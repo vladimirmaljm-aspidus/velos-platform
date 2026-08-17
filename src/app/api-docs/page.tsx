@@ -141,7 +141,8 @@ export default function ApiDocsPage() {
           variables defined in globals.css. */}
       <div className="swagger-ui-wrap">
         <SwaggerUI
-          spec={openApiSpec}
+          // swagger-ui-react v5 types don't declare `spec` prop, but it works at runtime
+          spec={openApiSpec as any}
           docExpansion="list"
           defaultModelExpandDepth={1}
           defaultModelsExpandDepth={1}
