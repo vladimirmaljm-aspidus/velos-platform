@@ -140,9 +140,10 @@ export default function ApiDocsPage() {
           inherits background/text colours from the app theme via CSS
           variables defined in globals.css. */}
       <div className="swagger-ui-wrap">
+        {/* @ts-expect-error — swagger-ui-react v5 has incorrect TS types (props: {}) 
+            but the component accepts spec/docExpansion/etc at runtime */}
         <SwaggerUI
-          // swagger-ui-react v5 types don't declare `spec` prop, but it works at runtime
-          spec={openApiSpec as any}
+          spec={openApiSpec}
           docExpansion="list"
           defaultModelExpandDepth={1}
           defaultModelsExpandDepth={1}
