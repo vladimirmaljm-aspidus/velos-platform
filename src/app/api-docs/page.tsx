@@ -44,7 +44,9 @@ import "swagger-ui-react/swagger-ui.css";
 // `ssr: false` defers the load to the browser, sidestepping the SSR crash.
 const SwaggerUI = dynamic(async () => {
   const mod = await import("swagger-ui-react");
-  return mod.default;
+  // Cast to any — swagger-ui-react v5 has incorrect TS types (props: {})
+  // but the component accepts spec/docExpansion/etc at runtime
+  return mod.default as any;
 }, { ssr: false, loading: () => <DocsSkeleton /> });
 
 type AuthState = "checking" | "ok" | "denied";
@@ -140,8 +142,6 @@ export default function ApiDocsPage() {
           inherits background/text colours from the app theme via CSS
           variables defined in globals.css. */}
       <div className="swagger-ui-wrap">
-        {/* @ts-expect-error — swagger-ui-react v5 has incorrect TS types (props: {}) 
-            but the component accepts spec/docExpansion/etc at runtime */}
         <SwaggerUI
           spec={openApiSpec}
           docExpansion="list"
