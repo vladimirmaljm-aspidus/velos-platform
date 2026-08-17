@@ -43,8 +43,9 @@ import "swagger-ui-react/swagger-ui.css";
 // server during `next build`. Wrapping the import in `next/dynamic` with
 // `ssr: false` defers the load to the browser, sidestepping the SSR crash.
 const SwaggerUI = dynamic(async () => {
-  // Use the wrapper with @ts-nocheck — swagger-ui-react v5 has incorrect TS types
-  return (await import("@/components/swagger-wrapper")).default;
+  const wrapper = await import("@/components/swagger-wrapper");
+  // Cast to ComponentType<any> — swagger-ui-react v5 has incorrect TS types
+  return wrapper.default as React.ComponentType<Record<string, unknown>>;
 }, { ssr: false, loading: () => <DocsSkeleton /> });
 
 type AuthState = "checking" | "ok" | "denied";
