@@ -1,0 +1,54 @@
+-- 021_drop_product_catalog_fk.sql
+-- Fix: supplier_offers and trade_calculations had FK to product_catalog(id),
+-- but the app now uses the products table for product selection.
+-- Drop the FK to allow product_id to reference products(id) UUIDs.
+-- Existing rows were backfilled to use products UUIDs where possible.
+--
+-- Background (Task ID: 2):
+--   supplier_offers.product_id_fkey  -> product_catalog(id)  ON DELETE CASCADE
+--   trade_calculations.product_id_fkey -> product_catalog(id)
+-- Both blocked saving supplier offers / trade calculations that referenced
+-- a UUID from the `products` table (which does NOT exist in product_catalog).
+-- Postgres error: 23503 (foreign_key_violation).
+--
+-- Pre-drop verification (run live on prod before this migration):
+--   SELECT count(*) FROM supplier_offers so
+--   LEFT JOIN products p ON so.product_id = p.id
+--   WHERE p.id IS NULL;            -- 0 (all 61 rows already had a products match)
+--   SELECT count(*) FROM trade_calculations tc
+--   LEFT JOIN products p ON tc.product_id = p.id
+--   WHERE p.id IS NULL;            -- 0 (the 1 row already had a products match)
+--
+-- Backfill applied before dropping (idempotent):
+--   UPDATE supplier_offers so
+--   SET product_id = p.id
+--   FROM product_catalog pc
+--   JOIN products p ON pc.name = p.name
+--   WHERE so.product_id = pc.id AND p.id IS NOT NULL;
+--   UPDATE trade_calculations tc
+--   SET product_id = p.id
+--   FROM product_catalog pc
+--   JOIN products p ON pc.name = p.name
+--   WHERE tc.product_id = pc.id AND p.id IS NOT NULL;
+
+ALTER TABLE supplier_offers DROP CONSTRAINT IF EXISTS supplier_offers_product_id_fkey;
+ALTER TABLE trade_calculations DROP CONSTRAINT IF EXISTS trade_calculations_product_id_fkey;
+
+-- Optional: add new FK pointing to products(id).
+-- Only add if all existing product_id values exist in products table.
+-- Verify first:
+--   SELECT count(*) FROM supplier_offers so
+--   LEFT JOIN products p ON so.product_id = p.id
+--   WHERE p.id IS NULL;
+--   SELECT count(*) FROM trade_calculations tc
+--   LEFT JOIN products p ON tc.product_id = p.id
+--   WHERE p.id IS NULL;
+-- If both return 0, safe to add:
+--   ALTER TABLE supplier_offers ADD CONSTRAINT supplier_offers_product_id_fkey
+--     FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL;
+--   ALTER TABLE trade_calculations ADD CONSTRAINT trade_calculations_product_id_fkey
+--     FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL;
+--
+-- NOTE: left intentionally commented out so the migration remains
+-- non-blocking and consistent with the existing project pattern
+-- (the live DB has very few FK constraints; see DEEP-AUDIT-DB-SEC notes).

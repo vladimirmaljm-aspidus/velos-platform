@@ -1,0 +1,86 @@
+-- 033_drop_vacuum_doc_seq_cron.sql
+-- ============================================================================
+-- P1 maintenance fix — task C-5 Fix 4.
+--
+-- Background
+-- ----------
+-- Migration `013_session_cleanup_and_cron.sql` scheduled a weekly
+-- `VACUUM ANALYZE public.document_sequences` cron job (jobname='vacuum-doc-seq',
+-- schedule='0 4 * * 0'). The B-1 audit flagged this as targeting a
+-- "non-existent table" — that conclusion was based on a reading of migration
+-- `004_document_sequences.sql`, which (despite its filename) does NOT create
+-- a `document_sequences` TABLE. Migration 004 creates Postgres SEQUENCE
+-- OBJECTS (`offer_number_seq`, `invoice_number_seq`, `proforma_number_seq`)
+-- and the `get_next_doc_number(doc_type)` RPC. The cron job was therefore
+-- assumed to be vacuuming nothing.
+--
+-- Live DB introspection (Supabase project `nwmwdsslgozqwuufjudj`)
+-- ----------------------------------------------------------------
+-- A `document_sequences` TABLE does in fact exist in the live DB (5 stale
+-- rows from 2026-08-03, schema: id, tenant_id, doc_type, year, last_number,
+-- prefix, updated_at). It is a LEGACY table from before migration 004 — the
+-- application code no longer reads or writes it. Migration 004 superseded it
+-- with SEQUENCE objects + the `get_next_doc_number` RPC; migration 032 then
+-- added `create_doc_with_number` for atomic INSERT-with-number. The 5 rows
+-- are leftover from the brief window in August when the legacy code path
+-- was still inserting before the RPC migration was fully rolled out.
+--
+-- Why drop the cron
+-- ----------------
+-- 1. The table is legacy and unused. VACUUM ANALYZE on a 5-row table that
+--    never changes is wasted work — Postgres autovacuum already handles
+--    tiny static tables.
+-- 2. The SEQUENCE objects that ACTUALLY back document numbering
+--    (`offer_number_seq`, `invoice_number_seq`, `proforma_number_seq`,
+--    `demand_number_seq`, `rfq_number_seq`) are NOT regular tables and do
+--    not need VACUUM ANALYZE — they are non-transactional sequence
+--    counters, internally managed by Postgres.
+-- 3. The other vacuum-* crons from migration 013 (vacuum-users,
+--    vacuum-sessions, vacuum-audit, vacuum-settings, vacuum-known-ips,
+--    vacuum-inv-mov) all target live, high-churn tables and remain.
+--
+-- Action
+-- ------
+-- Unschedule the `vacuum-doc-seq` cron job. This was applied live to the
+-- production Supabase project via the Management API on 2026-08-17:
+--
+--   SELECT cron.unschedule(jobid) FROM cron.job WHERE jobname = 'vacuum-doc-seq';
+--   -- → returned {unscheduled:true, jobid:4, jobname:'vacuum-doc-seq'}
+--
+-- This migration is idempotent — `cron.unschedule` is a no-op if the job
+-- doesn't exist (returns `false` rather than raising). Re-running this
+-- migration on a fresh DB that never had the job scheduled is safe.
+--
+-- Verification
+-- ------------
+--   SELECT jobid, jobname, schedule, command, active
+--   FROM cron.job
+--   WHERE jobname LIKE '%vacuum%' OR command LIKE '%vacuum%'
+--   ORDER BY jobname;
+--
+-- Expected: 6 rows (vacuum-audit, vacuum-inv-mov, vacuum-known-ips,
+-- vacuum-sessions, vacuum-settings, vacuum-users). `vacuum-doc-seq` is
+-- absent.
+--
+-- Out of scope / follow-ups
+-- -------------------------
+-- * The legacy `document_sequences` TABLE itself is left in place. Dropping
+--   it would require a separate impact assessment (it has 5 rows that may
+--   have audit / compliance value as historical record of which tenant
+--   issued which document numbers in August 2026). A follow-up task could
+--   archive those rows into `audit_logs.details` and then `DROP TABLE
+--   public.document_sequences`.
+-- * The Postgres SEQUENCE objects (`offer_number_seq` etc.) do not need
+--   any maintenance cron — their internal state is managed by Postgres.
+-- ============================================================================
+
+-- Idempotent unschedule. Returns false (no row) if the job was never
+-- scheduled on this DB; returns true if it was scheduled and is now gone.
+SELECT cron.unschedule('vacuum-doc-seq') AS unscheduled
+WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'vacuum-doc-seq');
+
+-- Verify the remaining vacuum jobs are untouched.
+SELECT jobid, jobname, schedule, command, active
+FROM cron.job
+WHERE jobname LIKE '%vacuum%'
+ORDER BY jobname;

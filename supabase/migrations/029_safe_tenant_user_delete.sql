@@ -1,0 +1,132 @@
+-- 029_safe_tenant_user_delete.sql
+-- ============================================================================
+-- DOCUMENTATION-ONLY MIGRATION — no SQL changes are applied by this file.
+--
+-- This file exists to record the design rationale for the application-layer
+-- cascade that `SupabaseStore.deleteTenantCascade` and
+-- `SupabaseStore.deleteUserCascade` perform (task C-1, P0 orphan prevention).
+-- It is intentionally a no-op at the DB level — the cascade is implemented
+-- in TypeScript because:
+--
+--   1. The live DB has very few FK constraints (per migration 021 comment),
+--      and the ones that exist use ON DELETE RESTRICT (e.g. offers.partner_id,
+--      demands.partner_id) which would BLOCK the tenant delete instead of
+--      cascading. Adding the proper FK + CASCADE constraints is a large,
+--      risky migration that needs careful per-table analysis (which columns
+--      are nullable, which are RESTRICT vs CASCADE vs SET NULL) and is tracked
+--      as a separate follow-up (see "Future work" below).
+--
+--   2. The DELETE route handler (src/app/api/tenants/[id]/route.ts) needs to
+--      return a structured 409 response with a per-table dependency count
+--      when the caller has not passed `confirm=true`. That count has to come
+--      from the application layer — a pure DB CASCADE would delete the rows
+--      before the route could enumerate them, so the operator would never
+--      see what they were about to destroy.
+--
+--   3. The soft-delete path (status='cancelled') needs to keep all rows.
+--      A DB-level CASCADE would make soft-delete impossible.
+--
+-- The application-layer cascade therefore walks the dependent tables in
+-- dependency order (children before parents) and DELETEs each one filtered
+-- by `tenant_id` (or `user_id` for users), then DELETEs the parent row
+-- last. Each per-table DELETE is wrapped in try/catch so a missing or
+-- renamed table in a given env does not abort the whole cascade — the table
+-- list is a superset of what any single env has.
+--
+-- Append-only / trigger-protected tables (audit_logs, document_verification_logs)
+-- are deliberately NOT in the cascade list. They are handled separately:
+--   - audit_logs            → migration 030 (anonymize_user_audit_logs RPC)
+--   - document_verification_logs → follow-up C-3 (same pattern, needs JOIN
+--                                  via portal_access.verification_code)
+--
+-- ----------------------------------------------------------------------------
+-- Tables covered by deleteTenantCascade(tenantId)
+-- ----------------------------------------------------------------------------
+--   audit_logs, sessions, mail_queue, notifications, entity_notes,
+--   user_tasks, inventory_movements, erp_journal_lines, erp_journal_entries,
+--   deal_commissions, commission_payouts, commission_agents,
+--   document_revisions, document_register, shared_documents, portal_rfqs,
+--   portal_access, api_keys, webhook_deliveries, webhooks, kyc_submissions,
+--   user_preferences, offers, invoices, proformas, supplier_offers,
+--   trade_calculations, demands, deals, products, partners,
+--   tenant_letterheads, tenant_seals, document_templates, settings, users
+--
+-- ----------------------------------------------------------------------------
+-- Tables covered by deleteUserCascade(userId)
+-- ----------------------------------------------------------------------------
+--   sessions, user_tasks, entity_notes, user_preferences, user_favorites,
+--   login_history, known_ips, trusted_devices, notifications
+--
+--   (audit_logs is handled separately by anonymizeUserAuditLogs — see
+--    migration 030. The PII columns are stripped but the rows are kept for
+--    tamper-evidence / financial-audit retention.)
+--
+-- ----------------------------------------------------------------------------
+-- Verification (run after deploying the application code)
+-- ----------------------------------------------------------------------------
+-- 1. Create a test tenant with a few dependent rows (users, partners, deals).
+-- 2. DELETE /api/tenants/<id>  → expect 409 with `dependencies` listing the
+--    counts and `error: "Tenant has existing data. Pass confirm=true..."`.
+-- 3. DELETE /api/tenants/<id> with body `{ soft: true }`  → expect 200 with
+--    `mode: soft`. Verify the tenant's status is now `cancelled` and all
+--    dependent rows are intact.
+-- 4. DELETE /api/tenants/<id> with body `{ confirm: true }`  → expect 200
+--    with `mode: hard` and `deleted` listing the pre-cascade counts. Verify
+--    the tenant row is gone and every dependent row's tenant_id no longer
+--    references it (orphan check):
+--
+--    SELECT relname, n_live_tup
+--    FROM pg_stat_user_tables
+--    WHERE relname IN ('users','partners','offers','invoices', ... )
+--      AND n_live_tup > 0;
+--    -- then spot-check:
+--    SELECT count(*) FROM users WHERE tenant_id = '<deleted-tenant-id>';
+--    -- expect 0 for every tenant-scoped table.
+--
+-- 5. DELETE /api/users/<id>  → expect 200 with `auditRowsAnonymised` count.
+--    Verify the user row is gone, sessions/user_tasks/etc are gone, and
+--    audit_logs rows for that user_id have username='deleted_user_<hash>',
+--    ip=NULL, user_agent=NULL (but the rows themselves still exist).
+--
+-- ----------------------------------------------------------------------------
+-- Future work — DB-level FK constraints (follow-up, NOT in this migration)
+-- ----------------------------------------------------------------------------
+-- The real fix for the orphan-row class of bugs is a migration that adds FK
+-- constraints with appropriate ON DELETE semantics for every cross-table
+-- reference. Sketch (NOT applied here — needs per-table review):
+--
+--   -- tenants.id ← *_tenant_id_fkey ON DELETE CASCADE
+--   ALTER TABLE users              ADD CONSTRAINT users_tenant_id_fkey
+--     FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+--   ALTER TABLE partners           ADD CONSTRAINT partners_tenant_id_fkey
+--     FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+--   -- ... (repeat for every tenant-scoped table)
+--
+--   -- users.id ← *_user_id_fkey ON DELETE CASCADE (or SET NULL for audit)
+--   ALTER TABLE sessions           ADD CONSTRAINT sessions_user_id_fkey
+--     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+--   ALTER TABLE user_tasks         ADD CONSTRAINT user_tasks_user_id_fkey
+--     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+--   -- audit_logs.user_id stays WITHOUT a FK so the anonymise RPC can
+--   -- mutate rows after the user is deleted (the JOIN would otherwise
+--   -- become invalid; the append-only trigger also blocks DELETE).
+--
+-- Caveats:
+--   - Adding FKs to a live DB with orphan rows will FAIL. A pre-migration
+--     cleanup script must DELETE or backfill the orphans first.
+--   - Some tables intentionally have NO tenant_id (e.g. user_preferences
+--     is user-scoped only) — those need a user_id FK, not a tenant_id FK.
+--   - The ON DELETE behavior must be chosen per-table: CASCADE for weak
+--     entities (offers, deals, sessions), SET NULL for nullable refs
+--     (e.g. audit_logs.user_id, erp_journal_entries.posted_by), RESTRICT
+--     for protected entities (the last admin user — but that gate is in
+--     the app, not the DB).
+--
+-- Until that migration lands, the application-layer cascade in
+-- `deleteTenantCascade` / `deleteUserCascade` is the only thing preventing
+-- orphan rows. Treat the absence of FK CASCADE as a known limitation.
+-- ============================================================================
+
+-- Intentionally empty. This file exists for documentation only — see the
+-- comments above. No schema changes are applied.
+SELECT 1 AS documentation_only_migration_029;

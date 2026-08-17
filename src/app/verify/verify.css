@@ -1,0 +1,96 @@
+.verify-bg {
+  background: #0a0e1a;
+  position: relative;
+  overflow: hidden;
+}
+.verify-bg::before {
+  content: "";
+  position: absolute;
+  inset: -50%;
+  background:
+    radial-gradient(circle at 20% 30%, rgba(13, 148, 136, 0.08) 0%, transparent 40%),
+    radial-gradient(circle at 80% 70%, rgba(59, 130, 246, 0.06) 0%, transparent 40%),
+    radial-gradient(circle at 50% 50%, rgba(139, 92, 246, 0.04) 0%, transparent 50%);
+  animation: verify-bg-shift 20s ease-in-out infinite alternate;
+}
+.verify-bg::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  backdrop-filter: blur(80px);
+  -webkit-backdrop-filter: blur(80px);
+}
+@keyframes verify-bg-shift {
+  0% { transform: translate(0, 0) rotate(0deg); }
+  100% { transform: translate(5%, -3%) rotate(2deg); }
+}
+.verify-card {
+  position: relative;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 24px;
+  box-shadow: 0 25px 80px -20px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+.verify-glow {
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle at center, rgba(13, 148, 136, 0.06) 0%, transparent 60%);
+  pointer-events: none;
+}
+.verify-glow-red {
+  background: radial-gradient(circle at center, rgba(239, 68, 68, 0.08) 0%, transparent 60%);
+}
+.verify-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.verify-detail-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: rgba(241, 245, 249, 0.5);
+  border: 1px solid rgba(226, 232, 240, 0.6);
+  border-radius: 10px;
+  transition: background 0.15s;
+}
+.verify-detail-row:hover {
+  background: rgba(241, 245, 249, 0.8);
+}
+.verify-detail-icon {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.06);
+  color: #64748b;
+  flex-shrink: 0;
+}
+.verify-detail-label {
+  font-size: 12px;
+  color: #64748b;
+  flex: 1;
+}
+.verify-detail-value {
+  font-size: 13px;
+  font-weight: 500;
+  color: #1e293b;
+  text-align: right;
+}
+@keyframes verify-ping-slow {
+  75%, 100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+.animate-ping-slow {
+  animation: verify-ping-slow 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}

@@ -1,0 +1,1894 @@
+// VELOS Trade Management Platform — Prisma Schema
+// SQLite-compatible: no enums, no native JSON/arrays (stored as String)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// 1. Tenant — multi-tenant company
+// ============================================================
+model Tenant {
+  id                  String    @id @default(cuid())
+  name                String
+  legal_name          String?
+  country             String? // ISO 3166-1 alpha-2
+  currency            String // default currency
+  tax_id              String?
+  vat_number          String?
+  registration_number String?
+  address_line        String?
+  city                String?
+  postal_code         String?
+  // Contact (shown in PDF footer + portal)
+  website             String?
+  phone               String?
+  email               String?
+  // Bank details (for invoices)
+  bank_name           String?
+  bank_accounts       Json? // JSONB array of {bank_name, iban, swift, ...}
+  bank_iban           String?
+  bank_swift          String?
+  // Branding
+  logo_url            String?
+  primary_color       String?
+  // Subscription
+  plan                String    @default("trial") // trial | starter | business | enterprise
+  status              String    @default("active") // active | suspended | cancelled
+  max_users           Int       @default(5)
+  subscription_start  DateTime?
+  subscription_end    DateTime?
+  trial_ends_at       DateTime?
+  billing_cycle       String? // monthly | yearly
+  amount_paid         Float?
+  currency_paid       String?
+  trial_days          Int?
+  // Meta
+  created_at          DateTime  @default(now())
+  updated_at          DateTime  @updatedAt
+
+  // Relations
+  users                 User[]
+  partners              Partner[]
+  productCatalogEntries ProductCatalogEntry[]
+  supplierOffers        SupplierOffer[]
+  tradeCalculations     TradeCalculation[]
+  portalAccesses        PortalAccess[]
+  documentTemplates     DocumentTemplate[]
+  documentVerifications DocumentVerification[]
+  kycSubmissions        KycSubmission[]
+  portalRfqs            PortalRfq[]
+  featureFlags          TenantFeatureFlags[]
+  notifications         Notification[]
+  erpAccounts           ErpAccount[]
+  fiscalPeriods         FiscalPeriod[]
+  erpJournalEntries     ErpJournalEntry[]
+  erpCostCenters        ErpCostCenter[]
+  erpBankAccounts       ErpBankAccount[]
+  erpBankTransactions   ErpBankTransaction[]
+  erpJournalLines       ErpJournalLine[]       @relation("JLTenant")
+  documentRevisions     DocumentRevision[]     @relation("DocRevTenant")
+  erpSetting            ErpSetting?
+  letterheads           TenantLetterhead[]
+  seals                 TenantSeal[]
+  invoices              Invoice[]
+  proformas             Proforma[]
+}
+
+// ============================================================
+// 2. User — platform users
+// ============================================================
+model User {
+  id                   String    @id @default(cuid())
+  tenant_id            String?
+  username             String
+  email                String    @unique
+  full_name            String?
+  role                 String    @default("staff") // super_admin | admin | manager | staff | viewer
+  permissions          String? // JSON array of strings
+  password_hash        String
+  totp_secret          String?
+  totp_enabled         Boolean   @default(false)
+  // SHA-256 hex strings for 10 one-time 2FA recovery codes (migration 040
+  // / src/lib/auth/totp.ts `hashRecoveryCode`). Hashed at the application
+  // layer so a DB read alone can't recover usable codes. NULL when 2FA is
+  // not active. Stored as TEXT (JSON array) — SQLite has no native JSON.
+  recovery_codes       String?
+  locked_until         DateTime?
+  failed_attempts      Int       @default(0)
+  last_login_at        DateTime?
+  last_login_ip        String?
+  last_login_country   String?
+  must_change_password Boolean   @default(false)
+  token_version        Int       @default(1)
+  signature            String? // base64 signature image
+  notif_prefs          String? // JSON object
+  active               Boolean   @default(true)
+  created_at           DateTime  @default(now())
+  updated_at           DateTime  @updatedAt
+
+  // Relations
+  tenant                  Tenant?                 @relation(fields: [tenant_id], references: [id])
+  deals                   Deal[]                  @relation("DealOwner")
+  offers                  Offer[]                 @relation("OfferOwner")
+  uploadedDocuments       SharedDocument[]
+  auditLogs               AuditLog[]
+  tasks                   UserTask[]
+  entityNotes             EntityNote[]
+  securitySessions        SecuritySession[]
+  loginHistory            LoginHistoryEntry[]
+  knownIps                KnownIp[]
+  trustedDevices          TrustedDevice[]
+  tradeCalculations       TradeCalculation[]      @relation("TradeCalcCreator")
+  documentRegisterEntries DocumentRegisterEntry[]
+  documentRevisions       DocumentRevision[]      @relation("DocRevCreator")
+  documentTemplates       DocumentTemplate[]      @relation("TemplateCreator")
+  approvedPortalAccess    PortalAccess[]          @relation("PortalApprover")
+  reviewedKyc             KycSubmission[]         @relation("KycReviewer")
+  notifications           Notification[]
+  featureFlagUpdater      TenantFeatureFlags[]    @relation("FlagUpdater")
+  preferences             UserPreference[]
+  letterheadsCreated      TenantLetterhead[]      @relation("LetterheadCreator")
+  sealsCreated            TenantSeal[]            @relation("SealCreator")
+
+  @@index([tenant_id])
+  @@index([email])
+  @@index([role])
+  @@index([active])
+}
+
+// ============================================================
+// 3. Partner — trading partners
+// ============================================================
+model Partner {
+  id                      String    @id @default(cuid())
+  tenant_id               String
+  name                    String
+  entity_type             String    @default("company") // company | individual
+  type                    String    @default("both") // supplier | buyer | both | agent | logistics | customs | bank | inspector
+  email                   String?
+  phone                   String?
+  website                 String?
+  tax_id                  String?
+  vat_number              String?
+  registration_number     String?
+  // Address
+  address_line            String?
+  city                    String?
+  state                   String?
+  postal_code             String?
+  country                 String? // ISO 3166-1 alpha-2
+  // Contact person
+  contact_name            String?
+  contact_email           String?
+  contact_phone           String?
+  // Bank
+  bank_name               String?
+  bank_account            String?
+  bank_swift              String?
+  bank_iban               String?
+  // Trade
+  preferred_currency      String?
+  preferred_incoterm      String?
+  preferred_payment_terms String?
+  // CRM
+  status                  String    @default("active") // active | inactive | blacklisted
+  risk_score              Int       @default(0)
+  notes                   String?
+  tags                    String? // JSON array of strings
+  // Portal
+  portal_enabled          Boolean   @default(false)
+  portal_token            String?
+  portal_level            String    @default("none") // none | viewer | buyer
+  kyc_status              String    @default("not_submitted") // not_submitted | pending | approved | rejected
+  kyc_data                String? // JSON object
+  kyc_reviewed_by         String?
+  kyc_reviewed_at         DateTime?
+  // Meta
+  created_at              DateTime  @default(now())
+  updated_at              DateTime  @updatedAt
+
+  // Relations
+  tenant                      Tenant                  @relation(fields: [tenant_id], references: [id])
+  deals                       Deal[]
+  offers                      Offer[]
+  demands                     Demand[]
+  sharedDocuments             SharedDocument[]
+  inventoryMovements          InventoryMovement[]
+  invoices                    Invoice[]
+  proformas                   Proforma[]
+  supplierOffers              SupplierOffer[]         @relation("SupplierOfferSupplier")
+  tradeCalculationsAsSupplier TradeCalculation[]      @relation("TradeCalcSupplier")
+  tradeCalculationsAsBuyer    TradeCalculation[]      @relation("TradeCalcBuyer")
+  portalAccesses              PortalAccess[]
+  documentVerifications       DocumentVerification[]  @relation("VerificationPartner")
+  kycSubmissions              KycSubmission[]
+  portalRfqs                  PortalRfq[]
+  documentRegisterEntries     DocumentRegisterEntry[]
+  journalLines                ErpJournalLine[]
+
+  @@index([tenant_id])
+  @@index([type])
+  @@index([status])
+  @@index([name])
+}
+
+// ============================================================
+// 4. Product — simple product catalog
+// ============================================================
+model Product {
+  id            String   @id @default(cuid())
+  tenant_id     String
+  sku           String
+  name          String
+  description   String?
+  category      String?
+  unit          String
+  price         Float
+  currency      String
+  cost          Float?
+  stock         Int      @default(0)
+  reorder_level Int      @default(0)
+  active        Boolean  @default(true)
+  attributes    String? // JSON object
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  // Relations
+  inventoryMovements InventoryMovement[]
+  offers             Offer[]             @relation("OfferProduct")
+
+  @@index([tenant_id])
+  @@index([sku])
+  @@index([category])
+  @@index([active])
+}
+
+// ============================================================
+// 5. Deal — deals with stages
+// ============================================================
+model Deal {
+  id             String    @id @default(cuid())
+  tenant_id      String
+  title          String
+  partner_id     String
+  owner_id       String?
+  stage          String    @default("lead") // lead | qualified | proposal | negotiation | won | lost
+  value          Float     @default(0)
+  currency       String    @default("USD")
+  expected_close DateTime?
+  probability    Int       @default(0)
+  description    String?
+  lost_reason    String?
+  created_at     DateTime  @default(now())
+  updated_at     DateTime  @updatedAt
+
+  // Relations
+  partner Partner @relation(fields: [partner_id], references: [id])
+  owner   User?   @relation("DealOwner", fields: [owner_id], references: [id])
+  offers  Offer[]
+
+  @@index([tenant_id])
+  @@index([partner_id])
+  @@index([owner_id])
+  @@index([stage])
+}
+
+// ============================================================
+// 6. Offer — offers with line items (JSON)
+// ============================================================
+model Offer {
+  id             String    @id @default(cuid())
+  tenant_id      String
+  number         String    @unique
+  deal_id        String?
+  partner_id     String
+  owner_id       String?
+  status         String    @default("draft") // draft | sent | accepted | rejected | expired
+  subject        String
+  currency       String    @default("USD")
+  subtotal       Float     @default(0)
+  discount_total Float     @default(0)
+  tax_total      Float     @default(0)
+  total          Float     @default(0)
+  notes          String?
+  terms          String?
+  valid_until    DateTime?
+  sent_at        DateTime?
+  responded_at   DateTime?
+  items          String // JSON array of OfferLineItem
+
+  // Trade / import fields
+  offer_no      String? // supplier's own reference number
+  bank_details  String? // bank name & IBAN
+  pol           String? // port of loading
+  pod           String? // port of discharge
+  vessel        String? // vessel name
+  container_no  String? // container number
+  lead_time     String? // e.g. "14 days"
+  packaging     String? // e.g. "50 kg PP bags"
+  payment_terms String? // e.g. "net30", "LC at sight"
+  tax_clause    String? // e.g. "VAT reverse charge"
+  incoterm      String? // EXW, FOB, CIF, etc.
+  selling_price Float? // per-unit selling price
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  // Trade / import fields (synced with live DB)
+  product_id       String? // linked product (FK to Product)
+  services         String? // JSON array of service line items
+  payment_bank_idx Int? // index into tenant bank_accounts JSON
+  pol_country      String? // country of port of loading
+  pod_country      String? // country of port of discharge
+  delivery_address String?
+  delivery_city    String?
+  delivery_country String?
+  specification    String?
+  origin_country   String?
+  quantity         Float   @default(0)
+  unit             String  @default("MT")
+
+  // Multi-currency (synced with live DB)
+  exchange_rate      Float?
+  exchange_rate_date DateTime?
+  exchange_rate_note String?
+
+  // Portal view tracking & client acceptance (synced with live DB)
+  viewed_at                DateTime?
+  viewed_by_email          String?
+  view_count               Int       @default(0)
+  client_accepted_at       DateTime?
+  client_signature         String?
+  client_note              String?
+  admin_reviewed_by_client Boolean   @default(false)
+
+  // Audit / soft delete (synced with live DB)
+  old_id     String?
+  deleted_at DateTime?
+  version    Int       @default(1)
+
+  // PDF / document register (synced with live DB)
+  pdf_file_url     String?
+  pdf_generated_at DateTime?
+  document_id      String?
+
+  // Relations
+  deal       Deal?       @relation(fields: [deal_id], references: [id])
+  partner    Partner     @relation(fields: [partner_id], references: [id])
+  owner      User?       @relation("OfferOwner", fields: [owner_id], references: [id])
+  product    Product?    @relation("OfferProduct", fields: [product_id], references: [id])
+  invoices   Invoice[]
+  proformas  Proforma[]
+  portalRfqs PortalRfq[] @relation("RfqLinkedOffer")
+
+  @@index([tenant_id])
+  @@index([deal_id])
+  @@index([partner_id])
+  @@index([owner_id])
+  @@index([status])
+  @@index([product_id])
+  @@index([deleted_at])
+}
+
+// ============================================================
+// 7. Demand — demands with items (JSON)
+// ============================================================
+model Demand {
+  id                 String    @id @default(cuid())
+  tenant_id          String
+  number             String    @unique
+  partner_id         String
+  status             String    @default("open") // open | quoted | closed
+  priority           String    @default("medium") // low | medium | high
+  subject            String
+  description        String?
+  requested_delivery DateTime?
+  currency           String    @default("EUR")
+  items              String // JSON array of DemandItem
+
+  // Trade / import fields
+  product_id     String? // linked product
+  product_name   String? // denormalized product name
+  target_price   Float? // target price per unit
+  is_new_product Boolean   @default(false)
+  source         String? // e.g. "portal", "manual", "import"
+  auto_hints     String? // JSON: auto-suggestions
+  buyer_bank     String? // buyer's bank details
+  destination    String? // delivery destination
+  needed_by      DateTime? // needed-by date
+  payment_terms  String? // e.g. "net30", "LC at sight"
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  // Relations
+  partner    Partner     @relation(fields: [partner_id], references: [id])
+  portalRfqs PortalRfq[] @relation("RfqLinkedDemand")
+
+  @@index([tenant_id])
+  @@index([partner_id])
+  @@index([status])
+}
+
+// ============================================================
+// 8. SharedDocument — file attachments
+// ============================================================
+model SharedDocument {
+  id                 String   @id @default(cuid())
+  tenant_id          String
+  partner_id         String
+  filename           String
+  mime_type          String
+  size               Int
+  storage_path       String
+  category           String   @default("other") // contract | invoice | spec | other
+  uploaded_by        String?
+  visible_to_partner Boolean  @default(false)
+  created_at         DateTime @default(now())
+
+  // Relations
+  partner  Partner @relation(fields: [partner_id], references: [id])
+  uploader User?   @relation(fields: [uploaded_by], references: [id])
+
+  @@index([tenant_id])
+  @@index([partner_id])
+  @@index([category])
+  @@index([uploaded_by])
+}
+
+// ============================================================
+// 9. AuditLog — audit trail
+// ============================================================
+model AuditLog {
+  id          String   @id @default(cuid())
+  tenant_id   String?
+  user_id     String?
+  username    String?
+  action      String
+  entity_type String?
+  entity_id   String?
+  details     String? // JSON object
+  ip          String?
+  user_agent  String?
+  created_at  DateTime @default(now())
+
+  // Relations
+  user User? @relation(fields: [user_id], references: [id])
+
+  @@index([tenant_id])
+  @@index([user_id])
+  @@index([action])
+  @@index([entity_type, entity_id])
+  @@index([created_at])
+}
+
+// ============================================================
+// 10. Setting — key-value settings
+// ============================================================
+model Setting {
+  id         String   @id @default(cuid())
+  tenant_id  String?
+  key        String
+  value      String // JSON-serialized value
+  updated_at DateTime @updatedAt
+
+  @@unique([tenant_id, key])
+  @@index([tenant_id])
+}
+
+// ============================================================
+// 11. UserTask — user tasks
+// ============================================================
+model UserTask {
+  id          String    @id @default(cuid())
+  tenant_id   String
+  user_id     String
+  title       String
+  done        Boolean   @default(false)
+  due_date    DateTime?
+  entity_type String?
+  entity_id   String?
+  priority    String    @default("medium") // low | medium | high
+  created_at  DateTime  @default(now())
+
+  // Relations
+  user User @relation(fields: [user_id], references: [id])
+
+  @@index([tenant_id])
+  @@index([user_id])
+  @@index([done])
+  @@index([due_date])
+  @@index([entity_type, entity_id])
+}
+
+// ============================================================
+// 12. InventoryMovement — inventory tracking
+// ============================================================
+model InventoryMovement {
+  id         String   @id @default(cuid())
+  tenant_id  String
+  partner_id String
+  product_id String
+  delta      Int
+  reason     String
+  reference  String?
+  created_at DateTime @default(now())
+
+  // Relations
+  partner Partner @relation(fields: [partner_id], references: [id])
+  product Product @relation(fields: [product_id], references: [id])
+
+  @@index([tenant_id])
+  @@index([partner_id])
+  @@index([product_id])
+  @@index([created_at])
+}
+
+// ============================================================
+// 13. EntityNote — notes on entities
+// ============================================================
+model EntityNote {
+  id          String   @id @default(cuid())
+  tenant_id   String
+  entity_type String
+  entity_id   String
+  content     String
+  pinned      Boolean  @default(false)
+  created_by  String?
+  created_at  DateTime @default(now())
+
+  // Relations
+  creator User? @relation(fields: [created_by], references: [id])
+
+  @@index([tenant_id])
+  @@index([entity_type, entity_id])
+  @@index([created_by])
+  @@index([pinned])
+}
+
+// ============================================================
+// 14. Invoice — invoices with items (JSON)
+// ============================================================
+model Invoice {
+  id             String    @id @default(cuid())
+  tenant_id      String
+  number         String    @unique
+  offer_id       String?
+  partner_id     String
+  status         String    @default("draft") // draft | sent | paid | overdue | cancelled
+  subject        String
+  currency       String    @default("USD")
+  subtotal       Float     @default(0)
+  discount_total Float     @default(0)
+  tax_total      Float     @default(0)
+  total          Float     @default(0)
+  issue_date     DateTime
+  due_date       DateTime
+  sent_at        DateTime?
+  paid_at        DateTime?
+  notes          String?
+  items          String // JSON array of OfferLineItem
+  created_at     DateTime  @default(now())
+  updated_at     DateTime  @updatedAt
+
+  // Trade / import fields (synced with live DB)
+  incoterm         String?
+  pol              String? // port of loading
+  pol_country      String?
+  pod              String? // port of discharge
+  pod_country      String?
+  vessel           String?
+  container_no     String?
+  lead_time        String?
+  packaging        String?
+  delivery_address String?
+  delivery_city    String?
+  delivery_country String?
+  specification    String?
+  origin_country   String?
+
+  // Multi-currency (synced with live DB)
+  exchange_rate      Float?
+  exchange_rate_date DateTime?
+  exchange_rate_note String?
+
+  // Portal view tracking (synced with live DB)
+  viewed_at       DateTime?
+  viewed_by_email String?
+  view_count      Int       @default(0)
+
+  // Audit / soft delete (synced with live DB)
+  deleted_at DateTime?
+  version    Int       @default(1)
+
+  // Relations
+  tenant  Tenant  @relation(fields: [tenant_id], references: [id])
+  offer   Offer?  @relation(fields: [offer_id], references: [id])
+  partner Partner @relation(fields: [partner_id], references: [id])
+
+  @@index([tenant_id])
+  @@index([offer_id])
+  @@index([partner_id])
+  @@index([status])
+  @@index([due_date])
+  @@index([deleted_at])
+}
+
+// ============================================================
+// 15. Proforma — proformas with items (JSON)
+// ============================================================
+model Proforma {
+  id             String    @id @default(cuid())
+  tenant_id      String
+  number         String    @unique
+  offer_id       String?
+  partner_id     String
+  status         String    @default("draft") // draft | sent | paid | expired
+  subject        String
+  currency       String    @default("EUR")
+  subtotal       Float     @default(0)
+  discount_total Float     @default(0)
+  tax_total      Float     @default(0)
+  total          Float     @default(0)
+  issue_date     DateTime
+  valid_until    DateTime
+  sent_at        DateTime?
+  paid_at        DateTime?
+  payment_terms  String?   @default("net30")
+  notes          String?
+  items          String // JSON array of OfferLineItem
+  created_at     DateTime  @default(now())
+  updated_at     DateTime  @updatedAt
+
+  // Trade / import fields (synced with live DB)
+  incoterm         String?
+  pol              String? // port of loading
+  pol_country      String?
+  pod              String? // port of discharge
+  pod_country      String?
+  vessel           String?
+  container_no     String?
+  lead_time        String?
+  packaging        String?
+  delivery_address String?
+  delivery_city    String?
+  delivery_country String?
+  specification    String?
+  origin_country   String?
+
+  // Multi-currency (synced with live DB)
+  exchange_rate      Float?
+  exchange_rate_date DateTime?
+  exchange_rate_note String?
+
+  // Portal view tracking (synced with live DB)
+  viewed_at       DateTime?
+  viewed_by_email String?
+  view_count      Int       @default(0)
+
+  // Audit / soft delete (synced with live DB)
+  deleted_at DateTime?
+  version    Int       @default(1)
+
+  // Relations
+  tenant  Tenant  @relation(fields: [tenant_id], references: [id])
+  offer   Offer?  @relation(fields: [offer_id], references: [id])
+  partner Partner @relation(fields: [partner_id], references: [id])
+
+  @@index([tenant_id])
+  @@index([offer_id])
+  @@index([partner_id])
+  @@index([status])
+  @@index([deleted_at])
+}
+
+// ============================================================
+// 16. DocumentRegisterEntry — document versioning
+// ============================================================
+model DocumentRegisterEntry {
+  id           String   @id @default(cuid())
+  tenant_id    String
+  number       String // e.g. OF-2026-001-V2
+  type         String // offer | invoice | proforma | contract | spec | other
+  version      Int      @default(1)
+  reference_id String?
+  partner_id   String?
+  title        String
+  status       String   @default("current") // current | superseded | archived
+  created_by   String?
+  metadata     String? // JSON object
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  // Relations
+  partner   Partner?           @relation(fields: [partner_id], references: [id])
+  creator   User?              @relation(fields: [created_by], references: [id])
+  revisions DocumentRevision[] @relation("DocRevDocument")
+
+  @@index([tenant_id])
+  @@index([type])
+  @@index([reference_id])
+  @@index([partner_id])
+  @@index([status])
+  @@index([number])
+}
+
+// ============================================================
+// 17. DocumentRevision — revision history
+// ============================================================
+model DocumentRevision {
+  id          String   @id @default(cuid())
+  tenant_id   String
+  document_id String
+  version     Int
+  change_note String   @default("")
+  created_by  String?
+  created_at  DateTime @default(now())
+
+  // Relations
+  tenant   Tenant                @relation("DocRevTenant", fields: [tenant_id], references: [id])
+  document DocumentRegisterEntry @relation("DocRevDocument", fields: [document_id], references: [id], onDelete: Cascade)
+  creator  User?                 @relation("DocRevCreator", fields: [created_by], references: [id])
+
+  @@index([tenant_id])
+  @@index([document_id])
+  @@index([created_by])
+}
+
+// ============================================================
+// 18. VaultSecret — encrypted secrets
+// ============================================================
+model VaultSecret {
+  id               String    @id @default(cuid())
+  tenant_id        String
+  key              String    @unique
+  description      String?
+  encrypted_value  String
+  category         String    @default("other") // api | smtp | database | payment | other
+  last_accessed_at DateTime?
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @updatedAt
+
+  @@index([tenant_id])
+  @@index([key])
+  @@index([category])
+}
+
+// ============================================================
+// 19. ApiKey — API keys
+// ============================================================
+model ApiKey {
+  id           String    @id @default(cuid())
+  tenant_id    String
+  name         String
+  key_prefix   String // first 8 chars shown
+  key_hash     String // full hash, never returned to client
+  permissions  String // JSON array of strings
+  last_used_at DateTime?
+  last_used_ip String?
+  active       Boolean   @default(true)
+  expires_at   DateTime?
+  created_at   DateTime  @default(now())
+
+  @@index([tenant_id])
+  @@index([key_prefix])
+  @@index([active])
+}
+
+// ============================================================
+// 20. Webhook — webhook endpoints
+// ============================================================
+model Webhook {
+  id                String    @id @default(cuid())
+  tenant_id         String
+  name              String
+  url               String
+  events            String // JSON array of strings, e.g. ["offer.sent", "deal.won"]
+  secret            String // for signing payloads
+  last_triggered_at DateTime?
+  last_status       Int? // HTTP status code
+  active            Boolean   @default(true)
+  created_at        DateTime  @default(now())
+
+  @@index([tenant_id])
+  @@index([active])
+}
+
+// ============================================================
+// 21. SecuritySession — user sessions
+// ============================================================
+model SecuritySession {
+  id           String    @id @default(cuid())
+  tenant_id    String
+  user_id      String
+  ip           String?
+  user_agent   String?
+  country      String?
+  created_at   DateTime  @default(now())
+  last_used_at DateTime?
+  expires_at   DateTime
+  revoked      Boolean   @default(false)
+  current      Boolean   @default(false)
+
+  // Relations
+  user User @relation(fields: [user_id], references: [id])
+
+  @@index([tenant_id])
+  @@index([user_id])
+  @@index([expires_at])
+  @@index([revoked])
+}
+
+// ============================================================
+// 22. LoginHistoryEntry — login history
+// ============================================================
+model LoginHistoryEntry {
+  id         String   @id @default(cuid())
+  tenant_id  String
+  user_id    String
+  username   String
+  ip         String?
+  user_agent String?
+  country    String?
+  success    Boolean
+  reason     String?
+  created_at DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [user_id], references: [id])
+
+  @@index([tenant_id])
+  @@index([user_id])
+  @@index([created_at])
+  @@index([success])
+}
+
+// ============================================================
+// 23. KnownIp — known IP addresses
+// ============================================================
+model KnownIp {
+  id         String   @id @default(cuid())
+  tenant_id  String
+  user_id    String
+  ip         String
+  country    String?
+  first_seen DateTime @default(now())
+  last_seen  DateTime @default(now())
+  trusted    Boolean  @default(false)
+
+  // Relations
+  user User @relation(fields: [user_id], references: [id])
+
+  @@index([tenant_id])
+  @@index([user_id])
+  @@index([ip])
+  @@index([trusted])
+}
+
+// ============================================================
+// 24. TrustedDevice — trusted devices
+// ============================================================
+model TrustedDevice {
+  id          String   @id @default(cuid())
+  tenant_id   String
+  user_id     String
+  device_name String
+  fingerprint String
+  ip          String?
+  last_used   DateTime @default(now())
+  revoked     Boolean  @default(false)
+  created_at  DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [user_id], references: [id])
+
+  @@index([tenant_id])
+  @@index([user_id])
+  @@index([fingerprint])
+  @@index([revoked])
+}
+
+// ============================================================
+// 25. MailQueueEntry — mail queue
+// ============================================================
+model MailQueueEntry {
+  id         String    @id @default(cuid())
+  tenant_id  String?
+  to_email   String
+  subject    String
+  body       String
+  status     String    @default("queued") // queued | sending | sent | failed
+  attempts   Int       @default(0)
+  error      String?
+  sent_at    DateTime?
+  created_at DateTime  @default(now())
+
+  @@index([tenant_id])
+  @@index([status])
+  @@index([created_at])
+}
+
+// ============================================================
+// 26. ProductCatalogEntry — product catalog (base products)
+// ============================================================
+model ProductCatalogEntry {
+  id             String   @id @default(cuid())
+  tenant_id      String
+  name           String
+  category       String // see PRODUCT_CATEGORIES
+  hs_code        String? // Harmonized System code
+  description    String?
+  base_unit      String // see UNITS_OF_MEASURE
+  specifications String? // JSON object, e.g. { icumsa: "45", moisture: "0.10%" }
+  origin_country String? // ISO alpha-2
+  images         String? // JSON array of strings (URLs)
+  active         Boolean  @default(true)
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  // Relations
+  tenant         Tenant          @relation(fields: [tenant_id], references: [id])
+  supplierOffers SupplierOffer[]
+
+  @@index([tenant_id])
+  @@index([category])
+  @@index([active])
+  @@index([name])
+}
+
+// ============================================================
+// 27. SupplierOffer — supplier-specific offers
+// ============================================================
+model SupplierOffer {
+  id                  String    @id @default(cuid())
+  tenant_id           String
+  product_id          String // → ProductCatalogEntry
+  supplier_id         String // → Partner (type supplier)
+  // Identification
+  offer_number        String? // supplier's own ref
+  status              String    @default("active") // active | expired | on_hold | consumed
+  // Pricing
+  unit_price          Float
+  currency            String    @default("USD")
+  min_order_qty       Float?
+  price_valid_until   DateTime?
+  // Product details (override base product if this supplier differs)
+  packaging           String? // e.g. "50 kg PP bags", "1 MT big bag"
+  packing_details     String? // e.g. "palletized, stretch-wrapped"
+  loadability         String? // e.g. "28 MT per 40' HC container"
+  specification_notes String? // deviations from base spec
+  origin_country      String?
+  // Trade terms
+  incoterm            String    @default("FOB") // EXW, FOB, CIF, etc.
+  loading_port        String?
+  delivery_port       String?
+  lead_time_days      Int?
+  payment_terms       String?
+  // Quality
+  inspection          String? // e.g. "SGS", "Bureau Veritas"
+  certificate         String? // e.g. "ISO 22000", "Halal", "Organic"
+  // Meta
+  notes               String?
+  created_at          DateTime  @default(now())
+  updated_at          DateTime  @updatedAt
+
+  // Relations
+  tenant   Tenant              @relation(fields: [tenant_id], references: [id])
+  product  ProductCatalogEntry @relation(fields: [product_id], references: [id])
+  supplier Partner             @relation("SupplierOfferSupplier", fields: [supplier_id], references: [id])
+
+  @@index([tenant_id])
+  @@index([product_id])
+  @@index([supplier_id])
+  @@index([status])
+}
+
+// ============================================================
+// 28. TradeCalculation — trade cost calculations with cost lines (JSON)
+// ============================================================
+model TradeCalculation {
+  id                  String   @id @default(cuid())
+  tenant_id           String
+  name                String
+  // Source
+  product_id          String?
+  supplier_offer_id   String?
+  supplier_id         String?
+  buyer_id            String?
+  // Quantities
+  quantity            Float    @default(0)
+  unit                String   @default("MT")
+  num_containers      Int      @default(0)
+  container_type      String?
+  // Buy side
+  buy_price_per_unit  Float    @default(0)
+  buy_currency        String   @default("USD")
+  buy_incoterm        String   @default("FOB")
+  // Sell side
+  sell_price_per_unit Float    @default(0)
+  sell_currency       String   @default("USD")
+  sell_incoterm       String   @default("CIF")
+  // Transport
+  transport_mode      String   @default("sea") // sea | air | land | rail
+  loading_port        String?
+  delivery_port       String?
+  // Exchange rate
+  exchange_rate       Float    @default(1.0)
+  // Cost lines (JSON array of TradeCostLine)
+  cost_lines          String // JSON
+  // Results (computed)
+  total_buy_cost      Float    @default(0)
+  total_landed_cost   Float    @default(0)
+  total_sell_revenue  Float    @default(0)
+  gross_margin        Float    @default(0)
+  margin_percent      Float    @default(0)
+  // Meta
+  created_by          String?
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+
+  // Commission tracking (synced with live DB migration 007)
+  commission_agent_id String?
+  commission_type     String?
+  commission_rate     Float   @default(0)
+
+  // Relations
+  tenant   Tenant   @relation(fields: [tenant_id], references: [id])
+  supplier Partner? @relation("TradeCalcSupplier", fields: [supplier_id], references: [id])
+  buyer    Partner? @relation("TradeCalcBuyer", fields: [buyer_id], references: [id])
+  creator  User?    @relation("TradeCalcCreator", fields: [created_by], references: [id])
+
+  @@index([tenant_id])
+  @@index([supplier_id])
+  @@index([buyer_id])
+  @@index([created_by])
+  @@index([commission_agent_id])
+}
+
+// ============================================================
+// 29. PortalAccess — portal access configuration
+// ============================================================
+model PortalAccess {
+  id                     String    @id @default(cuid())
+  partner_id             String
+  tenant_id              String
+  tier                   String    @default("standard") // limited | standard | premium
+  // Feature flags controlled by admin
+  can_view_offers        Boolean   @default(false)
+  can_view_documents     Boolean   @default(false)
+  can_view_catalog       Boolean   @default(false)
+  can_view_invoices      Boolean   @default(false)
+  can_view_profile       Boolean   @default(true)
+  can_view_company_info  Boolean   @default(false)
+  can_submit_rfq         Boolean   @default(false)
+  can_download_pdf       Boolean   @default(false)
+  // Compliance exemptions (premium clients)
+  exempt_kyc             Boolean   @default(false)
+  exempt_document_upload Boolean   @default(false)
+  exempt_location_share  Boolean   @default(false)
+  // Onboarding status
+  status                 String    @default("pending_approval") // pending_approval | approved | invited | active | suspended | revoked
+  approved_by            String?
+  approved_at            DateTime?
+  invited_at             DateTime?
+  welcome_email_sent     Boolean   @default(false)
+  // Access credentials
+  portal_email           String?
+  password_hash          String?
+  must_set_password      Boolean   @default(true)
+  last_login_at          DateTime?
+  last_login_ip          String?
+  // GPS verification (migration 015_portal_access_gps_verified_at.sql).
+  // Set to now() by /api/portal/log-location when source === "browser".
+  // Checked by src/lib/portal/require-gps.ts to gate portal data endpoints.
+  gps_verified_at        DateTime?
+  // Security: lockout & token version
+  locked_until           DateTime?
+  failed_attempts        Int       @default(0)
+  token_version          Int       @default(1)
+  created_at             DateTime  @default(now())
+  updated_at             DateTime  @updatedAt
+
+  // Relations
+  partner        Partner         @relation(fields: [partner_id], references: [id])
+  tenant         Tenant          @relation(fields: [tenant_id], references: [id])
+  approver       User?           @relation("PortalApprover", fields: [approved_by], references: [id])
+  kycSubmissions KycSubmission[]
+  portalRfqs     PortalRfq[]
+
+  @@index([partner_id])
+  @@index([tenant_id])
+  @@index([status])
+  @@index([portal_email])
+}
+
+// ============================================================
+// 30. DocumentTemplate — document templates
+// ============================================================
+model DocumentTemplate {
+  id                       String   @id @default(cuid())
+  tenant_id                String
+  name                     String
+  type                     String   @default("generic") // offer | invoice | proforma | contract | generic
+  is_default               Boolean  @default(false)
+  // Page layout
+  page_size                String   @default("A4") // A4 | Letter
+  page_margin_top          Int      @default(20) // mm
+  page_margin_bottom       Int      @default(20)
+  page_margin_left         Int      @default(15)
+  page_margin_right        Int      @default(15)
+  // Header
+  header_enabled           Boolean  @default(true)
+  header_height            Int      @default(30) // mm
+  header_content           String   @default("") // rich text / markdown
+  header_show_logo         Boolean  @default(true)
+  header_show_company_name Boolean  @default(true)
+  header_show_contact      Boolean  @default(true)
+  // Footer
+  footer_enabled           Boolean  @default(true)
+  footer_height            Int      @default(20)
+  footer_content           String   @default("")
+  footer_show_page_number  Boolean  @default(true)
+  footer_show_bank_details Boolean  @default(false)
+  footer_show_tax_id       Boolean  @default(false)
+  // Body styling
+  body_font_family         String   @default("Inter")
+  body_font_size           Int      @default(11)
+  body_line_height         Float    @default(1.5)
+  primary_color            String   @default("#000000") // hex
+  accent_color             String   @default("#666666")
+  // Table styling
+  table_header_bg          String   @default("#f3f4f6")
+  table_header_color       String   @default("#111827")
+  table_border_color       String   @default("#e5e7eb")
+  table_stripe             Boolean  @default(true)
+  // Linked branding assets (memorandum + seal)
+  letterhead_id            String? // ref TenantLetterhead — null = use tenant default letterhead
+  seal_id                  String? // ref TenantSeal — null = use tenant default seal
+  seal_enabled             Boolean  @default(true) // whether to stamp seal on this template
+  // Metadata
+  created_by               String?
+  created_at               DateTime @default(now())
+  updated_at               DateTime @updatedAt
+
+  // Relations
+  tenant     Tenant            @relation(fields: [tenant_id], references: [id])
+  creator    User?             @relation("TemplateCreator", fields: [created_by], references: [id])
+  letterhead TenantLetterhead? @relation(fields: [letterhead_id], references: [id], onDelete: SetNull)
+  seal       TenantSeal?       @relation(fields: [seal_id], references: [id], onDelete: SetNull)
+
+  @@index([tenant_id])
+  @@index([type])
+  @@index([is_default])
+  @@index([letterhead_id])
+  @@index([seal_id])
+}
+
+// ============================================================
+// 30b. TenantLetterhead — Memorandum firme (company letterhead)
+// Per-tenant branded letterhead used by all document templates.
+// ============================================================
+model TenantLetterhead {
+  id         String  @id @default(cuid())
+  tenant_id  String
+  name       String // e.g. "Official Letterhead 2026"
+  is_default Boolean @default(false)
+
+  // ── Company identity (overrides Tenant defaults when set) ──
+  company_name                String?
+  company_legal_name          String?
+  company_address_line        String?
+  company_city                String?
+  company_postal_code         String?
+  company_country             String? // ISO 3166-1 alpha-2
+  company_email               String?
+  company_phone               String?
+  company_website             String?
+  company_vat_number          String?
+  company_tax_id              String?
+  company_registration_number String?
+
+  // ── Bank details (shown in footer) ──
+  bank_name           String?
+  bank_iban           String?
+  bank_swift          String?
+  bank_account_holder String?
+
+  // ── Logo ──
+  logo_url         String? // base64 data URL or remote URL
+  logo_position    String  @default("left") // left | center | right
+  logo_width_mm    Int     @default(40) // width in mm
+  logo_height_mm   Int     @default(15) // height in mm
+  logo_lock_aspect Boolean @default(true)
+
+  // ── Branding colors ──
+  primary_color    String @default("#0f766e")
+  accent_color     String @default("#0d9488")
+  text_color       String @default("#0f172a")
+  muted_text_color String @default("#64748b")
+
+  // ── Page layout ──
+  page_size        String @default("A4") // A4 | Letter
+  margin_top_mm    Int    @default(25)
+  margin_bottom_mm Int    @default(25)
+  margin_left_mm   Int    @default(20)
+  margin_right_mm  Int    @default(20)
+  header_height_mm Int    @default(35)
+  footer_height_mm Int    @default(28)
+
+  // ── Header layout ──
+  header_layout            String  @default("logo-left-info-right")
+  // logo-left-info-right | logo-right-info-left | logo-center | text-only | two-column
+  header_show_logo         Boolean @default(true)
+  header_show_company_name Boolean @default(true)
+  header_show_contact      Boolean @default(true)
+  header_show_vat          Boolean @default(false)
+  header_divider           Boolean @default(true)
+  header_divider_color     String  @default("#e2e8f0")
+  header_custom_html       String? // advanced: custom HTML header
+
+  // ── Footer layout ──
+  footer_layout            String  @default("bank-contact-tax")
+  // bank-contact-tax | bank-only | contact-only | tax-id-only | custom
+  footer_show_bank_details Boolean @default(true)
+  footer_show_contact      Boolean @default(true)
+  footer_show_tax_id       Boolean @default(true)
+  footer_show_page_number  Boolean @default(true)
+  footer_divider           Boolean @default(true)
+  footer_divider_color     String  @default("#e2e8f0")
+  footer_custom_html       String? // advanced: custom HTML footer
+  footer_text              String? // optional small-print line
+
+  // ── Watermark ──
+  watermark_enabled  Boolean @default(false)
+  watermark_text     String?
+  watermark_color    String  @default("#94a3b8")
+  watermark_opacity  Float   @default(0.08) // 0.0 – 1.0
+  watermark_rotation Float   @default(-45) // degrees
+
+  // ── Typography ──
+  body_font_family     String @default("Inter, system-ui, sans-serif")
+  body_font_size_pt    Int    @default(11)
+  heading_font_family  String @default("Inter, system-ui, sans-serif")
+  heading_font_size_pt Int    @default(16)
+
+  // ── Metadata ──
+  created_by String?
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  // Relations
+  tenant    Tenant             @relation(fields: [tenant_id], references: [id])
+  creator   User?              @relation("LetterheadCreator", fields: [created_by], references: [id])
+  templates DocumentTemplate[]
+
+  @@index([tenant_id])
+  @@index([is_default])
+}
+
+// ============================================================
+// 30c. TenantSeal — Zigled (company seal / stamp)
+// Per-tenant seal image applied to documents.
+// ============================================================
+model TenantSeal {
+  id         String  @id @default(cuid())
+  tenant_id  String
+  name       String // e.g. "Official Round Seal"
+  is_default Boolean @default(false)
+
+  // ── Seal image ──
+  image_url       String // base64 data URL (PNG with transparency preferred)
+  image_width_mm  Int    @default(35) // rendered width in mm
+  image_height_mm Int    @default(35) // rendered height in mm
+  image_format    String @default("png") // png | jpg | svg
+
+  // ── Placement ──
+  position     String @default("bottom-right")
+  // bottom-right | bottom-left | bottom-center | top-right | top-left | top-center
+  offset_x_mm  Int    @default(0) // horizontal offset in mm (+ = right)
+  offset_y_mm  Int    @default(0) // vertical offset in mm (+ = down)
+  opacity      Float  @default(1.0) // 0.0 – 1.0
+  rotation_deg Float  @default(0) // degrees, 0 = upright
+
+  // ── Which document types this seal applies to (JSON array) ──
+  apply_to_types String @default("[]") // e.g. ["offer","invoice","proforma"]; [] = all
+
+  // ── Optional signature line beside seal ──
+  signature_enabled Boolean @default(false)
+  signature_label   String? // e.g. "Authorized signature"
+  signature_name    String? // e.g. "Vladimir, Director"
+
+  // ── Metadata ──
+  created_by String?
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  // Relations
+  tenant    Tenant             @relation(fields: [tenant_id], references: [id])
+  creator   User?              @relation("SealCreator", fields: [created_by], references: [id])
+  templates DocumentTemplate[]
+
+  @@index([tenant_id])
+  @@index([is_default])
+}
+
+// ============================================================
+// 31. DocumentVerification — QR verification
+// ============================================================
+model DocumentVerification {
+  id                   String    @id @default(cuid())
+  tenant_id            String
+  document_type        String // offer | invoice | proforma
+  document_id          String
+  document_number      String
+  verification_code    String    @unique // unique, embedded in QR
+  pdf_hash             String // SHA-256 of original PDF bytes
+  pdf_size             Int
+  issued_to_partner_id String?
+  issued_at            DateTime  @default(now())
+  // Verification tracking
+  verification_count   Int       @default(0)
+  last_verified_at     DateTime?
+  last_verified_ip     String?
+  // Status
+  status               String    @default("active") // active | revoked | superseded
+  created_at           DateTime  @default(now())
+
+  // Relations
+  tenant           Tenant            @relation(fields: [tenant_id], references: [id])
+  issuedToPartner  Partner?          @relation("VerificationPartner", fields: [issued_to_partner_id], references: [id])
+  verificationLogs VerificationLog[]
+
+  @@index([tenant_id])
+  @@index([document_type, document_id])
+  @@index([verification_code])
+  @@index([status])
+}
+
+// ============================================================
+// 32. VerificationLog — verification logs
+// ============================================================
+model VerificationLog {
+  id              String   @id @default(cuid())
+  verification_id String
+  code            String
+  verified_at     DateTime @default(now())
+  ip              String?
+  user_agent      String?
+  result          String // valid | invalid | revoked | modified
+  details         String?
+
+  // Relations
+  verification DocumentVerification @relation(fields: [verification_id], references: [id], onDelete: Cascade)
+
+  @@index([verification_id])
+  @@index([code])
+  @@index([result])
+  @@index([verified_at])
+}
+
+// ============================================================
+// 33. KycSubmission — KYC submissions
+// ============================================================
+model KycSubmission {
+  id               String  @id @default(cuid())
+  tenant_id        String
+  partner_id       String
+  portal_access_id String?
+  status           String  @default("draft") // draft | submitted | under_review | approved | rejected | resubmit
+
+  // Entity type
+  entity_type String @default("company") // company | individual
+
+  // Company / Individual data
+  legal_name          String?
+  trade_name          String?
+  registration_number String?
+  tax_id              String?
+  vat_number          String?
+  company_website     String?
+
+  // Address
+  address_line String?
+  city         String?
+  state        String?
+  postal_code  String?
+  country      String?
+
+  // Contact person
+  contact_name     String?
+  contact_email    String?
+  contact_phone    String?
+  contact_position String?
+
+  // Beneficial owner (for AML)
+  owner_name        String?
+  owner_id_type     String? // passport, id_card
+  owner_id_number   String?
+  owner_nationality String?
+  owner_dob         String?
+  owner_address     String?
+
+  // Business details
+  business_activity       String?
+  expected_monthly_volume String?
+  source_of_funds         String?
+
+  // Bank
+  bank_name    String?
+  bank_account String?
+  bank_iban    String?
+  bank_swift   String?
+
+  // Review
+  reviewed_by      String?
+  reviewed_at      DateTime?
+  review_notes     String?
+  rejection_reason String?
+  auto_transferred Boolean   @default(false)
+
+  // Meta
+  submitted_at DateTime?
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
+
+  // Relations
+  tenant       Tenant        @relation(fields: [tenant_id], references: [id])
+  partner      Partner       @relation(fields: [partner_id], references: [id])
+  portalAccess PortalAccess? @relation(fields: [portal_access_id], references: [id])
+  reviewer     User?         @relation("KycReviewer", fields: [reviewed_by], references: [id])
+  documents    KycDocument[]
+
+  @@index([tenant_id])
+  @@index([partner_id])
+  @@index([portal_access_id])
+  @@index([status])
+}
+
+// ============================================================
+// 34. KycDocument — KYC documents
+// ============================================================
+model KycDocument {
+  id            String   @id @default(cuid())
+  submission_id String
+  type          String // passport | id_card | company_registration | tax_certificate | vat_certificate | bank_statement | utility_bill | beneficial_owner_declaration | trade_license | chamber_of_commerce | other
+  filename      String
+  storage_path  String
+  mime_type     String
+  size          Int
+  uploaded_at   DateTime @default(now())
+
+  // Relations
+  submission KycSubmission @relation(fields: [submission_id], references: [id], onDelete: Cascade)
+
+  @@index([submission_id])
+  @@index([type])
+}
+
+// ============================================================
+// 35. PortalRfq — portal RFQs
+// ============================================================
+model PortalRfq {
+  id               String  @id @default(cuid())
+  tenant_id        String
+  partner_id       String
+  portal_access_id String?
+  number           String  @unique // RFQ-2026-XXX
+  status           String  @default("pending") // pending | quoted | accepted | declined | expired
+
+  // What the client wants
+  product_name        String
+  product_description String?
+  category            String? // from PRODUCT_CATEGORIES
+  quantity            Float   @default(0)
+  unit                String  @default("MT")
+  target_price        Float?
+  currency            String  @default("USD")
+
+  // Delivery
+  delivery_country String?
+  delivery_port    String?
+  delivery_date    DateTime?
+  incoterm         String?
+
+  // Additional
+  specifications String?
+  notes          String?
+
+  // Admin response
+  linked_offer_id  String?
+  linked_demand_id String?
+  admin_notes      String?
+
+  // Meta
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  // Relations
+  tenant       Tenant        @relation(fields: [tenant_id], references: [id])
+  partner      Partner       @relation(fields: [partner_id], references: [id])
+  portalAccess PortalAccess? @relation(fields: [portal_access_id], references: [id])
+  linkedOffer  Offer?        @relation("RfqLinkedOffer", fields: [linked_offer_id], references: [id])
+  linkedDemand Demand?       @relation("RfqLinkedDemand", fields: [linked_demand_id], references: [id])
+
+  @@index([tenant_id])
+  @@index([partner_id])
+  @@index([portal_access_id])
+  @@index([status])
+  @@index([number])
+}
+
+// ============================================================
+// 36. TenantFeatureFlags — feature flags per tenant
+// ============================================================
+model TenantFeatureFlags {
+  id                           String   @id @default(cuid())
+  tenant_id                    String   @unique
+  // Module toggles
+  module_crm                   Boolean  @default(true)
+  module_trade                 Boolean  @default(false) // product catalog + supplier offers + trade calculator
+  module_finance               Boolean  @default(true) // invoices + proformas
+  module_inventory             Boolean  @default(false)
+  module_portal                Boolean  @default(false) // client portal
+  module_logistics             Boolean  @default(true) // freight quote requests + packing lists
+  module_kyc                   Boolean  @default(false) // KYC verification
+  module_document_templates    Boolean  @default(false)
+  module_document_verification Boolean  @default(false) // QR + forensic
+  module_vault                 Boolean  @default(false)
+  module_api_keys              Boolean  @default(false)
+  module_webhooks              Boolean  @default(false)
+  module_mail_queue            Boolean  @default(false)
+  module_security              Boolean  @default(false) // security center
+  // Feature limits
+  max_partners                 Int      @default(999999) // 999999 = effectively unlimited
+  max_users                    Int      @default(5)
+  max_monthly_documents        Int      @default(999999) // 999999 = effectively unlimited
+  // Beta features
+  beta_ai_assistant            Boolean  @default(false)
+  beta_advanced_analytics      Boolean  @default(false)
+  // Meta
+  updated_by                   String?
+  updated_at                   DateTime @updatedAt
+
+  // Relations
+  tenant  Tenant @relation(fields: [tenant_id], references: [id])
+  updater User?  @relation("FlagUpdater", fields: [updated_by], references: [id])
+
+  @@index([tenant_id])
+}
+
+// ============================================================
+// 37. Notification — in-app notifications
+// ============================================================
+model Notification {
+  id           String    @id @default(cuid())
+  tenant_id    String
+  user_id      String? // null = broadcast to all tenant users
+  type         String // kyc_submitted | kyc_approved | kyc_rejected | rfq_received | rfq_quoted | offer_sent | offer_accepted | offer_rejected | offer_expired | invoice_overdue | invoice_paid | document_shared | portal_access_requested | portal_access_approved | portal_invite_sent | task_assigned | task_due_soon | low_stock_alert | system_message
+  title        String
+  message      String
+  entity_type  String?
+  entity_id    String?
+  read         Boolean   @default(false)
+  read_at      DateTime?
+  // Metadata for action buttons
+  action_url   String?
+  action_label String?
+  created_at   DateTime  @default(now())
+
+  // Relations
+  tenant Tenant @relation(fields: [tenant_id], references: [id])
+  user   User?  @relation(fields: [user_id], references: [id])
+
+  @@index([tenant_id])
+  @@index([user_id])
+  @@index([type])
+  @@index([read])
+  @@index([created_at])
+  @@index([entity_type, entity_id])
+}
+
+// ============================================================
+// 38. ErpAccount — Chart of Accounts (Kontni plan)
+// ============================================================
+model ErpAccount {
+  id               String   @id @default(cuid())
+  tenant_id        String
+  code             String // account code like "1000", "2000" etc.
+  name             String // account name
+  name_en          String? // English name
+  account_type     String // asset, liability, equity, revenue, expense
+  account_category String? // current_asset, fixed_asset, current_liability, etc.
+  parent_id        String? // self-reference for hierarchy
+  is_active        Boolean  @default(true)
+  is_system        Boolean  @default(false) // system accounts can't be deleted
+  standard         String? // eu, uae - which standard this follows
+  tax_code         String? // for tax-related accounts
+  description      String?
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  // Relations
+  parent        ErpAccount?      @relation("AccountHierarchy", fields: [parent_id], references: [id])
+  children      ErpAccount[]     @relation("AccountHierarchy")
+  journal_lines ErpJournalLine[]
+  bank_accounts ErpBankAccount[]
+  tenant        Tenant           @relation(fields: [tenant_id], references: [id])
+
+  @@index([tenant_id])
+  @@index([code])
+  @@index([account_type])
+}
+
+// ============================================================
+// 39. FiscalPeriod — Fiscal/calendar periods
+// ============================================================
+model FiscalPeriod {
+  id          String    @id @default(cuid())
+  tenant_id   String
+  name        String // e.g., "Q1 2025", "January 2025"
+  start_date  DateTime
+  end_date    DateTime
+  period_type String // monthly, quarterly, yearly
+  status      String    @default("open") // open, closed, locked
+  fiscal_year Int
+  closed_by   String? // user who closed
+  closed_at   DateTime?
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+
+  // Relations
+  journal_entries ErpJournalEntry[]
+  tenant          Tenant            @relation(fields: [tenant_id], references: [id])
+
+  @@index([tenant_id])
+  @@index([fiscal_year])
+  @@index([status])
+}
+
+// ============================================================
+// 40. ErpJournalEntry — Journal entries (header)
+// ============================================================
+model ErpJournalEntry {
+  id               String    @id @default(cuid())
+  tenant_id        String
+  entry_number     String // auto-generated like "JE-2025-001"
+  date             DateTime
+  description      String
+  reference_type   String? // deal, invoice, proforma, commission, manual, bank
+  reference_id     String? // linked entity ID
+  fiscal_period_id String?
+  status           String    @default("draft") // draft, posted, reversed, cancelled
+  source_type      String? // auto, manual - auto = system-generated
+  debit_total      Float     @default(0)
+  credit_total     Float     @default(0)
+  currency         String    @default("EUR")
+  exchange_rate    Float     @default(1)
+  notes            String?
+  created_by       String
+  posted_by        String?
+  posted_at        DateTime?
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @updatedAt
+
+  // Relations
+  lines             ErpJournalLine[]
+  fiscal_period     FiscalPeriod?        @relation(fields: [fiscal_period_id], references: [id])
+  bank_transactions ErpBankTransaction[]
+  tenant            Tenant               @relation(fields: [tenant_id], references: [id])
+
+  @@unique([tenant_id, entry_number])
+  @@index([tenant_id])
+  @@index([entry_number])
+  @@index([status])
+  @@index([date])
+  @@index([reference_type, reference_id])
+}
+
+// ============================================================
+// 41. ErpJournalLine — Journal entry lines (debit/credit)
+// ============================================================
+model ErpJournalLine {
+  id               String   @id @default(cuid())
+  tenant_id        String
+  journal_entry_id String
+  account_id       String
+  line_number      Int
+  description      String?
+  debit            Float    @default(0)
+  credit           Float    @default(0)
+  currency         String   @default("EUR")
+  partner_id       String? // for sub-ledger tracking
+  cost_center_id   String?
+  created_at       DateTime @default(now())
+
+  // Relations
+  tenant        Tenant          @relation("JLTenant", fields: [tenant_id], references: [id])
+  journal_entry ErpJournalEntry @relation(fields: [journal_entry_id], references: [id])
+  account       ErpAccount      @relation(fields: [account_id], references: [id])
+  cost_center   ErpCostCenter?  @relation(fields: [cost_center_id], references: [id])
+  partner       Partner?        @relation(fields: [partner_id], references: [id])
+
+  @@index([tenant_id])
+  @@index([journal_entry_id])
+  @@index([account_id])
+  @@index([partner_id])
+  @@index([cost_center_id])
+}
+
+// ============================================================
+// 42. ErpCostCenter — Cost centers
+// ============================================================
+model ErpCostCenter {
+  id          String   @id @default(cuid())
+  tenant_id   String
+  code        String
+  name        String
+  parent_id   String? // self-reference
+  is_active   Boolean  @default(true)
+  description String?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  // Relations
+  parent        ErpCostCenter?   @relation("CostCenterHierarchy", fields: [parent_id], references: [id])
+  children      ErpCostCenter[]  @relation("CostCenterHierarchy")
+  journal_lines ErpJournalLine[]
+  tenant        Tenant           @relation(fields: [tenant_id], references: [id])
+
+  @@index([tenant_id])
+  @@index([code])
+}
+
+// ============================================================
+// 43. ErpBankAccount — Bank accounts
+// ============================================================
+model ErpBankAccount {
+  id             String   @id @default(cuid())
+  tenant_id      String
+  account_id     String // linked to chart of accounts
+  bank_name      String
+  account_number String
+  iban           String?
+  swift_bic      String?
+  currency       String   @default("EUR")
+  balance        Float    @default(0)
+  is_active      Boolean  @default(true)
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  // Relations
+  account      ErpAccount           @relation(fields: [account_id], references: [id])
+  transactions ErpBankTransaction[]
+  tenant       Tenant               @relation(fields: [tenant_id], references: [id])
+
+  @@index([tenant_id])
+  @@index([account_id])
+}
+
+// ============================================================
+// 44. ErpBankTransaction — Bank transactions
+// ============================================================
+model ErpBankTransaction {
+  id                   String   @id @default(cuid())
+  tenant_id            String
+  bank_account_id      String
+  date                 DateTime
+  amount               Float
+  transaction_type     String // debit, credit
+  description          String?
+  reference            String?
+  counterparty         String?
+  counterparty_account String?
+  is_reconciled        Boolean  @default(false)
+  reconciled_with      String? // journal entry ID
+  journal_entry_id     String? // auto-created journal entry
+  created_at           DateTime @default(now())
+
+  // Relations
+  bank_account  ErpBankAccount   @relation(fields: [bank_account_id], references: [id])
+  journal_entry ErpJournalEntry? @relation(fields: [journal_entry_id], references: [id])
+  tenant        Tenant           @relation(fields: [tenant_id], references: [id])
+
+  @@index([tenant_id])
+  @@index([bank_account_id])
+  @@index([date])
+  @@index([is_reconciled])
+}
+
+// ============================================================
+// 46. UserPreference — per-user preference key-value pairs
+// ============================================================
+model UserPreference {
+  id               String   @id @default(cuid())
+  user_id          String
+  preference_key   String
+  preference_value String // JSON-serialized value
+  updated_at       DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [user_id], references: [id])
+
+  @@unique([user_id, preference_key])
+  @@index([user_id])
+  @@index([preference_key])
+}
+
+// ============================================================
+// 45. ErpSetting — ERP-specific settings
+// ============================================================
+model ErpSetting {
+  id                      String   @id @default(cuid())
+  tenant_id               String   @unique
+  accounting_standard     String   @default("eu") // eu, uae
+  fiscal_year_start       String   @default("01-01") // MM-DD
+  fiscal_year_end         String   @default("12-31") // MM-DD
+  default_currency        String   @default("EUR")
+  vat_enabled             Boolean  @default(true)
+  vat_rate                Float    @default(20.0) // default VAT rate
+  vat_return_period       String   @default("monthly") // monthly, quarterly, yearly
+  auto_post_journal       Boolean  @default(true) // auto-post from deals/invoices
+  revenue_account_id      String?
+  expense_account_id      String?
+  receivable_account_id   String?
+  payable_account_id      String?
+  vat_account_id          String?
+  bank_charges_account_id String?
+  cash_account_id         String?
+  retention_account_id    String?
+  round_off_account_id    String?
+  created_at              DateTime @default(now())
+  updated_at              DateTime @updatedAt
+
+  // Relations
+  tenant Tenant @relation(fields: [tenant_id], references: [id])
+
+  @@index([tenant_id])
+}
+
+model Plan {
+  id                    String   @id @default(cuid())
+  name                  String   @unique
+  description           String?
+  price_monthly         Float    @default(0)
+  price_yearly          Float    @default(0)
+  currency              String   @default("EUR")
+  max_users             Int      @default(5)
+  max_partners          Int      @default(999999)
+  max_monthly_documents Int      @default(999999)
+  max_products          Int      @default(999999)
+  storage_mb            Int      @default(500)
+  trial_days            Int      @default(15)
+  included_modules      String   @default("[]")
+  custom_branding       Boolean  @default(false)
+  api_access            Boolean  @default(false)
+  priority_support      Boolean  @default(false)
+  white_label           Boolean  @default(false)
+  is_active             Boolean  @default(true)
+  is_public             Boolean  @default(true)
+  sort_order            Int      @default(0)
+  created_at            DateTime @default(now())
+  updated_at            DateTime @updatedAt
+
+  @@index([is_active])
+}
+
+model ModuleGroup {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  description String?
+  icon        String?
+  color       String?
+  modules     String   @default("[]")
+  sort_order  Int      @default(0)
+  is_active   Boolean  @default(true)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+}

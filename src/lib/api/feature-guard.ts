@@ -1,0 +1,83 @@
+import { NextResponse } from "next/server";
+import { getSupabase } from "@/lib/supabase/client";
+
+/**
+ * Server-side feature-flag enforcement.
+ *
+ * A tenant's plan determines which modules are enabled via `feature_flags`
+ * (e.g. `module_trade`, `module_finance`, `module_portal`). If a tenant is on
+ * a plan that doesn't include a module (e.g. Trial without `module_trade`),
+ * the corresponding API routes should refuse — even if the client somehow
+ * reaches them past the sidebar's UI hide.
+ *
+ * Super-admins bypass. Portal endpoints are gated separately (see
+ * requirePortalFeature).
+ *
+ * Usage:
+ *   const denied = await requireFeature(tenantId, "module_trade", isSA);
+ *   if (denied) return denied;
+ */
+
+type ModuleFlag =
+  | "module_crm"
+  | "module_trade"
+  | "module_finance"
+  | "module_inventory"
+  | "module_portal"
+  | "module_logistics"
+  | "module_kyc"
+  | "module_document_templates"
+  | "module_document_verification"
+  | "module_vault"
+  | "module_api_keys"
+  | "module_webhooks"
+  | "module_mail_queue"
+  | "module_security";
+
+const cache = new Map<string, { flags: Record<string, boolean>; ts: number }>();
+const TTL_MS = 30_000;
+
+async function loadFlags(tenantId: string): Promise<Record<string, boolean>> {
+  const now = Date.now();
+  const cached = cache.get(tenantId);
+  if (cached && now - cached.ts < TTL_MS) return cached.flags;
+
+  const supabase = getSupabase();
+  const { data } = await supabase
+    .from("feature_flags")
+    .select("module_crm, module_trade, module_finance, module_inventory, module_portal, module_logistics, module_kyc, module_document_templates, module_document_verification, module_vault, module_api_keys, module_webhooks, module_mail_queue, module_security")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+  const flags = (data as any) || {};
+  cache.set(tenantId, { flags, ts: now });
+  return flags;
+}
+
+export async function requireFeature(
+  tenantId: string | null,
+  featureFlag: ModuleFlag,
+  isSuperAdmin: boolean = false,
+): Promise<NextResponse | null> {
+  if (isSuperAdmin) return null;
+  if (!tenantId) {
+    return NextResponse.json({ error: "Tenant context required." }, { status: 400 });
+  }
+  const flags = await loadFlags(tenantId);
+  if (flags[featureFlag] === false) {
+    return NextResponse.json(
+      {
+        error: `This module is not included in your plan. Upgrade your subscription to enable ${featureFlag.replace("module_", "").replace("_", " ")}.`,
+        feature_disabled: true,
+        module: featureFlag,
+      },
+      { status: 402 },
+    );
+  }
+  return null;
+}
+
+/** Force a re-fetch on next call (use after admin toggles a flag). */
+export function invalidateFeatureCache(tenantId?: string) {
+  if (tenantId) cache.delete(tenantId);
+  else cache.clear();
+}

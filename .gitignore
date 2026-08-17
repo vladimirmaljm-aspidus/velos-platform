@@ -1,0 +1,41 @@
+# ── Dependencies ────────────────────────────────────────────────────────────
+node_modules/
+
+# ── Build output ─────────────────────────────────────────────────────────────
+.next/
+tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+# ── Environment & secrets ────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+
+# ── Runtime data ─────────────────────────────────────────────────────────────
+dev.log
+db/custom.db
+*.log
+
+# ── Agent / scratchpad artifacts (never commit) ──────────────────────────────
+.claude-flow/
+skills/
+scratchpad-backups/
+agent-ctx/
+worklog.md
+worklog-*.md
+
+# ── Schema dumps (live DB schema snapshots — use supabase/migrations/ instead)
+supabase-schema*.sql
+
+# ── OS files ─────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Editor files ─────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# bun lockfile (project uses npm, not bun)
+bun.lock
