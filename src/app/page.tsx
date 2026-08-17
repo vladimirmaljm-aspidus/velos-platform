@@ -8,6 +8,9 @@ import { PortalLogin } from "@/components/portal/portal-login";
 import { PortalShell } from "@/components/portal/portal-shell";
 import { Loader2 } from "lucide-react";
 
+// Force dynamic rendering — prevents Vercel from caching the loading spinner
+export const dynamic = "force-dynamic";
+
 export default function Home() {
   const user = useAppStore((s) => s.user);
   const setUser = useAppStore((s) => s.setUser);
