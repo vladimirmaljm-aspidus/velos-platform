@@ -34,6 +34,7 @@ import {
 } from "@/lib/data/reference";
 import type { MarketplacePostType, MarketplacePriceType, MarketplacePostStatus, MarketplaceVisibility } from "@/lib/supabase/marketplace-types";
 import { SmartPricing } from "./smart-pricing";
+import { DocumentScanner, type DocumentScannerFillPayload } from "./document-scanner";
 
 export function MarketplaceCreatePost({
   open,
@@ -66,12 +67,50 @@ export function MarketplaceCreatePost({
     packaging: "",
     payment_terms: "",
     description: "",
+    // Phase 5: structured specifications + quality_specs (filled in by
+    // the DocumentScanner when a partner uploads a CoA / spec sheet).
+    specifications: {} as Record<string, string>,
+    quality_specs: [] as string[],
     status: "active" as MarketplacePostStatus,
     visibility: "public" as MarketplaceVisibility,
   });
 
   function set<K extends keyof typeof form>(k: K, v: (typeof form)[K]) {
     setForm({ ...form, [k]: v });
+  }
+
+  // Phase 5: "Fill Form" handler — invoked by the DocumentScanner
+  // when the user uploads a CoA / spec sheet and clicks Fill. Maps the
+  // parsed payload onto the form's existing fields (product_name,
+  // product_category) + the new specifications / quality_specs fields.
+  // The category is validated against the canonical PRODUCT_CATEGORIES
+  // list — the spec sheet's VLM-extracted category is free-text, so we
+  // match by case-insensitive substring. When no match is found the
+  // category field is left untouched (the user picks one manually).
+  function applyDocumentScan(data: DocumentScannerFillPayload) {
+    const next = { ...form };
+    if (data.productName && data.productName.trim()) {
+      next.product_name = data.productName.trim();
+    }
+    if (data.category) {
+      const match = PRODUCT_CATEGORIES.find((c) =>
+        c.name.toLowerCase().includes(data.category!.toLowerCase()) ||
+        c.code.toLowerCase() === data.category!.toLowerCase(),
+      );
+      if (match) next.product_category = match.code;
+    }
+    if (data.specifications && Object.keys(data.specifications).length > 0) {
+      next.specifications = { ...next.specifications, ...data.specifications };
+    }
+    if (data.parameters && data.parameters.length > 0) {
+      // Render each parameter as "Name: Value" — the marketplace post's
+      // `quality_specs` column is JSONB array of strings.
+      const asStrings = data.parameters
+        .filter((p) => p.name || p.value)
+        .map((p) => (p.name && p.value ? `${p.name}: ${p.value}` : p.name || p.value));
+      next.quality_specs = Array.from(new Set([...next.quality_specs, ...asStrings]));
+    }
+    setForm(next);
   }
 
   const create = useMutation({
@@ -90,6 +129,14 @@ export function MarketplaceCreatePost({
       };
       if (form.product_category) payload.product_category = form.product_category;
       if (form.product_subcategory) payload.product_subcategory = form.product_subcategory;
+      // Phase 5: ship the scanned specifications + quality_specs to the
+      // API when they are populated by the DocumentScanner.
+      if (Object.keys(form.specifications).length > 0) {
+        payload.specifications = form.specifications;
+      }
+      if (form.quality_specs.length > 0) {
+        payload.quality_specs = form.quality_specs;
+      }
       if (form.target_price) payload.target_price = Number(form.target_price);
       if (form.price_max) payload.price_max = Number(form.price_max);
       if (form.delivery_location) payload.delivery_location = form.delivery_location;
@@ -115,7 +162,8 @@ export function MarketplaceCreatePost({
       toast.success(t("marketplace-post-created"));
       qc.invalidateQueries({ queryKey: ["marketplace-list"] });
       onOpenChange(false);
-      // Reset form.
+      // Reset form (including the Phase 5 specifications / quality_specs
+      // fields).
       setForm({
         post_type: "sell", product_name: "", product_category: "",
         product_subcategory: "", quantity: "", unit: "MT",
@@ -124,6 +172,7 @@ export function MarketplaceCreatePost({
         delivery_location: "", delivery_country: "", delivery_date: "",
         incoterm: "", origin_country: "", packaging: "",
         payment_terms: "", description: "",
+        specifications: {}, quality_specs: [],
         status: "active", visibility: "public",
       });
       // Drill into the new post's detail view (SPA-style — same pattern
@@ -165,6 +214,13 @@ export function MarketplaceCreatePost({
           </div>
 
           <Separator />
+
+          {/* Phase 5: AI Document Scanner — upload a CoA or spec sheet,
+              the VLM extracts the structured data, and a "Fill Form"
+              button copies it into the fields below. Sits ABOVE the
+              product section so the scanned values flow naturally into
+              the visible form fields. */}
+          <DocumentScanner onFill={applyDocumentScan} />
 
           {/* Product */}
           <div className="space-y-3">

@@ -18,6 +18,7 @@ import { useT } from "@/lib/i18n/store";
 import { fmtMoney, fmtRelative } from "@/lib/utils/format";
 import { COUNTRIES } from "@/lib/data/reference";
 import type { MarketplacePostType } from "@/lib/supabase/marketplace-types";
+import { RiskBadge } from "./risk-badge";
 
 export interface MarketplacePostCardData {
   id: string;
@@ -92,6 +93,14 @@ export function MarketplacePostCard({
               {t(`marketplace-verification-${post.verification_level}`)}
             </Badge>
           )}
+        </div>
+
+        {/* Phase 5: AI risk badge — compact "icon + score" variant with a
+            hover tooltip listing every triggered risk factor. The badge
+            renders nothing on assessment failure (network error, etc.) so
+            the card stays uncluttered when the AI service is unavailable. */}
+        <div className="flex justify-end">
+          <RiskBadge postId={post.id} compact />
         </div>
 
         <div>

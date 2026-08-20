@@ -55,6 +55,11 @@ import type { MarketplacePostType } from "@/lib/supabase/marketplace-types";
 import type { AuctionType } from "@/lib/supabase/marketplace-auction-types";
 import { AuctionWidget } from "./auction-widget";
 import { ContractWidget } from "./contract-widget";
+import { PriceTrendChart } from "./price-trend-chart";
+import { FreightCalculator } from "./freight-calculator";
+import { CustomsCalculator } from "./customs-calculator";
+import { ContainerCalculator } from "./container-calculator";
+import { CarbonFootprint } from "./carbon-footprint";
 
 interface PostDetail {
   id: string;
@@ -347,6 +352,14 @@ export function MarketplacePostDetail({ postId }: { postId: string }) {
         </Card>
       </div>
 
+      {/* Phase 5: AI price prediction + 12-week price trend chart.
+          Shown for every post type — both buyers and sellers benefit
+          from seeing the current market average, the 30-day predicted
+          band, and the trend direction before submitting a response.
+          The card hides itself when the prediction API fails or there
+          is no comparable historical data (see PriceTrendChart). */}
+      <PriceTrendChart postId={post.id} />
+
       {/* Phase 4: auction widget — shown only on auction posts. */}
       {post.post_type === "auction" && (
         <AuctionWidget postId={post.id} post={{
@@ -374,6 +387,19 @@ export function MarketplacePostDetail({ postId }: { postId: string }) {
           isOwner={!!post.partner_id}
         />
       )}
+
+      {/* Phase 6: logistics calculators — freight + customs + container
+          loadability + carbon footprint. Shown for every post type since
+          both buyers and sellers need to estimate landed cost + transit
+          time + carbon before responding. Each calculator is a self-
+          contained card; they fetch their own data via the
+          /api/marketplace/calculators/* routes. */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <FreightCalculator />
+        <CustomsCalculator />
+        <ContainerCalculator />
+        <CarbonFootprint />
+      </div>
 
       {/* Send response form */}
       <Card>
