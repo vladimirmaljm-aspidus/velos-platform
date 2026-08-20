@@ -541,6 +541,13 @@ describe("tenant isolation — cross-tenant IDOR on POST /api/offers is blocked"
           tenant_id: TENANT_B, // ← malicious
           subject: "Attempting to write into tenant B",
           currency: "USD",
+          // FIX-ALL-2 / Fix 7: the offers POST route now validates the
+          // required fields at the route layer (partner_id + items[])
+          // BEFORE reaching the store — so to exercise the tenant_id
+          // override path we send a body that PASSES the new validation.
+          items: [
+            { sku: "SKU1", quantity: 1, unit_price: 100 },
+          ],
         }),
       }),
     );

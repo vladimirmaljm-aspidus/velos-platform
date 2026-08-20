@@ -188,7 +188,31 @@ export async function POST(req: NextRequest) {
           { email, ip, country, reason: existing ? "invalid_credentials" : "account_not_found" },
         );
       } catch (e) { console.error("[audit]", e); }
-      return NextResponse.json({ error: "Invalid credentials or account not active." }, { status: 401 });
+      // FIX-ALL-2 / Fix 8 — distinguish "wrong password" from "account
+      // suspended" so the user knows what to do next. Audit Part D found
+      // the previous "Invalid credentials or account not active." toast
+      // conflated two unrelated problems:
+      //   • a user with a wrong password (should retype)
+      //   • a user whose account is frozen (should contact support)
+      // The fix is conditional on `existing.status` — if we already have
+      // a portal_access row found by email AND that row's status is
+      // explicitly suspended / revoked, the user provided correct
+      // credentials at some point but the account is frozen. Otherwise
+      // (no row found, or status is "pending"/"invited" — which would
+      // surface as "must_set_password" earlier) it's a wrong-password
+      // case and we keep the same generic message to prevent email
+      // enumeration. The tenant-status gate further down handles
+      // workspace-level suspensions separately.
+      if (
+        existing &&
+        (existing.status === "suspended" || existing.status === "revoked")
+      ) {
+        return NextResponse.json(
+          { error: "Your account is suspended. Contact support to reactivate it." },
+          { status: 403 },
+        );
+      }
+      return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
     }
 
     // Check status is active

@@ -1,24 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, audit, sanitizeError } from "@/lib/api/helpers";
+// FIX-ALL-2 / Fix 3 — accept API-key auth on [id] routes so an API-key
+// caller fetching /api/invoices/<non-existent-id> gets 404 (not 401).
+import { requireAuthOrApiKey, hasPermission, audit, sanitizeError } from "@/lib/api/helpers";
 import { validateStatusTransition } from "@/lib/api/status-validator";
 
 export const runtime = "nodejs";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await requireAuth(_req);
+    const auth = await requireAuthOrApiKey(_req);
     if (auth instanceof NextResponse) return auth;
-    // Permission gate (invoices.read)
+    // Permission gate (invoices.read) — session callers use requirePermission,
+    // API-key callers use hasPermission (colon format).
     { const { requirePermission } = await import("@/lib/permissions/can");
-      const _d = requirePermission(auth, "invoices.read"); if (_d) return _d; } /* requirePermission wired */
+      if (!("apiKeyId" in auth)) { const _d = requirePermission(auth, "invoices.read"); if (_d) return _d; } }
+    if ("apiKeyId" in auth && !hasPermission(auth.permissions, "invoices:read")) {
+      return NextResponse.json({ error: "Insufficient permissions." }, { status: 403 });
+    }
   // Feature gate (module_finance)
   { const { requireFeature } = await import("@/lib/api/feature-guard");
-    const _f = await requireFeature(auth.tenantId, "module_finance", auth.isSuperAdmin); if (_f) return _f; } /* requireFeature wired */
+    const _tid = ("apiKeyId" in auth) ? auth.tenantId : auth.tenantId;
+    const _isSA = !("apiKeyId" in auth) && auth.isSuperAdmin;
+    const _f = await requireFeature(_tid, "module_finance", _isSA); if (_f) return _f; } /* requireFeature wired */
 
     const { id } = await params;
     const item = await auth.store.getInvoice(id);
+    // FIX-ALL-2 / Fix 3 — not-found returns 404, not 401.
     if (!item) return NextResponse.json({ error: "Not found." }, { status: 404 });
-    if (!auth.isSuperAdmin && item.tenant_id !== auth.tenantId) {
+    const isSuperAdmin = !("apiKeyId" in auth) && auth.isSuperAdmin;
+    if (!isSuperAdmin && item.tenant_id !== auth.tenantId) {
       return NextResponse.json({ error: "Not found." }, { status: 404 });
     }
     return NextResponse.json(item);
@@ -29,19 +39,26 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await requireAuth(req);
+    const auth = await requireAuthOrApiKey(req);
     if (auth instanceof NextResponse) return auth;
-  // Permission gate (invoices.update)
+  // Permission gate (invoices.update) — session callers use requirePermission,
+  // API-key callers use hasPermission (colon format).
   { const { requirePermission } = await import("@/lib/permissions/can");
-    const _d = requirePermission(auth, "invoices.update"); if (_d) return _d; } /* requirePermission wired */
+    if (!("apiKeyId" in auth)) { const _d = requirePermission(auth, "invoices.update"); if (_d) return _d; } }
+  if ("apiKeyId" in auth && !hasPermission(auth.permissions, "invoices:write")) {
+    return NextResponse.json({ error: "Insufficient permissions." }, { status: 403 });
+  }
   // Feature gate (module_finance)
   { const { requireFeature } = await import("@/lib/api/feature-guard");
-    const _f = await requireFeature(auth.tenantId, "module_finance", auth.isSuperAdmin); if (_f) return _f; } /* requireFeature wired */
+    const _tid = ("apiKeyId" in auth) ? auth.tenantId : auth.tenantId;
+    const _isSA = !("apiKeyId" in auth) && auth.isSuperAdmin;
+    const _f = await requireFeature(_tid, "module_finance", _isSA); if (_f) return _f; } /* requireFeature wired */
 
     const { id } = await params;
     const existing = await auth.store.getInvoice(id);
     if (!existing) return NextResponse.json({ error: "Not found." }, { status: 404 });
-    if (!auth.isSuperAdmin && existing.tenant_id !== auth.tenantId) {
+    const isSuperAdmin = !("apiKeyId" in auth) && auth.isSuperAdmin;
+    if (!isSuperAdmin && existing.tenant_id !== auth.tenantId) {
       return NextResponse.json({ error: "Not found." }, { status: 404 });
     }
     const body = await req.json();
@@ -54,7 +71,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     // away a status the database can actually hold.
     const existingStatus: string = existing.status;
     if (existingStatus === "paid" || existingStatus === "partial") {
-      if (!auth.isSuperAdmin) {
+      if (!isSuperAdmin) {
         const lockedFields = ["total", "subtotal", "items", "tax_total", "discount_total", "partner_id", "currency", "offer_id"];
         for (const k of lockedFields) {
           if (k in body) {
@@ -68,7 +85,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
     // FIX-P1-LOGIC Fix 1: enforce valid status transitions. Super-admins
     // bypass so they can correct bad data.
-    if (body.status && body.status !== existing.status && !auth.isSuperAdmin) {
+    if (body.status && body.status !== existing.status && !isSuperAdmin) {
       const transition = validateStatusTransition("invoice", existing.status, body.status);
       if (!transition.valid) {
         return NextResponse.json({ error: transition.error }, { status: 400 });
@@ -118,7 +135,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           .maybeSingle();
         if (je) {
           try {
-            await auth.store.reverseErpJournalEntry(je.id, auth.user.id);
+            // FIX-ALL-2 / Fix 3 — the JE reversal API takes a user_id
+            // for the audit trail. For API-key callers we don't have a
+            // real user_id; pass the synthetic api:<id> so the audit
+            // column stays populated and the JE reversal still works.
+            const reversalUserId = "user" in auth
+              ? auth.user.id
+              : `api:${auth.apiKeyId}`;
+            await auth.store.reverseErpJournalEntry(je.id, reversalUserId);
           } catch (e) {
             console.warn("[invoice.cancel] JE reversal failed:", e);
           }
@@ -187,16 +211,17 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       }
     }
 
+    const auditUser = "user" in auth ? auth.user : { id: `api:${auth.apiKeyId}`, username: auth.apiKeyName, tenant_id: auth.tenantId };
     try {
       const { recordRevision } = await import("@/lib/api/doc-revisions");
       await recordRevision({
         docType: "invoice", documentId: id, tenantId: existing.tenant_id,
         before: existing as any, after: updated as any,
-        userId: auth.user.id, username: auth.user.username,
+        userId: auditUser.id, username: auditUser.username,
         changeNote: (body as any)?._changeNote || null,
       });
     } catch (e) { console.warn("[invoice.update] revision failed:", e); }
-    await audit(auth.store, auth.user, req, "invoice.update", "invoice", id, { status: updated.status });
+    await audit(auth.store, auditUser, req, "invoice.update", "invoice", id, { status: updated.status });
     return NextResponse.json(updated);
   } catch (error: any) {
     return NextResponse.json({ error: sanitizeError(error) }, { status: 500 });
@@ -205,19 +230,26 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await requireAuth(req);
+    const auth = await requireAuthOrApiKey(req);
     if (auth instanceof NextResponse) return auth;
-  // Permission gate (invoices.delete)
+  // Permission gate (invoices.delete) — session callers use requirePermission,
+  // API-key callers use hasPermission (colon format).
   { const { requirePermission } = await import("@/lib/permissions/can");
-    const _d = requirePermission(auth, "invoices.delete"); if (_d) return _d; } /* requirePermission wired */
+    if (!("apiKeyId" in auth)) { const _d = requirePermission(auth, "invoices.delete"); if (_d) return _d; } }
+  if ("apiKeyId" in auth && !hasPermission(auth.permissions, "invoices:write")) {
+    return NextResponse.json({ error: "Insufficient permissions." }, { status: 403 });
+  }
   // Feature gate (module_finance)
   { const { requireFeature } = await import("@/lib/api/feature-guard");
-    const _f = await requireFeature(auth.tenantId, "module_finance", auth.isSuperAdmin); if (_f) return _f; } /* requireFeature wired */
+    const _tid = ("apiKeyId" in auth) ? auth.tenantId : auth.tenantId;
+    const _isSA = !("apiKeyId" in auth) && auth.isSuperAdmin;
+    const _f = await requireFeature(_tid, "module_finance", _isSA); if (_f) return _f; } /* requireFeature wired */
 
     const { id } = await params;
     const existing = await auth.store.getInvoice(id);
     if (!existing) return NextResponse.json({ error: "Not found." }, { status: 404 });
-    if (!auth.isSuperAdmin && existing.tenant_id !== auth.tenantId) {
+    const isSuperAdmin = !("apiKeyId" in auth) && auth.isSuperAdmin;
+    if (!isSuperAdmin && existing.tenant_id !== auth.tenantId) {
       return NextResponse.json({ error: "Not found." }, { status: 404 });
     }
     // Status guard (H-6) — only draft or cancelled invoices can be
@@ -230,7 +262,8 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       );
     }
     await auth.store.deleteInvoice(id);
-    await audit(auth.store, auth.user, req, "invoice.delete", "invoice", id);
+    const auditUser = "user" in auth ? auth.user : { id: `api:${auth.apiKeyId}`, username: auth.apiKeyName, tenant_id: auth.tenantId };
+    await audit(auth.store, auditUser, req, "invoice.delete", "invoice", id);
     return NextResponse.json({ ok: true });
   } catch (error: any) {
     return NextResponse.json({ error: sanitizeError(error) }, { status: 500 });

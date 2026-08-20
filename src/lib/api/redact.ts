@@ -65,6 +65,131 @@ export function redactDetails(
 /** Standard redaction keys for tenant-scoped audit logs. */
 export const TENANT_REDACT_KEYS = ["reset_token"];
 
+// ── FIX-ALL-2 / Fix 1 — strip sensitive data from API responses ─────────────
+//
+// Audit Part A (sensitive-data exposure): the GET /api/partners and
+// /api/offers routes returned the full row to API-key callers, including
+// fields the API contract should never surface:
+//
+//   • partners.kyc_data / kyc_status / kyc_submitted_at — KYC document
+//     metadata (ID numbers, document scans) that the operator reviews in
+//     the admin UI but that an API integrator has no business reading.
+//   • partners.bank_account / bank_swift / bank_iban — settlement bank
+//     account numbers; the API contract surfaces bank details only via the
+//     explicit `bank_details` JSON column on offers.
+//   • partners.vat_number — already encrypted at rest (P0-3 / Feature 2),
+//     but the decrypted value is still surfaced on the read path for the
+//     admin UI; API-key callers should not receive it.
+//   • offers.bank_details — JSON blob with the seller's bank account,
+//     swift, IBAN, beneficiary name; surfaced on the offer PDF but NOT in
+//     the API response.
+//
+// The redaction is conditional on `"apiKeyId" in auth` — a logged-in admin
+// user (session auth) keeps seeing the fields so the CRM UI continues to
+// work; only API-key integrators are subject to the strip. This matches
+// the audit's recommendation that the API surface be narrower than the
+// admin UI surface.
+
+/**
+ * Field names stripped from partner responses when the caller is an API
+ * key. See {@link redactSensitiveFields} for the policy.
+ */
+export const PARTNER_SENSITIVE_FIELDS = [
+  "kyc_data",
+  "kyc_status",
+  "kyc_submitted_at",
+  "kyc_reviewer_id",
+  "kyc_reviewed_at",
+  "kyc_notes",
+  "bank_account",
+  "bank_swift",
+  "bank_iban",
+  "bank_name",
+  "bank_beneficiary",
+  "vat_number",
+  "tax_id",
+] as const;
+
+/**
+ * Field names stripped from offer responses when the caller is an API
+ * key. `bank_details` is a JSON column on the offers table that carries
+ * the seller's settlement instructions — surfaced on the PDF but never
+ * in the API response.
+ */
+export const OFFER_SENSITIVE_FIELDS = [
+  "bank_details",
+] as const;
+
+function isApiKeyCaller(auth: unknown): boolean {
+  return (
+    typeof auth === "object" &&
+    auth !== null &&
+    "apiKeyId" in auth
+  );
+}
+
+/**
+ * Strip sensitive fields from a single record (or list of records) when
+ * the caller authenticated with an API key. Session-auth callers (admin
+ * UI) receive the full row unchanged.
+ *
+ * The helper is a no-op when `auth` is null/undefined or when the caller
+ * is a session-auth user (so it is safe to call on every response path
+ * unconditionally). The input object is NOT mutated — a shallow clone is
+ * returned so the caller's own copy (used for webhook payloads, audit
+ * details, etc.) retains the original values.
+ *
+ * The fields stripped are listed in {@link PARTNER_SENSITIVE_FIELDS}.
+ */
+export function redactPartnerFields<T extends Record<string, unknown>>(
+  record: T | T[] | null | undefined,
+  auth: unknown,
+): T | T[] | null | undefined {
+  if (!record || !isApiKeyCaller(auth)) return record;
+  const strip = (r: T): T => {
+    const copy: Record<string, unknown> = { ...r };
+    for (const f of PARTNER_SENSITIVE_FIELDS) {
+      if (f in copy) delete copy[f];
+    }
+    return copy as T;
+  };
+  return Array.isArray(record) ? record.map(strip) : strip(record);
+}
+
+/**
+ * Strip sensitive fields from offer records when the caller is an API
+ * key. See {@link redactPartnerFields} for the policy.
+ */
+export function redactOfferFields<T extends Record<string, unknown>>(
+  record: T | T[] | null | undefined,
+  auth: unknown,
+): T | T[] | null | undefined {
+  if (!record || !isApiKeyCaller(auth)) return record;
+  const strip = (r: T): T => {
+    const copy: Record<string, unknown> = { ...r };
+    for (const f of OFFER_SENSITIVE_FIELDS) {
+      if (f in copy) delete copy[f];
+    }
+    return copy as T;
+  };
+  return Array.isArray(record) ? record.map(strip) : strip(record);
+}
+
+/**
+ * Convenience alias kept for callers that prefer a single entry-point
+ * name. Mirrors the task description ("Create a `redactSensitiveFields`
+ * helper").
+ */
+export function redactSensitiveFields<T extends Record<string, unknown>>(
+  record: T | T[] | null | undefined,
+  auth: unknown,
+  kind: "partner" | "offer",
+): T | T[] | null | undefined {
+  return kind === "partner"
+    ? redactPartnerFields(record, auth)
+    : redactOfferFields(record, auth);
+}
+
 /**
  * Extended redaction keys for super-admin (cross-tenant) audit logs.
  *

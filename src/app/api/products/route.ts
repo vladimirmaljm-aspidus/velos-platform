@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuthOrApiKey, resolveTenantId, hasPermission, audit, type AuthContext, type ApiKeyAuthContext, sanitizeError } from "@/lib/api/helpers";
 import { withApm } from "@/lib/monitoring/apm";
+// FIX-ALL-2 / Fix 6 — XSS prevention on free-text fields.
+import { sanitizeFields, sanitizeInput } from "@/lib/security/sanitize-input";
 
 export const runtime = "nodejs";
 
@@ -58,7 +60,80 @@ async function _post(req: NextRequest) {
       return NextResponse.json({ error: "Insufficient permissions." }, { status: 403 });
     }
 
-    const body = await req.json();
+    let body;
+    try {
+      body = await req.json();
+    } catch {
+      // FIX-ALL-2 / Fix 7 — surface a clear 400 instead of letting the
+      // JSON parse throw bubble up as a 500 "Database error" later.
+      return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+    }
+
+    // FIX-ALL-2 / Fix 7 — validation BEFORE DB write. Audit Part D found
+    // POST /api/products {} returned "Database error Missing required
+    // field." because the routelet Postgres hit the NOT NULL constraint
+    // on `name` and `sku`. Validate the required fields here so we
+    // return a clean 400 listing the missing fields, never reaching the
+    // DB on a malformed payload. Also validate `price >= 0` — a
+    // negative price would pass the NOT NULL check but distort the
+    // dashboard aggregates (audit Flow 7 #1).
+    if (!body.id) {
+      const missing: string[] = [];
+      if (!body.name || String(body.name).trim() === "") missing.push("name");
+      if (!body.sku || String(body.sku).trim() === "") missing.push("sku");
+      if (missing.length > 0) {
+        return NextResponse.json(
+          { error: `Missing required field(s): ${missing.join(", ")}.` },
+          { status: 400 },
+        );
+      }
+      if (body.price !== undefined && body.price !== null) {
+        const p = Number(body.price);
+        if (!Number.isFinite(p) || p < 0) {
+          return NextResponse.json({ error: "price must be a non-negative number." }, { status: 400 });
+        }
+      }
+      if (body.cost !== undefined && body.cost !== null) {
+        const c = Number(body.cost);
+        if (!Number.isFinite(c) || c < 0) {
+          return NextResponse.json({ error: "cost must be a non-negative number." }, { status: 400 });
+        }
+      }
+      if (body.stock !== undefined && body.stock !== null) {
+        const s = Number(body.stock);
+        if (!Number.isFinite(s) || s < 0) {
+          return NextResponse.json({ error: "stock must be a non-negative number." }, { status: 400 });
+        }
+      }
+    }
+
+    // FIX-ALL-2 / Fix 6 — XSS prevention. Escape `<`/`>`/`"`/`'` in
+    // free-text fields before storing so a later `dangerouslySetInnerHTML`
+    // render path can't execute injected script. The fields below are the
+    // user-visible free-text columns on `products`; structured fields (sku,
+    // hs_code, currency) are validated by format elsewhere.
+    body = sanitizeFields(body, [
+      "name",
+      "description",
+      "detailed_spec",
+      "brand",
+      "category",
+      "tags",
+      "origin_country",
+      "flavor_profile",
+      "flavor_category",
+      "unit",
+    ]);
+    if (Array.isArray(body.attributes)) {
+      // `attributes` is a JSON object in practice — wrap each value
+      // through the sanitizer if it's a string. Non-string values
+      // (numbers, booleans) are returned unchanged by sanitizeInput.
+      const attrs: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(body.attributes as Record<string, unknown>)) {
+        attrs[k] = typeof v === "string" ? sanitizeInput(v) : v;
+      }
+      body.attributes = attrs;
+    }
     // Super-admins without ?tenant_id= resolve to null — fall back to the
     // product's existing tenant_id (e.g. when toggling show_in_catalog from
     // the Products table). If neither is present, refuse rather than

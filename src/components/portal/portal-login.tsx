@@ -36,7 +36,15 @@ import { useT, useI18nStore } from "@/lib/i18n/store";
 
 const FIRM_NAME = "VELOS";
 
-export function PortalLogin() {
+// FIX-ALL-2 / Fix 2 — the dedicated /portal/forgot-password and
+// /portal/setup-password routes render this component and pass an
+// `initialDialog` prop so the appropriate dialog auto-opens on mount.
+// Without this prop the user lands on the bare login form (no dialog),
+// which is what the audit found ("nothing happens" after clicking the
+// "Forgot your password?" link that redirected to the admin SPA).
+type InitialDialog = "forgot" | "setup" | null;
+
+export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialDialog } = {}) {
   const t = useT();
   const setPortalAccess = useAppStore((s) => s.setPortalAccess);
   const setAppMode = useAppStore((s) => s.setAppMode);
@@ -77,23 +85,37 @@ export function PortalLogin() {
     // Audit F-6/P1-3: prefer ?setup_token=xxx (single-use, 7-day-expiring)
     // over the legacy ?access_id=xxx (permanent UUID, never expired).
     const setupTokenParam = searchParams.get("setup_token");
+    // Hoisted so the `initialDialog` branch below can read it without
+    // entering the `else` block above (the access_id URL param is a
+    // legacy fallback for invite emails issued before the setup_token
+    // migration — see audit F-6/P1-3).
+    const accessIdParam = searchParams.get("access_id");
     if (setupTokenParam) {
       setSetupToken(setupTokenParam);
       setAccessId("");
       setSetupOpen(true);
-    } else {
-      const accessIdParam = searchParams.get("access_id");
-      if (accessIdParam) {
-        setAccessId(accessIdParam);
-        setSetupOpen(true);
-      }
+    } else if (accessIdParam) {
+      setAccessId(accessIdParam);
+      setSetupOpen(true);
     }
     const resetTokenParam = searchParams.get("reset_token");
     if (resetTokenParam) {
       setResetToken(resetTokenParam);
       setNewPassword(""); // clear for new entry
     }
-  }, [searchParams]);
+    // FIX-ALL-2 / Fix 2 — when the dedicated /portal/forgot-password or
+    // /portal/setup-password route renders this component, the
+    // `initialDialog` prop tells us which dialog to auto-open. URL
+    // params (?setup_token / ?reset_token) above take precedence over
+    // the prop so a deep link to /portal/setup-password?setup_token=…
+    // still opens the setup dialog (not the forgot one). Only run this
+    // when no URL param has already opened a dialog.
+    if (initialDialog === "forgot" && !setupTokenParam && !resetTokenParam) {
+      setForgotOpen(true);
+    } else if (initialDialog === "setup" && !setupTokenParam && !accessIdParam && !resetTokenParam) {
+      setSetupOpen(true);
+    }
+  }, [searchParams, initialDialog]);
 
   async function handleForgotPassword(e: React.FormEvent) {
     e.preventDefault();

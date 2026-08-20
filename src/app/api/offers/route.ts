@@ -3,6 +3,10 @@ import { requireAuthOrApiKey, resolveTenantId, hasPermission, audit, type AuthCo
 import { getSupabase } from "@/lib/supabase/client";
 import { triggerWebhooks } from "@/lib/webhooks/deliver";
 import { withApm } from "@/lib/monitoring/apm";
+// FIX-ALL-2 / Fix 1 — strip bank_details from offer responses for API-key callers.
+import { redactOfferFields } from "@/lib/api/redact";
+// FIX-ALL-2 / Fix 6 — XSS prevention on free-text fields.
+import { sanitizeFields } from "@/lib/security/sanitize-input";
 
 export const runtime = "nodejs";
 
@@ -40,6 +44,13 @@ async function _get(req: NextRequest) {
       result.items = result.items.filter((o) => o.tenant_id === auth.tenantId);
       result.total = result.total - (before - result.items.length);
     }
+    // FIX-ALL-2 / Fix 1 — strip `bank_details` from offer responses when
+    // the caller is an API key. The field is a JSON blob with the seller's
+    // settlement instructions (account number / SWIFT / IBAN / beneficiary)
+    // surfaced on the offer PDF but NOT in the API contract. The helper
+    // is a no-op for session-auth callers so the admin UI continues to
+    // render the bank block.
+    result.items = (redactOfferFields(result.items as any, auth) as any) || result.items;
     return NextResponse.json(result);
   } catch (e: any) {
     console.error("[offers GET]", e);
@@ -76,6 +87,67 @@ async function _post(req: NextRequest) {
     } catch {
       return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
     }
+
+  // FIX-ALL-2 / Fix 7 — validation BEFORE DB write. Audit Part D found
+  // that POST /api/products {} returned "Database error Missing required
+  // field." because Postgres hit the NOT NULL constraint. The same gap
+  // exists on offers — `partner_id` and `items[]` are NOT NULL on the
+  // offers table, and a missing partner_id surfaces as a foreign-key
+  // violation. Validate the required shape here so we return a clean
+  // 400 listing the missing fields, never reaching the DB.
+  if (!body.id) {
+    const missing: string[] = [];
+    if (!body.partner_id) missing.push("partner_id");
+    if (!Array.isArray(body.items) || body.items.length === 0) missing.push("items");
+    if (missing.length > 0) {
+      return NextResponse.json(
+        { error: `Missing required field(s): ${missing.join(", ")}.` },
+        { status: 400 },
+      );
+    }
+    // Per-line validation: each item must have a product_id (or sku) and
+    // a non-negative quantity / unit_price. A negative price would pass
+    // the NOT NULL check but distort the totals computation downstream.
+    for (let i = 0; i < body.items.length; i++) {
+      const it = body.items[i];
+      const qty = Number(it.quantity);
+      const price = Number(it.unit_price);
+      if (!Number.isFinite(qty) || qty < 0) {
+        return NextResponse.json({ error: `items[${i}].quantity must be a non-negative number.` }, { status: 400 });
+      }
+      if (!Number.isFinite(price) || price < 0) {
+        return NextResponse.json({ error: `items[${i}].unit_price must be a non-negative number.` }, { status: 400 });
+      }
+    }
+  }
+
+  // FIX-ALL-2 / Fix 6 — XSS prevention on free-text fields. Offers carry
+  // a lot of free-text (subject, notes, line item descriptions, payment
+  // terms, packaging, vessel/container, …) that the PDF generator pipes
+  // through `dangerouslySetInnerHTML`. Escape `<`/`>`/`"`/`'` here so a
+  // malicious name can't break out of the PDF template's HTML structure.
+  body = sanitizeFields(body, [
+    "subject",
+    "notes",
+    "payment_terms",
+    "packaging",
+    "vessel",
+    "container_no",
+    "pol",
+    "pod",
+    "incoterm",
+    "lead_time",
+    "delivery_terms",
+    "valid_until_note",
+    "shipping_terms",
+  ]);
+  if (Array.isArray(body.items)) {
+    body.items = body.items.map((it: any) => sanitizeFields(it, [
+      "description", "detailed_spec", "brand", "sku", "hs_code",
+      "origin_country", "notes", "subject", "unit",
+    ]));
+  }
+
   body.tenant_id = tid!;
   if (!body.owner_id && "user" in auth) body.owner_id = auth.user.id;
 
@@ -337,7 +409,10 @@ async function _post(req: NextRequest) {
     }
   }
 
-  return NextResponse.json(created);
+  // FIX-ALL-2 / Fix 1 — strip `bank_details` from the create response
+  // when the caller is an API key (parity with the GET list handler).
+  const redactedCreated = redactOfferFields(created as any, auth);
+  return NextResponse.json(redactedCreated);
   } catch (e: any) {
     console.error("[offers POST]", e);
     return NextResponse.json(

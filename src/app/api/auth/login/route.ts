@@ -109,7 +109,39 @@ export async function POST(req: NextRequest) {
     }
 
     const store = await getStore();
-    const user = await store.getUserByUsername(username);
+    // FIX-ALL-2 / Fix 5 — wrap the user lookup in try/catch so a
+    // malformed username (e.g. one containing SQL-breaking characters
+    // that confuses a non-parameterised query path) or a transient DB
+    // error NEVER surfaces as a 500 with a leaky Postgres message.
+    // We always return 401 "Invalid username or password." for any
+    // failure here — the caller cannot tell a DB error from a wrong
+    // password, which is the correct security posture (no info leak).
+    // The audit + security-event pipeline still records the failure
+    // server-side so ops can triage.
+    let user: Awaited<ReturnType<typeof store.getUserByUsername>>;
+    try {
+      user = await store.getUserByUsername(username);
+    } catch (lookupErr) {
+      console.error("[login] user lookup failed:", lookupErr);
+      // Best-effort audit so the security pipeline sees the anomaly.
+      try {
+        const ip0 = getRequestIp(req);
+        await store.appendAudit({
+          user_id: null,
+          username,
+          action: "login.failed",
+          entity_type: "auth",
+          entity_id: null,
+          details: { reason: "user_lookup_threw", error: lookupErr instanceof Error ? lookupErr.message : String(lookupErr) },
+          ip: ip0,
+          user_agent: req.headers.get("user-agent") || null,
+        });
+      } catch { /* non-critical */ }
+      return NextResponse.json(
+        { error: "Invalid username or password." },
+        { status: 401 },
+      );
+    }
 
     const ip = getRequestIp(req);
     const userAgent = req.headers.get("user-agent") || null;

@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuthOrApiKey, resolveTenantId, hasPermission, audit, type AuthContext, type ApiKeyAuthContext, sanitizeError } from "@/lib/api/helpers";
 import { triggerWebhooks } from "@/lib/webhooks/deliver";
 import { withApm } from "@/lib/monitoring/apm";
+// FIX-ALL-2 / Fix 1 — strip KYC / bank / vat / tax fields from API-key responses.
+import { redactPartnerFields } from "@/lib/api/redact";
+// FIX-ALL-2 / Fix 6 — XSS prevention on free-text fields.
+import { sanitizeFields } from "@/lib/security/sanitize-input";
 // P0-3 / Feature 2 — field-level encryption. The partner PII fields
 // contact_email, phone, tax_id (and vat_number) are encrypted at rest
 // with AES-256-GCM (enc: prefix). tax_id / vat_number are also used in
@@ -87,7 +91,13 @@ async function _get(req: NextRequest) {
       delete rest.vat_number_hmac;
       return rest;
     });
-    return NextResponse.json({ ...result, items: safeItems });
+    // FIX-ALL-2 / Fix 1 — strip KYC / bank / vat / tax fields from API-key
+    // responses. The strip is conditional on `"apiKeyId" in auth` — session
+    // callers (admin UI) keep the full row so the CRM continues to render
+    // bank / KYC / VAT fields; only API-key integrators lose them. The
+    // helper is a no-op for session callers so we always invoke it.
+    const redactedItems = redactPartnerFields(safeItems as any, auth);
+    return NextResponse.json({ ...result, items: redactedItems });
   } catch (e: any) {
     console.error("[partners.list]", e);
     return NextResponse.json(
@@ -112,7 +122,51 @@ async function _post(req: NextRequest) {
       return NextResponse.json({ error: "Insufficient permissions." }, { status: 403 });
     }
 
-    const body = await req.json();
+    let body;
+    try {
+      body = await req.json();
+    } catch {
+      // FIX-ALL-2 / Fix 7 — surface a clear 400 instead of letting the
+      // JSON parse throw bubble up as a 500 "Database error" later.
+      return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+    }
+
+    // FIX-ALL-2 / Fix 7 — validation BEFORE DB write. Audit Part D
+    // found POST /api/products {} returned "Database error Missing
+    // required field." — the message leaked the implementation detail
+    // that Postgres hit the NOT NULL constraint. The same gap exists on
+    // partners (the `name` column is NOT NULL). Validate the required
+    // fields here so we return a clean 400 with a list of missing
+    // fields, never reaching the DB on a malformed payload.
+    if (!body.id) {
+      const missing: string[] = [];
+      if (!body.name || String(body.name).trim() === "") missing.push("name");
+      if (missing.length > 0) {
+        return NextResponse.json(
+          { error: `Missing required field(s): ${missing.join(", ")}.` },
+          { status: 400 },
+        );
+      }
+    }
+
+    // FIX-ALL-2 / Fix 6 — XSS prevention. Escape `<`/`>`/`"`/`'` in
+    // free-text fields before storing so a later `dangerouslySetInnerHTML`
+    // render path can't execute injected script. The fields below are the
+    // user-visible free-text columns on `partners`; structured fields
+    // (tax_id, email, …) are validated by format elsewhere.
+    body = sanitizeFields(body, [
+      "name",
+      "legal_name",
+      "description",
+      "contact_person",
+      "address",
+      "city",
+      "state",
+      "country",
+      "website",
+      "notes",
+    ]);
+
     body.tenant_id = tid!;
     if (!body.id) {
       const isSA = !("apiKeyId" in auth) && auth.isSuperAdmin;
@@ -264,7 +318,10 @@ async function _post(req: NextRequest) {
     if (safeCreated.vat_number && typeof safeCreated.vat_number === "string") {
       safeCreated.vat_number = decryptField(safeCreated.vat_number);
     }
-    return NextResponse.json(safeCreated);
+    // FIX-ALL-2 / Fix 1 — strip KYC / bank / vat / tax from API-key
+    // responses (parity with the GET list handler).
+    const redactedCreated = redactPartnerFields(safeCreated as any, auth);
+    return NextResponse.json(redactedCreated);
   } catch (e: any) {
     console.error("[partners.upsert]", e);
     return NextResponse.json(

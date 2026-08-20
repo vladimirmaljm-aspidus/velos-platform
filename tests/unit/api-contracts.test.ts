@@ -532,11 +532,16 @@ describe("API contract — POST /api/products", () => {
     });
     mockState.auth = makeAuthCtx(tenantAUser(), mockState.store);
 
+    // FIX-ALL-2 / Fix 7: the route now validates the required fields
+    // (name, sku) BEFORE reaching the store — so to exercise the
+    // store-throws → 500 + sanitizeError path, we send a body that
+    // PASSES the route-layer validation but then trips the store mock
+    // (the mock throws unconditionally on `upsertProduct`).
     const r = await createProduct(
       req("http://localhost/api/products", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ sku: "X1", name: "" }),
+        body: JSON.stringify({ sku: "X1", name: "Valid Name" }),
       }),
     );
     expect(r.status).toBe(500);

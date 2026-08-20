@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, audit, sanitizeError } from "@/lib/api/helpers";
+// FIX-ALL-2 / Fix 3 — accept API-key auth on [id] routes so an API-key
+// caller fetching /api/partners/<non-existent-id> gets 404 (not 401).
+import { requireAuthOrApiKey, hasPermission, audit, sanitizeError } from "@/lib/api/helpers";
+// FIX-ALL-2 / Fix 1 — strip KYC / bank / vat / tax fields from API-key responses.
+import { redactPartnerFields } from "@/lib/api/redact";
+// FIX-ALL-2 / Fix 6 — XSS prevention on free-text fields.
+import { sanitizeFields } from "@/lib/security/sanitize-input";
 // P0-3 / Feature 2 — field-level encryption. The partner PII fields
 // contact_email, phone, tax_id, vat_number are encrypted at rest (enc:
 // prefix). This [id] route decrypts on GET and encrypts on PUT.
@@ -14,16 +20,27 @@ export const runtime = "nodejs";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await requireAuth(_req);
+    const auth = await requireAuthOrApiKey(_req);
     if (auth instanceof NextResponse) return auth;
-    // Permission gate (partners.read)
+    // Permission gate (partners.read) — session callers go through
+    // requirePermission; API-key callers go through hasPermission.
     { const { requirePermission } = await import("@/lib/permissions/can");
-      const _d = requirePermission(auth, "partners.read"); if (_d) return _d; } /* requirePermission wired */
+      if (!("apiKeyId" in auth)) { const _d = requirePermission(auth, "partners.read"); if (_d) return _d; } }
+    if ("apiKeyId" in auth && !hasPermission(auth.permissions, "partners:read")) {
+      return NextResponse.json({ error: "Insufficient permissions." }, { status: 403 });
+    }
 
     const { id } = await params;
     const partner = await auth.store.getPartner(id);
+    // FIX-ALL-2 / Fix 3 — not-found returns 404, not 401. Previously an
+    // API-key caller hit `requireAuth` first (which rejects Bearer tokens)
+    // and got 401 for every [id] lookup, masking the genuine 404 case.
     if (!partner) return NextResponse.json({ error: "Not found." }, { status: 404 });
-    if (!auth.isSuperAdmin && partner.tenant_id !== auth.tenantId) {
+    // Tenant-ownership check uses `auth.isSuperAdmin` for session callers;
+    // API-key callers are scoped to their own tenant and have no
+    // `isSuperAdmin` property.
+    const isSuperAdmin = !("apiKeyId" in auth) && auth.isSuperAdmin;
+    if (!isSuperAdmin && partner.tenant_id !== auth.tenantId) {
       return NextResponse.json({ error: "Not found." }, { status: 404 });
     }
     // CRITICAL FIX (audit D-5 / F-9-1): strip portal_token from the API
@@ -46,7 +63,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     if (safePartner.vat_number && typeof safePartner.vat_number === "string") {
       safePartner.vat_number = decryptField(safePartner.vat_number);
     }
-    return NextResponse.json(safePartner);
+    // FIX-ALL-2 / Fix 1 — strip KYC / bank / vat / tax from API-key responses.
+    const redactedPartner = redactPartnerFields(safePartner as any, auth);
+    return NextResponse.json(redactedPartner);
   } catch (error: any) {
     return NextResponse.json({ error: sanitizeError(error) }, { status: 500 });
   }
@@ -54,20 +73,43 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await requireAuth(req);
+    const auth = await requireAuthOrApiKey(req);
     if (auth instanceof NextResponse) return auth;
-  // Permission gate (partners.update)
+  // Permission gate (partners.update) — session callers use requirePermission,
+  // API-key callers use hasPermission (colon format).
   { const { requirePermission } = await import("@/lib/permissions/can");
-    const _d = requirePermission(auth, "partners.update"); if (_d) return _d; } /* requirePermission wired */
+    if (!("apiKeyId" in auth)) { const _d = requirePermission(auth, "partners.update"); if (_d) return _d; } }
+  if ("apiKeyId" in auth && !hasPermission(auth.permissions, "partners:write")) {
+    return NextResponse.json({ error: "Insufficient permissions." }, { status: 403 });
+  }
 
     const { id } = await params;
     // Tenant ownership check: fetch existing first
     const existing = await auth.store.getPartner(id);
     if (!existing) return NextResponse.json({ error: "Not found." }, { status: 404 });
-    if (!auth.isSuperAdmin && existing.tenant_id !== auth.tenantId) {
+    const isSuperAdmin = !("apiKeyId" in auth) && auth.isSuperAdmin;
+    if (!isSuperAdmin && existing.tenant_id !== auth.tenantId) {
       return NextResponse.json({ error: "Not found." }, { status: 404 });
     }
-    const body = await req.json();
+    let body;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+    }
+    // FIX-ALL-2 / Fix 6 — XSS prevention on free-text fields (parity with POST).
+    body = sanitizeFields(body, [
+      "name",
+      "legal_name",
+      "description",
+      "contact_person",
+      "address",
+      "city",
+      "state",
+      "country",
+      "website",
+      "notes",
+    ]);
     // ── P0-3 / Feature 2 — field-level encryption ──────────────────────────
     // Encrypt contact_email, phone, tax_id, vat_number at rest with
     // AES-256-GCM (enc: prefix). tax_id / vat_number ALSO get a
@@ -99,7 +141,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
     // Preserve the entity's tenant_id — regular users cannot move it to another tenant
     const updated = await auth.store.upsertPartner({ ...body, id, tenant_id: existing.tenant_id });
-    await audit(auth.store, auth.user, req, "partner.update", "partner", id, { name: updated.name });
+    // FIX-ALL-2 / Fix 3 — audit identity for API-key callers (parity with
+    // the POST handler's getAuthUser pattern). Session callers pass their
+    // full user; API-key callers pass a synthetic identity so the FK shape
+    // the audit_logs.user_id column expects is satisfied (NULL id +
+    // "api:<name>" username is acceptable per the audit() helper signature).
+    const auditUser = "user" in auth ? auth.user : { id: `api:${auth.apiKeyId}`, username: auth.apiKeyName, tenant_id: auth.tenantId };
+    await audit(auth.store, auditUser, req, "partner.update", "partner", id, { name: updated.name });
     // Strip portal_token from response (parity with GET / list — audit D-5 / F-9-1).
     // P0-3 / Feature 2: decrypt PII fields + strip the HMAC columns.
     const { portal_token: _omit, tax_id_hmac: _omitTid, vat_number_hmac: _omitVn, ...safeUpdated } = updated as any;
@@ -115,7 +163,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (safeUpdated.vat_number && typeof safeUpdated.vat_number === "string") {
       safeUpdated.vat_number = decryptField(safeUpdated.vat_number);
     }
-    return NextResponse.json(safeUpdated);
+    // FIX-ALL-2 / Fix 1 — strip KYC / bank / vat / tax from API-key responses.
+    const redactedUpdated = redactPartnerFields(safeUpdated as any, auth);
+    return NextResponse.json(redactedUpdated);
   } catch (error: any) {
     return NextResponse.json({ error: sanitizeError(error) }, { status: 500 });
   }
@@ -123,16 +173,21 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await requireAuth(req);
+    const auth = await requireAuthOrApiKey(req);
     if (auth instanceof NextResponse) return auth;
-  // Permission gate (partners.delete)
+  // Permission gate (partners.delete) — session callers use requirePermission,
+  // API-key callers use hasPermission (colon format).
   { const { requirePermission } = await import("@/lib/permissions/can");
-    const _d = requirePermission(auth, "partners.delete"); if (_d) return _d; } /* requirePermission wired */
+    if (!("apiKeyId" in auth)) { const _d = requirePermission(auth, "partners.delete"); if (_d) return _d; } }
+  if ("apiKeyId" in auth && !hasPermission(auth.permissions, "partners:write")) {
+    return NextResponse.json({ error: "Insufficient permissions." }, { status: 403 });
+  }
 
     const { id } = await params;
     const existing = await auth.store.getPartner(id);
     if (!existing) return NextResponse.json({ error: "Not found." }, { status: 404 });
-    if (!auth.isSuperAdmin && existing.tenant_id !== auth.tenantId) {
+    const isSuperAdmin = !("apiKeyId" in auth) && auth.isSuperAdmin;
+    if (!isSuperAdmin && existing.tenant_id !== auth.tenantId) {
       return NextResponse.json({ error: "Not found." }, { status: 404 });
     }
 
@@ -187,7 +242,8 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     }
 
     await auth.store.deletePartner(id);
-    await audit(auth.store, auth.user, req, "partner.delete", "partner", id, {
+    const auditUser = "user" in auth ? auth.user : { id: `api:${auth.apiKeyId}`, username: auth.apiKeyName, tenant_id: auth.tenantId };
+    await audit(auth.store, auditUser, req, "partner.delete", "partner", id, {
       forced: force,
       dependencies_ignored: force ? depCount : 0,
     });

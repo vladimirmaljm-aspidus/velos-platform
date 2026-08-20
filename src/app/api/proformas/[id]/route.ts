@@ -1,47 +1,64 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, audit } from "@/lib/api/helpers";
+// FIX-ALL-2 / Fix 3 — accept API-key auth on [id] routes so an API-key
+// caller fetching /api/proformas/<non-existent-id> gets 404 (not 401).
+import { requireAuthOrApiKey, hasPermission, audit, sanitizeError } from "@/lib/api/helpers";
 import { validateStatusTransition } from "@/lib/api/status-validator";
 
 export const runtime = "nodejs";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await requireAuth(_req);
+    const auth = await requireAuthOrApiKey(_req);
     if (auth instanceof NextResponse) return auth;
-    // Permission gate (proformas.read)
+    // Permission gate (proformas.read) — session callers use requirePermission,
+    // API-key callers use hasPermission (colon format).
     { const { requirePermission } = await import("@/lib/permissions/can");
-      const _d = requirePermission(auth, "proformas.read"); if (_d) return _d; } /* requirePermission wired */
+      if (!("apiKeyId" in auth)) { const _d = requirePermission(auth, "proformas.read"); if (_d) return _d; } }
+    if ("apiKeyId" in auth && !hasPermission(auth.permissions, "proformas:read")) {
+      return NextResponse.json({ error: "Insufficient permissions." }, { status: 403 });
+    }
   // Feature gate (module_finance)
   { const { requireFeature } = await import("@/lib/api/feature-guard");
-    const _f = await requireFeature(auth.tenantId, "module_finance", auth.isSuperAdmin); if (_f) return _f; } /* requireFeature wired */
+    const _tid = ("apiKeyId" in auth) ? auth.tenantId : auth.tenantId;
+    const _isSA = !("apiKeyId" in auth) && auth.isSuperAdmin;
+    const _f = await requireFeature(_tid, "module_finance", _isSA); if (_f) return _f; } /* requireFeature wired */
 
     const { id } = await params;
     const item = await auth.store.getProforma(id);
+    // FIX-ALL-2 / Fix 3 — not-found returns 404, not 401.
     if (!item) return NextResponse.json({ error: "Not found." }, { status: 404 });
-    if (!auth.isSuperAdmin && item.tenant_id !== auth.tenantId) {
+    const isSuperAdmin = !("apiKeyId" in auth) && auth.isSuperAdmin;
+    if (!isSuperAdmin && item.tenant_id !== auth.tenantId) {
       return NextResponse.json({ error: "Not found." }, { status: 404 });
     }
     return NextResponse.json(item);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(error) }, { status: 500 });
   }
 }
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await requireAuth(req);
+    const auth = await requireAuthOrApiKey(req);
     if (auth instanceof NextResponse) return auth;
-  // Permission gate (proformas.update)
+  // Permission gate (proformas.update) — session callers use requirePermission,
+  // API-key callers use hasPermission (colon format).
   { const { requirePermission } = await import("@/lib/permissions/can");
-    const _d = requirePermission(auth, "proformas.update"); if (_d) return _d; } /* requirePermission wired */
+    if (!("apiKeyId" in auth)) { const _d = requirePermission(auth, "proformas.update"); if (_d) return _d; } }
+  if ("apiKeyId" in auth && !hasPermission(auth.permissions, "proformas:write")) {
+    return NextResponse.json({ error: "Insufficient permissions." }, { status: 403 });
+  }
   // Feature gate (module_finance)
   { const { requireFeature } = await import("@/lib/api/feature-guard");
-    const _f = await requireFeature(auth.tenantId, "module_finance", auth.isSuperAdmin); if (_f) return _f; } /* requireFeature wired */
+    const _tid = ("apiKeyId" in auth) ? auth.tenantId : auth.tenantId;
+    const _isSA = !("apiKeyId" in auth) && auth.isSuperAdmin;
+    const _f = await requireFeature(_tid, "module_finance", _isSA); if (_f) return _f; } /* requireFeature wired */
 
     const { id } = await params;
     const existing = await auth.store.getProforma(id);
     if (!existing) return NextResponse.json({ error: "Not found." }, { status: 404 });
-    if (!auth.isSuperAdmin && existing.tenant_id !== auth.tenantId) {
+    const isSuperAdmin = !("apiKeyId" in auth) && auth.isSuperAdmin;
+    if (!isSuperAdmin && existing.tenant_id !== auth.tenantId) {
       return NextResponse.json({ error: "Not found." }, { status: 404 });
     }
     const body = await req.json();
@@ -51,7 +68,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     // by the customer or paid — that would silently rewrite a binding commercial
     // commitment and could diverge from the originating offer/invoice.
     if (existing.status === "paid" || existing.status === "accepted") {
-      if (!auth.isSuperAdmin) {
+      if (!isSuperAdmin) {
         const lockedFields = ["total", "subtotal", "items", "tax_total", "discount_total", "partner_id", "currency", "offer_id"];
         for (const k of lockedFields) {
           if (k in body) {
@@ -65,7 +82,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
     // FIX-P1-LOGIC Fix 1: enforce valid status transitions. Super-admins
     // bypass so they can correct bad data.
-    if (body.status && body.status !== existing.status && !auth.isSuperAdmin) {
+    if (body.status && body.status !== existing.status && !isSuperAdmin) {
       const transition = validateStatusTransition("proforma", existing.status, body.status);
       if (!transition.valid) {
         return NextResponse.json({ error: transition.error }, { status: 400 });
@@ -91,37 +108,45 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       body.total = Math.round((subtotal - discountTotal + taxTotal) * 100) / 100;
     }
     const updated = await auth.store.upsertProforma({ ...body, id, tenant_id: existing.tenant_id });
+    const auditUser = "user" in auth ? auth.user : { id: `api:${auth.apiKeyId}`, username: auth.apiKeyName, tenant_id: auth.tenantId };
     try {
       const { recordRevision } = await import("@/lib/api/doc-revisions");
       await recordRevision({
         docType: "proforma", documentId: id, tenantId: existing.tenant_id,
         before: existing as any, after: updated as any,
-        userId: auth.user.id, username: auth.user.username,
+        userId: auditUser.id, username: auditUser.username,
         changeNote: (body as any)?._changeNote || null,
       });
     } catch (e) { console.warn("[proforma.update] revision failed:", e); }
-    await audit(auth.store, auth.user, req, "proforma.update", "proforma", id, { status: updated.status });
+    await audit(auth.store, auditUser, req, "proforma.update", "proforma", id, { status: updated.status });
     return NextResponse.json(updated);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(error) }, { status: 500 });
   }
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await requireAuth(req);
+    const auth = await requireAuthOrApiKey(req);
     if (auth instanceof NextResponse) return auth;
-  // Permission gate (proformas.delete)
+  // Permission gate (proformas.delete) — session callers use requirePermission,
+  // API-key callers use hasPermission (colon format).
   { const { requirePermission } = await import("@/lib/permissions/can");
-    const _d = requirePermission(auth, "proformas.delete"); if (_d) return _d; } /* requirePermission wired */
+    if (!("apiKeyId" in auth)) { const _d = requirePermission(auth, "proformas.delete"); if (_d) return _d; } }
+  if ("apiKeyId" in auth && !hasPermission(auth.permissions, "proformas:write")) {
+    return NextResponse.json({ error: "Insufficient permissions." }, { status: 403 });
+  }
   // Feature gate (module_finance)
   { const { requireFeature } = await import("@/lib/api/feature-guard");
-    const _f = await requireFeature(auth.tenantId, "module_finance", auth.isSuperAdmin); if (_f) return _f; } /* requireFeature wired */
+    const _tid = ("apiKeyId" in auth) ? auth.tenantId : auth.tenantId;
+    const _isSA = !("apiKeyId" in auth) && auth.isSuperAdmin;
+    const _f = await requireFeature(_tid, "module_finance", _isSA); if (_f) return _f; } /* requireFeature wired */
 
     const { id } = await params;
     const existing = await auth.store.getProforma(id);
     if (!existing) return NextResponse.json({ error: "Not found." }, { status: 404 });
-    if (!auth.isSuperAdmin && existing.tenant_id !== auth.tenantId) {
+    const isSuperAdmin = !("apiKeyId" in auth) && auth.isSuperAdmin;
+    if (!isSuperAdmin && existing.tenant_id !== auth.tenantId) {
       return NextResponse.json({ error: "Not found." }, { status: 404 });
     }
     // Status guard (H-6) — only draft/cancelled proformas can be
@@ -133,9 +158,10 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       );
     }
     await auth.store.deleteProforma(id);
-    await audit(auth.store, auth.user, req, "proforma.delete", "proforma", id);
+    const auditUser = "user" in auth ? auth.user : { id: `api:${auth.apiKeyId}`, username: auth.apiKeyName, tenant_id: auth.tenantId };
+    await audit(auth.store, auditUser, req, "proforma.delete", "proforma", id);
     return NextResponse.json({ ok: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(error) }, { status: 500 });
   }
 }

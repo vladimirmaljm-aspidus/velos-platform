@@ -785,11 +785,29 @@ export function sanitizeError(e: unknown): string {
     // caller can't distinguish "row doesn't exist" from "you can't see it".
     .replace(/permission denied for (table|sequence|function) [^.\s]+/gi, "Permission denied.")
     .replace(/new row for relation "[^"]+" violates row-level security policy[^.]*\.?/gi, "Not found.")
+    // ── FIX-ALL-2 / Fix 4: strip "Record not found (table=…)" table-name
+    // leak. Postgres RPC functions (e.g. the atomic doc-number insert in
+    // migration 032) raise `Record not found (table=offers)` when a
+    // pre-condition join fails. The literal table name in the parentheses
+    // leaks the schema to the API client. Strip just the parenthesised
+    // clause, leaving the human-readable "Record not found." prefix.
+    .replace(/Record not found\s*\(\s*table=[^)]*\)/gi, "Record not found")
+    .replace(/\(\s*table=[^)]*\)/gi, "")
     // ── Collapse the leftover double-spaces that come from chained
     // substitutions (e.g. "Database error Database error. Missing required
     // field." → "Database error. Missing required field."). Cosmetic, but
     // keeps the response body readable when the original Postgres message
     // hit several patterns at once.
+    .replace(/\s{2,}/g, " ")
+    // ── FIX-ALL-2 / Fix 4: remove the "Database error" prefix that the
+    // chained schema/table/column substitutions leave in front of a more
+    // specific suffix (audit Part D, "Database error Missing required
+    // field."). The bare `Database error.` message (period, no further
+    // text) is preserved — only the prefix-then-other-word form is
+    // stripped, so existing api-helpers.test.ts assertions that expect
+    // `toBe("Database error.")` still pass.
+    .replace(/^Database error\s+(?=\S)/i, "")
+    .replace(/(\s)Database error\s+(?=\S)/gi, "$1")
     .replace(/\s{2,}/g, " ")
     .trim();
 }

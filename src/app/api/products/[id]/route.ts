@@ -1,20 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, audit, sanitizeError } from "@/lib/api/helpers";
+// FIX-ALL-2 / Fix 3 — accept API-key auth on [id] routes so an API-key
+// caller fetching /api/products/<non-existent-id> gets 404 (not 401).
+import { requireAuthOrApiKey, hasPermission, audit, sanitizeError } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await requireAuth(_req);
+    const auth = await requireAuthOrApiKey(_req);
     if (auth instanceof NextResponse) return auth;
-    // Permission gate (products.read)
+    // Permission gate (products.read) — session callers use requirePermission,
+    // API-key callers use hasPermission (colon format).
     { const { requirePermission } = await import("@/lib/permissions/can");
-      const _d = requirePermission(auth, "products.read"); if (_d) return _d; } /* requirePermission wired */
+      if (!("apiKeyId" in auth)) { const _d = requirePermission(auth, "products.read"); if (_d) return _d; } }
+    if ("apiKeyId" in auth && !hasPermission(auth.permissions, "products:read")) {
+      return NextResponse.json({ error: "Insufficient permissions." }, { status: 403 });
+    }
 
     const { id } = await params;
     const item = await auth.store.getProduct(id);
+    // FIX-ALL-2 / Fix 3 — not-found returns 404, not 401. Previously an
+    // API-key caller hit `requireAuth` first (which rejects Bearer tokens)
+    // and got 401 for every [id] lookup — masking the genuine 404 case.
     if (!item) return NextResponse.json({ error: "Not found." }, { status: 404 });
-    if (!auth.isSuperAdmin && item.tenant_id !== auth.tenantId) {
+    const isSuperAdmin = !("apiKeyId" in auth) && auth.isSuperAdmin;
+    if (!isSuperAdmin && item.tenant_id !== auth.tenantId) {
       return NextResponse.json({ error: "Not found." }, { status: 404 });
     }
     return NextResponse.json(item);
@@ -25,21 +35,27 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await requireAuth(req);
+    const auth = await requireAuthOrApiKey(req);
     if (auth instanceof NextResponse) return auth;
-  // Permission gate (products.update)
+  // Permission gate (products.update) — session callers use requirePermission,
+  // API-key callers use hasPermission (colon format).
   { const { requirePermission } = await import("@/lib/permissions/can");
-    const _d = requirePermission(auth, "products.update"); if (_d) return _d; } /* requirePermission wired */
+    if (!("apiKeyId" in auth)) { const _d = requirePermission(auth, "products.update"); if (_d) return _d; } }
+  if ("apiKeyId" in auth && !hasPermission(auth.permissions, "products:write")) {
+    return NextResponse.json({ error: "Insufficient permissions." }, { status: 403 });
+  }
 
     const { id } = await params;
     const existing = await auth.store.getProduct(id);
     if (!existing) return NextResponse.json({ error: "Not found." }, { status: 404 });
-    if (!auth.isSuperAdmin && existing.tenant_id !== auth.tenantId) {
+    const isSuperAdmin = !("apiKeyId" in auth) && auth.isSuperAdmin;
+    if (!isSuperAdmin && existing.tenant_id !== auth.tenantId) {
       return NextResponse.json({ error: "Not found." }, { status: 404 });
     }
     const body = await req.json();
     const updated = await auth.store.upsertProduct({ ...body, id, tenant_id: existing.tenant_id });
-    await audit(auth.store, auth.user, req, "product.update", "product", id, { name: updated.name });
+    const auditUser = "user" in auth ? auth.user : { id: `api:${auth.apiKeyId}`, username: auth.apiKeyName, tenant_id: auth.tenantId };
+    await audit(auth.store, auditUser, req, "product.update", "product", id, { name: updated.name });
     return NextResponse.json(updated);
   } catch (error: any) {
     return NextResponse.json({ error: sanitizeError(error) }, { status: 500 });
@@ -48,16 +64,21 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await requireAuth(req);
+    const auth = await requireAuthOrApiKey(req);
     if (auth instanceof NextResponse) return auth;
-  // Permission gate (products.delete)
+  // Permission gate (products.delete) — session callers use requirePermission,
+  // API-key callers use hasPermission (colon format).
   { const { requirePermission } = await import("@/lib/permissions/can");
-    const _d = requirePermission(auth, "products.delete"); if (_d) return _d; } /* requirePermission wired */
+    if (!("apiKeyId" in auth)) { const _d = requirePermission(auth, "products.delete"); if (_d) return _d; } }
+  if ("apiKeyId" in auth && !hasPermission(auth.permissions, "products:write")) {
+    return NextResponse.json({ error: "Insufficient permissions." }, { status: 403 });
+  }
 
     const { id } = await params;
     const existing = await auth.store.getProduct(id);
     if (!existing) return NextResponse.json({ error: "Not found." }, { status: 404 });
-    if (!auth.isSuperAdmin && existing.tenant_id !== auth.tenantId) {
+    const isSuperAdmin = !("apiKeyId" in auth) && auth.isSuperAdmin;
+    if (!isSuperAdmin && existing.tenant_id !== auth.tenantId) {
       return NextResponse.json({ error: "Not found." }, { status: 404 });
     }
     // FIX-P1: dependency check (D-1) — refuse delete when the product is
@@ -78,7 +99,8 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       console.warn("[products DELETE] dependency check failed:", depErr);
     }
     await auth.store.deleteProduct(id);
-    await audit(auth.store, auth.user, req, "product.delete", "product", id);
+    const auditUser = "user" in auth ? auth.user : { id: `api:${auth.apiKeyId}`, username: auth.apiKeyName, tenant_id: auth.tenantId };
+    await audit(auth.store, auditUser, req, "product.delete", "product", id);
     return NextResponse.json({ ok: true });
   } catch (error: any) {
     return NextResponse.json({ error: sanitizeError(error) }, { status: 500 });

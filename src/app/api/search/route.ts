@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, resolveTenantId } from "@/lib/api/helpers";
+// FIX-ALL-2 / Fix 3 — accept API-key auth so an API-key caller can use the
+// global search endpoint (audit Flow 1: `GET /api/search?q=tobacco` → 401
+// with API key). Session callers keep using requirePermission; API-key
+// callers go through hasPermission (colon format).
+import { requireAuthOrApiKey, hasPermission, resolveTenantId } from "@/lib/api/helpers";
 import { getSupabase } from "@/lib/supabase/client";
 import { withApm } from "@/lib/monitoring/apm";
 
@@ -25,10 +29,18 @@ export const runtime = "nodejs";
  * result set without hitting the DB (matches the legacy behaviour).
  */
 async function _get(req: NextRequest) {
-  const auth = await requireAuth(req);
+  const auth = await requireAuthOrApiKey(req);
   if (auth instanceof NextResponse) return auth;
   { const { requirePermission } = await import("@/lib/permissions/can");
-    const _d = requirePermission(auth, "dashboard.read"); if (_d) return _d; } /* requirePermission wired */
+    if (!("apiKeyId" in auth)) { const _d = requirePermission(auth, "dashboard.read"); if (_d) return _d; } } /* requirePermission wired */
+  // FIX-ALL-2 / Fix 3 — API-key callers need a colon-format permission
+  // check. `dashboard:read` is the canonical dashboard scope; keys with
+  // `*` or `dashboard:*` pass, keys scoped to a single resource (e.g.
+  // `partners:read`) don't. This mirrors the session-auth gate above
+  // and prevents a 401 leak on a missing-record case.
+  if ("apiKeyId" in auth && !hasPermission(auth.permissions, "dashboard:read")) {
+    return NextResponse.json({ error: "Insufficient permissions." }, { status: 403 });
+  }
 
   const tenantId = resolveTenantId(auth, req);
   if (!tenantId) return NextResponse.json({ items: [] });
