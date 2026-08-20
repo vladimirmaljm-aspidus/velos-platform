@@ -3,6 +3,7 @@ import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { updateMarketplaceResponseStatus } from "@/lib/data/marketplace-store";
 import { audit } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
+import { notify } from "@/lib/notif/helper";
 import { withApm } from "@/lib/monitoring/apm";
 import type { MarketplaceResponseStatus } from "@/lib/supabase/marketplace-types";
 
@@ -56,6 +57,39 @@ async function _put(
     } catch (e) {
       console.error("[marketplace.response.put] audit failed:", e);
     }
+
+    // Notify the responder that their offer was accepted / rejected
+    // (Phase 2). The caller is the post owner; `updated.partner_id` is
+    // the responder (the original response author). Fire-and-forget.
+    try {
+      const responderPartnerId = updated?.partner_id;
+      if (responderPartnerId && responderPartnerId !== access.partner_id) {
+        const isAccept = status === "accepted";
+        const isReject = status === "rejected";
+        if (isAccept || isReject) {
+          await notify({
+            tenantId: access.tenant_id,
+            partnerId: responderPartnerId,
+            type: isAccept
+              ? "marketplace_response_accepted"
+              : "marketplace_response_rejected",
+            title: isAccept
+              ? "Your offer was accepted"
+              : "Your offer was rejected",
+            message: isAccept
+              ? "The post owner accepted your marketplace offer."
+              : "The post owner rejected your marketplace offer.",
+            entityType: "marketplace_post",
+            entityId: id,
+            actionUrl: `/portal/marketplace/${id}`,
+            actionLabel: "View post",
+          });
+        }
+      }
+    } catch (e) {
+      console.error("[marketplace.response.put] notify failed:", e);
+    }
+
     return NextResponse.json(updated);
   } catch (e: any) {
     console.error("[marketplace.response.put]", e);

@@ -115,6 +115,18 @@ const PortalMarketplaceCompany = dynamic(
   { ssr: false }
 );
 
+// Marketplace (Phase 2 — negotiation rooms): the standalone route
+// /portal/marketplace/negotiations sets `initialView="portal-marketplace-negotiations"`
+// and /portal/marketplace/negotiations/[id] adds
+// `initialSelectedNegotiationId={id}` so the deep-link opens the room
+// directly. The NegotiationsBrowser is exported from negotiation-room.tsx
+// (the same file also exports the NegotiationRoom chat component so the
+// SPA-side drill-down from list → room doesn't need a separate file).
+const PortalNegotiations = dynamic(
+  () => import("@/components/portal/marketplace/negotiation-room").then((m) => m.NegotiationsBrowser),
+  { ssr: false }
+);
+
 interface NavItem {
   key: ViewKey;
   labelKey: string;
@@ -179,6 +191,7 @@ const VIEW_TITLE_KEYS: Record<string, string> = {
   "portal-dashboard": "portal-nav-dashboard",
   "portal-marketplace": "portal-nav-marketplace",
   "portal-marketplace-company": "portal-nav-marketplace",
+  "portal-marketplace-negotiations": "portal-nav-marketplace",
   "portal-offers": "portal-nav-my-offers",
   "portal-invoices": "portal-nav-my-invoices",
   "portal-proformas": "portal-nav-my-proformas",
@@ -194,11 +207,15 @@ const VIEW_TITLE_KEYS: Record<string, string> = {
 export function PortalShell({
   initialView,
   initialSelectedId,
+  initialSelectedNegotiationId,
 }: {
   initialView?: ViewKey;
   /** Pre-set the selected entity id (e.g. negotiation id from the URL)
    *  when deep-linking into a detail page. */
   initialSelectedId?: string;
+  /** Phase 2 — pre-set the selected marketplace negotiation id when
+   *  deep-linking into /portal/marketplace/negotiations/[id]. */
+  initialSelectedNegotiationId?: string;
 } = {}) {
   const t = useT();
   const portalAccess = useAppStore((s) => s.portalAccess) as PortalAccess | null;
@@ -208,6 +225,7 @@ export function PortalShell({
   const setView = useAppStore((s) => s.setView);
   const selectedId = useAppStore((s) => s.selectedId);
   const setSelectedId = useAppStore((s) => s.setSelectedId);
+  const setSelectedNegotiationId = useAppStore((s) => s.setSelectedNegotiationId);
 
   // Apply the initial view once on mount (when navigating to a deep link like
   // /portal/offers the corresponding page passes initialView so the sidebar
@@ -215,7 +233,8 @@ export function PortalShell({
   useEffect(() => {
     if (initialView) setView(initialView);
     if (initialSelectedId) setSelectedId(initialSelectedId);
-  }, [initialView, initialSelectedId, setView, setSelectedId]);
+    if (initialSelectedNegotiationId) setSelectedNegotiationId(initialSelectedNegotiationId);
+  }, [initialView, initialSelectedId, initialSelectedNegotiationId, setView, setSelectedId, setSelectedNegotiationId]);
 
   // Hydrate portalAccess from the server session on first mount. Without
   // this, a page refresh on /portal/dashboard (or a deep-link into the
@@ -565,6 +584,7 @@ export function PortalShell({
               {view === "portal-marketplace-company" && selectedId && (
                 <PortalMarketplaceCompany partnerId={selectedId} />
               )}
+              {view === "portal-marketplace-negotiations" && <PortalNegotiations />}
             </>
           )}
         </main>

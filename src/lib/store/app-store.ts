@@ -115,6 +115,15 @@ interface AppState {
   selectedId: string | null;
   setSelectedId: (id: string | null) => void;
 
+  // ── Marketplace negotiations (Phase 2) ──────────────────────────────
+  // The marketplace's negotiation rooms view has its own drill-down id so
+  // it doesn't collide with the post-detail's `selectedId`. Set by the
+  // SPA-side NegotiationsBrowser when a card is clicked or by the
+  // initialSelectedNegotiationId prop on PortalShell (deep-link case for
+  // /portal/marketplace/negotiations/[id]).
+  selectedNegotiationId: string | null;
+  setSelectedNegotiationId: (id: string | null) => void;
+
   sidebarCollapsed: boolean;
   toggleSidebar: () => void;
 
@@ -195,6 +204,20 @@ export const useAppStore = create<AppState>((set) => ({
     }
   },
 
+  // Marketplace negotiations drill-down (Phase 2). Same sessionStorage
+  // pattern as `selectedId` so a refresh on /portal/marketplace/negotiations/[id]
+  // lands back on the same room instead of bouncing to the list.
+  selectedNegotiationId: null,
+  setSelectedNegotiationId: (id) => {
+    set({ selectedNegotiationId: id });
+    if (typeof window !== "undefined") {
+      try {
+        if (id) sessionStorage.setItem("velos_selected_negotiation_id", id);
+        else sessionStorage.removeItem("velos_selected_negotiation_id");
+      } catch { /* ignore */ }
+    }
+  },
+
   sidebarCollapsed: false,
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
 
@@ -245,15 +268,18 @@ export function useHydrateActiveTenant() {
 export function useHydrateViewState() {
   const setView = useAppStore((s) => s.setView);
   const setSelectedId = useAppStore((s) => s.setSelectedId);
+  const setSelectedNegotiationId = useAppStore((s) => s.setSelectedNegotiationId);
   React.useEffect(() => {
     if (typeof window === "undefined") return;
     try {
       const v = sessionStorage.getItem("velos_view");
       const sid = sessionStorage.getItem("velos_selected_id");
+      const nid = sessionStorage.getItem("velos_selected_negotiation_id");
       if (v) setView(v as ViewKey);
       if (sid) setSelectedId(sid);
+      if (nid) setSelectedNegotiationId(nid);
     } catch { /* ignore */ }
-  }, [setView, setSelectedId]);
+  }, [setView, setSelectedId, setSelectedNegotiationId]);
 }
 
 /**

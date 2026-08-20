@@ -4,9 +4,11 @@ import {
   listMarketplaceResponses,
   createMarketplaceResponse,
 } from "@/lib/data/marketplace-store";
+import { getSupabase } from "@/lib/supabase/client";
 import { sanitizeFields } from "@/lib/security/sanitize-input";
 import { audit } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
+import { notify } from "@/lib/notif/helper";
 import { withApm } from "@/lib/monitoring/apm";
 
 export const runtime = "nodejs";
@@ -125,6 +127,37 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
     } catch (e) {
       console.error("[marketplace.response.create] audit failed:", e);
     }
+    // Notify the post owner that a new response arrived (Phase 2). The
+    // notification is fire-and-forget — a failure here must not block the
+    // responder's HTTP response. We look up the post owner's partner_id
+    // via the supabase client (the store strips it from the response row
+    // before returning).
+    try {
+      const sb = getSupabase();
+      const { data: postRow } = await sb
+        .from("marketplace_posts")
+        .select("partner_id, product_name")
+        .eq("id", id)
+        .maybeSingle();
+      const ownerPartnerId = (postRow as { partner_id?: string } | null)?.partner_id;
+      const productName = (postRow as { product_name?: string } | null)?.product_name ?? "your post";
+      if (ownerPartnerId && ownerPartnerId !== access.partner_id) {
+        await notify({
+          tenantId: access.tenant_id,
+          partnerId: ownerPartnerId,
+          type: "marketplace_response_received",
+          title: "New marketplace response",
+          message: `A partner responded to "${productName}".`,
+          entityType: "marketplace_post",
+          entityId: id,
+          actionUrl: `/portal/marketplace/${id}`,
+          actionLabel: "View post",
+        });
+      }
+    } catch (e) {
+      console.error("[marketplace.response.create] notify failed:", e);
+    }
+
     return NextResponse.json(created);
   } catch (e: any) {
     console.error("[marketplace.response.create]", e);
