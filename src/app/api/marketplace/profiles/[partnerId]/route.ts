@@ -68,7 +68,20 @@ async function _get(_req: NextRequest, ctx: { params: Promise<{ partnerId: strin
       console.error("[marketplace.profile.get] can_review lookup failed:", e);
     }
 
-    return NextResponse.json({ profile, partner, can_review: canReview });
+    // `viewer_is_self` lets the company-profile page distinguish "viewer
+    // is the company itself" (so the ESG sustainability-certs component
+    // surfaces the Add / Delete affordances and the carbon-offset widget
+    // surfaces its create dialog) from "viewer is another company" (read-
+    // only view). The check is just access.partner_id === partnerId —
+    // surfaced here so the client doesn't need a second round-trip.
+    const viewerIsSelf = access.partner_id === partnerId;
+
+    return NextResponse.json({
+      profile,
+      partner,
+      can_review: canReview,
+      viewer_is_self: viewerIsSelf,
+    });
   } catch (e: any) {
     console.error("[marketplace.profile.get]", e);
     return NextResponse.json({ error: "Failed to load company profile." }, { status: 500 });

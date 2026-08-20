@@ -38,6 +38,9 @@ import { fmtDateTime, fmtRelative } from "@/lib/utils/format";
 import { COUNTRIES } from "@/lib/data/reference";
 import { VerificationBadge } from "./verification-badge";
 import { RatingStars } from "./rating-stars";
+import { ESGRating } from "./esg-rating";
+import { SustainabilityCerts } from "./sustainability-certs";
+import { CarbonOffsetWidget } from "./carbon-offset-widget";
 import type { MarketplaceVerificationLevel } from "@/lib/supabase/marketplace-profile-types";
 
 interface PublicProfile {
@@ -88,6 +91,7 @@ interface ProfileResponse {
   profile: PublicProfile;
   partner: PublicPartner | null;
   can_review: boolean;
+  viewer_is_self?: boolean;
 }
 
 /**
@@ -245,7 +249,21 @@ export function CompanyProfile({ partnerId }: { partnerId: string }) {
   }
 
   const { profile, partner, can_review } = profileQ.data;
-  const isSelf = profile.partner_id === partnerId; // NOTE: profile.partner_id is the company being viewed
+  // `viewer_is_self` is the canonical "the viewer IS the company itself"
+  // signal — the company can add/delete their own sustainability certs
+  // and create carbon offsets only when this is true. The check is done
+  // server-side (access.partner_id === partnerId) and surfaced via the
+  // profile API response so the client doesn't need a second round-trip.
+  const viewerIsSelf = Boolean(profileQ.data.viewer_is_self);
+  // Portal sessions are never super-admin (super-admin is a CRM-only role).
+  // The "Verify" button on the sustainability-certs component is wired to
+  // PUT /api/marketplace/esg/certs/[id] with `verified: true`, which
+  // enforces requireSuperAdmin — so we just hide the button on the portal
+  // surface; CRM admins verify via the super-admin route.
+  const canVerify = false;
+  // Preserve the legacy isSelf variable for the existing Follow / Respond
+  // code paths — same semantics as viewerIsSelf.
+  const isSelf = viewerIsSelf;
   const country = partner?.country ? COUNTRIES.find((c) => c.code === partner.country) : null;
   const totalResponses = profile.total_responses || 0;
   const successful = profile.successful_deals || 0;
@@ -486,6 +504,23 @@ export function CompanyProfile({ partnerId }: { partnerId: string }) {
           </CardContent>
         </Card>
       </div>
+
+      {/* ESG section — rating + sustainability certs + carbon offsets.
+          Added in Phase 11. The ESG rating is public (any viewer sees it).
+          Sustainability certs are public-read; the Add/Delete affordances
+          only show for the company owner. The carbon-offset widget is
+          private to the owner (the offset transactions are not public). */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <ESGRating partnerId={partnerId} />
+        <SustainabilityCerts
+          partnerId={partnerId}
+          canEdit={viewerIsSelf}
+          canVerify={canVerify}
+        />
+      </div>
+      {viewerIsSelf && (
+        <CarbonOffsetWidget partnerId={partnerId} isSelf />
+      )}
 
       {/* Reviews section */}
       <Card>
