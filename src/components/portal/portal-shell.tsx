@@ -26,6 +26,8 @@ import {
   Truck,
   Globe2,
   Store,
+  LineChart,
+  Users,
 } from "lucide-react";
 import { useAppStore, ViewKey } from "@/lib/store/app-store";
 import { useT, useI18nStore } from "@/lib/i18n/store";
@@ -127,6 +129,29 @@ const PortalNegotiations = dynamic(
   { ssr: false }
 );
 
+// Marketplace (Phase 9 — market intelligence): the standalone route
+// /portal/marketplace/intelligence sets
+// `initialView="portal-marketplace-intelligence"` so the deep-link opens
+// the dashboard directly. The dashboard ties together the seven
+// intelligence panels (price trends, supply/demand, top countries,
+// heatmap, news, benchmark, seasonal) — see
+// src/components/portal/marketplace/marketplace-intelligence-dashboard.tsx.
+const PortalMarketplaceIntelligence = dynamic(
+  () => import("@/components/portal/marketplace/marketplace-intelligence-dashboard").then((m) => m.MarketplaceIntelligenceDashboard),
+  { ssr: false }
+);
+
+// Marketplace (Phase 10 — community): the standalone route
+// /portal/marketplace/community sets
+// `initialView="portal-marketplace-community"` so the deep-link opens the
+// community hub directly. The hub itself renders four tabs (Groups /
+// Q&A / Events / Blog), each backed by its own data-fetching child
+// component — see src/components/portal/marketplace/community-hub.tsx.
+const PortalMarketplaceCommunity = dynamic(
+  () => import("@/components/portal/marketplace/community-hub").then((m) => m.CommunityHub),
+  { ssr: false }
+);
+
 interface NavItem {
   key: ViewKey;
   labelKey: string;
@@ -138,6 +163,8 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { key: "portal-dashboard", labelKey: "portal-nav-dashboard", icon: LayoutDashboard },
   { key: "portal-marketplace", labelKey: "portal-nav-marketplace", icon: Store },
+  { key: "portal-marketplace-intelligence", labelKey: "portal-nav-marketplace-intelligence", icon: LineChart },
+  { key: "portal-marketplace-community", labelKey: "portal-nav-marketplace-community", icon: Users },
   { key: "portal-offers", labelKey: "portal-nav-my-offers", icon: FileText, gate: "can_view_offers" },
   { key: "portal-invoices", labelKey: "portal-nav-my-invoices", icon: FileText, gate: "can_view_invoices" },
   { key: "portal-proformas", labelKey: "portal-nav-my-proformas", icon: FileText, gate: "can_view_invoices" },
@@ -192,6 +219,8 @@ const VIEW_TITLE_KEYS: Record<string, string> = {
   "portal-marketplace": "portal-nav-marketplace",
   "portal-marketplace-company": "portal-nav-marketplace",
   "portal-marketplace-negotiations": "portal-nav-marketplace",
+  "portal-marketplace-intelligence": "portal-nav-marketplace-intelligence",
+  "portal-marketplace-community": "portal-nav-marketplace-community",
   "portal-offers": "portal-nav-my-offers",
   "portal-invoices": "portal-nav-my-invoices",
   "portal-proformas": "portal-nav-my-proformas",
@@ -585,6 +614,8 @@ export function PortalShell({
                 <PortalMarketplaceCompany partnerId={selectedId} />
               )}
               {view === "portal-marketplace-negotiations" && <PortalNegotiations />}
+              {view === "portal-marketplace-intelligence" && <PortalMarketplaceIntelligence />}
+              {view === "portal-marketplace-community" && <PortalMarketplaceCommunity />}
             </>
           )}
         </main>

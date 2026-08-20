@@ -86,7 +86,11 @@ export type ViewKey =
   | "portal-marketplace-negotiations"
   | "portal-marketplace-negotiation-room"
   // Marketplace (Phase 3 — company profiles)
-  | "portal-marketplace-company";
+  | "portal-marketplace-company"
+  // Marketplace (Phase 9 — market intelligence dashboard)
+  | "portal-marketplace-intelligence"
+  // Marketplace (Phase 10 — community: groups, Q&A, events, blog)
+  | "portal-marketplace-community";
 
 export interface SafeUser {
   id: string;
