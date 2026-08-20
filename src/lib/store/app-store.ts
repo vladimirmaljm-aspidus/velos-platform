@@ -78,7 +78,13 @@ export type ViewKey =
   | "portal-messages"
   | "portal-proformas"
   | "portal-logistics"
-  | "portal-notifications";
+  | "portal-notifications"
+  // Marketplace (Phase 1 — Berza roba)
+  | "portal-marketplace"
+  // Marketplace (Phase 2 — negotiation rooms)
+  | "portal-marketplace-post-detail"
+  | "portal-marketplace-negotiations"
+  | "portal-marketplace-negotiation-room";
 
 export interface SafeUser {
   id: string;

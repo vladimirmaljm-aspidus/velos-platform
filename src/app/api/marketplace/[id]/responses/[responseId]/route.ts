@@ -1,0 +1,70 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { updateMarketplaceResponseStatus } from "@/lib/data/marketplace-store";
+import { audit } from "@/lib/api/helpers";
+import { getStore } from "@/lib/data/store";
+import { withApm } from "@/lib/monitoring/apm";
+import type { MarketplaceResponseStatus } from "@/lib/supabase/marketplace-types";
+
+export const runtime = "nodejs";
+
+// PUT /api/marketplace/[id]/responses/[responseId] — accept / reject /
+// counter a response. Only the POST OWNER can do this (the store verifies
+// via the inner join responses → posts).
+async function _put(
+  req: NextRequest,
+  ctx: { params: Promise<{ id: string; responseId: string }> },
+) {
+  const access = await getPortalSessionAccess();
+  if (!access) {
+    return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+  }
+  const { id, responseId } = await ctx.params;
+
+  let body;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+  }
+  const status = String(body.status || "").toLowerCase() as MarketplaceResponseStatus;
+  const allowed: MarketplaceResponseStatus[] = [
+    "sent", "viewed", "accepted", "rejected", "expired", "countered",
+  ];
+  if (!allowed.includes(status)) {
+    return NextResponse.json({ error: "Invalid status." }, { status: 400 });
+  }
+
+  try {
+    const updated = await updateMarketplaceResponseStatus(
+      responseId,
+      access.tenant_id,
+      access.partner_id,
+      status,
+    );
+    try {
+      const store = await getStore();
+      await audit(
+        store,
+        { id: undefined, username: access.portal_email || `portal:${access.id}`, tenant_id: access.tenant_id },
+        req,
+        "marketplace.response_status_changed",
+        "marketplace_response",
+        responseId,
+        { post_id: id, new_status: status },
+      );
+    } catch (e) {
+      console.error("[marketplace.response.put] audit failed:", e);
+    }
+    return NextResponse.json(updated);
+  } catch (e: any) {
+    console.error("[marketplace.response.put]", e);
+    const msg = e?.message || "Failed to update response.";
+    // Surface ownership errors as 403, not-found as 404.
+    const status = /not found/i.test(msg) ? 404 :
+      /only the post owner/i.test(msg) ? 403 : 500;
+    return NextResponse.json({ error: msg }, { status });
+  }
+}
+
+export const PUT = withApm(_put, "PUT /api/marketplace/[id]/responses/[responseId]");

@@ -25,6 +25,7 @@ import {
   Bell,
   Truck,
   Globe2,
+  Store,
 } from "lucide-react";
 import { useAppStore, ViewKey } from "@/lib/store/app-store";
 import { useT, useI18nStore } from "@/lib/i18n/store";
@@ -93,6 +94,15 @@ const PortalLogistics = dynamic(
   () => import("@/components/portal/portal-logistics").then((m) => m.PortalLogistics),
   { ssr: false }
 );
+// Marketplace (Phase 1 — Berza roba): the SPA view router renders the
+// MarketplaceBrowser inside the PortalShell chrome. The standalone routes
+// /portal/marketplace and /portal/marketplace/[id] both set
+// `initialView="portal-marketplace"` (+ `initialSelectedId` for the detail
+// page) so deep links land on the right screen.
+const PortalMarketplace = dynamic(
+  () => import("@/components/portal/marketplace/marketplace-browser").then((m) => m.MarketplaceBrowser),
+  { ssr: false }
+);
 
 interface NavItem {
   key: ViewKey;
@@ -104,6 +114,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { key: "portal-dashboard", labelKey: "portal-nav-dashboard", icon: LayoutDashboard },
+  { key: "portal-marketplace", labelKey: "portal-nav-marketplace", icon: Store },
   { key: "portal-offers", labelKey: "portal-nav-my-offers", icon: FileText, gate: "can_view_offers" },
   { key: "portal-invoices", labelKey: "portal-nav-my-invoices", icon: FileText, gate: "can_view_invoices" },
   { key: "portal-proformas", labelKey: "portal-nav-my-proformas", icon: FileText, gate: "can_view_invoices" },
@@ -155,6 +166,7 @@ const TIER_META: Record<
 // View title keys — looked up at render-time so they translate when the locale changes.
 const VIEW_TITLE_KEYS: Record<string, string> = {
   "portal-dashboard": "portal-nav-dashboard",
+  "portal-marketplace": "portal-nav-marketplace",
   "portal-offers": "portal-nav-my-offers",
   "portal-invoices": "portal-nav-my-invoices",
   "portal-proformas": "portal-nav-my-proformas",
@@ -167,20 +179,30 @@ const VIEW_TITLE_KEYS: Record<string, string> = {
   "portal-profile": "portal-nav-my-profile",
 };
 
-export function PortalShell({ initialView }: { initialView?: ViewKey } = {}) {
+export function PortalShell({
+  initialView,
+  initialSelectedId,
+}: {
+  initialView?: ViewKey;
+  /** Pre-set the selected entity id (e.g. negotiation id from the URL)
+   *  when deep-linking into a detail page. */
+  initialSelectedId?: string;
+} = {}) {
   const t = useT();
   const portalAccess = useAppStore((s) => s.portalAccess) as PortalAccess | null;
   const setPortalAccess = useAppStore((s) => s.setPortalAccess);
   const setAppMode = useAppStore((s) => s.setAppMode);
   const view = useAppStore((s) => s.view);
   const setView = useAppStore((s) => s.setView);
+  const setSelectedId = useAppStore((s) => s.setSelectedId);
 
   // Apply the initial view once on mount (when navigating to a deep link like
   // /portal/offers the corresponding page passes initialView so the sidebar
   // highlights the right item).
   useEffect(() => {
     if (initialView) setView(initialView);
-  }, [initialView]);
+    if (initialSelectedId) setSelectedId(initialSelectedId);
+  }, [initialView, initialSelectedId, setView, setSelectedId]);
 
   // Hydrate portalAccess from the server session on first mount. Without
   // this, a page refresh on /portal/dashboard (or a deep-link into the
@@ -526,6 +548,7 @@ export function PortalShell({ initialView }: { initialView?: ViewKey } = {}) {
               {view === "portal-logistics" && <PortalLogistics />}
               {view === "portal-messages" && <PortalMessages />}
               {view === "portal-profile" && <PortalProfile />}
+              {view === "portal-marketplace" && <PortalMarketplace />}
             </>
           )}
         </main>
