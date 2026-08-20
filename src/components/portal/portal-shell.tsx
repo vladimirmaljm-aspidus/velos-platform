@@ -23,11 +23,17 @@ import {
   ShieldAlert,
   MessageSquare,
   Bell,
+  BellRing,
+  CheckCheck,
   Truck,
   Globe2,
   Store,
   LineChart,
   Users,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  ArrowRight,
 } from "lucide-react";
 import { useAppStore, ViewKey } from "@/lib/store/app-store";
 import { useT, useI18nStore } from "@/lib/i18n/store";
@@ -40,12 +46,16 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { initials, fmtRelative } from "@/lib/utils/format";
 import { toast } from "sonner";
-import type { PortalAccess, PortalTier, Partner } from "@/lib/supabase/types";
+import type { PortalAccess, PortalTier, Partner, Notification } from "@/lib/supabase/types";
 import { getTierMeta } from "@/lib/portal/tiers";
 import { usePortalGeolocation } from "@/lib/portal/use-geolocation";
 
+// UI-3 step 5 — the redesigned dashboard is a marketplace-focused welcome
+// page with quick stats, quick actions, and recent activity. The legacy
+// `portal-dashboard.tsx` (offers/invoices/proformas KPIs) stays in the
+// codebase as a fallback but is no longer rendered.
 const PortalDashboard = dynamic(
-  () => import("@/components/portal/portal-dashboard").then((m) => m.PortalDashboard),
+  () => import("@/components/portal/portal-dashboard-redesign").then((m) => m.PortalDashboardRedesign),
   { ssr: false }
 );
 const PortalOffers = dynamic(
@@ -295,6 +305,40 @@ export function PortalShell({
   const [partner, setPartner] = useState<Partner | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
 
+  // UI-3 step 1 — collapsible sidebar. The store field is shared with the
+  // admin shell, but since portal mode never renders the admin sidebar the
+  // state is effectively portal-local. Persisted across reloads via the
+  // store-level toggle so a refresh keeps the user's chosen width.
+  const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed);
+  const toggleSidebar = useAppStore((s) => s.toggleSidebar);
+
+  // UI-3 step 1 — notification bell with badge. Lightweight fetch of the
+  // unread count + the latest 5 notifications for the header dropdown.
+  const notifsQ = useQuery<{ items: Notification[]; total: number }>({
+    queryKey: ["portal-notifications-badge"],
+    queryFn: async () => {
+      const r = await fetch("/api/portal/notifications");
+      if (!r.ok) return { items: [], total: 0 } as { items: Notification[]; total: number };
+      return r.json() as Promise<{ items: Notification[]; total: number }>;
+    },
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
+    enabled: !!portalAccess,
+  });
+  const notifItems = notifsQ.data?.items ?? [];
+  const unreadNotifCount = notifItems.filter((n) => !n.read).length;
+  const recentNotifs = notifItems.slice(0, 5);
+
+  async function markAllNotifsRead() {
+    const unread = notifItems.filter((n) => !n.read);
+    await Promise.all(
+      unread.map((n) =>
+        fetch(`/api/portal/notifications/${n.id}/read`, { method: "PUT" }).catch(() => {}),
+      ),
+    );
+    notifsQ.refetch();
+  }
+
   // Geolocation capture (required for non-Premium tiers; the hook handles
   // the audit logging and re-logs every 5 minutes).
   const geo = usePortalGeolocation(portalAccess);
@@ -464,8 +508,15 @@ export function PortalShell({
 
   return (
     <div className="min-h-screen flex bg-background bg-mesh-portal">
-      {/* Sidebar — portal (glass, client-facing) */}
-      <aside className="hidden md:flex w-64 shrink-0 flex-col border-r border-border/60 glass text-sidebar-foreground">
+      {/* Sidebar — portal (glass, client-facing). Collapsible on desktop to
+          // a 72px icon rail; the mobile drawer below renders the expanded
+          // 288px variant regardless so labels stay readable on small screens. */}
+      <aside
+        className={cn(
+          "hidden md:flex shrink-0 flex-col border-r border-border/60 glass text-sidebar-foreground smooth",
+          sidebarCollapsed ? "w-[72px]" : "w-64",
+        )}
+      >
         <SidebarContent
           portalAccess={portalAccess}
           partnerName={partnerName}
@@ -481,6 +532,8 @@ export function PortalShell({
           TierIcon={TierIcon}
           kycBlocking={kycBlocking}
           messagesUnread={messagesUnread}
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={toggleSidebar}
         />
       </aside>
 
@@ -507,6 +560,8 @@ export function PortalShell({
               TierIcon={TierIcon}
               kycBlocking={kycBlocking}
               messagesUnread={messagesUnread}
+              collapsed={false}
+              onToggleCollapse={() => setMobileNavOpen(false)}
             />
           </aside>
         </div>
@@ -532,6 +587,93 @@ export function PortalShell({
               </h2>
             </div>
             <div className="flex items-center gap-2 sm:gap-3">
+              {/* UI-3 step 1 — notification bell with unread badge + dropdown.
+                  Pulls from the same /api/portal/notifications endpoint as the
+                  full Notifications view; the dropdown just shows the latest 5
+                  + a "view all" + "mark all read" shortcut. */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="relative size-9 rounded-full"
+                    aria-label={t("portal-shell-notifications")}
+                  >
+                    {unreadNotifCount > 0 ? (
+                      <BellRing className="size-[18px] text-foreground/80" />
+                    ) : (
+                      <Bell className="size-[18px] text-muted-foreground" />
+                    )}
+                    {unreadNotifCount > 0 && (
+                      <span className="absolute top-1.5 right-1.5 inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-semibold tabular leading-none ring-2 ring-background">
+                        {unreadNotifCount > 99 ? "99+" : unreadNotifCount}
+                      </span>
+                    )}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-80 p-0">
+                  <div className="flex items-center justify-between px-3 py-2.5 border-b border-border/60">
+                    <div>
+                      <p className="text-sm font-semibold">{t("portal-shell-notifications")}</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {unreadNotifCount > 0
+                          ? t("portal-unread").replace("{n}", String(unreadNotifCount))
+                          : t("portal-shell-notifications-empty")}
+                      </p>
+                    </div>
+                    {unreadNotifCount > 0 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-[11px] gap-1"
+                        onClick={markAllNotifsRead}
+                      >
+                        <CheckCheck className="size-3.5" />
+                        {t("portal-shell-mark-all-read")}
+                      </Button>
+                    )}
+                  </div>
+                  <div className="max-h-80 overflow-y-auto custom-scroll">
+                    {recentNotifs.length === 0 ? (
+                      <div className="px-3 py-6 text-center text-xs text-muted-foreground">
+                        {t("portal-shell-notifications-empty")}
+                      </div>
+                    ) : (
+                      recentNotifs.map((n) => (
+                        <DropdownMenuItem
+                          key={n.id}
+                          className="flex items-start gap-2.5 px-3 py-2.5 cursor-pointer focus:bg-accent"
+                          onClick={() => setView("portal-notifications")}
+                        >
+                          {!n.read && (
+                            <span className="mt-1.5 size-1.5 rounded-full bg-primary shrink-0" />
+                          )}
+                          <div className={cn("min-w-0 flex-1", n.read && "pl-4")}>
+                            <p className="text-xs font-medium line-clamp-2">{n.title}</p>
+                            {n.message && (
+                              <p className="text-[11px] text-muted-foreground line-clamp-2 mt-0.5">{n.message}</p>
+                            )}
+                            <p className="text-[10px] text-muted-foreground mt-0.5 tabular">
+                              {fmtRelative(n.created_at)}
+                            </p>
+                          </div>
+                        </DropdownMenuItem>
+                      ))
+                    )}
+                  </div>
+                  <div className="border-t border-border/60 p-1.5">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full justify-center text-xs gap-1.5"
+                      onClick={() => setView("portal-notifications")}
+                    >
+                      {t("portal-shell-view-all-notifications")}
+                      <ArrowRight className="size-3" />
+                    </Button>
+                  </div>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <div className="hidden sm:flex flex-col items-end leading-tight">
                 <span className="text-sm font-medium max-w-[180px] truncate">
                   {partnerName}
@@ -570,11 +712,63 @@ export function PortalShell({
                   ))}
                 </DropdownMenuContent>
               </DropdownMenu>
-              <Avatar className="size-9 ring-1 ring-border shadow-soft">
-                <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
-                  {initials(partnerName)}
-                </AvatarFallback>
-              </Avatar>
+              {/* UI-3 step 1 — user profile dropdown. Replaces the previous
+                  plain avatar button with a dropdown offering shortcuts to
+                  profile, KYC, and sign-out. */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className="flex items-center gap-1 rounded-full hover:ring-2 hover:ring-primary/20 smooth focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    aria-label={t("portal-shell-account")}
+                  >
+                    <Avatar className="size-9 ring-1 ring-border shadow-soft">
+                      <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
+                        {initials(partnerName)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <ChevronDown className="size-3.5 text-muted-foreground -ml-1 hidden sm:block" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56 p-0">
+                  <div className="px-3 py-3 border-b border-border/60">
+                    <p className="text-sm font-semibold truncate">{partnerName}</p>
+                    <p className="text-[11px] text-muted-foreground truncate">
+                      {t("portal-shell-welcome-short").replace("{name}", partnerName.split(" ")[0])}
+                    </p>
+                    <div className="mt-2">
+                      <Badge className={cn("gap-1 capitalize", TIER_META[tier].className)}>
+                        <TierIcon className="size-3" />
+                        {t(TIER_META[tier].labelKey)}
+                      </Badge>
+                    </div>
+                  </div>
+                  <div className="p-1.5">
+                    <DropdownMenuItem
+                      className="gap-2 cursor-pointer rounded-md px-2 py-1.5 text-sm"
+                      onClick={() => setView("portal-profile")}
+                    >
+                      <User className="size-4 text-muted-foreground" />
+                      {t("portal-shell-view-profile")}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="gap-2 cursor-pointer rounded-md px-2 py-1.5 text-sm"
+                      onClick={() => setView("portal-kyc")}
+                    >
+                      <ShieldCheck className="size-4 text-muted-foreground" />
+                      {t("portal-shell-manage-kyc")}
+                    </DropdownMenuItem>
+                  </div>
+                  <div className="border-t border-border/60 p-1.5">
+                    <DropdownMenuItem
+                      className="gap-2 cursor-pointer rounded-md px-2 py-1.5 text-sm text-destructive focus:text-destructive"
+                      onClick={signOut}
+                    >
+                      <LogOut className="size-4" />
+                      {t("portal-shell-sign-out-confirm")}
+                    </DropdownMenuItem>
+                  </div>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
         </header>
@@ -637,6 +831,8 @@ function SidebarContent({
   TierIcon,
   kycBlocking,
   messagesUnread,
+  collapsed,
+  onToggleCollapse,
 }: {
   portalAccess: PortalAccess;
   partnerName: string;
@@ -649,6 +845,10 @@ function SidebarContent({
   TierIcon: React.ComponentType<{ className?: string }>;
   kycBlocking: boolean;
   messagesUnread: number;
+  /** UI-3 step 1 — when true, sidebar collapses to an icon rail (labels
+   *  hidden, section headers hidden, partner card shows avatar only). */
+  collapsed: boolean;
+  onToggleCollapse: () => void;
 }) {
   // While KYC is blocking, only the KYC + Profile items are usable. Everything
   // else is hidden so the sidebar can't tease functionality the user hasn't
@@ -672,19 +872,21 @@ function SidebarContent({
   return (
     <>
       {/* Brand */}
-      <div className="h-16 flex items-center gap-3 px-4 border-b border-border/60 shrink-0">
+      <div className={cn("h-16 flex items-center border-b border-border/60 shrink-0", collapsed ? "justify-center px-2" : "gap-3 px-4")}>
         <div className="size-9 rounded-lg bg-gradient-emerald text-primary-foreground flex items-center justify-center shrink-0 font-semibold text-sm tracking-tight shadow-soft-md">
           A
         </div>
-        <div className="min-w-0 flex-1">
-          <p className="font-semibold text-sm tracking-tight truncate">{t("portal-brand-title")}</p>
-          <p className="text-[10px] text-muted-foreground truncate">{t("portal-brand-subtitle")}</p>
-        </div>
+        {!collapsed && (
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold text-sm tracking-tight truncate">{t("portal-brand-title")}</p>
+            <p className="text-[10px] text-muted-foreground truncate">{t("portal-brand-subtitle")}</p>
+          </div>
+        )}
       </div>
 
-      {/* Partner card — premium feel */}
-      <div className="px-3 py-4 border-b border-border/60 shrink-0">
-        <div className="rounded-xl bg-card border border-border/60 shadow-soft p-3 relative overflow-hidden">
+      {/* Partner card — premium feel. Collapsed mode shows avatar only. */}
+      <div className={cn("border-b border-border/60 shrink-0", collapsed ? "px-2 py-3" : "px-3 py-4")}>
+        <div className={cn("rounded-xl bg-card border border-border/60 shadow-soft relative overflow-hidden", collapsed ? "p-1.5 flex justify-center" : "p-3")}>
           {/* Subtle accent for premium */}
           {tier === "premium" && (
             <div className="absolute top-0 right-0 h-12 w-12 bg-amber-500/10 blur-2xl rounded-full" />
@@ -692,8 +894,14 @@ function SidebarContent({
           {profileLoading ? (
             <div className="flex items-center gap-2">
               <Loader2 className="size-4 animate-spin text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">{t("portal-loading-dots")}</span>
+              {!collapsed && <span className="text-xs text-muted-foreground">{t("portal-loading-dots")}</span>}
             </div>
+          ) : collapsed ? (
+            <Avatar className="size-9 ring-1 ring-border" title={partnerName}>
+              <AvatarFallback className="bg-primary/10 text-primary text-[11px] font-medium">
+                {initials(partnerName)}
+              </AvatarFallback>
+            </Avatar>
           ) : (
             <div className="relative">
               <div className="flex items-center gap-2 mb-2">
@@ -727,9 +935,11 @@ function SidebarContent({
       {/* Nav — workspace */}
       <nav className="flex-1 overflow-y-auto custom-scroll px-3 py-4 space-y-5">
         <div className="space-y-1">
-          <p className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-            {t("portal-section-workspace")}
-          </p>
+          {!collapsed && (
+            <p className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+              {t("portal-section-workspace")}
+            </p>
+          )}
           {workspaceItems.map((item, idx) => {
             const Icon = item.icon;
             const active = isActive(item);
@@ -738,13 +948,22 @@ function SidebarContent({
               <button
                 key={`ws-${idx}`}
                 onClick={() => setView(item.key)}
+                title={collapsed ? t(item.labelKey) : undefined}
+                aria-label={t(item.labelKey)}
                 className={cn(
-                  "group w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium smooth",
+                  "group relative w-full flex items-center rounded-lg text-sm font-medium smooth",
+                  collapsed ? "justify-center px-2 py-2" : "gap-3 px-3 py-2",
                   active
                     ? "bg-primary/10 text-primary glow-emerald"
                     : "text-foreground/70 hover:bg-accent hover:text-accent-foreground"
                 )}
               >
+                {/* UI-3 step 1 — active state accent: a copper left bar that
+                    // doubles as a visual selection cue in both expanded and
+                    // collapsed modes. */}
+                {active && (
+                  <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-1 rounded-full bg-primary smooth" />
+                )}
                 <Icon
                   className={cn(
                     "size-[18px] shrink-0 smooth",
@@ -753,7 +972,7 @@ function SidebarContent({
                       : "text-muted-foreground group-hover:text-foreground"
                   )}
                 />
-                <span className="truncate flex-1 text-left">{t(item.labelKey)}</span>
+                {!collapsed && <span className="truncate flex-1 text-left">{t(item.labelKey)}</span>}
                 {badgeCount > 0 && (
                   <Badge className="bg-destructive text-destructive-foreground text-[10px] px-1.5 py-0 h-5 min-w-[20px] justify-center rounded-full tabular">
                     {badgeCount > 99 ? "99+" : badgeCount}
@@ -765,48 +984,114 @@ function SidebarContent({
         </div>
 
         {/* Account section */}
-        <div className="space-y-1">
-          <p className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-            {t("portal-section-account")}
-          </p>
-          {accountItems.map((item, idx) => {
-            const Icon = item.icon;
-            const active = isActive(item);
-            return (
-              <button
-                key={`acc-${idx}`}
-                onClick={() => setView(item.key)}
-                className={cn(
-                  "group w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium smooth",
-                  active
-                    ? "bg-primary/10 text-primary glow-emerald"
-                    : "text-foreground/70 hover:bg-accent hover:text-accent-foreground"
-                )}
-              >
-                <Icon
+        {!collapsed ? (
+          <div className="space-y-1">
+            <p className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+              {t("portal-section-account")}
+            </p>
+            {accountItems.map((item, idx) => {
+              const Icon = item.icon;
+              const active = isActive(item);
+              return (
+                <button
+                  key={`acc-${idx}`}
+                  onClick={() => setView(item.key)}
                   className={cn(
-                    "size-[18px] shrink-0 smooth",
+                    "group relative w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium smooth",
                     active
-                      ? "text-primary"
-                      : "text-muted-foreground group-hover:text-foreground"
+                      ? "bg-primary/10 text-primary glow-emerald"
+                      : "text-foreground/70 hover:bg-accent hover:text-accent-foreground"
                   )}
-                />
-                <span className="truncate">{t(item.labelKey)}</span>
-              </button>
-            );
-          })}
-        </div>
+                >
+                  {active && (
+                    <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-1 rounded-full bg-primary smooth" />
+                  )}
+                  <Icon
+                    className={cn(
+                      "size-[18px] shrink-0 smooth",
+                      active
+                        ? "text-primary"
+                        : "text-muted-foreground group-hover:text-foreground"
+                    )}
+                  />
+                  <span className="truncate">{t(item.labelKey)}</span>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          /* Collapsed mode — render account items inline (icons only). */
+          <div className="space-y-1 pt-4 border-t border-border/40">
+            {accountItems.map((item, idx) => {
+              const Icon = item.icon;
+              const active = isActive(item);
+              return (
+                <button
+                  key={`acc-${idx}`}
+                  onClick={() => setView(item.key)}
+                  title={t(item.labelKey)}
+                  aria-label={t(item.labelKey)}
+                  className={cn(
+                    "group relative w-full flex items-center justify-center rounded-lg px-2 py-2 text-sm font-medium smooth",
+                    active
+                      ? "bg-primary/10 text-primary glow-emerald"
+                      : "text-foreground/70 hover:bg-accent hover:text-accent-foreground"
+                  )}
+                >
+                  {active && (
+                    <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-1 rounded-full bg-primary smooth" />
+                  )}
+                  <Icon
+                    className={cn(
+                      "size-[18px] shrink-0 smooth",
+                      active ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
+                    )}
+                  />
+                </button>
+              );
+            })}
+          </div>
+        )}
       </nav>
 
-      {/* Sign out */}
-      <div className="border-t border-border/60 p-3 shrink-0">
+      {/* Collapse toggle + sign out */}
+      <div className="border-t border-border/60 p-3 shrink-0 space-y-1.5">
+        {/* UI-3 step 1 — collapse/expand toggle (desktop only; the mobile
+            // drawer passes onToggleCollapse = close drawer so tapping the
+            // button just dismisses the drawer). */}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onToggleCollapse}
+          className={cn(
+            "w-full justify-center text-muted-foreground hover:text-foreground smooth h-9",
+            collapsed ? "px-0" : "px-2"
+          )}
+          aria-label={collapsed ? t("portal-shell-expand") : t("portal-shell-collapse")}
+          title={collapsed ? t("portal-shell-expand") : t("portal-shell-collapse")}
+        >
+          {collapsed ? (
+            <ChevronRight className="size-4" />
+          ) : (
+            <>
+              <ChevronLeft className="size-4 mr-2" />
+              {t("portal-shell-collapse")}
+            </>
+          )}
+        </Button>
         <Button
           variant="ghost"
           size="sm"
           onClick={signOut}
-          className="w-full justify-start text-muted-foreground hover:text-foreground smooth"
+          className={cn(
+            "w-full justify-center text-muted-foreground hover:text-foreground smooth h-9",
+            collapsed ? "px-0" : "justify-start"
+          )}
+          title={collapsed ? t("portal-sign-out") : undefined}
+          aria-label={t("portal-sign-out")}
         >
-          <LogOut className="size-4 mr-2" /> {t("portal-sign-out")}
+          <LogOut className="size-4" />
+          {!collapsed && <span className="ml-2">{t("portal-sign-out")}</span>}
         </Button>
       </div>
     </>
