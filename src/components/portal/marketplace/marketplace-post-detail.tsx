@@ -52,6 +52,9 @@ import {
   CURRENCIES,
 } from "@/lib/data/reference";
 import type { MarketplacePostType } from "@/lib/supabase/marketplace-types";
+import type { AuctionType } from "@/lib/supabase/marketplace-auction-types";
+import { AuctionWidget } from "./auction-widget";
+import { ContractWidget } from "./contract-widget";
 
 interface PostDetail {
   id: string;
@@ -85,6 +88,17 @@ interface PostDetail {
   expires_at: string | null;
   created_at: string;
   updated_at: string;
+  // Owner-only field — the store keeps it on the row only when the caller
+  // is the post owner. Presence === ownership on the client side.
+  partner_id?: string;
+  // Phase 4 auction columns (NULL on non-auction posts).
+  auction_type?: AuctionType | null;
+  auction_start_price?: number | null;
+  auction_current_price?: number | null;
+  auction_reserve_price?: number | null;
+  auction_ends_at?: string | null;
+  auction_winner_id?: string | null;
+  auction_min_increment?: number | null;
 }
 
 const TYPE_BADGE: Record<MarketplacePostType, { labelKey: string; icon: React.ComponentType<{ className?: string }>; cls: string }> = {
@@ -332,6 +346,34 @@ export function MarketplacePostDetail({ postId }: { postId: string }) {
           </CardContent>
         </Card>
       </div>
+
+      {/* Phase 4: auction widget — shown only on auction posts. */}
+      {post.post_type === "auction" && (
+        <AuctionWidget postId={post.id} post={{
+          id: post.id,
+          post_type: post.post_type,
+          target_price: post.target_price,
+          currency: post.currency,
+          auction_type: post.auction_type ?? null,
+          auction_start_price: post.auction_start_price ?? null,
+          auction_current_price: post.auction_current_price ?? null,
+          auction_reserve_price: post.auction_reserve_price ?? null,
+          auction_ends_at: post.auction_ends_at ?? null,
+          auction_winner_id: post.auction_winner_id ?? null,
+          auction_min_increment: post.auction_min_increment ?? null,
+          status: post.status,
+        }} />
+      )}
+
+      {/* Phase 4: contract widget — shown only on contract posts. */}
+      {post.post_type === "contract" && (
+        <ContractWidget
+          postId={post.id}
+          currency={post.currency}
+          unit={post.unit}
+          isOwner={!!post.partner_id}
+        />
+      )}
 
       {/* Send response form */}
       <Card>

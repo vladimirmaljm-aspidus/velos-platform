@@ -33,6 +33,7 @@ import {
   CURRENCIES,
 } from "@/lib/data/reference";
 import type { MarketplacePostType, MarketplacePriceType, MarketplacePostStatus, MarketplaceVisibility } from "@/lib/supabase/marketplace-types";
+import { SmartPricing } from "./smart-pricing";
 
 export function MarketplaceCreatePost({
   open,
@@ -265,6 +266,17 @@ export function MarketplaceCreatePost({
                 </Label>
               </div>
             </div>
+            {/* Phase 4: smart pricing guidance — shows the market average
+                for the typed product + warns when the target price is far
+                above / below that average. Renders nothing while the
+                product name is empty / below 2 chars. */}
+            {form.price_type !== "on_request" && (
+              <SmartPricing
+                productName={form.product_name}
+                targetPrice={form.target_price ? Number(form.target_price) : null}
+                currency={form.currency}
+              />
+            )}
           </div>
 
           <Separator />
