@@ -7,6 +7,7 @@ import {
 } from "@/lib/data/marketplace-logistics-store";
 import { audit } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
+import { triggerWebhooks } from "@/lib/webhooks/deliver";
 import { withApm } from "@/lib/monitoring/apm";
 import type { ContainerType, ShipmentStatus } from "@/lib/supabase/marketplace-logistics-types";
 
@@ -115,6 +116,25 @@ async function _put(req: NextRequest, ctx: { params: Promise<{ id: string }> }) 
         updated.id,
         { status: updated.status, carrier_name: updated.carrier_name },
       );
+      // Phase 12 — fire marketplace.shipment_updated webhook
+      // (fire-and-forget). Receivers use this to sync their own
+      // shipment-tracker UIs, trigger customs filing on `arrived_port`,
+      // release escrow on `delivered`, etc. The payload mirrors the
+      // audit log entry — triggerWebhooks() additionally sanitises PII
+      // markers before signing + sending, so no carrier account numbers
+      // leak even if a future column adds them.
+      void triggerWebhooks(store, access.tenant_id, "marketplace.shipment_updated", "marketplace_shipment", updated.id, {
+        shipment_id: updated.id,
+        status: updated.status,
+        carrier_name: updated.carrier_name ?? null,
+        carrier_tracking_number: updated.carrier_tracking_number ?? null,
+        container_number: updated.container_number ?? null,
+        bill_of_lading_number: updated.bill_of_lading_number ?? null,
+        loading_port: updated.loading_port ?? null,
+        discharge_port: updated.discharge_port ?? null,
+        vessel_name: updated.vessel_name ?? null,
+        updated_at: updated.updated_at,
+      }).catch(() => {});
     } catch (e) {
       console.error("[marketplace.shipments.update] audit failed:", e);
     }

@@ -55,13 +55,23 @@ async function _put(
         responseId,
         { post_id: id, new_status: status },
       );
-      // Phase 12 — fire marketplace.response_accepted webhook when the
-      // owner accepts a response. (Rejected / countered statuses don't
-      // fire a webhook — the spec calls out only the "accepted" path
-      // because that's the trigger for downstream flows like contract
-      // creation, shipment booking, L/C initiation, etc.)
+      // Phase 12 — fire marketplace.response_accepted / rejected webhooks
+      // when the owner accepts / rejects a response. The two are the
+      // downstream-flow triggers the spec calls out (accept → contract
+      // creation, shipment booking, L/C initiation; reject → re-list the
+      // post in the browse feed, decrement the open-response counter).
+      // Countered / viewed / sent / expired statuses don't fire a webhook
+      // — those are intermediate negotiation states with no downstream
+      // automation.
       if (status === "accepted") {
         void triggerWebhooks(store, access.tenant_id, "marketplace.response_accepted", "marketplace_response", responseId, {
+          id: responseId,
+          post_id: id,
+          new_status: status,
+          responder_partner_id: updated?.partner_id,
+        }).catch(() => {});
+      } else if (status === "rejected") {
+        void triggerWebhooks(store, access.tenant_id, "marketplace.response_rejected", "marketplace_response", responseId, {
           id: responseId,
           post_id: id,
           new_status: status,

@@ -1,0 +1,131 @@
+-- 053_marketplace_api.sql
+-- ============================================================================
+-- Marketplace Phase 12 — public API + white-label settings documentation.
+--
+-- COMPANION MIGRATION to 053_marketplace_api_integrations.sql. The
+-- integrations migration adds the `partner_id` column to `api_keys`
+-- (so a partner can issue their own marketplace-scoped API key). This
+-- migration is purely DOCUMENTATION + a defensive index — no schema
+-- changes are required for the public API or the white-label config
+-- because both reuse existing tables:
+--
+--   • Public API listing / detail endpoints
+--     (src/app/api/marketplace/public/route.ts +
+--      src/app/api/marketplace/public/[id]/route.ts) read directly
+--      from `marketplace_posts` (migration 044) + `partners` (base
+--      schema) + `marketplace_company_profiles` (migration 045).
+--      No new table, no new column.
+--
+--   • White-label config (src/lib/marketplace/white-label.ts) persists
+--     one JSON row per tenant in the existing `settings` table (key =
+--     'marketplace_white_label', value = WhiteLabelConfig JSON). The
+--     settings table is created by the Prisma schema (model Setting,
+--     @@unique([tenant_id, key])) — no DDL needed here.
+--
+-- The migration is IDEMPOTENT — `CREATE INDEX IF NOT EXISTS` +
+-- `COMMENT IF NOT EXISTS`/`SET` patterns mean re-running it on an
+-- already-migrated DB is a no-op.
+--
+-- RATE LIMITING
+--   The public endpoints are gated by `checkRateLimit('mkt:public:ip:',
+--   30, 60_000)` in route.ts (using the `check_rate_limit` Postgres
+--   RPC added in migration 024_rate_limits.sql). The rate-limit key
+--   namespace `mkt:public:ip:` is namespaced so it doesn't collide with
+--   the login / portal-login / password-reset counters.
+--
+-- PII REDACTION POLICY (Phase 12 spec)
+--   • Posts — strip: partner_id, tenant_id, portal_access_id,
+--     target_price (when price_visible = false), contact info.
+--     Keep: product_name, category, quantity, unit, price (when
+--     visible), delivery_location, country, incoterm, specs,
+--     is_verified, verification_level.
+--     Implemented in src/lib/marketplace/public-api.ts →
+--     redactPostForPublic(). The store-layer allow-list in
+--     src/lib/data/marketplace-store.ts → redactPostRow() is the
+--     hot-path redactor; public-api.ts is the inverse deny-list used
+--     by ad-hoc public surfaces (RSS, sitemap, directory export).
+--
+--   • Partners — strip: email, phone, address, contact_name, bank
+--     details, KYC.
+--     Keep: name, country, type, verification_level.
+--     Implemented in src/lib/marketplace/public-api.ts →
+--     redactPartnerForPublic().
+--
+-- WEBHOOK EVENTS (Phase 12)
+--   The marketplace API routes fire the following events via
+--   triggerWebhooks() (src/lib/webhooks/deliver.ts). Each event is a
+--   selectable chip in the webhooks admin form
+--   (src/components/views/webhooks-view.tsx). The webhooks table
+--   (migration 023) already supports any string in its `events` text[]
+--   column — no schema change needed.
+--
+--     marketplace.post_created        — POST /api/marketplace
+--     marketplace.response_sent       — POST /api/marketplace/[id]/responses
+--     marketplace.response_accepted   — PUT /api/marketplace/[id]/responses/[responseId] (status=accepted)
+--     marketplace.response_rejected   — PUT /api/marketplace/[id]/responses/[responseId] (status=rejected)
+--     marketplace.message_sent        — POST /api/marketplace/negotiations/[id]/messages
+--     marketplace.bid_placed          — POST /api/marketplace/[id]/bids
+--     marketplace.auction_won         — cron /api/cron/auction-sweep (after processAuctionEnd)
+--     marketplace.shipment_updated    — PUT /api/marketplace/shipments/[id]
+--     marketplace.document_signed     — POST /api/marketplace/documents/[id]/sign
+--
+-- WHITE-LABEL CONFIG SHAPE (settings.value JSON for key='marketplace_white_label')
+--   {
+--     "marketplaceName":     "VELOS Marketplace",
+--     "logoUrl":             "/logo.svg",
+--     "primaryColor":        "#B45309",        // hex; normalised to #RRGGBB or #RGB
+--     "accentColor":         "#D97706",        // hex
+--     "customDomain":        "",                // e.g. "market.example.com"
+--     "featuredCategories":  [],                // string[] — surfaced first in browse
+--     "customFooter":        "Powered by VELOS",
+--     "hideVelosBranding":   false              // when true, "Powered by VELOS" is hidden
+--   }
+--
+--   Defaults are surfaced when the settings row is absent or fails
+--   schema validation (defensive — the portal shell renders on every
+--   page, so a DB error must not lock users out). See
+--   src/lib/marketplace/white-label.ts → DEFAULT_WHITE_LABEL +
+--   getWhiteLabelConfig().
+-- ============================================================================
+
+-- ----------------------------------------------------------------------------
+-- Index: settings(tenant_id, key)
+-- Prisma already declares @@unique([tenant_id, key]) which creates a UNIQUE
+-- index. The non-unique index below is a defensive backstop for the case
+-- where the unique constraint was added with a different name (or the
+-- DB was provisioned outside Prisma migrate). The white-label read path
+-- (getWhiteLabelConfig) hits this lookup on every marketplace page render,
+-- so an index is essential — a seq scan on settings would surface as
+-- visible latency on the portal dashboard.
+-- ----------------------------------------------------------------------------
+CREATE INDEX IF NOT EXISTS idx_settings_tenant_key
+  ON public.settings (tenant_id, key);
+
+-- ----------------------------------------------------------------------------
+-- COMMENTs — surfaced in `psql \d+` introspection so a DBA on call can
+-- discover the white-label config + the public API surface without
+-- grepping the application source.
+-- ----------------------------------------------------------------------------
+COMMENT ON INDEX public.idx_settings_tenant_key IS
+  'Phase 12 — fast lookup for settings rows by (tenant_id, key). The white-label config (key=marketplace_white_label) is read on every marketplace page render.';
+
+COMMENT ON TABLE public.settings IS
+  'Key-value settings store. Phase 12 keys: marketplace_white_label (per-tenant white-label config JSON).';
+
+-- ----------------------------------------------------------------------------
+-- Verification queries (run manually to confirm the migration landed):
+--
+--   SELECT indexname, indexdef
+--   FROM pg_indexes
+--   WHERE tablename = 'settings'
+--   ORDER BY indexname;
+--   -- Expected: idx_settings_tenant_key present.
+--
+--   SELECT obj_description('public.settings'::regclass, 'pg_class') AS table_comment;
+--   -- Expected: 'Key-value settings store. Phase 12 keys: ...'
+--
+--   -- Confirm the white-label config row pattern (returns 0..N rows):
+--   SELECT tenant_id, key, value
+--   FROM settings
+--   WHERE key = 'marketplace_white_label';
+-- ----------------------------------------------------------------------------

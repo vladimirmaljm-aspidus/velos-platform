@@ -461,10 +461,13 @@ function WebhookFormDialog({
             </div>
 
             {/* Phase 12 — Marketplace lifecycle event chips. Lets a
-                partner subscribe to the 8 marketplace events fired by
-                the marketplace API routes (post_created, response_sent,
-                response_accepted, message_sent, bid_placed, auction_won,
-                shipment_status, document_signed) plus 2 API-key events. */}
+                partner subscribe to the marketplace events fired by the
+                marketplace API routes + the auction-sweep cron. The
+                response_rejected + shipment_updated events were added in
+                the Phase 12 public-API follow-up: rejected fires from
+                the [responseId] PUT handler when the owner rejects a
+                response, shipment_updated fires from the shipments PUT
+                handler on every status change. */}
             <div className="flex flex-wrap gap-1.5 pt-1">
               <span className="text-xs text-muted-foreground self-center">Marketplace events:</span>
               {(
@@ -472,10 +475,11 @@ function WebhookFormDialog({
                   "marketplace.post_created",
                   "marketplace.response_sent",
                   "marketplace.response_accepted",
+                  "marketplace.response_rejected",
                   "marketplace.message_sent",
                   "marketplace.bid_placed",
                   "marketplace.auction_won",
-                  "marketplace.shipment_status",
+                  "marketplace.shipment_updated",
                   "marketplace.document_signed",
                   "marketplace.api_key_created",
                   "marketplace.api_key_revoked",
