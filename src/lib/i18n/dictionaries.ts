@@ -62,6 +62,7 @@ export const NAV: Record<Locale, Record<string, string>> = {
     "verification-logs": "Verification Logs",
     "performance": "Performance",
     "super-admin-settings": "Platform Settings",
+    "marketplace-admin": "Marketplace Admin",
   },
   sr: {
     dashboard: "Kontrolna tabla",
@@ -117,6 +118,7 @@ export const NAV: Record<Locale, Record<string, string>> = {
     "verification-logs": "Evidencija verifikacija",
     "performance": "Performanse",
     "super-admin-settings": "Podešavanja platforme",
+    "marketplace-admin": "Admin berze",
   },
   tr: {
     dashboard: "Gösterge Paneli",
@@ -172,6 +174,7 @@ export const NAV: Record<Locale, Record<string, string>> = {
     "verification-logs": "Doğrulama Kayıtları",
     "performance": "Performans",
     "super-admin-settings": "Platform Ayarları",
+    "marketplace-admin": "Pazar Yöneticisi",
   },
   de: {
     dashboard: "Übersicht",
@@ -227,6 +230,7 @@ export const NAV: Record<Locale, Record<string, string>> = {
     "verification-logs": "Verifizierungsprotokoll",
     "performance": "Leistung",
     "super-admin-settings": "Plattform-Einstellungen",
+    "marketplace-admin": "Marktplatz-Admin",
   },
   ru: {
     dashboard: "Панель управления",
@@ -282,6 +286,7 @@ export const NAV: Record<Locale, Record<string, string>> = {
     "verification-logs": "Журнал верификаций",
     "performance": "Производительность",
     "super-admin-settings": "Настройки платформы",
+    "marketplace-admin": "Админ биржи",
   },
 };
 

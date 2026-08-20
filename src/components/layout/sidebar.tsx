@@ -14,7 +14,7 @@ import {
   ChevronLeft, ChevronRight, Building2, Calculator,
   ToggleRight, LayoutGrid, Plug, DollarSign, BookMarked, Calendar,
   StickyNote, Briefcase, Settings2, TrendingUp, Truck, MapPin,
-  Shield, Globe, Gauge,
+  Shield, Globe, Gauge, Store,
 } from "lucide-react";
 import {
   Tooltip,
@@ -176,6 +176,11 @@ const SECTIONS: NavSection[] = [
       { key: "feature-flags", i18nKey: "feature-flags", i18nSection: "platform", icon: ToggleRight, permission: "platform.feature_flags.read" },
       { key: "plan-upgrade-queue", i18nKey: "plan-upgrade-queue", i18nSection: "platform", icon: TrendingUp, permission: "platform.plans.write" },
       { key: "verification-logs", i18nKey: "verification-logs", i18nSection: "platform", icon: Shield, superAdminOnly: true },
+      // UI-2 — super-admin marketplace management panel (cross-tenant:
+      // posts, verification, reviews, categories, blacklist, stats).
+      // Visible to super-admins only; the view itself also re-checks
+      // isSuperAdmin before rendering.
+      { key: "marketplace-admin", i18nKey: "marketplace-admin", i18nSection: "platform", icon: Store, superAdminOnly: true },
       // P0-4 — unified super-admin settings interface (security, roles,
       // data protection, monitoring, incidents, platform config,
       // system health). Visible to super-admins only; the view itself

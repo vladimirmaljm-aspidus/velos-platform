@@ -74,6 +74,7 @@ const PlatformHealthView = dynamic(() => import("@/components/views/platform-hea
 const VerificationLogsView = dynamic(() => import("@/components/views/verification-logs-view").then((m) => m.VerificationLogsView), { ssr: false });
 const PerformanceView = dynamic(() => import("@/components/views/admin/performance-view").then((m) => m.PerformanceView), { ssr: false });
 const TradeGlobeView = dynamic(() => import("@/components/views/trade-globe-view").then((m) => m.TradeGlobeView), { ssr: false });
+const MarketplaceAdminView = dynamic(() => import("@/components/views/admin/marketplace-admin-view").then((m) => m.MarketplaceAdminView), { ssr: false });
 
 /* -------------------------------------------------------------------------- */
 /*  View renderer                                                             */
@@ -133,6 +134,7 @@ function ViewContent({ view }: { view: string }) {
     case "verification-logs":   return <VerificationLogsView />;
     case "performance":         return <PerformanceView />;
     case "trade-globe":         return <TradeGlobeView />;
+    case "marketplace-admin":   return <MarketplaceAdminView />;
     default:                     return <DashboardView />;
   }
 }

@@ -90,7 +90,10 @@ export type ViewKey =
   // Marketplace (Phase 9 — market intelligence dashboard)
   | "portal-marketplace-intelligence"
   // Marketplace (Phase 10 — community: groups, Q&A, events, blog)
-  | "portal-marketplace-community";
+  | "portal-marketplace-community"
+  // Marketplace (UI-2 — super-admin cross-tenant management panel:
+  //   posts, verification, reviews, categories, blacklist, stats)
+  | "marketplace-admin";
 
 export interface SafeUser {
   id: string;
