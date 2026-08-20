@@ -34,21 +34,29 @@ function portalViewForUrl(url: string, type: NotificationType): ViewKey | null {
   if (u.includes("/proforma") || type.startsWith("proforma_")) return "portal-proformas";
   if (u.includes("/document") || type === "document_shared") return "portal-documents";
   if (u.includes("/messages")) return "portal-messages";
+  // Marketplace (Phase 2) — point negotiation + response notifications at the
+  // negotiation rooms view. The deep-link path /portal/marketplace/negotiations
+  // is rendered by NegotiationsBrowser inside PortalShell.
+  if (u.includes("/marketplace/negotiation") || type.startsWith("marketplace_")) {
+    return "portal-marketplace-negotiations";
+  }
   return null;
 }
 
 /** Map notification type to a visual category */
 function getNotifCategory(type: NotificationType): "info" | "warning" | "success" | "error" {
-  if (type.startsWith("kyc_rejected") || type === "invoice_overdue" || type === "low_stock_alert") return "error";
-  if (type.startsWith("kyc_submitted") || type === "rfq_received" || type === "task_due_soon") return "warning";
+  if (type.startsWith("kyc_rejected") || type === "invoice_overdue" || type === "low_stock_alert" || type === "marketplace_response_rejected") return "error";
+  if (type.startsWith("kyc_submitted") || type === "rfq_received" || type === "task_due_soon" || type === "marketplace_response_received") return "warning";
   if (
     type.startsWith("kyc_approved") ||
     type === "invoice_paid" ||
     type === "offer_accepted" ||
     type === "rfq_quoted" ||
-    type === "portal_access_approved"
+    type === "portal_access_approved" ||
+    type === "marketplace_response_accepted"
   )
     return "success";
+  // marketplace_message_received + everything else → info
   return "info";
 }
 

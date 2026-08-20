@@ -1290,6 +1290,11 @@ export class MockStore implements Store {
       "document_shared",
       "portal_access_requested", "portal_access_approved", "portal_invite_sent",
       "portal_message",
+      // Marketplace (Phase 2) — negotiation rooms + offer notifications
+      "marketplace_response_received",
+      "marketplace_response_accepted",
+      "marketplace_response_rejected",
+      "marketplace_message_received",
     ]);
     return mock.notifications
       .filter((n) => n.tenant_id === tenantId && n.partner_id === partnerId && PORTAL_SAFE_TYPES.has(n.type))

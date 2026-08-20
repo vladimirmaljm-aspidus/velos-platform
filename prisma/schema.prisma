@@ -1570,7 +1570,7 @@ model Notification {
   id           String    @id @default(cuid())
   tenant_id    String
   user_id      String? // null = broadcast to all tenant users
-  type         String // kyc_submitted | kyc_approved | kyc_rejected | rfq_received | rfq_quoted | offer_sent | offer_accepted | offer_rejected | offer_expired | invoice_overdue | invoice_paid | document_shared | portal_access_requested | portal_access_approved | portal_invite_sent | task_assigned | task_due_soon | low_stock_alert | system_message
+  type         String // kyc_submitted | kyc_approved | kyc_rejected | rfq_received | rfq_quoted | offer_sent | offer_accepted | offer_rejected | offer_expired | invoice_overdue | invoice_paid | document_shared | portal_access_requested | portal_access_approved | portal_invite_sent | task_assigned | task_due_soon | low_stock_alert | system_message | marketplace_response_received | marketplace_response_accepted | marketplace_response_rejected | marketplace_message_received
   title        String
   message      String
   entity_type  String?

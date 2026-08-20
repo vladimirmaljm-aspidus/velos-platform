@@ -104,6 +104,17 @@ const PortalMarketplace = dynamic(
   { ssr: false }
 );
 
+// Marketplace (Phase 3 — company profiles): the standalone route
+// /portal/marketplace/company/[partnerId] sets
+// `initialView="portal-marketplace-company"` + `initialSelectedId={partnerId}`
+// so the deep-link lands on the right company page. The browser stays on
+// the same view key when the user clicks a company name from the post
+// detail or marketplace list.
+const PortalMarketplaceCompany = dynamic(
+  () => import("@/components/portal/marketplace/company-profile").then((m) => m.CompanyProfile),
+  { ssr: false }
+);
+
 interface NavItem {
   key: ViewKey;
   labelKey: string;
@@ -167,6 +178,7 @@ const TIER_META: Record<
 const VIEW_TITLE_KEYS: Record<string, string> = {
   "portal-dashboard": "portal-nav-dashboard",
   "portal-marketplace": "portal-nav-marketplace",
+  "portal-marketplace-company": "portal-nav-marketplace",
   "portal-offers": "portal-nav-my-offers",
   "portal-invoices": "portal-nav-my-invoices",
   "portal-proformas": "portal-nav-my-proformas",
@@ -194,6 +206,7 @@ export function PortalShell({
   const setAppMode = useAppStore((s) => s.setAppMode);
   const view = useAppStore((s) => s.view);
   const setView = useAppStore((s) => s.setView);
+  const selectedId = useAppStore((s) => s.selectedId);
   const setSelectedId = useAppStore((s) => s.setSelectedId);
 
   // Apply the initial view once on mount (when navigating to a deep link like
@@ -549,6 +562,9 @@ export function PortalShell({
               {view === "portal-messages" && <PortalMessages />}
               {view === "portal-profile" && <PortalProfile />}
               {view === "portal-marketplace" && <PortalMarketplace />}
+              {view === "portal-marketplace-company" && selectedId && (
+                <PortalMarketplaceCompany partnerId={selectedId} />
+              )}
             </>
           )}
         </main>

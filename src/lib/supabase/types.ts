@@ -1475,7 +1475,12 @@ export type NotificationType =
   | "low_stock_alert"
   | "system_message"
   | "portal_message"
-  | "email_failed";
+  | "email_failed"
+  // Marketplace (Phase 2 — negotiation rooms + notifications)
+  | "marketplace_response_received" // post owner received a new offer/response
+  | "marketplace_response_accepted" // responder's offer was accepted by the post owner
+  | "marketplace_response_rejected" // responder's offer was rejected by the post owner
+  | "marketplace_message_received" // other party sent a message in a negotiation room
 
 export interface Notification {
   id: string;
