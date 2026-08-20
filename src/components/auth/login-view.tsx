@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import {
   Card,
   CardContent,
@@ -12,6 +13,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Loader2,
@@ -23,15 +25,23 @@ import {
   Globe,
   Eye,
   EyeOff,
+  Building2,
+  Sparkles,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store/app-store";
 import { useI18nStore, useT } from "@/lib/i18n/store";
 
-export function LoginView() {
+interface LoginViewProps {
+  /** Switch to the registration surface (Sign Up link on the homepage). */
+  onSwitchToRegister?: () => void;
+}
+
+export function LoginView({ onSwitchToRegister }: LoginViewProps) {
   const setUser = useAppStore((s) => s.setUser);
   const t = useT();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [remember, setRemember] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -41,11 +51,11 @@ export function LoginView() {
     setError("");
 
     if (!username.trim()) {
-      setError("Please enter your username.");
+      setError(t("login-error-username"));
       return;
     }
     if (!password) {
-      setError("Please enter your password.");
+      setError(t("login-error-password"));
       return;
     }
 
@@ -54,7 +64,7 @@ export function LoginView() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username, password, remember }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -68,7 +78,7 @@ export function LoginView() {
       useI18nStore.getState().reset();
       useI18nStore.getState().hydrate();
     } catch {
-      setError("Network error. Please check your connection and try again.");
+      setError(t("login-error-network"));
     } finally {
       setLoading(false);
     }
@@ -83,26 +93,70 @@ export function LoginView() {
   return (
     <div className="min-h-screen flex flex-col lg:flex-row">
       {/* ═══════════════════════════════════════════════════════════════════════
-          LEFT — BRANDING PANEL
-          On mobile: compact header strip (logo only) so the login form is
+          LEFT — BRANDING PANEL (VELOS copper gradient)
+          On mobile: compact header strip (logo + tagline) so the login form is
           reachable without scrolling.
-          On desktop (lg+): full-height solid navy panel, restrained copy.
+          On desktop (lg+): full-height gradient panel, restrained copy.
           ═══════════════════════════════════════════════════════════════════════ */}
-      <div className="relative flex flex-col justify-center overflow-hidden bg-[oklch(0.16_0.03_258)] px-6 py-6 lg:w-[46%] lg:min-h-screen lg:px-16 lg:py-20 lg:justify-center xl:px-20">
+      <div className="relative flex flex-col justify-center overflow-hidden px-6 py-6 lg:w-[46%] lg:min-h-screen lg:px-16 lg:py-20 lg:justify-center xl:px-20">
+        {/* Copper gradient background — uses the platform's --primary token
+            layered over a deep navy base so it reads as "VELOS copper" in both
+            light and dark mode (the canvas behind the gradient is opaque). */}
+        <div
+          aria-hidden
+          className="absolute inset-0 bg-[oklch(0.16_0.03_258)]"
+        />
+        <div
+          aria-hidden
+          className="absolute inset-0 opacity-90"
+          style={{
+            background:
+              "radial-gradient(900px 500px at 15% 0%, oklch(0.46 0.13 55 / 0.55), transparent 60%)," +
+              "radial-gradient(700px 600px at 90% 100%, oklch(0.685 0.105 82 / 0.40), transparent 55%)," +
+              "linear-gradient(135deg, oklch(0.20 0.04 258) 0%, oklch(0.16 0.03 258) 100%)",
+          }}
+        />
+        {/* Subtle dotted texture overlay */}
+        <div
+          aria-hidden
+          className="absolute inset-0 opacity-[0.18]"
+          style={{
+            backgroundImage:
+              "radial-gradient(circle at 1px 1px, rgba(255,255,255,0.35) 1px, transparent 0)",
+            backgroundSize: "26px 26px",
+          }}
+        />
+        {/* Floating accent blobs for depth */}
+        <div
+          aria-hidden
+          className="absolute -top-24 -right-24 size-80 rounded-full bg-[oklch(0.55_0.12_55/0.25)] blur-3xl"
+        />
+        <div
+          aria-hidden
+          className="absolute -bottom-32 -left-16 size-96 rounded-full bg-[oklch(0.685_0.105_82/0.18)] blur-3xl"
+        />
+
         {/* Content */}
         <div className="relative z-10 mx-auto w-full max-w-lg">
           {/* Logo — always visible, compact on mobile */}
           <div className="lg:mb-14">
             <div className="inline-flex items-center gap-3">
-              <div className="flex size-9 items-center justify-center rounded-md bg-white/10 ring-1 ring-white/15 overflow-hidden lg:size-11">
-                <Image src="/logo.svg" alt="VELOS" width={44} height={44} priority className="w-full h-full object-cover" />
+              <div className="flex size-11 items-center justify-center rounded-lg bg-white/10 ring-1 ring-white/20 overflow-hidden shadow-lg shadow-black/20 lg:size-12">
+                <Image
+                  src="/logo.svg"
+                  alt="VELOS"
+                  width={44}
+                  height={44}
+                  priority
+                  className="w-full h-full object-cover"
+                />
               </div>
               <div>
-                <h1 className="text-lg font-semibold tracking-tight text-white lg:text-2xl">
-                  VELOS Trade
+                <h1 className="text-xl font-semibold tracking-tight text-white lg:text-2xl">
+                  VELOS
                 </h1>
-                <p className="hidden text-sm text-white/45 lg:block">
-                  Trade Management Platform
+                <p className="text-xs text-white/60 lg:text-sm">
+                  {t("login-brand-tagline")}
                 </p>
               </div>
             </div>
@@ -116,7 +170,7 @@ export function LoginView() {
               {t("login-headline-2")}
             </h2>
 
-            <p className="mb-10 max-w-md text-base leading-relaxed text-white/55">
+            <p className="mb-10 max-w-md text-base leading-relaxed text-white/60">
               {t("login-tagline")}
             </p>
 
@@ -128,41 +182,68 @@ export function LoginView() {
                     key={i}
                     className="flex items-center gap-3 border-b border-white/10 py-3.5"
                   >
-                    <Icon className="size-4 shrink-0 text-white/45" />
-                    <span className="text-sm text-white/75">{h.text}</span>
+                    <Icon className="size-4 shrink-0 text-[oklch(0.685_0.105_82)]" />
+                    <span className="text-sm text-white/80">{h.text}</span>
                   </div>
                 );
               })}
             </div>
 
-            <p className="mt-14 text-xs text-white/30">
-              © {new Date().getFullYear()} VELOS. All rights reserved.
-            </p>
+            <div className="mt-14 flex items-center gap-2 text-xs text-white/40">
+              <Sparkles className="size-3.5" />
+              <span>
+                © {new Date().getFullYear()} VELOS. {t("login-rights")}
+              </span>
+            </div>
           </div>
         </div>
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════════
           RIGHT — LOGIN FORM
+          Mobile: shows logo + brand tagline at top so the brand panel above
+          isn't the only place the VELOS identity appears on a small screen.
           ═══════════════════════════════════════════════════════════════════════ */}
-      <div className="flex flex-1 items-center justify-center bg-background px-6 py-8 lg:min-h-screen lg:px-12 lg:py-12">
-        <div className="w-full max-w-[400px]">
-          <Card className="border-0 bg-transparent shadow-none">
-            <CardHeader className="mb-2 space-y-2 px-0 text-left">
+      <div className="flex flex-1 items-center justify-center bg-background px-5 py-8 lg:min-h-screen lg:px-12 lg:py-12">
+        <div className="w-full max-w-[420px]">
+          {/* Mobile-only brand row (desktop has the gradient panel) */}
+          <div className="mb-6 flex items-center gap-3 lg:hidden">
+            <div className="flex size-10 items-center justify-center rounded-md overflow-hidden ring-1 ring-border">
+              <Image
+                src="/logo.svg"
+                alt="VELOS"
+                width={40}
+                height={40}
+                priority
+                className="w-full h-full object-cover"
+              />
+            </div>
+            <div>
+              <p className="text-sm font-semibold tracking-tight text-foreground">
+                VELOS
+              </p>
+              <p className="text-[11px] text-muted-foreground">
+                {t("login-brand-tagline")}
+              </p>
+            </div>
+          </div>
+
+          <Card className="border border-border/70 bg-card/80 backdrop-blur-sm shadow-sm">
+            <CardHeader className="mb-2 space-y-2 px-6 pt-6 text-left">
               <CardTitle className="text-2xl font-semibold tracking-tight text-foreground">
                 {t("login-welcome")}
               </CardTitle>
-              <CardDescription className="text-base text-muted-foreground">
+              <CardDescription className="text-sm text-muted-foreground">
                 {t("login-signin-desc")}
               </CardDescription>
             </CardHeader>
 
-            <CardContent className="px-0">
+            <CardContent className="px-6 pb-6">
               {/* Error alert */}
               {error && (
                 <Alert
                   variant="destructive"
-                  className="mb-6"
+                  className="mb-5"
                   role="alert"
                   aria-live="assertive"
                 >
@@ -174,7 +255,7 @@ export function LoginView() {
 
               {/* Form */}
               <form onSubmit={submit} className="space-y-5" noValidate>
-                {/* {t("login-username")} */}
+                {/* Username */}
                 <div className="space-y-2">
                   <Label
                     htmlFor="login-username"
@@ -202,7 +283,7 @@ export function LoginView() {
                   </div>
                 </div>
 
-                {/* {t("login-password")} */}
+                {/* Password */}
                 <div className="space-y-2">
                   <Label
                     htmlFor="login-password"
@@ -234,9 +315,37 @@ export function LoginView() {
                       aria-label={showPassword ? "Hide password" : "Show password"}
                       tabIndex={-1}
                     >
-                      {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                      {showPassword ? (
+                        <EyeOff className="size-4" />
+                      ) : (
+                        <Eye className="size-4" />
+                      )}
                     </button>
                   </div>
+                </div>
+
+                {/* Remember me + Forgot password */}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="login-remember"
+                      checked={remember}
+                      onCheckedChange={(v) => setRemember(v === true)}
+                      disabled={loading}
+                    />
+                    <Label
+                      htmlFor="login-remember"
+                      className="text-sm font-normal text-muted-foreground cursor-pointer"
+                    >
+                      {t("login-remember")}
+                    </Label>
+                  </div>
+                  <Link
+                    href="/portal/forgot-password"
+                    className="text-xs text-muted-foreground hover:text-primary underline-offset-4 hover:underline transition-colors"
+                  >
+                    {t("login-forgot-password")}
+                  </Link>
                 </div>
 
                 {/* Submit */}
@@ -260,17 +369,34 @@ export function LoginView() {
                 </Button>
               </form>
 
+              {/* Sign-up CTA — switches the homepage to the register surface */}
+              {onSwitchToRegister && (
+                <div className="mt-6 flex items-center justify-center gap-1.5 text-sm text-muted-foreground">
+                  <span>{t("login-no-account")}</span>
+                  <button
+                    type="button"
+                    onClick={onSwitchToRegister}
+                    className="font-medium text-primary hover:text-primary/80 underline-offset-4 hover:underline transition-colors"
+                  >
+                    {t("login-switch-to-register")}
+                  </button>
+                </div>
+              )}
+
               {/* Bottom note */}
-              <p className="mt-8 text-center text-xs text-muted-foreground/50">
+              <p className="mt-6 flex items-center justify-center gap-1.5 text-center text-xs text-muted-foreground/60">
+                <ShieldCheck className="size-3.5" />
                 {t("login-secure-note")}
-              </p>
-              {/* Copyright — shown here on mobile only; the desktop branding
-                  panel already has its own copyright line. */}
-              <p className="mt-4 text-center text-[11px] text-muted-foreground/40 lg:hidden">
-                © {new Date().getFullYear()} VELOS. {t("login-rights")}
               </p>
             </CardContent>
           </Card>
+
+          {/* Copyright — shown here on mobile only; the desktop branding
+              panel already has its own copyright line. */}
+          <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-[11px] text-muted-foreground/50 lg:hidden">
+            <Building2 className="size-3" />
+            © {new Date().getFullYear()} VELOS. {t("login-rights")}
+          </p>
         </div>
       </div>
     </div>

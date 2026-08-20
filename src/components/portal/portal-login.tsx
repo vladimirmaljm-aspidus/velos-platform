@@ -2,10 +2,12 @@
 
 import { useState, useEffect } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Dialog,
   DialogContent,
@@ -28,6 +30,8 @@ import {
   ShieldCheck,
   Eye,
   EyeOff,
+  Store,
+  Info,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAppStore } from "@/lib/store/app-store";
@@ -55,6 +59,10 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  // UI-1 — surface login errors INLINE (above the form) in addition to the
+  // toast. A toast that vanishes after 3s was the root cause of the original
+  // "nothing happens" reports — the user missed it and clicked again.
+  const [loginError, setLoginError] = useState<string | null>(null);
 
   // Setup-password dialog state
   const [setupOpen, setSetupOpen] = useState(false);
@@ -171,17 +179,35 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!email || !password) return;
+    // Client-side validation with inline errors — surfaces missing fields
+    // instantly without a round-trip. The server repeats every check.
+    setLoginError(null);
+    if (!email.trim()) {
+      setLoginError(t("portal-login-error-enter-email"));
+      return;
+    }
+    if (!password) {
+      setLoginError(t("portal-login-error-enter-password"));
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch("/api/portal/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: email.trim(), password }),
       });
       const data = await res.json();
       if (!res.ok) {
-        toast.error(data.error || t("portal-login-toast-signin-failed"));
+        // Inline error is the primary surface — toast is kept as a
+        // secondary signal so a user who scrolled away still sees it.
+        const msg =
+          data.error ||
+          (res.status === 401
+            ? t("portal-login-error-credentials")
+            : t("portal-login-toast-signin-failed"));
+        setLoginError(msg);
+        toast.error(msg);
         return;
       }
       setPortalAccess(data.access);
@@ -193,7 +219,9 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
       // a successful sign-in ('welcome toast but nothing happens').
       router.push("/portal/dashboard");
     } catch {
-      toast.error(t("portal-login-toast-network"));
+      const msg = t("portal-login-error-network");
+      setLoginError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -266,10 +294,24 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
     <div className="min-h-screen flex bg-background">
       {/* Left — login form with mesh background */}
       <div className="flex-1 flex flex-col items-center justify-center p-6 lg:p-10 bg-mesh-portal relative">
+        {/* VELOS copper gradient overlay — layers the brand colour under the
+            existing dotted mesh so the login screen reads as VELOS, not as a
+            generic white card. The overlay is opaque enough to feel branded
+            but transparent enough that the underlying bg-mesh-portal texture
+            still shows through. */}
+        <div
+          aria-hidden
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background:
+              "radial-gradient(800px 400px at 0% 0%, oklch(0.395 0.115 55 / 0.06), transparent 60%)," +
+              "radial-gradient(700px 500px at 100% 100%, oklch(0.685 0.105 82 / 0.04), transparent 60%)",
+          }}
+        />
         <div className="w-full max-w-md relative z-10">
           {/* Brand — VELOS client portal mark */}
           <div className="flex items-center gap-3 mb-10">
-            <div className="size-12 rounded-xl overflow-hidden shadow-soft-md">
+            <div className="size-12 rounded-xl overflow-hidden shadow-soft-md ring-1 ring-border">
               <Image src="/logo.svg" alt="VELOS" width={48} height={48} priority />
             </div>
             <div>
@@ -290,6 +332,40 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
                 </p>
               </div>
 
+              {/* ── How to sign in (UI-1 — clear instructions) ───────────────
+                  Compact info card so a brand-new portal client knows exactly
+                  what to do without reading the help docs. Sits above the
+                  form, dismissible visually by the eye once the user starts
+                  typing (it doesn't dismiss itself — the instructions stay
+                  available if the user scrolls back up). */}
+              <div className="mb-5 flex items-start gap-2.5 rounded-lg border border-primary/15 bg-primary/[0.04] p-3 text-xs text-muted-foreground">
+                <Info className="size-4 shrink-0 text-primary mt-0.5" />
+                <div>
+                  <p className="font-medium text-foreground/80 mb-0.5">
+                    {t("portal-login-instructions-title")}
+                  </p>
+                  <p className="leading-relaxed">
+                    {t("portal-login-instructions-desc")}
+                  </p>
+                </div>
+              </div>
+
+              {/* Inline error — surfaces ABOVE the form fields so the user
+                  sees the failure reason without having to scroll, and it
+                  stays visible until the user starts typing again. */}
+              {loginError && (
+                <Alert
+                  variant="destructive"
+                  className="mb-5"
+                  role="alert"
+                  aria-live="assertive"
+                >
+                  <AlertDescription className="text-sm font-medium">
+                    {loginError}
+                  </AlertDescription>
+                </Alert>
+              )}
+
               <form onSubmit={submit} className="space-y-5">
                 <div className="space-y-2">
                   <Label htmlFor="email" className="text-sm font-medium">
@@ -302,10 +378,14 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
                       type="email"
                       autoComplete="email"
                       value={email}
-                      onChange={(e) => setEmail(e.target.value)}
+                      onChange={(e) => {
+                        setEmail(e.target.value);
+                        if (loginError) setLoginError(null);
+                      }}
                       className="pl-10 h-11 smooth focus-visible:ring-primary/40 focus-visible:border-primary/40"
                       placeholder="you@company.com"
                       disabled={loading}
+                      aria-required="true"
                     />
                   </div>
                 </div>
@@ -321,10 +401,14 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
                       type={showPassword ? "text" : "password"}
                       autoComplete="current-password"
                       value={password}
-                      onChange={(e) => setPassword(e.target.value)}
+                      onChange={(e) => {
+                        setPassword(e.target.value);
+                        if (loginError) setLoginError(null);
+                      }}
                       className="pl-10 pr-10 h-11 smooth focus-visible:ring-primary/40 focus-visible:border-primary/40"
                       placeholder="••••••••"
                       disabled={loading}
+                      aria-required="true"
                     />
                     <button
                       type="button"
@@ -523,7 +607,43 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
             </div>
           </div>
 
-          <p className="text-center text-xs text-muted-foreground mt-8">
+          {/* ── Marketplace link (UI-1) ────────────────────────────────────
+              Lets a prospective client window-shop the public marketplace
+              without signing in — converts more visitors into sign-ups.
+              Styled as a subtle ghost-link card so it doesn't compete with
+              the primary sign-in CTA but is still discoverable. */}
+          <Link
+            href="/portal/marketplace"
+            className="mt-6 group flex items-center gap-3 rounded-lg border border-border/70 bg-card/60 px-4 py-3 text-left transition-colors hover:border-primary/40 hover:bg-primary/[0.04] smooth"
+          >
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary group-hover:bg-primary/15 smooth">
+              <Store className="size-4.5" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-medium text-foreground">
+                {t("portal-login-marketplace-link")}
+              </span>
+              <span className="block text-xs text-muted-foreground leading-snug">
+                {t("portal-login-marketplace-desc")}
+              </span>
+            </span>
+            <ArrowRight className="size-4 shrink-0 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 smooth" />
+          </Link>
+
+          {/* ── Need an account? Contact your account manager ─────────── */}
+          <p className="mt-5 text-center text-xs text-muted-foreground">
+            {t("portal-login-need-account")}{" "}
+            <a
+              href={`mailto:hello@velos.trade?subject=${encodeURIComponent(
+                "Portal access request",
+              )}`}
+              className="font-medium text-primary hover:underline underline-offset-4"
+            >
+              {t("portal-login-contact-us")}
+            </a>
+          </p>
+
+          <p className="text-center text-xs text-muted-foreground mt-6">
             © {new Date().getFullYear()} {FIRM_NAME} · {t("portal-login-secure-workspace")}
           </p>
 
