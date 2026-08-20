@@ -9,6 +9,7 @@ import { sanitizeFields } from "@/lib/security/sanitize-input";
 import { audit } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { notify } from "@/lib/notif/helper";
+import { triggerWebhooks } from "@/lib/webhooks/deliver";
 import { withApm } from "@/lib/monitoring/apm";
 
 export const runtime = "nodejs";
@@ -124,6 +125,20 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
         created.id,
         { post_id: id, unit_price: created.unit_price },
       );
+      // Phase 12 — fire marketplace.response_sent webhook (fire-and-forget).
+      // Payload mirrors what's in the audit log (no message body, which
+      // can be free-text and potentially sensitive). triggerWebhooks()
+      // additionally sanitises PII markers before signing + sending.
+      void triggerWebhooks(store, access.tenant_id, "marketplace.response_sent", "marketplace_response", created.id, {
+        id: created.id,
+        post_id: created.post_id,
+        quantity: created.quantity,
+        unit_price: created.unit_price,
+        currency: created.currency,
+        is_counter: created.is_counter,
+        status: created.status,
+        created_at: created.created_at,
+      }).catch(() => {});
     } catch (e) {
       console.error("[marketplace.response.create] audit failed:", e);
     }

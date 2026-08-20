@@ -7,6 +7,7 @@ import {
 import { sanitizeFields } from "@/lib/security/sanitize-input";
 import { audit } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
+import { triggerWebhooks } from "@/lib/webhooks/deliver";
 import { withApm } from "@/lib/monitoring/apm";
 import type { ShipmentStatus } from "@/lib/supabase/marketplace-logistics-types";
 
@@ -93,6 +94,17 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
         evt.id,
         { shipment_id: id, status: body.status, location: body.location },
       );
+      // Phase 12 — fire marketplace.shipment_status webhook
+      // (fire-and-forget). Receivers can use this to update their own
+      // dashboards / trigger downstream logistics flows (e.g. customs
+      // filing on "arrived_port", invoice issuance on "delivered").
+      void triggerWebhooks(store, access.tenant_id, "marketplace.shipment_status", "marketplace_shipment", id, {
+        shipment_id: id,
+        event_id: evt.id,
+        status: body.status,
+        location: body.location ?? null,
+        event_date: evt.event_date,
+      }).catch(() => {});
     } catch (e) {
       console.error("[marketplace.shipment_events.add] audit failed:", e);
     }

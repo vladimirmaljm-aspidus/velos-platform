@@ -4,6 +4,7 @@ import { listMarketplacePosts, createMarketplacePost } from "@/lib/data/marketpl
 import { sanitizeFields } from "@/lib/security/sanitize-input";
 import { audit } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
+import { triggerWebhooks } from "@/lib/webhooks/deliver";
 import { withApm } from "@/lib/monitoring/apm";
 
 export const runtime = "nodejs";
@@ -152,6 +153,24 @@ async function _post(req: NextRequest) {
         created.id,
         { post_type: created.post_type, product_name: created.product_name, quantity: created.quantity },
       );
+      // Phase 12 — fire marketplace.post_created webhook (fire-and-forget
+      // — a webhook failure must NOT block the post creation response).
+      // The triggerWebhooks() helper sanitises PII from the payload
+      // before signing + sending, so no partner PII leaks.
+      void triggerWebhooks(store, access.tenant_id, "marketplace.post_created", "marketplace_post", created.id, {
+        id: created.id,
+        post_type: created.post_type,
+        product_name: created.product_name,
+        product_category: created.product_category,
+        quantity: created.quantity,
+        unit: created.unit,
+        currency: created.currency,
+        target_price: created.target_price,
+        delivery_country: created.delivery_country,
+        status: created.status,
+        visibility: created.visibility,
+        created_at: created.created_at,
+      }).catch(() => {});
     } catch (e) {
       console.error("[marketplace.create] audit failed:", e);
     }

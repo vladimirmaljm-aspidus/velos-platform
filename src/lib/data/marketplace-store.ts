@@ -735,3 +735,260 @@ export async function listNegotiationMessages(
   if (error) throw error;
   return (data as MarketplaceMessage[]) || [];
 }
+
+// ─── Phase 12 — public API feed (cross-tenant, redacted) ────────────────
+
+/**
+ * Public-facing feed shape — used by GET /api/marketplace/public.
+ *
+ * The Phase 1 `sanitisePublicPost()` strips tenant_id / partner_id /
+ * portal_access_id but otherwise returns the row verbatim. Phase 12's
+ * public API needs a STRICTER redaction (the spec: "no partner PII, only
+ * company name + country + verification level") because callers are NOT
+ * authenticated — there's no portal session to bind them to a tenant, so
+ * leaking even the partner_id is unnecessary.
+ *
+ * Each item therefore carries the public marketing copy (product name,
+ * quantity, price, location, country, etc.) PLUS a small `partner` block
+ * with: company name, country, city, website, verification_level.
+ *
+ * `partner_id` and `tenant_id` are NEVER included. The post id IS returned
+ * so callers can deep-link to the public-detail endpoint.
+ */
+export interface PublicMarketplacePostItem {
+  id: string;
+  post_type: string;
+  product_name: string;
+  product_category: string | null;
+  product_subcategory: string | null;
+  quantity: number;
+  unit: string;
+  target_price: number | null;
+  price_visible: boolean;
+  currency: string;
+  price_type: string;
+  price_max: number | null;
+  delivery_location: string | null;
+  delivery_country: string | null;
+  delivery_date: string | null;
+  incoterm: string | null;
+  origin_country: string | null;
+  packaging: string | null;
+  payment_terms: string | null;
+  description: string | null;
+  status: string;
+  is_verified: boolean;
+  verification_level: string;
+  views_count: number;
+  responses_count: number;
+  expires_at: string | null;
+  created_at: string;
+  partner: {
+    company_name: string;
+    country: string | null;
+    city: string | null;
+    website: string | null;
+    verification_level: string;
+    rating_average: number;
+    rating_count: number;
+  } | null;
+}
+
+/**
+ * Cross-tenant public feed of marketplace posts.
+ *
+ * Returns the redacted shape defined above. The query is NOT scoped to a
+ * tenant — the public feed is a global marketplace browse surface. Only
+ * `status='active'` AND `visibility='public'` posts are returned (private
+ * and draft posts are hidden from the public; partners see their own
+ * drafts via the auth-gated /api/marketplace/my-posts).
+ *
+ * Pagination is `(page, limit)` (1-indexed page) — the spec asks for
+ * `page` + `limit`. We translate to `offset` internally.
+ */
+export async function listPublicMarketplacePosts(
+  filters: {
+    post_type?: string;
+    category?: string;
+    country?: string;
+    search?: string;
+    limit?: number;
+    page?: number;
+  } = {},
+): Promise<{ items: PublicMarketplacePostItem[]; total: number; page: number; limit: number }> {
+  const sb = getSupabase();
+  const limit = Math.min(Math.max(filters.limit ?? 24, 1), 100);
+  const page = Math.max(filters.page ?? 1, 1);
+  const offset = (page - 1) * limit;
+
+  let q = sb
+    .from("marketplace_posts")
+    .select("*", { count: "exact" })
+    .eq("status", "active")
+    .eq("visibility", "public");
+
+  if (filters.post_type) q = q.eq("post_type", filters.post_type);
+  if (filters.category) q = q.eq("product_category", filters.category);
+  if (filters.country) q = q.eq("delivery_country", filters.country);
+
+  if (filters.search) {
+    const s = String(filters.search).replace(/[(),\\]/g, " ").trim();
+    if (s) {
+      q = q.or(`product_name.ilike.%${s}%,description.ilike.%${s}%,product_category.ilike.%${s}%`);
+    }
+  }
+
+  q = q.order("created_at", { ascending: false });
+
+  const { data, error, count } = await q.range(offset, offset + limit - 1);
+  if (error) throw error;
+
+  const rows = (data as MarketplacePost[]) || [];
+  const items = await hydratePublicPostItems(rows);
+  return {
+    items,
+    total: count ?? 0,
+    page,
+    limit,
+  };
+}
+
+/**
+ * Hydrate the redacted `PublicMarketplacePostItem` shape from raw post
+ * rows. Performs a batched lookup of partner info via the partners +
+ * marketplace_company_profiles tables so the listing never makes N+1
+ * queries.
+ *
+ * Partners with no profile row (no company_description, etc.) still get
+ * a `partner` block — we fall back to the partner's name + country +
+ * city + website from the partners table, with verification_level='none'
+ * and zeroed rating counters.
+ */
+async function hydratePublicPostItems(
+  rows: MarketplacePost[],
+): Promise<PublicMarketplacePostItem[]> {
+  if (rows.length === 0) return [];
+  const sb = getSupabase();
+
+  const partnerIds = Array.from(new Set(rows.map((r) => r.partner_id).filter(Boolean)));
+  if (partnerIds.length === 0) {
+    return rows.map(redactPostRow);
+  }
+
+  // Batched partner lookup. The partners table is global (no tenant
+  // scope) — getPartner() in the store already fetches by id alone.
+  const { data: partnerRows } = await sb
+    .from("partners")
+    .select("id, name, country, city, website")
+    .in("id", partnerIds);
+  const partnersById = new Map<string, { id: string; name: string; country: string | null; city: string | null; website: string | null }>(
+    ((partnerRows as any[]) || []).map((p) => [p.id, p]),
+  );
+
+  // Batched profile lookup (verification_level + rating_average + rating_count).
+  const { data: profileRows } = await sb
+    .from("marketplace_company_profiles")
+    .select("partner_id, verification_level, rating_average, rating_count")
+    .in("partner_id", partnerIds);
+  const profilesByPartner = new Map<string, { verification_level: string; rating_average: number; rating_count: number }>(
+    ((profileRows as any[]) || []).map((p) => [p.partner_id, p]),
+  );
+
+  return rows.map((r) => {
+    const base = redactPostRow(r);
+    const partner = partnersById.get(r.partner_id);
+    const profile = profilesByPartner.get(r.partner_id);
+    base.partner = partner
+      ? {
+          company_name: partner.name,
+          country: partner.country,
+          city: partner.city,
+          website: partner.website,
+          verification_level: profile?.verification_level ?? "none",
+          rating_average: profile?.rating_average ?? 0,
+          rating_count: profile?.rating_count ?? 0,
+        }
+      : null;
+    return base;
+  });
+}
+
+/**
+ * Strip PII from a raw marketplace_posts row to produce the
+ * `PublicMarketplacePostItem` shape (minus the `partner` block, which is
+ * attached by `hydratePublicPostItems`).
+ */
+function redactPostRow(p: MarketplacePost): PublicMarketplacePostItem {
+  return {
+    id: p.id,
+    post_type: p.post_type,
+    product_name: p.product_name,
+    product_category: p.product_category,
+    product_subcategory: p.product_subcategory,
+    quantity: p.quantity,
+    unit: p.unit,
+    target_price: p.target_price,
+    price_visible: p.price_visible,
+    currency: p.currency,
+    price_type: p.price_type,
+    price_max: p.price_max,
+    delivery_location: p.delivery_location,
+    delivery_country: p.delivery_country,
+    delivery_date: p.delivery_date,
+    incoterm: p.incoterm,
+    origin_country: p.origin_country,
+    packaging: p.packaging,
+    payment_terms: p.payment_terms,
+    description: p.description,
+    status: p.status,
+    is_verified: p.is_verified,
+    verification_level: p.verification_level,
+    views_count: p.views_count,
+    responses_count: p.responses_count,
+    expires_at: p.expires_at,
+    created_at: p.created_at,
+    partner: null,
+  };
+}
+
+/**
+ * Fetch a single post by id for the PUBLIC feed (no tenant scope).
+ * Increments views_count atomically (fire-and-forget — same pattern as
+ * the auth-gated getMarketplacePost).
+ *
+ * Returns null when the post doesn't exist, OR when status is not
+ * 'active'/'expired', OR when visibility is 'private'. (A 404 to the
+ * caller — we don't leak the existence of a private/draft post.)
+ *
+ * The redacted shape is identical to the listing item; the verification
+ * badge + rating are part of the `partner` block.
+ */
+export async function getPublicMarketplacePost(
+  postId: string,
+): Promise<PublicMarketplacePostItem | null> {
+  const sb = getSupabase();
+  const { data, error } = await sb
+    .from("marketplace_posts")
+    .select("*")
+    .eq("id", postId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const post = data as MarketplacePost;
+
+  // Bump views_count (fire-and-forget — never blocks the read).
+  void sb
+    .from("marketplace_posts")
+    .update({ views_count: (post.views_count || 0) + 1 })
+    .eq("id", postId)
+    .then(({ error: e }) => {
+      if (e) console.error("[marketplace.public] view-count increment failed:", e);
+    });
+
+  // Hide non-public / non-active posts.
+  if (post.status !== "active" && post.status !== "expired") return null;
+  if (post.visibility === "private") return null;
+
+  const [hydrated] = await hydratePublicPostItems([post]);
+  return hydrated;
+}

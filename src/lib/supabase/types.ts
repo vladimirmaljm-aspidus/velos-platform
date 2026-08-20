@@ -630,6 +630,14 @@ export interface ApiKey {
   active: boolean;
   expires_at: string | null;
   created_at: string;
+  /**
+   * Phase 12 — OPTIONAL partner binding. When set, the key is scoped to
+   * this partner (a marketplace API key created by a portal partner via
+   * /api/marketplace/api-keys). When NULL, the key is tenant-level (the
+   * original Phase-N API keys created by tenant admins via /api/api-keys).
+   * The column was added by migration 053; pre-existing rows are NULL.
+   */
+  partner_id?: string | null;
 }
 
 // ---------- Webhooks ----------

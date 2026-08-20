@@ -459,6 +459,46 @@ function WebhookFormDialog({
                 </button>
               ))}
             </div>
+
+            {/* Phase 12 — Marketplace lifecycle event chips. Lets a
+                partner subscribe to the 8 marketplace events fired by
+                the marketplace API routes (post_created, response_sent,
+                response_accepted, message_sent, bid_placed, auction_won,
+                shipment_status, document_signed) plus 2 API-key events. */}
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              <span className="text-xs text-muted-foreground self-center">Marketplace events:</span>
+              {(
+                [
+                  "marketplace.post_created",
+                  "marketplace.response_sent",
+                  "marketplace.response_accepted",
+                  "marketplace.message_sent",
+                  "marketplace.bid_placed",
+                  "marketplace.auction_won",
+                  "marketplace.shipment_status",
+                  "marketplace.document_signed",
+                  "marketplace.api_key_created",
+                  "marketplace.api_key_revoked",
+                ] as const
+              ).map((ev) => (
+                <button
+                  key={ev}
+                  type="button"
+                  onClick={() => {
+                    const list = events
+                      .split(",")
+                      .map((s) => s.trim())
+                      .filter(Boolean);
+                    if (!list.includes(ev)) list.push(ev);
+                    setEvents(list.join(", "));
+                  }}
+                  className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200 text-[11px] font-mono hover:bg-amber-200 dark:hover:bg-amber-900/60 transition-colors"
+                  title={`Fire only on ${ev}`}
+                >
+                  {ev}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="flex items-center justify-between p-3 rounded-md bg-muted/30">

@@ -4,6 +4,7 @@ import { authorizeCron } from "@/lib/api/cron-auth";
 import { audit } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { processAuctionEnd } from "@/lib/data/marketplace-auction-store";
+import { triggerWebhooks } from "@/lib/webhooks/deliver";
 
 export const runtime = "nodejs";
 
@@ -90,6 +91,32 @@ export async function GET(req: NextRequest) {
         try {
           await processAuctionEnd(id);
           settlements.push({ id, ok: true });
+          // Phase 12 — fire marketplace.auction_won webhook when a winner
+          // was determined. The settled row is the sanitised post shape
+          // (no tenant_id / partner_id) — we re-fetch the post to get
+          // the tenant_id (needed for the webhook trigger scope) and
+          // the winner_id. Skip when no winner (auction ended with no
+          // bids ≥ reserve — a legitimate outcome).
+          try {
+            const sb2 = getSupabase();
+            const { data: postRow } = await sb2
+              .from("marketplace_posts")
+              .select("tenant_id, auction_winner_id, auction_current_price, currency")
+              .eq("id", id)
+              .maybeSingle();
+            const p = postRow as { tenant_id?: string; auction_winner_id?: string | null; auction_current_price?: number | null; currency?: string | null } | null;
+            if (p?.tenant_id && p.auction_winner_id) {
+              const store = await getStore();
+              void triggerWebhooks(store, p.tenant_id, "marketplace.auction_won", "marketplace_post", id, {
+                post_id: id,
+                winner_partner_id: p.auction_winner_id,
+                winning_bid: p.auction_current_price ?? null,
+                currency: p.currency ?? null,
+              }).catch(() => {});
+            }
+          } catch (e) {
+            console.error(`[cron/auction-sweep] auction_won webhook failed for ${id}:`, e);
+          }
         } catch (e: any) {
           // One failed settlement must not abort the rest.
           console.error(`[cron/auction-sweep] settle failed for ${id}:`, e);

@@ -4,6 +4,7 @@ import { updateMarketplaceResponseStatus } from "@/lib/data/marketplace-store";
 import { audit } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { notify } from "@/lib/notif/helper";
+import { triggerWebhooks } from "@/lib/webhooks/deliver";
 import { withApm } from "@/lib/monitoring/apm";
 import type { MarketplaceResponseStatus } from "@/lib/supabase/marketplace-types";
 
@@ -54,6 +55,19 @@ async function _put(
         responseId,
         { post_id: id, new_status: status },
       );
+      // Phase 12 — fire marketplace.response_accepted webhook when the
+      // owner accepts a response. (Rejected / countered statuses don't
+      // fire a webhook — the spec calls out only the "accepted" path
+      // because that's the trigger for downstream flows like contract
+      // creation, shipment booking, L/C initiation, etc.)
+      if (status === "accepted") {
+        void triggerWebhooks(store, access.tenant_id, "marketplace.response_accepted", "marketplace_response", responseId, {
+          id: responseId,
+          post_id: id,
+          new_status: status,
+          responder_partner_id: updated?.partner_id,
+        }).catch(() => {});
+      }
     } catch (e) {
       console.error("[marketplace.response.put] audit failed:", e);
     }

@@ -4,6 +4,7 @@ import { getDocument, signDocument } from "@/lib/data/marketplace-trade-document
 import { computeDocumentFingerprint } from "@/lib/marketplace/document-pdf";
 import { audit } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
+import { triggerWebhooks } from "@/lib/webhooks/deliver";
 import { withApm } from "@/lib/monitoring/apm";
 
 export const runtime = "nodejs";
@@ -90,6 +91,18 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
           notes: body.notes ?? null,
         },
       );
+      // Phase 12 — fire marketplace.document_signed webhook
+      // (fire-and-forget). Receivers can use this to trigger downstream
+      // flows: eBL hand-off to the carrier, customs filing of the
+      // signed commercial invoice, payment-schedule activation, etc.
+      void triggerWebhooks(store, access.tenant_id, "marketplace.document_signed", "marketplace_trade_document", signed.id, {
+        document_id: signed.id,
+        document_type: signed.document_type,
+        reference_number: signed.reference_number,
+        signed_by: access.partner_id,
+        signed_at: signed.signed_at,
+        signature_prefix: signature.slice(0, 12),
+      }).catch(() => {});
     } catch (e) {
       console.error("[marketplace.documents.sign] audit failed:", e);
     }

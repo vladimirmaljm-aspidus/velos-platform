@@ -5,6 +5,7 @@ import { getSupabase } from "@/lib/supabase/client";
 import { audit } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { notify } from "@/lib/notif/helper";
+import { triggerWebhooks } from "@/lib/webhooks/deliver";
 import { withApm } from "@/lib/monitoring/apm";
 
 export const runtime = "nodejs";
@@ -183,6 +184,23 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
           actionUrl: `/portal/marketplace/${id}`,
           actionLabel: "View auction",
         });
+      }
+      // Phase 12 — fire marketplace.bid_placed webhook (fire-and-forget).
+      // For sealed auctions we deliberately omit the bid amount (the
+      // payload would leak it to the receiver before the auction closes).
+      try {
+        const store = await getStore();
+        void triggerWebhooks(store, access.tenant_id, "marketplace.bid_placed", "marketplace_auction_bid", bid.id, {
+          id: bid.id,
+          post_id: id,
+          bidder_partner_id: bid.partner_id,
+          bid_amount: isSealed ? null : amount,
+          currency,
+          is_sealed: isSealed,
+          created_at: bid.created_at,
+        }).catch(() => {});
+      } catch (e) {
+        console.error("[marketplace.bids.post] webhook failed:", e);
       }
     } catch (e) {
       console.error("[marketplace.bids.post] notify failed:", e);

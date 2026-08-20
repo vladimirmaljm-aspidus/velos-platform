@@ -7,6 +7,8 @@ import {
 import { getSupabase } from "@/lib/supabase/client";
 import { sanitizeFields } from "@/lib/security/sanitize-input";
 import { notify } from "@/lib/notif/helper";
+import { getStore } from "@/lib/data/store";
+import { triggerWebhooks } from "@/lib/webhooks/deliver";
 import { withApm } from "@/lib/monitoring/apm";
 
 export const runtime = "nodejs";
@@ -157,6 +159,24 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
       }
     } catch (e) {
       console.error("[marketplace.messages.create] notify/reveal failed:", e);
+    }
+
+    // Phase 12 — fire marketplace.message_sent webhook (fire-and-forget).
+    // Payload excludes the message body (which is free-text and could
+    // contain sensitive negotiation terms); receivers that need the
+    // body can call the auth-gated GET /api/marketplace/negotiations/[id]/messages
+    // with their own API key.
+    try {
+      const store = await getStore();
+      void triggerWebhooks(store, access.tenant_id, "marketplace.message_sent", "marketplace_message", created.id, {
+        id: created.id,
+        negotiation_id: created.negotiation_id,
+        sender_partner_id: created.sender_partner_id,
+        message_type: created.message_type,
+        created_at: created.created_at,
+      }).catch(() => {});
+    } catch (e) {
+      console.error("[marketplace.messages.create] webhook failed:", e);
     }
 
     return NextResponse.json(created);
