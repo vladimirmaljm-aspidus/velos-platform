@@ -163,3 +163,4 @@ export async function getZaiClient(): Promise<ZaiClient> {
       "  3. Set ZAI_BASE_URL + ZAI_API_KEY (if the Z.AI API is directly reachable)",
   );
 }
+// rebuild trigger
