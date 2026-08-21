@@ -35,7 +35,7 @@ import { PageHeader } from "@/components/common/page-header";
 import { KpiCard } from "@/components/common/kpi-card";
 import { EmptyState } from "@/components/common/empty-state";
 import { fmtRelative, fmtDateTime } from "@/lib/utils/format";
-import { useAppStore, isAdmin } from "@/lib/store/app-store";
+import { useAppStore, isSuperAdmin } from "@/lib/store/app-store";
 import type { MailQueueEntry, MailStatus } from "@/lib/supabase/types";
 import { useApiUrl, useTenantKey } from "@/lib/hooks/use-api-url";
 import { useDebounced } from "@/lib/hooks/use-debounced";
@@ -48,7 +48,7 @@ const STATUS_META: Record<MailStatus, { labelKey: string; className: string; ico
   failed: { labelKey: "admin-failed", className: "bg-destructive text-white", icon: XCircle },
 };
 
-function AdminRequired() {
+function SuperAdminRequired() {
   const t = useT();
   return (
     <Card className="border-amber-200 bg-amber-50/50 dark:bg-amber-950/10">
@@ -71,7 +71,11 @@ export function MailQueueView() {
   const t = useT();
 
   const user = useAppStore((s) => s.user);
-  const admin = isAdmin(user);
+  // SUPER-ADMIN ONLY — the mail queue is a PLATFORM-level concern
+  // (cross-tenant delivery observability, system-wide bounce/retry
+  // surface). Tenant admins — including trial tenants whose
+  // `isAdmin()` returns true via the role check — must not see it.
+  const superAdmin = isSuperAdmin(user);
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounced(search, 300);
@@ -90,7 +94,7 @@ export function MailQueueView() {
       if (!r.ok) throw new Error("Failed to load mail queue");
       return r.json() as Promise<{ items: MailQueueEntry[]; total: number }>;
     },
-    enabled: admin,
+    enabled: superAdmin,
   });
 
   const retryMut = useMutation({
@@ -123,11 +127,11 @@ export function MailQueueView() {
     onError: () => toast.error(t("admin-mail-delete-failed-toast")),
   });
 
-  if (!admin) {
+  if (!superAdmin) {
     return (
       <div>
         <PageHeader title={t("admin-mail-title")} description={t("admin-mail-desc")} />
-        <AdminRequired />
+        <SuperAdminRequired />
       </div>
     );
   }

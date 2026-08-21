@@ -112,6 +112,31 @@ export function ApiKeysView() {
 
   const user = useAppStore((s) => s.user);
   const admin = isAdmin(user);
+  const isSuperAdminUser = !!user && user.role === "super_admin";
+
+  // ── Plan gate — TRIAL tenants do NOT get API keys. ──────────────────────
+  // API keys are a paid-tier integration surface (programmatic access to
+  // tenant data, scoped permission presets). A trial tenant minting API
+  // keys is a security risk: a leaked key from a throwaway trial account
+  // can be used to probe the platform's endpoint surface for 14 days. The
+  // sidebar ALREADY hides this item via the `module_api_keys` feature flag
+  // (which defaults to false for every new tenant, trial included) — this
+  // is the in-view defense for the direct-URL navigation case.
+  const subQ = useQuery({
+    queryKey: ["subscription-status-api-keys"],
+    queryFn: async () => {
+      const r = await fetch("/api/subscription/status");
+      if (!r.ok) return null;
+      return r.json() as Promise<{
+        subscription: { is_trial?: boolean } | null;
+      }>;
+    },
+    staleTime: 60_000,
+    refetchOnWindowFocus: true,
+  });
+  const isTrial = !!subQ.data?.subscription?.is_trial;
+  const planAllowed = isSuperAdminUser || !isTrial;
+
   const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -124,7 +149,7 @@ export function ApiKeysView() {
       if (!r.ok) throw new Error("Neuspešno učitavanje API ključeva");
       return r.json() as Promise<{ items: SafeApiKey[] }>;
     },
-    enabled: admin,
+    enabled: admin && planAllowed,
   });
 
   const deleteMut = useMutation({
@@ -145,6 +170,29 @@ export function ApiKeysView() {
       <div>
         <PageHeader title={t("api-keys")} description={t("admin-api-keys-desc")} />
         <AdminRequired />
+      </div>
+    );
+  }
+
+  if (!planAllowed) {
+    return (
+      <div>
+        <PageHeader title={t("api-keys")} description={t("admin-api-keys-desc")} />
+        <Card className="border-amber-500/40 bg-amber-50/50 dark:bg-amber-950/20 rounded-xl">
+          <CardContent className="p-6 flex items-start gap-3">
+            <ShieldAlert className="size-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
+                {t("admin-access-required")}
+              </p>
+              <p className="text-xs text-amber-700 dark:text-amber-300">
+                API keys are a paid-plan integration surface and are not
+                available during the trial. Upgrade your workspace to mint
+                scoped API keys for programmatic access.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }

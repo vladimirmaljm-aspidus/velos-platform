@@ -85,7 +85,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: "vault", label: "Vault", icon: Lock, adminOnly: true },
   { key: "api-keys", label: "API Keys", icon: Key, adminOnly: true },
   { key: "webhooks", label: "Webhooks", icon: Webhook, adminOnly: true },
-  { key: "mail-queue", label: "Mail Queue", icon: Mail, adminOnly: true },
+  { key: "mail-queue", label: "Mail Queue", icon: Mail, superAdminOnly: true },
   { key: "settings", label: "Settings", icon: Settings, adminOnly: true },
   // Platform
   { key: "platform-dashboard", label: "Platform Dashboard", icon: LayoutDashboard, superAdminOnly: true },

@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
 import { ShieldAlert, Building2, ShieldCheck, Mail, Upload, Loader2, UserCog, X, ImageIcon, Send, CheckCircle2, XCircle, Zap, AlertTriangle, Globe, Info, FileText, Palette, QrCode, Save } from "lucide-react";
 import { useAppStore, isAdmin } from "@/lib/store/app-store";
+import { useQuery } from "@tanstack/react-query";
 import { TwoFactorSetup } from "@/components/auth/two-factor-setup";
 import { CURRENCIES } from "@/lib/data/reference";
 import { useApiUrl, useTenantKey } from "@/lib/hooks/use-api-url";
@@ -128,6 +129,35 @@ export function SettingsView() {
   const isSuperAdmin = !!currentUser && currentUser.role === "super_admin";
   const t = useT();
 
+  // ── Plan-gate for dangerous tabs (security / comms) ─────────────────────
+  // The SecurityTab (password policy, 2FA enforcement) and the CommsTab
+  // (SMTP / Resend / Postmark credentials) control tenant-wide posture
+  // that a TRIAL tenant should not be able to relax — a 14-day trial
+  // admin disabling 2FA enforcement, or pointing outbound mail at an
+  // attacker-controlled SMTP relay, are both dangerous in a way that
+  // survives the trial. Trial tenants therefore don't see these tabs
+  // at all; paid-plan tenant admins and super_admin do. (The
+  // /api/settings PUT endpoint ALSO rejects trial admins because the
+  // trial admin permission set excludes `settings.write` — this UI
+  // gate is the UX half of that defense, the API is the security half.)
+  const subQ = useQuery({
+    queryKey: ["subscription-status-settings"],
+    queryFn: async () => {
+      const r = await fetch("/api/subscription/status");
+      if (!r.ok) return null;
+      return r.json() as Promise<{
+        subscription: { is_trial?: boolean; plan?: string | null } | null;
+      }>;
+    },
+    staleTime: 60_000,
+    refetchOnWindowFocus: true,
+  });
+  const isTrial = !!subQ.data?.subscription?.is_trial;
+  // Super-admin bypasses the plan gate (they own the platform and can
+  // impersonate any tenant anyway); paid-plan admins pass; trial
+  // tenant admins are denied.
+  const canManageDangerousSettings = isSuperAdmin || !isTrial;
+
   if (!admin) {
     return (
       <div>
@@ -150,8 +180,12 @@ export function SettingsView() {
       <Tabs defaultValue="company">
         <TabsList className="flex w-full max-w-2xl overflow-x-auto justify-start sm:grid sm:grid-cols-6">
           <TabsTrigger value="company">{t("admin-settings-tab-company")}</TabsTrigger>
-          <TabsTrigger value="security">{t("admin-settings-tab-security")}</TabsTrigger>
-          <TabsTrigger value="comms">{t("admin-settings-tab-comms")}</TabsTrigger>
+          {canManageDangerousSettings && (
+            <TabsTrigger value="security">{t("admin-settings-tab-security")}</TabsTrigger>
+          )}
+          {canManageDangerousSettings && (
+            <TabsTrigger value="comms">{t("admin-settings-tab-comms")}</TabsTrigger>
+          )}
           <TabsTrigger value="integrations">{t("admin-settings-tab-integrations")}</TabsTrigger>
           <TabsTrigger value="preferences">{t("admin-settings-tab-preferences")}</TabsTrigger>
           <TabsTrigger value="memorandum">{t("admin-settings-tab-memorandum")}</TabsTrigger>
@@ -162,11 +196,17 @@ export function SettingsView() {
           <DefaultLanguageCard />
         </TabsContent>
         <TabsContent value="security" className="mt-4 space-y-4">
-          <SecurityTab />
-          <TwoFactorSetup isSuperAdmin={isSuperAdmin} />
+          {canManageDangerousSettings ? (
+            <>
+              <SecurityTab />
+              <TwoFactorSetup isSuperAdmin={isSuperAdmin} />
+            </>
+          ) : (
+            <PlanGateCard />
+          )}
         </TabsContent>
         <TabsContent value="comms" className="mt-4">
-          <CommsTab />
+          {canManageDangerousSettings ? <CommsTab /> : <PlanGateCard />}
         </TabsContent>
         <TabsContent value="integrations" className="mt-4">
           <IntegrationsTab />
@@ -179,6 +219,42 @@ export function SettingsView() {
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+/**
+ * PlanGateCard — placeholder shown in place of the Security/Comms tab when
+ * the current caller is on a TRIAL plan (and is not super_admin). The
+ * security/comms settings control tenant-wide posture (password policy,
+ * 2FA enforcement, outbound SMTP credentials) that a trial tenant should
+ * not be able to relax. The /api/settings PUT endpoint ALSO rejects trial
+ * admins (the trial permission set excludes `settings.write`) — this card
+ * is the UX half of that defense, the API is the security half.
+ */
+function PlanGateCard() {
+  const setView = useAppStore((s) => s.setView);
+  const t = useT();
+  return (
+    <Card className="border-amber-500/40 bg-amber-50/50 dark:bg-amber-950/20 rounded-xl">
+      <CardContent className="p-6 flex items-start gap-3">
+        <ShieldAlert className="size-5 text-amber-600 shrink-0 mt-0.5" />
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
+            Upgrade to manage security &amp; communications settings
+          </p>
+          <p className="text-xs text-amber-700 dark:text-amber-300">
+            Password policy, two-factor enforcement, and outbound email
+            (SMTP / Resend / Postmark) credentials are restricted to paid
+            plans. Upgrade your workspace to configure these settings.
+          </p>
+          <div>
+            <Button size="sm" onClick={() => setView("plans")}>
+              {t("misc-sub-upgrade-now")}
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

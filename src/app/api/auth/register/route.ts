@@ -243,6 +243,41 @@ export async function POST(req: NextRequest) {
     } as any);
 
     // ── Create admin user (role: admin, active) ───────────────────────────
+    // TRIAL tenants get a RESTRICTED permission set — NOT the `["*"]`
+    // wildcard. The wildcard would make `isAdmin()` return true (giving
+    // them access to vault/api-keys/webhooks/mail-queue/security/audit
+    // surfaces they should not have on a trial plan) AND grant them
+    // every non-platform permission via `canUser()`'s rule-2 bypass.
+    // The list below covers full tenant CRUD for their own data
+    // (partners, products, deals, invoices, documents, logistics, KYC
+    // review of their own portal, document templates, ERP read, basic
+    // marketplace + reports) but EXCLUDES the platform-dangerous
+    // features reserved for paid plans or super_admin: vault, api-keys,
+    // webhooks, mail-queue, security, audit, settings.write, users.write.
+    // When the tenant upgrades to a paid plan, a super_admin can flip
+    // their permissions to `["*"]` (or grant the specific additional
+    // scopes) via the platform users panel.
+    const TRIAL_ADMIN_PERMISSIONS = [
+      "partners:read", "partners:write",
+      "products:read", "products:write",
+      "offers:read", "offers:write",
+      "demands:read", "demands:write",
+      "deals:read", "deals:write",
+      "invoices:read", "invoices:write",
+      "proformas:read", "proformas:write",
+      "documents:read", "documents:write",
+      "commissions:read",
+      "inventory:read", "inventory:write",
+      "logistics:read",
+      "kyc:read",
+      "portal:read",
+      "portal.rfq_read",
+      "portal-uploads:read",
+      "document-templates:read", "document-templates:write",
+      "erp:read",
+      "marketplace:read", "marketplace:write",
+      "reports:read",
+    ];
     const passwordHash = await hashPassword(password);
     const user = await store.upsertUser({
       tenant_id: tenant.id,
@@ -252,7 +287,7 @@ export async function POST(req: NextRequest) {
       role: "admin",
       password_hash: passwordHash,
       active: true,
-      permissions: ["*"],
+      permissions: TRIAL_ADMIN_PERMISSIONS,
       token_version: 1,
       totp_enabled: false,
       totp_secret: null,

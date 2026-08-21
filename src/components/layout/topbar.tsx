@@ -657,14 +657,19 @@ export function Topbar() {
               {t(locale, "security")}
             </DropdownMenuItem>
 
-            {/* API Docs — admin/super-admin only.
+            {/* API Docs — SUPER-ADMIN only.
                 This is the only entry point in the SPA to the /api-docs
                 route (a separate Next.js page that renders Swagger UI). The
                 link opens in a new tab because the docs page replaces the
                 SPA — closing the tab returns the user to where they were.
-                Visibility is enforced client-side as a UX gate; the docs
-                page itself re-checks the session and refuses non-admins. */}
-            {(admin || superAdmin) && (
+                The /api-docs page itself re-checks the session and refuses
+                non-super-admins, AND the /api/openapi-json endpoint is
+                server-side auth-gated to super_admin — so the visibility
+                here is just UX, but we restrict it to super_admin so
+                tenant admins (including trial tenants whose `isAdmin()`
+                returns true) don't get a dangling link to a page they'll
+                be denied on. */}
+            {superAdmin && (
               <DropdownMenuItem
                 asChild
                 className="cursor-pointer rounded-lg mx-0.5 px-3 py-2 text-sm smooth"

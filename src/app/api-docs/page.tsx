@@ -9,12 +9,13 @@
  * crash Next.js server-side rendering.
  *
  * ─── Access control ────────────────────────────────────────────────────────
- * The page is gated client-side: if the caller has no admin session, we
- * redirect to / (the login view). This is a UX gate, not a security gate —
- * the underlying API endpoints enforce their own permission checks
- * regardless of who is browsing the docs. The docs themselves contain no
- * secrets (the spec is also served publicly at /api/openapi-json so external
- * tools can import it).
+ * The page is gated client-side to SUPER-ADMIN accounts only. The API
+ * documentation discloses the full route surface of the platform (every
+ * endpoint, every parameter, every schema), which is information an
+ * attacker can use to enumerate targets — so it is restricted to the
+ * platform owner. This is a UX gate; the underlying API endpoints enforce
+ * their own permission checks and the /api/openapi-json route itself is
+ * server-side auth-gated to super_admin.
  *
  * ─── Why dynamic import with ssr: false? ───────────────────────────────────
  * `swagger-ui-react` v5 ships ESM that references `window` at module-eval
@@ -26,7 +27,7 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
-import { useAppStore, isAdmin, isSuperAdmin } from "@/lib/store/app-store";
+import { useAppStore, isSuperAdmin } from "@/lib/store/app-store";
 import { Loader2, ArrowLeft, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { openApiSpec } from "@/lib/api/openapi-spec";
@@ -65,10 +66,13 @@ export default function ApiDocsPage() {
         if (!mounted) return;
         if (data?.user) {
           setUser(data.user);
-          // Only admins and super-admins see the docs. Regular sales/viewer
-          // accounts get the denied state — they have no use for the API
-          // spec and we don't want to advertise endpoints they can't call.
-          if (isAdmin(data.user) || isSuperAdmin(data.user)) {
+          // SUPER-ADMIN ONLY. The API documentation discloses the full
+          // route surface (every endpoint, parameter, schema) — that is
+          // enumeration material an attacker can use to scope a follow-on
+          // attack. Tenant admins (including trial tenants with the
+          // wildcard-permission bypass) and regular users get the denied
+          // state.
+          if (isSuperAdmin(data.user)) {
             setAuth("ok");
           } else {
             setAuth("denied");
@@ -87,10 +91,10 @@ export default function ApiDocsPage() {
       <div className="min-h-screen flex flex-col items-center justify-center gap-4 p-6 bg-background">
         <ShieldAlert className="size-10 text-muted-foreground" />
         <div className="text-center space-y-1">
-          <h1 className="text-xl font-semibold">Admin access required</h1>
+          <h1 className="text-xl font-semibold">Super-admin access required</h1>
           <p className="text-sm text-muted-foreground max-w-sm">
-            The API documentation is restricted to admin and super-admin
-            accounts. Sign in with an admin account to continue.
+            The API documentation is restricted to super-admin accounts.
+            Sign in with a super-admin account to continue.
           </p>
         </div>
         <Button asChild>

@@ -26,6 +26,17 @@ import { toast } from "sonner";
 
 // ─── Public types ─────────────────────────────────────────────────────────
 
+export interface ScannerCoAParameter {
+  name: string;
+  value: string;
+  /** Unit of measurement (e.g. "%", "mg/kg", "°C"). May be omitted. */
+  unit?: string;
+  /** Spec / limit / acceptable range stated on the CoA. May be omitted. */
+  spec?: string;
+  /** Pass / Fail / Conforms when the CoA states it. May be omitted. */
+  result?: string;
+}
+
 export interface DocumentScannerFillPayload {
   /** Canonical product name extracted from the document. */
   productName?: string;
@@ -34,7 +45,7 @@ export interface DocumentScannerFillPayload {
   /** Key/value spec map — passed verbatim to the create-post form. */
   specifications?: Record<string, string>;
   /** List of measured quality parameters (name + value strings). */
-  parameters?: Array<{ name: string; value: string }>;
+  parameters?: ScannerCoAParameter[];
   /** Batch / lot number from a CoA. */
   batch?: string;
   /** ISO date from a CoA. */
@@ -52,19 +63,49 @@ interface DocumentScannerProps {
 
 // ─── API response shapes (mirror src/lib/marketplace/document-parser.ts) ─
 
+type ConfidenceLevel = "high" | "medium" | "low";
+
 interface CoAResult {
-  parameters: Array<{ name: string; value: string }>;
+  parameters: ScannerCoAParameter[];
   product: string;
   batch: string;
   date: string;
+  manufactureDate?: string;
+  expiryDate?: string;
+  manufacturer?: string;
+  grade?: string;
+  origin?: string;
+  certifications?: string[];
+  storage?: string;
+  packaging?: string;
+  confidence?: ConfidenceLevel;
+  uncertainFields?: string[];
 }
+
 interface SpecSheetResult {
   productName: string;
   specifications: Record<string, string>;
   category: string;
+  sku?: string;
+  hsCode?: string;
+  brand?: string;
+  originCountry?: string;
+  shelfLife?: string;
+  storage?: string;
+  certifications?: string[];
+  containerCapacity?: string;
+  applications?: string[];
+  confidence?: ConfidenceLevel;
+  uncertainFields?: string[];
 }
 
 type ParseType = "coa" | "spec_sheet";
+
+// Allowed MIME types — kept in sync with the API route + document-parser.
+const IMAGE_MIME_RE = /^image\/(png|jpe?g|webp)$/i;
+const PDF_MIME = "application/pdf";
+const IMAGE_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
+const PDF_MAX_BYTES = 15 * 1024 * 1024; // 15 MB
 
 // ─── Component ────────────────────────────────────────────────────────────
 
@@ -81,10 +122,19 @@ type ParseType = "coa" | "spec_sheet";
  *     key/value specifications map. The map goes onto the post's
  *     `specifications` JSONB column.
  *
- * The image is uploaded as base64 (NOT persisted server-side — the API
+ * Two file kinds are supported:
+ *   • Images (PNG / JPEG / WebP) — sent to the VLM via the
+ *     `image_url` content block.
+ *   • PDFs — sent via the `file_url` content block. PDFs are capped at
+ *     15 MB; images at 5 MB.
+ *
+ * The file is uploaded as base64 (NOT persisted server-side — the API
  * route keeps it in memory only for the duration of the VLM call). The
- * preview shows the parsed fields so the user can sanity-check before
- * filling the form.
+ * preview shows either a thumbnail (images) or a PDF icon + filename
+ * (PDFs) so the user can sanity-check before filling the form. The
+ * parsed-data preview also surfaces a confidence badge (`high` /
+ * `medium` / `low`) the VLM self-assesses, plus the list of fields the
+ * model was uncertain about.
  */
 export function DocumentScanner({ onFill }: DocumentScannerProps) {
   const t = useT();
@@ -92,12 +142,17 @@ export function DocumentScanner({ onFill }: DocumentScannerProps) {
   const [parsedCoA, setParsedCoA] = useState<CoAResult | null>(null);
   const [parsedSpec, setParsedSpec] = useState<SpecSheetResult | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [pdfFileName, setPdfFileName] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   // ── Mutation: POST /api/marketplace/parse-document ──────────────────
   const parse = useMutation({
-    mutationFn: async (vars: { type: ParseType; imageBase64: string }) => {
+    mutationFn: async (vars: {
+      type: ParseType;
+      fileBase64: string;
+      mimeType: string;
+    }) => {
       const r = await fetch("/api/marketplace/parse-document", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -105,11 +160,13 @@ export function DocumentScanner({ onFill }: DocumentScannerProps) {
       });
       if (r.status === 503) {
         // AI service unavailable — friendly message via the toast.
-        const e = await r.json().catch(() => ({}));
-        throw new Error(e.error || t("marketplace-document-scanner-ai-unavailable"));
+        const e = (await r.json().catch(() => ({}))) as { error?: string };
+        throw new Error(
+          e.error || t("marketplace-document-scanner-ai-unavailable"),
+        );
       }
       if (!r.ok) {
-        const e = await r.json().catch(() => ({}));
+        const e = (await r.json().catch(() => ({}))) as { error?: string };
         throw new Error(e.error || "Failed to parse document.");
       }
       return r.json() as Promise<{ result: CoAResult | SpecSheetResult }>;
@@ -136,33 +193,54 @@ export function DocumentScanner({ onFill }: DocumentScannerProps) {
   // ── File picker ──────────────────────────────────────────────────────
   const onFileSelected = useCallback(
     async (file: File) => {
+      const isPdf = file.type === PDF_MIME;
+      const isImage = IMAGE_MIME_RE.test(file.type);
+
       // Validate the MIME + size BEFORE encoding.
-      if (!/^image\/(png|jpeg|webp)$/i.test(file.type)) {
+      if (!isImage && !isPdf) {
         toast.error(t("marketplace-document-scanner-invalid-format"));
         return;
       }
-      if (file.size > 5 * 1024 * 1024) {
+      const maxBytes = isPdf ? PDF_MAX_BYTES : IMAGE_MAX_BYTES;
+      if (file.size > maxBytes) {
         toast.error(t("marketplace-document-scanner-too-large"));
         return;
       }
-      // Render a preview thumbnail so the user sees what they uploaded.
-      const url = URL.createObjectURL(file);
-      setPreviewUrl(url);
 
-      // Read as base64 — the FileReader result is `data:<mime>;base64,<...>`
-      // which the parser strips down to bare base64 internally.
+      // Reset any stale preview from the previous upload.
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+        setPreviewUrl(null);
+      }
+      setPdfFileName(null);
+
+      if (isPdf) {
+        // PDFs can't be drawn into an <img>; show a FileText icon + name.
+        setPdfFileName(file.name);
+      } else {
+        // Render a preview thumbnail so the user sees what they uploaded.
+        const url = URL.createObjectURL(file);
+        setPreviewUrl(url);
+      }
+
+      // Read as base64 — the FileReader result is `data:<mime>;base64,<...>`.
+      // The API route auto-detects the MIME from this prefix, but we pass
+      // the explicit `mimeType` too so the parser doesn't have to guess
+      // when the data: prefix is stripped.
       const reader = new FileReader();
       reader.onload = () => {
         const dataUrl = String(reader.result || "");
-        parse.mutate({ type: scanType, imageBase64: dataUrl });
+        const mimeType = isPdf ? PDF_MIME : file.type;
+        parse.mutate({ type: scanType, fileBase64: dataUrl, mimeType });
       };
       reader.onerror = () => {
         toast.error("Failed to read the file.");
         setPreviewUrl(null);
+        setPdfFileName(null);
       };
       reader.readAsDataURL(file);
     },
-    [scanType, parse, t],
+    [scanType, parse, t, previewUrl],
   );
 
   const onDrop = useCallback(
@@ -253,18 +331,27 @@ export function DocumentScanner({ onFill }: DocumentScannerProps) {
               alt="Upload preview"
               className="max-h-32 rounded-md border"
             />
+          ) : pdfFileName ? (
+            <div className="flex flex-col items-center gap-1 max-w-full">
+              <FileText className="h-10 w-10 text-rose-600" />
+              <p className="text-xs font-medium truncate max-w-full">{pdfFileName}</p>
+              <p className="text-[10px] text-muted-foreground">PDF</p>
+            </div>
           ) : (
             <>
               <Upload className="h-6 w-6 text-muted-foreground" />
               <p className="text-xs text-muted-foreground">
                 {t("marketplace-document-scanner-dropzone")}
               </p>
+              <p className="text-[10px] text-muted-foreground">
+                PNG · JPEG · WebP · PDF (≤ 5 MB image / ≤ 15 MB PDF)
+              </p>
             </>
           )}
           <input
             ref={inputRef}
             type="file"
-            accept="image/png,image/jpeg,image/webp"
+            accept="image/png,image/jpeg,image/webp,application/pdf"
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0];
@@ -293,7 +380,7 @@ export function DocumentScanner({ onFill }: DocumentScannerProps) {
         {/* Parsed preview — CoA. */}
         {scanType === "coa" && parsedCoA && (
           <div className="space-y-2">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Badge variant="outline" className="border-transparent bg-emerald-500/15 text-emerald-700 dark:text-emerald-400">
                 <CheckCircle2 className="h-3 w-3 mr-1" />
                 {t("marketplace-document-scanner-parsed-coa")}
@@ -303,12 +390,34 @@ export function DocumentScanner({ onFill }: DocumentScannerProps) {
                   {parsedCoA.parameters.length} {t("marketplace-document-scanner-parameters-count")}
                 </span>
               )}
+              {parsedCoA.confidence && (
+                <ConfidenceBadge level={parsedCoA.confidence} label={t("marketplace-document-scanner-confidence")} />
+              )}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
               <Field label={t("marketplace-product-name")} value={parsedCoA.product || "—"} />
               <Field label={t("marketplace-document-scanner-batch")} value={parsedCoA.batch || "—"} />
               <Field label={t("marketplace-document-scanner-date")} value={parsedCoA.date || "—"} />
+              {parsedCoA.manufacturer && (
+                <Field label={t("marketplace-document-scanner-manufacturer")} value={parsedCoA.manufacturer} />
+              )}
+              {parsedCoA.grade && (
+                <Field label={t("marketplace-document-scanner-grade")} value={parsedCoA.grade} />
+              )}
+              {parsedCoA.origin && (
+                <Field label={t("marketplace-document-scanner-origin")} value={parsedCoA.origin} />
+              )}
+              {parsedCoA.expiryDate && (
+                <Field label={t("marketplace-document-scanner-expiry")} value={parsedCoA.expiryDate} />
+              )}
             </div>
+            {parsedCoA.certifications && parsedCoA.certifications.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {parsedCoA.certifications.map((c) => (
+                  <Badge key={c} variant="outline" className="text-[10px]">{c}</Badge>
+                ))}
+              </div>
+            )}
             {parsedCoA.parameters.length > 0 && (
               <>
                 <Separator className="my-2" />
@@ -316,12 +425,24 @@ export function DocumentScanner({ onFill }: DocumentScannerProps) {
                 <ul className="text-xs space-y-1 max-h-32 overflow-y-auto">
                   {parsedCoA.parameters.map((p, i) => (
                     <li key={i} className="flex justify-between gap-3">
-                      <span className="text-muted-foreground truncate">{p.name}</span>
-                      <span className="font-medium text-right">{p.value}</span>
+                      <span className="text-muted-foreground truncate">
+                        {p.name}
+                        {p.spec ? ` (spec: ${p.spec})` : ""}
+                      </span>
+                      <span className="font-medium text-right">
+                        {p.value}
+                        {p.unit ? ` ${p.unit}` : ""}
+                        {p.result ? ` · ${p.result}` : ""}
+                      </span>
                     </li>
                   ))}
                 </ul>
               </>
+            )}
+            {parsedCoA.uncertainFields && parsedCoA.uncertainFields.length > 0 && (
+              <p className="text-[10px] text-amber-700 dark:text-amber-400">
+                {t("marketplace-document-scanner-uncertain-fields")}: {parsedCoA.uncertainFields.join(", ")}
+              </p>
             )}
           </div>
         )}
@@ -329,7 +450,7 @@ export function DocumentScanner({ onFill }: DocumentScannerProps) {
         {/* Parsed preview — Spec Sheet. */}
         {scanType === "spec_sheet" && parsedSpec && (
           <div className="space-y-2">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Badge variant="outline" className="border-transparent bg-emerald-500/15 text-emerald-700 dark:text-emerald-400">
                 <CheckCircle2 className="h-3 w-3 mr-1" />
                 {t("marketplace-document-scanner-parsed-spec")}
@@ -339,11 +460,39 @@ export function DocumentScanner({ onFill }: DocumentScannerProps) {
                   {Object.keys(parsedSpec.specifications).length} {t("marketplace-document-scanner-specs-count")}
                 </span>
               )}
+              {parsedSpec.confidence && (
+                <ConfidenceBadge level={parsedSpec.confidence} label={t("marketplace-document-scanner-confidence")} />
+              )}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
               <Field label={t("marketplace-product-name")} value={parsedSpec.productName || "—"} />
               <Field label={t("marketplace-product-category")} value={parsedSpec.category || "—"} />
+              {parsedSpec.sku && (
+                <Field label={t("marketplace-document-scanner-sku")} value={parsedSpec.sku} />
+              )}
+              {parsedSpec.hsCode && (
+                <Field label={t("marketplace-document-scanner-hs-code")} value={parsedSpec.hsCode} />
+              )}
+              {parsedSpec.brand && (
+                <Field label={t("marketplace-document-scanner-brand")} value={parsedSpec.brand} />
+              )}
+              {parsedSpec.originCountry && (
+                <Field label={t("marketplace-document-scanner-origin")} value={parsedSpec.originCountry} />
+              )}
+              {parsedSpec.shelfLife && (
+                <Field label={t("marketplace-document-scanner-shelf-life")} value={parsedSpec.shelfLife} />
+              )}
+              {parsedSpec.containerCapacity && (
+                <Field label={t("marketplace-document-scanner-container-capacity")} value={parsedSpec.containerCapacity} />
+              )}
             </div>
+            {parsedSpec.certifications && parsedSpec.certifications.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {parsedSpec.certifications.map((c) => (
+                  <Badge key={c} variant="outline" className="text-[10px]">{c}</Badge>
+                ))}
+              </div>
+            )}
             {Object.keys(parsedSpec.specifications).length > 0 && (
               <>
                 <Separator className="my-2" />
@@ -357,6 +506,11 @@ export function DocumentScanner({ onFill }: DocumentScannerProps) {
                   ))}
                 </ul>
               </>
+            )}
+            {parsedSpec.uncertainFields && parsedSpec.uncertainFields.length > 0 && (
+              <p className="text-[10px] text-amber-700 dark:text-amber-400">
+                {t("marketplace-document-scanner-uncertain-fields")}: {parsedSpec.uncertainFields.join(", ")}
+              </p>
             )}
           </div>
         )}
@@ -390,5 +544,25 @@ function Field({ label, value }: { label: string; value: string }) {
       <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{label}</p>
       <p className="font-medium truncate">{value}</p>
     </div>
+  );
+}
+
+function ConfidenceBadge({
+  level,
+  label,
+}: {
+  level: ConfidenceLevel;
+  label: string;
+}) {
+  const tone =
+    level === "high"
+      ? "border-transparent bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
+      : level === "medium"
+        ? "border-transparent bg-amber-500/15 text-amber-700 dark:text-amber-400"
+        : "border-transparent bg-rose-500/15 text-rose-700 dark:text-rose-400";
+  return (
+    <Badge variant="outline" className={`text-[10px] ${tone}`}>
+      {label}: {level}
+    </Badge>
   );
 }

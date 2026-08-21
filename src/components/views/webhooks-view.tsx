@@ -83,6 +83,32 @@ export function WebhooksView() {
 
   const user = useAppStore((s) => s.user);
   const admin = isAdmin(user);
+  const isSuperAdminUser = !!user && user.role === "super_admin";
+
+  // ── Plan gate — TRIAL tenants do NOT get webhooks. ──────────────────────
+  // Webhooks are a paid-tier automation surface (outbound delivery to
+  // arbitrary URLs on tenant events). A trial tenant registering
+  // webhooks is a security risk: trial accounts can be farmed to probe
+  // the platform's event-delivery surface (and to exfiltrate tenant
+  // data via delivery payloads to attacker-controlled endpoints) for 14
+  // days before anyone notices. The sidebar ALREADY hides this item via
+  // the `module_webhooks` feature flag (default false for every new
+  // tenant) — this is the in-view defense for the direct-URL navigation.
+  const subQ = useQuery({
+    queryKey: ["subscription-status-webhooks"],
+    queryFn: async () => {
+      const r = await fetch("/api/subscription/status");
+      if (!r.ok) return null;
+      return r.json() as Promise<{
+        subscription: { is_trial?: boolean } | null;
+      }>;
+    },
+    staleTime: 60_000,
+    refetchOnWindowFocus: true,
+  });
+  const isTrial = !!subQ.data?.subscription?.is_trial;
+  const planAllowed = isSuperAdminUser || !isTrial;
+
   const qc = useQueryClient();
   const [editing, setEditing] = useState<WebhookType | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -96,7 +122,7 @@ export function WebhooksView() {
       if (!r.ok) throw new Error("Failed to load webhooks");
       return r.json() as Promise<{ items: WebhookType[] }>;
     },
-    enabled: admin,
+    enabled: admin && planAllowed,
   });
 
   const toggleMut = useMutation({
@@ -133,6 +159,29 @@ export function WebhooksView() {
       <div>
         <PageHeader title={t("admin-webhooks-title")} description={t("admin-webhooks-desc")} />
         <AdminRequired />
+      </div>
+    );
+  }
+
+  if (!planAllowed) {
+    return (
+      <div>
+        <PageHeader title={t("admin-webhooks-title")} description={t("admin-webhooks-desc")} />
+        <Card className="border-amber-500/40 bg-amber-50/50 dark:bg-amber-950/20 rounded-xl">
+          <CardContent className="p-6 flex items-start gap-3">
+            <ShieldCheck className="size-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
+                {t("admin-access-required")}
+              </p>
+              <p className="text-xs text-amber-700 dark:text-amber-300">
+                Webhooks are a paid-plan automation surface and are not
+                available during the trial. Upgrade your workspace to
+                register outbound webhook deliveries.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }
