@@ -35,6 +35,7 @@
 //   VLM call.
 
 import ZAI from "z-ai-web-dev-sdk";
+import { getZaiClient } from "@/lib/ai/zai-client";
 
 // ─── Public shapes ────────────────────────────────────────────────────────
 
@@ -146,11 +147,14 @@ function extractJson(text: string): any | null {
  * public constructor).
  */
 async function getZai(): Promise<Awaited<ReturnType<typeof ZAI.create>>> {
+  // Delegate to the shared client factory which tries the file-based
+  // config first (local dev) and falls back to ZAI_BASE_URL + ZAI_API_KEY
+  // env vars (Vercel/serverless).
   try {
-    return await ZAI.create();
+    return await getZaiClient();
   } catch (e) {
     throw new DocumentParserError(
-      "AI vision service is not configured — set the .z-ai-config file (baseUrl + apiKey) or the equivalent environment variables.",
+      "AI vision service is not configured — set ZAI_BASE_URL and ZAI_API_KEY env vars (or create a .z-ai-config file).",
       e,
     );
   }

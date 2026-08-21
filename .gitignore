@@ -39,3 +39,6 @@ Thumbs.db
 
 # bun lockfile (project uses npm, not bun)
 bun.lock
+
+# ── Z.AI SDK config file (contains API token — NEVER commit) ──────────────────
+.z-ai-config

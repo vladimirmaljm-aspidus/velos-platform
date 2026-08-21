@@ -85,12 +85,10 @@ async function _get(req: NextRequest) {
   const query = `${category} ${suffix}`;
 
   try {
-    // Dynamic import so a missing `.z-ai-config` doesn't break the
-    // build / runtime for environments that don't have the SDK
-    // configured.
-    const ZAIModule = await import("z-ai-web-dev-sdk");
-    const ZAI = ZAIModule.default;
-    const zai = await ZAI.create();
+    // Use the shared client factory which falls back to ZAI_BASE_URL +
+    // ZAI_API_KEY env vars when .z-ai-config is absent (Vercel/serverless).
+    const { getZaiClient } = await import("@/lib/ai/zai-client");
+    const zai = await getZaiClient();
     const results = await zai.functions.invoke("web_search", {
       query,
       num,
