@@ -91,7 +91,11 @@ export function TenantsView({ embedded = false }: { embedded?: boolean } = {}) {
   const user = useAppStore((s) => s.user);
   const [editing, setEditing] = useState<Tenant | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
+  // DEL-1: store the full tenant record (not just the id) so the delete
+  // confirmation dialog can render the tenant name and gate the "Confirm"
+  // button behind a type-to-match input.
+  const [deleteTarget, setDeleteTarget] = useState<Tenant | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
 
   const isSuper = isSuperAdmin(user);
 
@@ -106,17 +110,36 @@ export function TenantsView({ embedded = false }: { embedded?: boolean } = {}) {
   });
 
   const deleteMut = useMutation({
-    mutationFn: async (id: string) => {
-      const r = await fetch(api(`/api/tenants/${id}`), { method: "DELETE" });
-      if (!r.ok) throw new Error("Delete failed");
+    mutationFn: async (tenant: Tenant) => {
+      // DEL-1: pass `confirm: true` so the server's hard-delete cascade
+      // (deleteTenantCascade) runs unconditionally for super_admin callers.
+      // Without this, the server 409s on tenants that have any dependent
+      // rows (users, partners, invoices, …).
+      const r = await fetch(api(`/api/tenants/${tenant.id}`), {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: true }),
+      });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.error || "Delete failed");
+      }
     },
     onSuccess: () => {
       toast.success("Tenant deleted.");
       qc.invalidateQueries({ queryKey: ["tenants", tenantKey] });
-      setDeleteId(null);
+      setDeleteTarget(null);
+      setDeleteConfirmText("");
     },
-    onError: () => toast.error("Delete failed."),
+    onError: (e: any) => toast.error(e.message || "Delete failed."),
   });
+
+  // DEL-1: type-to-confirm gate — the operator must type the tenant name
+  // verbatim before the destructive action button is enabled. Prevents an
+  // accidental click from destroying a tenant with all its data.
+  const deleteConfirmMatches =
+    deleteTarget !== null &&
+    deleteConfirmText.trim().toLowerCase() === (deleteTarget.name || "").trim().toLowerCase();
 
   if (!isSuper) {
     return (
@@ -233,7 +256,7 @@ export function TenantsView({ embedded = false }: { embedded?: boolean } = {}) {
                           <Button size="icon" variant="ghost" className="size-8" onClick={() => { setEditing(tn); setShowForm(true); }} title={t(locale, "edit")}>
                             <Pencil className="size-4" />
                           </Button>
-                          <Button size="icon" variant="ghost" className="size-8 text-destructive" onClick={() => setDeleteId(tn.id)} title={t(locale, "delete")}>
+                          <Button size="icon" variant="ghost" className="size-8 text-destructive" onClick={() => { setDeleteTarget(tn); setDeleteConfirmText(""); }} title={t(locale, "delete")}>
                             <Trash2 className="size-4" />
                           </Button>
                         </div>
@@ -257,18 +280,48 @@ export function TenantsView({ embedded = false }: { embedded?: boolean } = {}) {
         }}
       />
 
-      <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
+      <AlertDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => {
+          if (!o) {
+            setDeleteTarget(null);
+            setDeleteConfirmText("");
+          }
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t(locale, "pf-delete-tenant-title")}</AlertDialogTitle>
             <AlertDialogDescription>
               {t(locale, "pf-delete-tenant-desc")}
+              {/* DEL-1: stronger warning — super_admin can now force-delete a
+               * tenant even when it has users / subscriptions / data. */}
+              <span className="block mt-2 text-destructive font-medium">
+                This will permanently delete this tenant AND all associated data
+                (users, partners, products, deals, invoices, sessions, etc.).
+                This cannot be undone.
+              </span>
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {/* DEL-1: type-to-confirm gate. */}
+          <div className="space-y-2">
+            <Label htmlFor="delete-confirm-tenant-name" className="text-xs text-muted-foreground">
+              Type the tenant name (<span className="font-mono text-foreground">{deleteTarget?.name || "—"}</span>) to confirm:
+            </Label>
+            <Input
+              id="delete-confirm-tenant-name"
+              autoComplete="off"
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              placeholder={deleteTarget?.name || ""}
+              className="font-mono"
+            />
+          </div>
           <AlertDialogFooter>
             <AlertDialogCancel>{t(locale, "cancel")}</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => deleteId && deleteMut.mutate(deleteId)}
+              onClick={() => deleteTarget && deleteMut.mutate(deleteTarget)}
+              disabled={!deleteConfirmMatches}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {t(locale, "delete")}

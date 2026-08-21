@@ -235,9 +235,22 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     // dangles forever. We refuse the hard-delete unless the caller
     // explicitly confirms they understand the cascade, OR they ask for a
     // soft-delete instead (status → cancelled, no data loss).
+    //
+    // ── DEL-1 (Super admin force-delete) ────────────────────────────────
+    // This route is already gated by `requireSuperAdmin` at the top, so
+    // every caller IS a super_admin. The platform owner explicitly
+    // requested the ability to delete ANY tenant regardless of users /
+    // subscriptions — the dependency gate is now bypassed for super_admin
+    // callers. The cascade (`deleteTenantCascade` below) still walks every
+    // tenant-scoped table and DELETEs the rows in dependency order, so no
+    // orphans are left behind. The dependency snapshot is still captured
+    // for the audit entry so the audit trail records what was destroyed.
     const deps = await auth.store.countTenantDependencies(id);
 
-    if (deps.total > 0 && !body.confirm) {
+    // Non-super-admin callers (defensive — currently unreachable because
+    // `requireSuperAdmin` above already 403'd them) still hit the gate and
+    // must pass `confirm=true`. Super_admin bypasses the gate entirely.
+    if (!auth.isSuperAdmin && deps.total > 0 && !body.confirm) {
       return NextResponse.json({
         error: "Tenant has existing data. Pass confirm=true to hard delete, or soft=true for soft delete.",
         dependencies: deps,

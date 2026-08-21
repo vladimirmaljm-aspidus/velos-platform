@@ -186,21 +186,58 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     const _d = requirePermission(auth, "users.delete"); if (_d) return _d; } /* requirePermission wired */
 
     const { id } = await params;
+    // ── DEL-1 (Super admin force-delete) ─────────────────────────────────
+    // The "cannot delete yourself" guard is intentionally kept for EVERYONE,
+    // including super_admin — otherwise a super_admin could accidentally
+    // lock themselves out of the platform (no super_admin left = no way to
+    // manage tenants). The platform owner must use a separate self-offboarding
+    // flow (promote a successor, then delete self from that successor's session).
     if (id === auth.user.id) {
       return NextResponse.json({ error: "You cannot delete yourself." }, { status: 400 });
     }
     const existing = await auth.store.getUserById(id);
     if (!existing) return NextResponse.json({ error: "Not found." }, { status: 404 });
 
-    // Tenant Ownership check
+    // Tenant Ownership check (non-super-admins only)
+    // Super_admin can see / delete users in any tenant — they are the
+    // platform owner. Regular admins are scoped to their own tenant and
+    // can never see / delete super_admin accounts (404 here, not 403, so
+    // the existence of a super_admin account is not leaked).
     if (!auth.isSuperAdmin) {
       if (existing.role === "super_admin" || existing.tenant_id !== auth.tenantId) {
         return NextResponse.json({ error: "Not found." }, { status: 404 });
       }
     }
 
-    // Prevent deleting the last admin
-    if (existing.role === "admin" && existing.tenant_id) {
+    // ── DEL-1: Last-super_admin safety ──────────────────────────────────
+    // Super_admin can delete ANY user — including other admins — EXCEPT
+    // the last remaining super_admin. Deleting the last super_admin would
+    // leave the platform without any platform-level owner (no one to
+    // manage tenants, no one to recover from a tenant-admin lockout).
+    // The check is scoped to platform-level super_admins (tenant_id IS
+    // NULL — tenant-scoped admins with the "super_admin" role string are
+    // a legacy edge case that we don't want to special-case here).
+    if (existing.role === "super_admin") {
+      const allUsers = await auth.store.listUsers("");
+      const otherSuperAdmins = allUsers.filter(
+        (u) => u.role === "super_admin" && u.active && u.id !== existing.id,
+      ).length;
+      if (otherSuperAdmins < 1) {
+        return NextResponse.json(
+          { error: "Cannot delete the last super_admin. Promote another user to super_admin first." },
+          { status: 400 },
+        );
+      }
+    }
+
+    // ── DEL-1: Last-admin safety (non-super-admin only) ────────────────
+    // A regular tenant admin cannot delete the last admin of their own
+    // tenant (would orphan the tenant — no one with admin rights to manage
+    // users / billing). Super_admin is exempt: as the platform owner they
+    // can delete any admin including the last one (e.g. when decommissioning
+    // a tenant entirely — the tenant itself is deleted separately via
+    // DELETE /api/tenants/[id]).
+    if (!auth.isSuperAdmin && existing.role === "admin" && existing.tenant_id) {
       const users = await auth.store.listUsers(existing.tenant_id);
       const adminCount = users.filter(u => u.role === "admin" && u.active && u.id !== existing.id).length;
       if (adminCount < 1) {

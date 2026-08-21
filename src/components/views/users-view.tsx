@@ -92,9 +92,15 @@ export function UsersView() {
   const qc = useQueryClient();
   const currentUser = useAppStore((s) => s.user);
   const admin = isAdmin(currentUser);
+  const isSuper = isSuperAdmin(currentUser);
   const [editing, setEditing] = useState<SafeUser | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
+  // DEL-1: store the full user record (not just the id) so the delete
+  // confirmation dialog can render the user's email / role and gate the
+  // "Confirm" button behind a type-to-confirm input when a super_admin is
+  // deleting another admin.
+  const [deleteTarget, setDeleteTarget] = useState<SafeUser | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [page, setPage] = useState(1);
 
   const { data, isLoading } = useQuery({
@@ -136,10 +142,22 @@ export function UsersView() {
     onSuccess: () => {
       toast.success("User deleted.");
       qc.invalidateQueries({ queryKey: ["users", tenantKey] });
-      setDeleteId(null);
+      setDeleteTarget(null);
+      setDeleteConfirmText("");
     },
     onError: (e: any) => toast.error(e.message || "Failed to delete user."),
   });
+
+  // DEL-1: super_admin deleting another admin (admin or super_admin) is a
+  // high-impact action — gate the "Confirm" button behind a type-to-match
+  // input that requires the operator to type the user's email verbatim.
+  // Non-super-admin callers fall through to the regular AlertDialog flow
+  // (no type-to-confirm needed; existing permission checks already gate them).
+  const deleteNeedsConfirm =
+    isSuper && deleteTarget !== null && (deleteTarget.role === "admin" || deleteTarget.role === "super_admin");
+  const deleteConfirmMatches =
+    !deleteNeedsConfirm ||
+    (deleteTarget?.email && deleteConfirmText.trim().toLowerCase() === deleteTarget.email.trim().toLowerCase());
 
   const allItems = data?.items || [];
   const totalPages = Math.max(1, Math.ceil(allItems.length / PAGE_SIZE));
@@ -295,7 +313,12 @@ export function UsersView() {
                                   toast.error(t("admin-users-cannot-delete-self"));
                                   return;
                                 }
-                                setDeleteId(u.id);
+                                // DEL-1: capture the full user record so the
+                                // confirmation dialog can render role / email
+                                // and (for super_admin deletes of admins) gate
+                                // the Confirm button behind a type-to-match input.
+                                setDeleteTarget(u);
+                                setDeleteConfirmText("");
                               }}
                               title={isSelf ? t("admin-users-cannot-delete-self") : t("delete")}
                             >
@@ -358,18 +381,56 @@ export function UsersView() {
         }}
       />
 
-      <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
+      <AlertDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => {
+          if (!o) {
+            setDeleteTarget(null);
+            setDeleteConfirmText("");
+          }
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t("admin-users-delete-title")}</AlertDialogTitle>
             <AlertDialogDescription>
               {t("admin-users-delete-desc")}
+              {/* DEL-1: stronger warning for super_admin deletes — the
+               * platform owner can now delete ANY user (including other
+               * admins / super_admins), so surface the irreversible
+               * cascading-delete consequence prominently. */}
+              {isSuper && deleteTarget && (deleteTarget.role === "admin" || deleteTarget.role === "super_admin") && (
+                <span className="block mt-2 text-destructive font-medium">
+                  This will permanently delete this {deleteTarget.role === "super_admin" ? "super-admin" : "admin"} user AND all associated data (sessions, audit-log PII, notifications, etc.). This cannot be undone.
+                </span>
+              )}
+              {isSuper && deleteTarget && deleteTarget.role !== "admin" && deleteTarget.role !== "super_admin" && (
+                <span className="block mt-2 text-destructive font-medium">
+                  This will permanently delete this user AND all associated data. This cannot be undone.
+                </span>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {deleteNeedsConfirm && (
+            <div className="space-y-2">
+              <Label htmlFor="delete-confirm-email" className="text-xs text-muted-foreground">
+                Type the user&apos;s email (<span className="font-mono text-foreground">{deleteTarget?.email || "—"}</span>) to confirm:
+              </Label>
+              <Input
+                id="delete-confirm-email"
+                autoComplete="off"
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                placeholder={deleteTarget?.email || ""}
+                className="font-mono"
+              />
+            </div>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => deleteId && deleteMut.mutate(deleteId)}
+              onClick={() => deleteTarget && deleteMut.mutate(deleteTarget.id)}
+              disabled={deleteNeedsConfirm && !deleteConfirmMatches}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {t("delete")}

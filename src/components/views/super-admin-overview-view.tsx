@@ -397,6 +397,11 @@ export function SuperAdminOverviewView({ embedded = false }: { embedded?: boolea
   const [createOpen, setCreateOpen] = useState(false);
   const [editTenant, setEditTenant] = useState<TenantStats | null>(null);
   const [deleteTenant, setDeleteTenant] = useState<TenantStats | null>(null);
+  // DEL-1: super_admin force-deleting a tenant with users / subscriptions
+  // is a high-impact irreversible cascade. Gate the "Confirm" button behind
+  // a type-to-match input that requires the operator to type the tenant's
+  // name verbatim. Cleared on dialog close.
+  const [deleteTenantConfirmText, setDeleteTenantConfirmText] = useState("");
   const [viewUsersTenant, setViewUsersTenant] = useState<TenantStats | null>(null);
   const [assignAdminTenant, setAssignAdminTenant] = useState<TenantStats | null>(null);
 
@@ -462,13 +467,21 @@ export function SuperAdminOverviewView({ embedded = false }: { embedded?: boolea
 
   async function handleDeleteTenant() {
     if (!deleteTenant) return;
-    const r = await fetch(api(`/api/tenants/${deleteTenant.tenant.id}`), { method: "DELETE" });
+    // DEL-1: pass `confirm: true` so the server's hard-delete path runs
+    // unconditionally. Super_admin is the platform owner — they have
+    // explicitly confirmed via the type-to-match input above.
+    const r = await fetch(api(`/api/tenants/${deleteTenant.tenant.id}`), {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirm: true }),
+    });
     if (!r.ok) {
       const e = await r.json().catch(() => ({}));
       throw new Error(e.error || t("pf-tenant-delete-failed"));
     }
     toast.success(t("pf-company-deleted"));
     setDeleteTenant(null);
+    setDeleteTenantConfirmText("");
     queryClient.invalidateQueries({ queryKey: ["super-admin-overview", tenantKey] });
   }
 
@@ -561,12 +574,27 @@ export function SuperAdminOverviewView({ embedded = false }: { embedded?: boolea
       )}
 
       {/* Delete Confirmation */}
-      <AlertDialog open={!!deleteTenant} onOpenChange={(v) => { if (!v) setDeleteTenant(null); }}>
+      <AlertDialog
+        open={!!deleteTenant}
+        onOpenChange={(v) => {
+          if (!v) {
+            setDeleteTenant(null);
+            setDeleteTenantConfirmText("");
+          }
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t("pf-delete-company")}</AlertDialogTitle>
             <AlertDialogDescription>
               {t("pf-delete-company-confirm").replace("{name}", deleteTenant?.tenant.name || "")}
+              {/* DEL-1: stronger warning — super_admin can now force-delete
+               * a tenant even when it has users / subscriptions / data. */}
+              <span className="block mt-2 text-destructive font-medium">
+                This will permanently delete this tenant AND all associated data
+                (users, partners, products, deals, invoices, sessions, etc.).
+                This cannot be undone.
+              </span>
               {deleteTenant && deleteTenant.user_count > 0 && (
                 <span className="block mt-2 text-destructive font-medium">
                   {t("pf-delete-company-user-warning").replace("{n}", String(deleteTenant.user_count))}
@@ -574,11 +602,32 @@ export function SuperAdminOverviewView({ embedded = false }: { embedded?: boolea
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {/* DEL-1: type-to-confirm gate. The operator must type the
+           * tenant's name verbatim before the destructive action button
+           * becomes enabled. Prevents an accidental click from destroying
+           * a tenant with thousands of users / invoices. */}
+          <div className="space-y-2">
+            <Label htmlFor="delete-confirm-tenant-name" className="text-xs text-muted-foreground">
+              Type the tenant name (<span className="font-mono text-foreground">{deleteTenant?.tenant.name || "—"}</span>) to confirm:
+            </Label>
+            <Input
+              id="delete-confirm-tenant-name"
+              autoComplete="off"
+              value={deleteTenantConfirmText}
+              onChange={(e) => setDeleteTenantConfirmText(e.target.value)}
+              placeholder={deleteTenant?.tenant.name || ""}
+              className="font-mono"
+            />
+          </div>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDeleteTenant}
-              disabled={!!deleteTenant && deleteTenant.user_count > 0}
+              disabled={
+                !deleteTenant ||
+                deleteTenantConfirmText.trim().toLowerCase() !==
+                  (deleteTenant?.tenant.name || "").trim().toLowerCase()
+              }
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {t("delete")}
