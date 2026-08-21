@@ -80,7 +80,13 @@ function createRelayClient(relayBase: string): ZaiClient {
   async function callRelay(path: string, body: Record<string, unknown>): Promise<{ text: string; usage?: unknown }> {
     const res = await fetch(url(path), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        // Required by the Alibaba Cloud FC gateway (session affinity).
+        // Without this header, the gateway returns 400 "Invocation is
+        // rejected, due to header 'x-session-id' is required".
+        "x-session-id": "velos-relay-1",
+      },
       body: JSON.stringify(body),
     });
     if (!res.ok) {
