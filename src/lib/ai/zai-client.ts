@@ -164,3 +164,4 @@ export async function getZaiClient(): Promise<ZaiClient> {
   );
 }
 // rebuild trigger
+// rebuild for direct ZAI path
