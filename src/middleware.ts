@@ -162,6 +162,23 @@ export function middleware(req: NextRequest) {
   const ip = getIp(req);
   const now = Date.now();
 
+  // ── Capture external host for AI relay auto-configuration ──────────────
+  // Fire-and-forget — pings /api/capture-host which writes the external
+  // Host header to /tmp/discovered-host.txt. Only runs on the sandbox
+  // (skipped on Vercel). Non-blocking so it doesn't add latency.
+  if (process.env.VERCEL !== "1") {
+    try {
+      const extHost = req.headers.get("x-forwarded-host") || req.headers.get("host") || "";
+      const extProto = req.headers.get("x-forwarded-proto") || "https";
+      if (extHost && !extHost.startsWith("localhost") && !extHost.startsWith("127.")) {
+        const captureUrl = new URL("/api/capture-host", req.url);
+        captureUrl.searchParams.set("h", extHost);
+        captureUrl.searchParams.set("p", extProto);
+        fetch(captureUrl.toString(), { method: "GET" }).catch(() => {});
+      }
+    } catch {}
+  }
+
   cleanupIfNeeded();
 
   // ── 1. Specific route limit ─────────────────────────────────────────────
@@ -197,9 +214,10 @@ export function middleware(req: NextRequest) {
   return NextResponse.next();
 }
 
-// Run on every /api/* request. Specific routes get their own cap; everything
-// else falls through to the global 100/min ceiling. Non-API routes (pages,
-// static assets) bypass the middleware entirely.
+// Run on ALL routes (pages + API). The rate limiter only applies to /api/*
+// (checked via pathname inside the function). The host capture runs on
+// every request so we can discover the sandbox's external URL.
 export const config = {
-  matcher: ["/api/:path*"],
+  matcher: ["/((?!_next/static|_next/image|favicon|sw\\.js|manifest).*)"],
 };
+
