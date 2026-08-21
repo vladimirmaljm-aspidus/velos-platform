@@ -114,6 +114,97 @@ async function handleExtract(body: any): Promise<{ text: string }> {
   };
 }
 
+// ─── /parse-document endpoint (full PDF/image analysis) ─────────────────────
+// Used by the browser (client-side) to bypass Vercel's network block.
+// The browser sends the file (PDF or image) + type, the relay does:
+//   1. If PDF: extract text via unpdf → send to chat model (fast path)
+//   2. If image or scanned PDF: send to vision model
+//   3. Return structured JSON
+
+const COA_PROMPT = `You are a B2B commodity-trade compliance assistant. Extract ALL data from this Certificate of Analysis document. Return STRICT JSON only (no markdown fences, no prose). Fields:
+{"product":"","batch":"","date":null,"manufactureDate":null,"expiryDate":null,"manufacturer":"","grade":"","origin":"","certifications":[],"storage":"","packaging":"","shelfLife":"","parameters":[{"name":"","value":"","unit":"","spec":"","result":""}],"confidence":"high|medium|low","uncertain_fields":[]}
+Use null for unreadable fields. Do not invent data.`;
+
+const SPEC_SHEET_PROMPT = `You are a B2B commodity-trade compliance assistant. Extract ALL data from this product specification sheet. Return STRICT JSON only (no markdown fences, no prose). Fields:
+{"productName":"","sku":"","hsCode":"","category":"","brand":"","originCountry":"","shelfLife":"","storage":"","packaging":"","containerCapacity":{"cap20":null,"cap40":null},"certifications":[],"applications":[],"specifications":{"appearance":"","color":"","odor":"","density":"","moisture":"","purity":"","activeIngredient":"","pH":"","solubility":"","particleSize":"","viscosity":""},"confidence":"high|medium|low","uncertain_fields":[]}
+Use null for unreadable fields. Do not invent data.`;
+
+function stripDataUrlPrefix(s: string): string {
+  const idx = s.indexOf(";base64,");
+  if (idx >= 0 && s.startsWith("data:")) return s.slice(idx + 8);
+  return s;
+}
+
+function extractJson(text: string): unknown | null {
+  if (!text) return null;
+  const trimmed = text.trim();
+  try { return JSON.parse(trimmed); } catch {}
+  const fence = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) { try { return JSON.parse(fence[1].trim()); } catch {} }
+  const open = trimmed.match(/```(?:json)?\s*([\s\S]+)/i);
+  if (open) { try { return JSON.parse(open[1].trim()); } catch {} }
+  const first = trimmed.search(/[{[]/);
+  if (first >= 0) {
+    const ch = trimmed[first];
+    const close = ch === "{" ? "}" : "]";
+    const last = trimmed.lastIndexOf(close);
+    if (last > first) { try { return JSON.parse(trimmed.slice(first, last + 1)); } catch {} }
+  }
+  return null;
+}
+
+async function handleParseDocument(body: any): Promise<{ result: unknown }> {
+  const { type, fileBase64, mimeType } = body;
+  if (!fileBase64) throw new Error("Missing fileBase64");
+  if (type !== "coa" && type !== "spec_sheet") throw new Error("Invalid type (must be coa or spec_sheet)");
+
+  const instruction = type === "coa" ? COA_PROMPT : SPEC_SHEET_PROMPT;
+  const clean = stripDataUrlPrefix(fileBase64);
+  const isPdf = (mimeType === "application/pdf") || clean.startsWith("JVBERi");
+
+  const zai = await getZai();
+
+  // Fast path: PDF text extraction → chat model
+  if (isPdf) {
+    try {
+      const { extractText, getDocumentProxy } = await import("unpdf");
+      const bin = Buffer.from(clean, "base64");
+      const pdf = await getDocumentProxy(new Uint8Array(bin));
+      const result = await extractText(pdf, { mergePages: true });
+      const pdfText = (result?.text ?? "").trim();
+      if (pdfText.length > 50) {
+        const chatResult = await zai.chat.completions.create({
+          messages: [{ role: "user", content: `${instruction}\n\n--- DOCUMENT TEXT ---\n${pdfText}` }],
+          thinking: { type: "disabled" },
+        });
+        const content = chatResult?.choices?.[0]?.message?.content ?? "";
+        const raw = typeof content === "string" ? content : Array.isArray(content) ? content.map((c: any) => typeof c === "string" ? c : c?.text ?? "").join("") : String(content);
+        const parsed = extractJson(raw);
+        if (parsed && typeof parsed === "object") return { result: parsed };
+      }
+    } catch (e) {
+      console.error("[ai-relay] PDF text extraction failed, falling back to vision:", e);
+    }
+  }
+
+  // Slow path: vision model (images + scanned PDFs)
+  const mime = isPdf ? "application/pdf" : (mimeType || "image/png");
+  const contentBlock = isPdf
+    ? { type: "file_url", file_url: { url: `data:application/pdf;base64,${clean}` } }
+    : { type: "image_url", image_url: { url: `data:${mime};base64,${clean}` } };
+
+  const visionResult = await zai.chat.completions.createVision({
+    model: "glm-4v",
+    messages: [{ role: "user", content: [{ type: "text", text: instruction }, contentBlock] }],
+    thinking: { type: "disabled" },
+  } as any);
+  const content = visionResult?.choices?.[0]?.message?.content ?? "";
+  const raw = typeof content === "string" ? content : Array.isArray(content) ? content.map((c: any) => typeof c === "string" ? c : c?.text ?? "").join("") : String(content);
+  const parsed = extractJson(raw);
+  if (parsed && typeof parsed === "object") return { result: parsed };
+  throw new Error("AI did not return parseable JSON");
+}
+
 const server = createServer(async (req, res) => {
   setCORS(res);
   if (req.method === "OPTIONS") {
@@ -121,8 +212,13 @@ const server = createServer(async (req, res) => {
     res.end();
     return;
   }
-  if (req.method === "GET" && req.url === "/health") {
-    sendJSON(res, 200, { status: "ok", service: "velos-ai-relay", port: PORT });
+  if (req.method === "GET") {
+    const path = req.url?.split("?")[0];
+    if (path === "/health") {
+      sendJSON(res, 200, { status: "ok", service: "velos-ai-relay", port: PORT });
+      return;
+    }
+    sendJSON(res, 405, { error: "Method not allowed" });
     return;
   }
   if (req.method !== "POST") {
@@ -138,6 +234,7 @@ const server = createServer(async (req, res) => {
     if (path === "/chat") result = await handleChat(body);
     else if (path === "/vision") result = await handleVision(body);
     else if (path === "/extract") result = await handleExtract(body);
+    else if (path === "/parse-document") result = await handleParseDocument(body);
     else { sendJSON(res, 404, { error: "Unknown endpoint" }); return; }
     sendJSON(res, 200, result);
   } catch (e) {

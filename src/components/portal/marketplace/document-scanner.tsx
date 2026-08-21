@@ -212,20 +212,42 @@ export function DocumentScanner({ onFill }: DocumentScannerProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  // ── Mutation: POST /api/marketplace/parse-document ──────────────────
+  // ── Mutation: parse document via relay (client-side) or Vercel API ─────
+  // When NEXT_PUBLIC_ZAI_RELAY_URL is set (production), the browser calls
+  // the relay directly — bypassing Vercel's network block to the Z.AI
+  // internal API. The relay (on the sandbox) can reach internal-api.z.ai.
+  // When the env var is NOT set (sandbox/local dev), falls back to the
+  // Vercel API which uses the local .z-ai-config.
   const parse = useMutation({
     mutationFn: async (vars: {
       type: ParseType;
       fileBase64: string;
       mimeType: string;
     }) => {
+      const relayUrl = process.env.NEXT_PUBLIC_ZAI_RELAY_URL;
+      if (relayUrl) {
+        // Client-side call to the relay (browser → sandbox → Z.AI)
+        const r = await fetch(`${relayUrl}/parse-document?XTransformPort=3030`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-session-id": "velos-relay-1",
+          },
+          body: JSON.stringify(vars),
+        });
+        if (!r.ok) {
+          const e = (await r.json().catch(() => ({}))) as { error?: string };
+          throw new Error(e.error || "AI analysis failed. Try a smaller file.");
+        }
+        return r.json() as Promise<{ result: CoAResult | SpecSheetResult }>;
+      }
+      // Fallback: Vercel API (sandbox/local dev with .z-ai-config)
       const r = await fetch("/api/marketplace/parse-document", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(vars),
       });
       if (r.status === 503) {
-        // AI service unavailable — friendly message via the toast.
         const e = (await r.json().catch(() => ({}))) as { error?: string };
         throw new Error(
           e.error || t("marketplace-document-scanner-ai-unavailable"),
