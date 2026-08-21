@@ -8,6 +8,16 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: false,
   },
   reactStrictMode: false,
+  // unpdf bundles its own pdfjs internally and has CJS/dynamic-require
+  // patterns that Turbopack mishandles when server-bundled. Treating it
+  // as an external node module (required from node_modules at runtime)
+  // avoids "Cannot find module" / "fetch failed" errors on Vercel.
+  serverExternalPackages: ["unpdf"],
+  // Also keep z-ai-web-dev-sdk external — it reads .z-ai-config from
+  // disk at runtime, which bundling would break.
+  experimental: {
+    serverComponentsExternalPackages: ["unpdf", "z-ai-web-dev-sdk"],
+  },
   async headers() {
     return [
       {
