@@ -56,6 +56,43 @@
 import ZAI from "z-ai-web-dev-sdk";
 import { getZaiClient } from "@/lib/ai/zai-client";
 
+// ─── PDF text extraction (fast path) ────────────────────────────────────────
+// unpdf is a server-side PDF text extractor with NO DOM dependencies (unlike
+// pdfjs-dist which needs canvas/DOMMatrix polyfills). It runs in <1s on
+// typical CoAs/spec sheets — fast enough for Vercel's 60s function limit.
+// Vision processing of a PDF takes 30-70s+ and reliably times out on
+// serverless, so we extract text first and send it to the (much faster)
+// chat.completions.create endpoint. Only scanned PDFs (no extractable text)
+// fall back to the slow vision path.
+type UnpdfModule = typeof import("unpdf");
+let _unpdfPromise: Promise<UnpdfModule> | null = null;
+async function loadUnpdf(): Promise<UnpdfModule> {
+  if (!_unpdfPromise) {
+    _unpdfPromise = import("unpdf");
+  }
+  return _unpdfPromise;
+}
+
+/**
+ * Try to extract text from a PDF's base64 string. Returns the text or an
+ * empty string if the PDF is scanned (image-based, no text layer).
+ */
+async function extractPdfText(base64Raw: string): Promise<string> {
+  const clean = stripDataUrlPrefix(base64Raw);
+  const bin = Buffer.from(clean, "base64");
+  if (bin.length < 4 || bin.slice(0, 4).toString("latin1") !== "%PDF") {
+    return ""; // not a PDF
+  }
+  try {
+    const { extractText, getDocumentProxy } = await loadUnpdf();
+    const pdf = await getDocumentProxy(new Uint8Array(bin));
+    const result = await extractText(pdf, { mergePages: true });
+    return (result?.text ?? "").trim();
+  } catch {
+    return ""; // text extraction failed — fall back to vision
+  }
+}
+
 // ─── Public shapes ────────────────────────────────────────────────────────
 
 export type DocumentMimeType =
@@ -331,24 +368,69 @@ async function runVisionExtraction(
   const mime = resolveMime(fileBase64, mimeType);
   const kind = kindFromMime(mime);
 
-  // Reject obviously oversized payloads BEFORE invoking the VLM — the
-  // vision model rejects oversized inputs anyway, and rejecting here
-  // avoids paying for a failed inference call. Caps are per-kind to
-  // match the API route's validation:
+  // Reject obviously oversized payloads BEFORE invoking the model. Caps are
+  // per-kind to match the API route's validation:
   //   • images: 5 MB binary ≈ 6.67 MB base64 → 7_000_000 chars
-  //   • PDFs:    15 MB binary ≈ 20 MB base64   → 21_000_000 chars
-  const maxChars = kind === "document" ? 21_000_000 : 7_000_000;
+  //   • PDFs:    8 MB binary ≈ 10.7 MB base64 → 11_000_000 chars
+  // (PDF cap reduced from 15 MB — text extraction handles larger files,
+  // but the vision fallback for scanned PDFs needs smaller payloads.)
+  const maxChars = kind === "document" ? 11_000_000 : 7_000_000;
   const cleanLen = stripDataUrlPrefix(fileBase64).length;
   if (cleanLen > maxChars) {
     throw new DocumentParserError(
       kind === "document"
-        ? "PDF is too large (must be ≤ 15 MB after base64 encoding)."
+        ? "PDF is too large (must be ≤ 8 MB after base64 encoding)."
         : "Image is too large (must be ≤ 5 MB after base64 encoding).",
     );
   }
 
   const zai = await getZai();
   let raw: string;
+
+  // ── FAST PATH: PDF text extraction → chat model ────────────────────────
+  // For text-based PDFs (the vast majority of CoAs/spec sheets), extract
+  // the text and send it to the chat model. This is ~10x faster than the
+  // vision model (which takes 30-70s for PDFs and times out on Vercel).
+  if (kind === "document") {
+    const pdfText = await extractPdfText(fileBase64);
+    if (pdfText.length > 50) {
+      try {
+        const chatResult = await zai.chat.completions.create({
+          messages: [
+            {
+              role: "user",
+              content: `${instruction}\n\n--- DOCUMENT TEXT (extracted from PDF) ---\n${pdfText}`,
+            },
+          ],
+          thinking: { type: "disabled" },
+        });
+        const content =
+          chatResult?.choices?.[0]?.message?.content ??
+          chatResult?.choices?.[0]?.delta?.content ??
+          chatResult?.content ??
+          "";
+        raw = typeof content === "string"
+          ? content
+          : Array.isArray(content)
+            ? content
+                .map((c: unknown) =>
+                  typeof c === "string" ? c : String((c as { text?: string })?.text ?? ""),
+                )
+                .join("")
+            : String(content ?? "");
+        // Validate we got JSON before returning.
+        const quickCheck = extractJson(raw);
+        if (quickCheck !== null && typeof quickCheck === "object") {
+          return quickCheck as Record<string, unknown>;
+        }
+        // If text path returned non-JSON, fall through to vision.
+      } catch {
+        // Chat call failed — fall through to vision as a fallback.
+      }
+    }
+  }
+
+  // ── SLOW PATH: vision model (images + scanned PDFs) ─────────────────────
   try {
     const result = await zai.chat.completions.createVision({
       // The SDK requires `model` on the vision body — `glm-4v` is the
@@ -387,7 +469,10 @@ async function runVisionExtraction(
         : String(content ?? "");
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
-    throw new DocumentParserError(`AI vision call failed: ${msg}`, e);
+    throw new DocumentParserError(
+      `AI analysis failed: ${msg}. If this is a large document, try a smaller file or an image instead.`,
+      e,
+    );
   }
 
   const parsed = extractJson(raw);

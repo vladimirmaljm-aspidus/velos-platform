@@ -14,15 +14,24 @@ import { getStore } from "@/lib/data/store";
 
 export const runtime = "nodejs";
 
+// Vercel function timeout — the vision model can take 30-70s for PDFs.
+// Default Hobby limit is 10s; this raises it to 60s (the Hobby max).
+// Pro plan supports up to 300s. Text-based PDFs use the fast chat path
+// (<10s) so they finish well within this limit.
+export const maxDuration = 60;
+
 // ─── Size caps ────────────────────────────────────────────────────────────
 //
 // Base64 expands binary by ~33%, so the cap on the encoded string is
 // ~1.34× the binary cap. We add a small JSON-envelope headroom on top.
 //
 //   • Images: 5 MB binary   → 5 * 1024 * 1024 * 1.34 ≈ 7,025,627 → cap 7,000,000 chars
-//   • PDFs:    15 MB binary → 15 * 1024 * 1024 * 1.34 ≈ 21,076,881 → cap 21,000,000 chars
+//   • PDFs:    8 MB binary  → 8 * 1024 * 1024 * 1.34 ≈ 11,241,006 → cap 11,000,000 chars
+// (PDF cap reduced from 15 MB — text extraction handles large files, but
+// the vision fallback for scanned PDFs needs smaller payloads to stay
+// within the 60s function timeout.)
 const IMAGE_MAX_BASE64_CHARS = 7_000_000;
-const PDF_MAX_BASE64_CHARS = 21_000_000;
+const PDF_MAX_BASE64_CHARS = 11_000_000;
 
 const IMAGE_MIMES = new Set<DocumentMimeType>([
   "image/png",

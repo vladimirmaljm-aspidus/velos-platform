@@ -3,16 +3,14 @@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
-  Eye,
-  MessageSquare,
-  MapPin,
-  ShieldCheck,
   Clock,
-  TrendingUp,
-  TrendingDown,
-  Gavel,
   FileText,
-  Package,
+  Gavel,
+  MapPin,
+  MessageSquare,
+  Eye,
+  TrendingDown,
+  TrendingUp,
   CheckCircle2,
 } from "lucide-react";
 import { useT } from "@/lib/i18n/store";
@@ -45,62 +43,55 @@ export interface MarketplacePostCardData {
 }
 
 /**
- * UI-3 step 2 — type → badge meta. Buy = green (real green, distinct from
- * the copper emerald remap which we reserve for sell). Sell = copper
- * (emerald-* in our palette). Auction = amber, Contract = violet.
+ * UI-MARKET — Post card redesign.
+ *
+ * Premium B2B commodity trade card (Bloomberg-Terminal-meets-SaaS):
+ *   1. Solid type badge top-left (BUY=emerald / SELL=amber / Auction=violet /
+ *      Contract=sky). White text. The buy/sell polarity matches the user's
+ *      spec exactly; auction/contract reuse the existing palette but as
+ *      solid fills so all four types share the same visual weight.
+ *   2. Verified-or-Risk badge top-right (one or the other, never both — the
+ *      verified badge already implies low risk).
+ *   3. Product name (text-lg bold) + category (xs uppercase muted).
+ *   4. Price (right-aligned, 2xl bold for fixed / lg for range / muted base
+ *      for "on request"). Currency symbol is part of fmtMoney output.
+ *   5. Specs block (border-t separated): quantity + unit.
+ *   6. Footer (border-t separated): location (MapPin), responses
+ *      (MessageSquare), posted-ago (Clock) — all small muted.
+ *
+ * Padding is p-5 (was p-4 — too tight), gap-3 between blocks, rounded-xl
+ * (not rounded-lg), border-border/60 with hover:border-primary/40 +
+ * hover:shadow-md transition-all.
  */
 const TYPE_META: Record<
   MarketplacePostType,
-  { labelKey: string; icon: React.ComponentType<{ className?: string }>; badge: string; tile: string }
+  {
+    labelKey: string;
+    icon: React.ComponentType<{ className?: string }>;
+    badge: string;
+  }
 > = {
   buy: {
     labelKey: "marketplace-buy",
     icon: TrendingUp,
-    badge: "border-transparent bg-green-500/15 text-green-700 dark:text-green-400",
-    tile: "bg-green-500/10 text-green-700 dark:text-green-400",
+    badge: "border-transparent bg-emerald-600 text-white shadow-sm",
   },
   sell: {
     labelKey: "marketplace-sell",
     icon: TrendingDown,
-    badge: "border-transparent bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
-    tile: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+    badge: "border-transparent bg-amber-600 text-white shadow-sm",
   },
   auction: {
     labelKey: "marketplace-auction",
     icon: Gavel,
-    badge: "border-transparent bg-amber-500/15 text-amber-700 dark:text-amber-400",
-    tile: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
+    badge: "border-transparent bg-violet-600 text-white shadow-sm",
   },
   contract: {
     labelKey: "marketplace-contract",
     icon: FileText,
-    badge: "border-transparent bg-violet-500/15 text-violet-700 dark:text-violet-400",
-    tile: "bg-violet-500/10 text-violet-700 dark:text-violet-400",
+    badge: "border-transparent bg-sky-600 text-white shadow-sm",
   },
 };
-
-/** Category code → emoji-ish product icon fallback tile color. Used by the
- *  product image placeholder so different categories get a distinct tint. */
-const CATEGORY_TILE: Record<string, string> = {
-  AGRI: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
-  FOOD: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
-  SUGAR: "bg-pink-500/10 text-pink-700 dark:text-pink-400",
-  GRAIN: "bg-yellow-500/10 text-yellow-700 dark:text-yellow-400",
-  OIL: "bg-lime-500/10 text-lime-700 dark:text-lime-400",
-  METAL: "bg-slate-500/10 text-slate-700 dark:text-slate-300",
-  CHEM: "bg-violet-500/10 text-violet-700 dark:text-violet-400",
-  CMT: "bg-stone-500/10 text-stone-700 dark:text-stone-300",
-  ENERGY: "bg-red-500/10 text-red-700 dark:text-red-400",
-  TEXTILE: "bg-teal-500/10 text-teal-700 dark:text-teal-400",
-  MACHINERY: "bg-sky-500/10 text-sky-700 dark:text-sky-400",
-  PACKAGING: "bg-indigo-500/10 text-indigo-700 dark:text-indigo-400",
-  OTHER: "bg-muted text-muted-foreground",
-};
-
-function categoryTile(code: string | null): string {
-  if (code && CATEGORY_TILE[code]) return CATEGORY_TILE[code];
-  return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400";
-}
 
 /** Country flag emoji from ISO code; falls back to 🌐. */
 function flagEmoji(code: string | null | undefined): string {
@@ -119,17 +110,25 @@ export function MarketplacePostCard({
   const t = useT();
   const meta = TYPE_META[post.post_type] ?? TYPE_META.sell;
   const TypeIcon = meta.icon;
-  const country = post.delivery_country
-    ? getCountry(post.delivery_country)
-    : null;
+  const country = post.delivery_country ? getCountry(post.delivery_country) : null;
   const flag = flagEmoji(post.delivery_country);
 
-  function fmtPrice(): string {
-    if (!post.price_visible || post.price_type === "on_request") {
-      return t("marketplace-price-on-request");
-    }
-    if (post.price_type === "range" && post.target_price != null && post.price_max != null) {
-      return `${fmtMoney(post.target_price, post.currency)} – ${fmtMoney(post.price_max, post.currency)}`;
+  const isOnRequest =
+    !post.price_visible || post.price_type === "on_request";
+  const isRange =
+    !isOnRequest &&
+    post.price_type === "range" &&
+    post.target_price != null &&
+    post.price_max != null;
+  const priceIsNumeric = !isOnRequest && post.target_price != null;
+
+  function fmtPriceValue(): string {
+    if (isOnRequest) return t("marketplace-price-on-request");
+    if (isRange && post.target_price != null && post.price_max != null) {
+      return `${fmtMoney(post.target_price, post.currency)} – ${fmtMoney(
+        post.price_max,
+        post.currency,
+      )}`;
     }
     if (post.target_price != null) {
       return fmtMoney(post.target_price, post.currency);
@@ -137,9 +136,13 @@ export function MarketplacePostCard({
     return t("marketplace-price-on-request");
   }
 
-  function fmtUnitLabel(): string {
-    return post.unit;
-  }
+  // Single fixed price → big & bold; range → smaller (fits on one line);
+  // on-request → muted, smaller.
+  const priceClass = isOnRequest
+    ? "text-base font-medium text-muted-foreground"
+    : isRange
+      ? "text-lg font-bold tabular leading-none"
+      : "text-2xl font-bold tabular leading-none";
 
   return (
     <Card
@@ -151,118 +154,105 @@ export function MarketplacePostCard({
           onClick?.(post.id);
         }
       }}
-      className="cursor-pointer transition-all hover:shadow-soft-md hover:border-primary/40 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 group overflow-hidden"
+      className={cn(
+        "group cursor-pointer overflow-hidden rounded-xl border border-border/60",
+        "transition-all hover:border-primary/40 hover:shadow-md hover:-translate-y-0.5",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
+      )}
       onClick={() => onClick?.(post.id)}
     >
-      <CardContent className="p-0">
-        {/* Header strip — product image placeholder (left) + type badge (right). */}
-        <div className="relative h-24 sm:h-28 bg-gradient-to-br from-muted/40 to-muted/10 overflow-hidden">
-          {/* Category-tinted product icon */}
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div
-              className={cn(
-                "size-12 rounded-xl flex items-center justify-center shadow-soft",
-                categoryTile(post.product_category),
-              )}
+      <CardContent className="p-5 space-y-4">
+        {/* ── Top row: type badge + verified/risk badge ───────────────── */}
+        <div className="flex items-start justify-between gap-2">
+          <Badge className={cn("gap-1.5 font-semibold", meta.badge)}>
+            <TypeIcon className="size-3.5" />
+            {t(meta.labelKey)}
+          </Badge>
+          {post.is_verified ? (
+            <Badge
+              variant="outline"
+              className="gap-1 border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+              title={t(`marketplace-verification-${post.verification_level}`)}
             >
-              <Package className="size-6" />
-            </div>
-          </div>
-          {/* Type badge (top-left) */}
-          <div className="absolute top-2.5 left-2.5">
-            <Badge variant="outline" className={cn("gap-1 font-medium", meta.badge)}>
-              <TypeIcon className="size-3" />
-              {t(meta.labelKey)}
+              <CheckCircle2 className="size-3.5" />
+              {t("marketplace-card-verified")}
             </Badge>
-          </div>
-          {/* Verified badge (top-right) */}
-          {post.is_verified && (
-            <div className="absolute top-2.5 right-2.5">
-              <Badge
-                variant="outline"
-                className="gap-1 border-transparent bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 backdrop-blur-sm"
-                title={t(`marketplace-verification-${post.verification_level}`)}
-              >
-                <CheckCircle2 className="size-3" />
-                {t("marketplace-card-verified")}
-              </Badge>
-            </div>
-          )}
-          {/* Country flag emoji (bottom-right) */}
-          {country && (
-            <div
-              className="absolute bottom-2 right-2.5 text-lg leading-none"
-              title={country.name}
-            >
-              <span>{flag}</span>
-            </div>
+          ) : (
+            <RiskBadge postId={post.id} compact />
           )}
         </div>
 
-        {/* Body */}
-        <div className="p-4 space-y-3">
-          {/* Risk badge — compact, on its own line so it doesn't crowd the
-              type badge. Hidden when the AI service is unavailable. */}
-          <RiskBadge postId={post.id} compact />
-
-          <div>
-            <h3 className="font-semibold text-base leading-snug line-clamp-2 group-hover:text-primary smooth">
-              {post.product_name}
-            </h3>
-            {post.product_category && (
-              <p className="text-xs text-muted-foreground mt-0.5">{post.product_category}</p>
-            )}
-          </div>
-
-          {/* Quantity + unit + price — the headline numbers */}
-          <div className="rounded-lg bg-muted/40 border border-border/40 p-2.5">
-            <div className="flex items-baseline justify-between gap-2">
-              <div className="min-w-0">
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                  {t("marketplace-quantity")}
-                </p>
-                <p className="text-sm font-semibold tabular leading-tight">
-                  <span className="text-base">{post.quantity.toLocaleString()}</span>
-                  <span className="text-muted-foreground ml-1 text-xs">{fmtUnitLabel()}</span>
-                </p>
-              </div>
-              <div className="text-right min-w-0">
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                  {t("marketplace-price")}
-                </p>
-                <p className="text-sm font-semibold leading-tight truncate">
-                  {fmtPrice()}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Location */}
-          {(country || post.delivery_location) && (
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <MapPin className="size-3 shrink-0" />
-              <span className="truncate">
-                {post.delivery_location && <>{post.delivery_location}{country ? ", " : ""}</>}
-                {country && <>{flag} {country.name}</>}
-              </span>
-            </div>
+        {/* ── Product name + category ─────────────────────────────────── */}
+        <div className="space-y-1">
+          <h3 className="text-lg font-bold leading-snug line-clamp-2 group-hover:text-primary smooth">
+            {post.product_name}
+          </h3>
+          {post.product_category && (
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+              {post.product_category}
+            </p>
           )}
+        </div>
 
-          {/* Footer — views / responses / posted ago */}
-          <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-2 border-t border-border/60">
-            <div className="flex items-center gap-2.5">
-              <span className="inline-flex items-center gap-1" title={t("marketplace-card-views")}>
-                <Eye className="size-3" />
-                <span className="tabular">{post.views_count}</span>
+        {/* ── Price (prominent, right-aligned) ────────────────────────── */}
+        <div className="flex items-baseline justify-end gap-1.5">
+          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            {t("marketplace-price")}
+          </span>
+          <span className={priceClass}>{fmtPriceValue()}</span>
+        </div>
+
+        {/* ── Specs block: quantity ───────────────────────────────────── */}
+        <div className="space-y-2 border-t border-border/60 pt-3 text-sm">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-muted-foreground">
+              {t("marketplace-quantity")}
+            </span>
+            <span className="font-semibold tabular">
+              {post.quantity.toLocaleString()}
+              <span className="ml-1 text-xs font-normal text-muted-foreground">
+                {post.unit}
               </span>
-              <span className="inline-flex items-center gap-1" title={t("marketplace-card-responses")}>
-                <MessageSquare className="size-3" />
-                <span className="tabular">{post.responses_count}</span>
+            </span>
+          </div>
+        </div>
+
+        {/* ── Footer: location · responses · posted-ago ───────────────── */}
+        <div className="border-t border-border/60 pt-3">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
+            {(country || post.delivery_location) && (
+              <span className="inline-flex min-w-0 items-center gap-1">
+                <MapPin className="size-3.5 shrink-0" />
+                <span className="truncate">
+                  {post.delivery_location && (
+                    <>{post.delivery_location}{country ? ", " : ""}</>
+                  )}
+                  {country && (
+                    <>{flag} {country.name}</>
+                  )}
+                </span>
               </span>
-            </div>
-            <span className="inline-flex items-center gap-1">
-              <Clock className="size-3" />
-              {t("marketplace-card-posted-ago").replace("{ago}", fmtRelative(post.created_at))}
+            )}
+            <span
+              className="inline-flex items-center gap-1"
+              title={t("marketplace-card-responses")}
+            >
+              <MessageSquare className="size-3.5" />
+              <span className="tabular">{post.responses_count}</span>
+            </span>
+            <span
+              className="inline-flex items-center gap-1"
+              title={t("marketplace-card-views")}
+            >
+              <Eye className="size-3.5" />
+              <span className="tabular">{post.views_count}</span>
+            </span>
+            <span className="ml-auto inline-flex items-center gap-1">
+              <Clock className="size-3.5" />
+              {t("marketplace-card-posted-ago").replace(
+                "{ago}",
+                fmtRelative(post.created_at),
+              )}
             </span>
           </div>
         </div>
@@ -274,16 +264,28 @@ export function MarketplacePostCard({
 /** Skeleton card used by `MarketplaceList` while the data is loading. */
 export function MarketplacePostCardSkeleton() {
   return (
-    <div className="rounded-xl border border-border/60 bg-card overflow-hidden">
-      <div className="h-24 sm:h-28 bg-muted/40 animate-pulse" />
-      <div className="p-4 space-y-3">
-        <div className="h-4 w-3/4 rounded bg-muted/60 animate-pulse" />
-        <div className="h-3 w-1/3 rounded bg-muted/40 animate-pulse" />
-        <div className="h-12 rounded-lg bg-muted/30 animate-pulse" />
-        <div className="h-3 w-1/2 rounded bg-muted/40 animate-pulse" />
-        <div className="h-3 mt-2 border-t border-border/60 pt-2 flex justify-between">
+    <div className="overflow-hidden rounded-xl border border-border/60 bg-card">
+      <div className="space-y-4 p-5">
+        <div className="flex items-start justify-between gap-2">
+          <div className="h-6 w-16 rounded-full bg-muted/60 animate-pulse" />
+          <div className="h-6 w-20 rounded-full bg-muted/40 animate-pulse" />
+        </div>
+        <div className="space-y-1.5">
+          <div className="h-5 w-full rounded bg-muted/60 animate-pulse" />
+          <div className="h-3 w-1/3 rounded bg-muted/40 animate-pulse" />
+        </div>
+        <div className="flex justify-end">
+          <div className="h-7 w-24 rounded bg-muted/60 animate-pulse" />
+        </div>
+        <div className="h-px bg-border/60" />
+        <div className="flex justify-between">
           <div className="h-3 w-16 rounded bg-muted/40 animate-pulse" />
-          <div className="h-3 w-12 rounded bg-muted/40 animate-pulse" />
+          <div className="h-4 w-20 rounded bg-muted/60 animate-pulse" />
+        </div>
+        <div className="h-px bg-border/60" />
+        <div className="flex justify-between">
+          <div className="h-3 w-24 rounded bg-muted/40 animate-pulse" />
+          <div className="h-3 w-16 rounded bg-muted/40 animate-pulse" />
         </div>
       </div>
     </div>

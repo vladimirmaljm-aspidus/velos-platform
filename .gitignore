@@ -42,3 +42,4 @@ bun.lock
 
 # ── Z.AI SDK config file (contains API token — NEVER commit) ──────────────────
 .z-ai-config
+tool-results/

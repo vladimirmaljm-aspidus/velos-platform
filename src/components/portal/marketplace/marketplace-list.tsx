@@ -154,12 +154,33 @@ export function MarketplaceList({ onCreateClick }: { onCreateClick?: () => void 
   const isUnfilteredEmpty = !hasActiveFilters && items.length === 0;
 
   return (
-    <div className="space-y-4">
-      {/* ─── Sticky filter bar ─────────────────────────────────────────── */}
+    <div className="space-y-6">
+      {/* ─── Page header: title + subtitle ───────────────────────────── */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-bold tracking-tight">
+            {t("marketplace-title")}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {t("marketplace-subtitle")}
+          </p>
+        </div>
+        {onCreateClick && (
+          <Button
+            onClick={onCreateClick}
+            className="shrink-0 gap-1.5 self-start sm:self-auto"
+          >
+            <Plus className="h-4 w-4" />
+            {t("marketplace-create-post")}
+          </Button>
+        )}
+      </div>
+
+      {/* ─── Sticky filter bar ────────────────────────────────────────── */}
       <div className="sticky top-16 z-20 -mx-4 px-4 py-3 sm:mx-0 sm:px-0 sm:py-0 sm:space-y-3">
-        <div className="rounded-xl border border-border/60 bg-background/80 backdrop-blur-md shadow-soft p-3 sm:p-0 sm:bg-transparent sm:border-0 sm:shadow-none sm:backdrop-blur-none">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <div className="relative flex-1">
+        <div className="rounded-xl border border-border/60 bg-background/80 backdrop-blur-md shadow-soft p-3 sm:bg-background/60 sm:border sm:border-border/60 sm:shadow-sm sm:backdrop-blur-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-2">
+            <div className="relative flex-1 min-w-0">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 value={search}
@@ -169,7 +190,7 @@ export function MarketplaceList({ onCreateClick }: { onCreateClick?: () => void 
               />
             </div>
             <Select value={type} onValueChange={setTypeAndReset}>
-              <SelectTrigger className={cn("w-full sm:w-32", type !== "all" && "border-primary/60 ring-1 ring-primary/20")}>
+              <SelectTrigger className={cn("w-full sm:w-36", type !== "all" && "border-primary/60 ring-1 ring-primary/20")}>
                 <SelectValue placeholder={t("marketplace-all-types")} />
               </SelectTrigger>
               <SelectContent>
@@ -214,18 +235,12 @@ export function MarketplaceList({ onCreateClick }: { onCreateClick?: () => void 
                 <SelectItem value="ending_soon">{t("marketplace-sort-ending-soon")}</SelectItem>
               </SelectContent>
             </Select>
-            {onCreateClick && (
-              <Button onClick={onCreateClick} className="shrink-0 gap-1">
-                <Plus className="h-4 w-4" />
-                {t("marketplace-create-post")}
-              </Button>
-            )}
           </div>
         </div>
       </div>
 
       {/* ─── Result count + clear filters ──────────────────────────────── */}
-      <div className="flex items-center justify-between gap-3 flex-wrap pt-1">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <p className="text-sm text-muted-foreground">
           {firstPageQ.isLoading
             ? t("marketplace-skeleton-loading")
@@ -251,8 +266,8 @@ export function MarketplaceList({ onCreateClick }: { onCreateClick?: () => void 
 
       {/* ─── Grid ──────────────────────────────────────────────────────── */}
       {firstPageQ.isLoading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {Array.from({ length: 8 }).map((_, i) => (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          {Array.from({ length: 6 }).map((_, i) => (
             <MarketplacePostCardSkeleton key={`skeleton-${i}`} />
           ))}
         </div>
@@ -296,7 +311,7 @@ export function MarketplaceList({ onCreateClick }: { onCreateClick?: () => void 
         )
       ) : (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {items.map((post) => (
               <MarketplacePostCard
                 key={post.id}
@@ -306,7 +321,7 @@ export function MarketplaceList({ onCreateClick }: { onCreateClick?: () => void 
             ))}
             {/* Skeleton placeholders rendered while a "Load more" fetch is
                 in flight so the new page slides in gracefully. */}
-            {loadingMore && Array.from({ length: 4 }).map((_, i) => (
+            {loadingMore && Array.from({ length: 3 }).map((_, i) => (
               <MarketplacePostCardSkeleton key={`skeleton-more-${i}`} />
             ))}
           </div>

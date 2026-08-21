@@ -118,7 +118,7 @@ export function RiskBadge({ postId, compact = true, className }: RiskBadgeProps)
           {label}
         </Badge>
       </TooltipTrigger>
-      <TooltipContent side="top" className="max-w-sm p-3">
+      <TooltipContent side="top" className="max-h-[60vh] max-w-sm overflow-y-auto p-3">
         <div className="space-y-1.5">
           <p className="text-xs font-semibold">
             {t("marketplace-risk-tooltip-title")} — {t(meta.labelKey)} ({a.score}/100)

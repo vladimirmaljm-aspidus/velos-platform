@@ -406,12 +406,12 @@ export function ShipmentTracker({ shipmentId, isBookingPartner }: ShipmentTracke
 
       {/* Add tracking event dialog */}
       <Dialog open={eventOpen} onOpenChange={setEventOpen}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 px-6 pt-6 pb-4">
             <DialogTitle>{t("marketplace-shipment-add-event-title")}</DialogTitle>
             <DialogDescription>{t("marketplace-shipment-add-event-desc")}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-2">
+          <div className="flex-1 overflow-y-auto -mx-6 px-6 space-y-4 pb-4">
             <div>
               <Label htmlFor="e-status">{t("marketplace-col-status")}</Label>
               <Select
@@ -459,7 +459,7 @@ export function ShipmentTracker({ shipmentId, isBookingPartner }: ShipmentTracke
               />
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
             <Button variant="outline" onClick={() => setEventOpen(false)}>
               {t("portal-action-cancel")}
             </Button>
