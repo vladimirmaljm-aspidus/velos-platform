@@ -265,7 +265,7 @@ export function ApiKeysView() {
                         <div className="flex flex-wrap gap-1 max-w-[260px]">
                           {k.permissions && k.permissions.length > 0 ? (
                             k.permissions.map((p) => (
-                              <Badge key={p} variant="secondary" className="text-[10px]">{p}</Badge>
+                              <Badge key={p} variant="secondary" className="text-xs">{p}</Badge>
                             ))
                           ) : (
                             <span className="text-xs text-muted-foreground">—</span>
@@ -405,8 +405,8 @@ function CreateKeyDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="lg" className="max-w-2xl">
-        <DialogHeader>
+      <DialogContent size="lg" className="max-w-2xl max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle className="flex items-center gap-2">
             <KeyRound className="size-5" />
             {t("admin-api-keys-new")}
@@ -416,7 +416,8 @@ function CreateKeyDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-5 py-2">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
+        <div className="grid gap-5">
           {/* Name */}
           <div className="space-y-1.5">
             <Label>{t("admin-api-keys-name-label")}</Label>
@@ -471,8 +472,9 @@ function CreateKeyDialog({
             <p className="text-xs text-muted-foreground">{t("admin-api-keys-expiry-help")}</p>
           </div>
         </div>
+        </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>{t("cancel")}</Button>
           <Button onClick={save} disabled={saving || !name.trim() || !selectedPreset}>
             {saving ? t("admin-api-keys-generating") : t("admin-api-keys-generate")}
@@ -501,8 +503,8 @@ function KeyRevealDialog({ fullKey, onClose }: { fullKey: string | null; onClose
 
   return (
     <Dialog open={!!fullKey} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent size="lg">
-        <DialogHeader>
+      <DialogContent size="lg" className="max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle className="flex items-center gap-2">
             <AlertTriangle className="size-5 text-amber-600" />
             {t("admin-api-keys-copy-title")}
@@ -512,7 +514,7 @@ function KeyRevealDialog({ fullKey, onClose }: { fullKey: string | null; onClose
           </DialogDescription>
         </DialogHeader>
 
-        <div className="py-2 space-y-3">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-3">
           <div className="rounded-md border border-border/60 bg-muted/50 p-3">
             <code className="text-xs font-mono break-all block text-foreground">{fullKey}</code>
           </div>
@@ -527,8 +529,7 @@ function KeyRevealDialog({ fullKey, onClose }: { fullKey: string | null; onClose
             {t("admin-api-keys-treat-as-password")}
           </p>
         </div>
-
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button onClick={onClose}>{t("admin-api-keys-saved-key")}</Button>
         </DialogFooter>
       </DialogContent>

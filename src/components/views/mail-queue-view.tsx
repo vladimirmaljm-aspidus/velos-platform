@@ -370,20 +370,20 @@ function MailDetail({
         </Badge>
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
-        <Card><CardContent className="p-3">
+      <div className="grid grid-cols-2 gap-3">
+        <Card><CardContent className="p-4">
           <p className="text-xs text-muted-foreground">{t("admin-mail-recipient")}</p>
           <p className="text-sm font-medium truncate">{entry.to_email}</p>
         </CardContent></Card>
-        <Card><CardContent className="p-3">
+        <Card><CardContent className="p-4">
           <p className="text-xs text-muted-foreground">{t("admin-col-created")}</p>
           <p className="text-sm">{fmtDateTime(entry.created_at)}</p>
         </CardContent></Card>
-        <Card><CardContent className="p-3">
+        <Card><CardContent className="p-4">
           <p className="text-xs text-muted-foreground">{t("admin-mail-sent-at")}</p>
           <p className="text-sm">{fmtDateTime(entry.sent_at)}</p>
         </CardContent></Card>
-        <Card><CardContent className="p-3">
+        <Card><CardContent className="p-4">
           <p className="text-xs text-muted-foreground">{t("admin-mail-detail-last-error")}</p>
           <p className="text-sm text-destructive truncate" title={entry.error || ""}>{entry.error || "—"}</p>
         </CardContent></Card>
@@ -480,15 +480,16 @@ function ComposeDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="lg">
-        <DialogHeader>
+      <DialogContent size="lg" className="max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle className="flex items-center gap-2">
             <Send className="size-5" /> {t("admin-mail-compose-title")}
           </DialogTitle>
           <DialogDescription>{t("admin-mail-compose-desc")}</DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-3 py-2">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
+        <div className="grid gap-3">
           <div className="space-y-1.5">
             <Label>{t("admin-mail-recipient")} *</Label>
             <Input type="email" value={to} onChange={(e) => setTo(e.target.value)} placeholder={t("admin-mail-form-to-placeholder")} />
@@ -509,8 +510,9 @@ function ComposeDialog({
             />
           </div>
         </div>
+        </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>{t("cancel")}</Button>
           <Button onClick={save} disabled={saving}>
             {saving ? t("admin-mail-queuing") : t("admin-mail-queue-email")}

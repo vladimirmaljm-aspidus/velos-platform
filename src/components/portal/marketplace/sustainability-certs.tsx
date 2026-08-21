@@ -359,13 +359,13 @@ function AddCertDialog({
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-lg max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle>{t("marketplace-esg-certs-add-title")}</DialogTitle>
           <DialogDescription>{t("marketplace-esg-certs-add-desc")}</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-3">
           <div>
             <Label htmlFor="ec-type">{t("marketplace-esg-certs-type-label")}</Label>
             <Select
@@ -444,7 +444,7 @@ function AddCertDialog({
           </p>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button variant="outline" onClick={onClose}>{t("portal-action-cancel")}</Button>
           <Button onClick={() => createMut.mutate()} disabled={createMut.isPending}>
             {createMut.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}

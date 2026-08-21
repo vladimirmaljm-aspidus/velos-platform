@@ -665,44 +665,44 @@ function CalcDetail({
       {/* Summary grid */}
       <div className="grid grid-cols-2 gap-2">
         <Card className="border-border/60 shadow-soft rounded-xl">
-          <CardContent className="p-3">
+          <CardContent className="p-4 sm:p-5">
             <p className="text-xs text-muted-foreground">{t("misc-buy-total")}</p>
             <p className="text-lg font-semibold tabular">{fmtMoney(calc.total_buy_cost, calc.buy_currency)}</p>
-            <p className="text-[11px] text-muted-foreground tabular">
+            <p className="text-xs text-muted-foreground tabular">
               {fmtMoney(calc.buy_price_per_unit, calc.buy_currency)} × {fmtNumber(calc.quantity)} {calc.unit}
             </p>
           </CardContent>
         </Card>
         <Card className="border-border/60 shadow-soft rounded-xl">
-          <CardContent className="p-3">
+          <CardContent className="p-4 sm:p-5">
             <p className="text-xs text-muted-foreground">{t("misc-landed-cost")}</p>
             <p className="text-lg font-semibold tabular">{fmtMoney(calc.total_landed_cost, calc.buy_currency)}</p>
-            <p className="text-[11px] text-muted-foreground tabular">
+            <p className="text-xs text-muted-foreground tabular">
               {fmtMoney(calc.total_landed_cost / Math.max(calc.quantity, 1), calc.buy_currency)} / {calc.unit}
             </p>
             {currenciesDiffer && (
-              <p className="text-[11px] tabular text-muted-foreground border-t pt-1 mt-1">
+              <p className="text-xs tabular text-muted-foreground border-t pt-1 mt-1">
                 ≈ {fmtMoney(landedCostInSellCurrency, calc.sell_currency)} @ {fxRate}
               </p>
             )}
           </CardContent>
         </Card>
         <Card className="border-border/60 shadow-soft rounded-xl">
-          <CardContent className="p-3">
+          <CardContent className="p-4 sm:p-5">
             <p className="text-xs text-muted-foreground">{t("misc-sell-revenue")}</p>
             <p className="text-lg font-semibold tabular">{fmtMoney(calc.total_sell_revenue, calc.sell_currency)}</p>
-            <p className="text-[11px] text-muted-foreground tabular">
+            <p className="text-xs text-muted-foreground tabular">
               {fmtMoney(calc.sell_price_per_unit, calc.sell_currency)} × {fmtNumber(calc.quantity)} {calc.unit}
             </p>
           </CardContent>
         </Card>
         <Card className={`border-border/60 shadow-soft rounded-xl ${marginPositive ? "" : "border-destructive/30"}`}>
-          <CardContent className="p-3">
+          <CardContent className="p-4 sm:p-5">
             <p className="text-xs text-muted-foreground">{t("misc-gross-margin-card")}</p>
             <p className={`text-lg font-semibold tabular ${marginPositive ? "text-chart-1" : "text-destructive"}`}>
               {fmtMoney(calc.gross_margin, displayCurrency)}
             </p>
-            <p className={`text-[11px] tabular ${marginPositive ? "text-chart-1" : "text-destructive"}`}>
+            <p className={`text-xs tabular ${marginPositive ? "text-chart-1" : "text-destructive"}`}>
               {marginPositive ? <TrendingUp className="size-3 inline mr-0.5" /> : <TrendingDown className="size-3 inline mr-0.5" />}
               {t("misc-margin-suffix").replace("${n}", calc.margin_percent.toFixed(2))}
             </p>
@@ -1520,8 +1520,8 @@ function CalcFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="full">
-        <DialogHeader>
+      <DialogContent size="full" className="max-h-[88vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="size-4 text-amber-500" />
             {calc ? t("misc-edit-calculation") : t("misc-new-calculation")}
@@ -1529,8 +1529,8 @@ function CalcFormDialog({
           <DialogDescription>{t("misc-calc-dialog-desc")}</DialogDescription>
         </DialogHeader>
 
-        <div className="max-h-[70vh] overflow-y-auto pr-1">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 py-2">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div className="md:col-span-2 space-y-1.5">
@@ -1546,7 +1546,7 @@ function CalcFormDialog({
               {t("misc-product")}
               {loadingProduct && <Loader2 className="size-3 animate-spin text-muted-foreground" />}
               {productContext && !loadingProduct && (
-                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 gap-0.5">
+                <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 gap-0.5">
                   <Sparkles className="size-2.5 text-amber-500" /> {t("misc-auto-filled")}
                 </Badge>
               )}
@@ -1617,7 +1617,7 @@ function CalcFormDialog({
               {t("misc-supplier-label")}
               {loadingSupplier && <Loader2 className="size-3 animate-spin text-muted-foreground" />}
               {supplierContext && !loadingSupplier && (
-                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 gap-0.5">
+                <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 gap-0.5">
                   <Sparkles className="size-2.5 text-amber-500" /> {t("misc-auto-filled")}
                 </Badge>
               )}
@@ -1697,7 +1697,7 @@ function CalcFormDialog({
             <Label className="flex items-center gap-1.5">
               {t("misc-unit-label")}
               {conversionHint && (
-                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 gap-0.5 text-amber-600 border-amber-500/30">
+                <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 gap-0.5 text-amber-600 border-amber-500/30">
                   <ArrowLeftRight className="size-2.5" /> {t("misc-auto-converted")}
                 </Badge>
               )}
@@ -1708,7 +1708,7 @@ function CalcFormDialog({
               className="w-full"
             />
             {conversionHint && (
-              <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
                 <ArrowLeftRight className="size-3 shrink-0" />
                 <span>{conversionHint}</span>
               </p>
@@ -1734,7 +1734,7 @@ function CalcFormDialog({
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               {(() => {
                 const m = ENHANCED_TRANSPORT_MODES.find((mm) => mm.code === form.transport_mode);
                 return m ? t(m.hintKey) : t("log-select-transport-mode-hint");
@@ -1795,7 +1795,7 @@ function CalcFormDialog({
                   placeholder={t("log-freight-rate-mt-placeholder")}
                 />
               </div>
-              <p className="md:col-span-2 text-[11px] text-muted-foreground">
+              <p className="md:col-span-2 text-xs text-muted-foreground">
                 {t("log-vessel-fields-hint")}
               </p>
             </>
@@ -1828,7 +1828,7 @@ function CalcFormDialog({
                   className="tabular"
                 />
               </div>
-              <p className="md:col-span-2 text-[11px] text-muted-foreground">
+              <p className="md:col-span-2 text-xs text-muted-foreground">
                 {t("log-truck-fields-hint")}
               </p>
             </>
@@ -1849,7 +1849,7 @@ function CalcFormDialog({
                   placeholder={t("log-chargeable-weight-placeholder")}
                 />
               </div>
-              <p className="md:col-span-2 text-[11px] text-muted-foreground">
+              <p className="md:col-span-2 text-xs text-muted-foreground">
                 {t("log-air-fields-hint")}
               </p>
             </>
@@ -1876,7 +1876,7 @@ function CalcFormDialog({
           <div className="space-y-1.5">
             <Label className="flex items-center gap-1.5">
               {t("misc-buy-incoterm")}
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 gap-0.5">
+              <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 gap-0.5">
                 <Sparkles className="size-2.5 text-amber-500" /> {t("misc-auto-sets-loading")}
               </Badge>
             </Label>
@@ -1943,7 +1943,7 @@ function CalcFormDialog({
             <Label className="flex items-center gap-1.5">
               {t("misc-exchange-rate")}
               {form.buy_currency && form.sell_currency && form.buy_currency !== form.sell_currency && (
-                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 gap-0.5">
+                <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 gap-0.5">
                   1 {form.buy_currency} = {Number(form.exchange_rate || 0).toFixed(4)} {form.sell_currency}
                 </Badge>
               )}
@@ -1996,7 +1996,7 @@ function CalcFormDialog({
               )}
             </div>
             {form.buy_currency && form.sell_currency && form.buy_currency !== form.sell_currency && (
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 {t("misc-exchange-rate-hint")}
               </p>
             )}
@@ -2059,7 +2059,7 @@ function CalcFormDialog({
                         />
                       </div>
                       <div className="col-span-4 sm:col-span-1">
-                        <Badge variant="secondary" className="font-mono w-full justify-center py-1.5 text-[10px]">{l.basis}</Badge>
+                        <Badge variant="secondary" className="font-mono w-full justify-center py-1.5 text-xs">{l.basis}</Badge>
                       </div>
                       <div className="col-span-5 sm:col-span-2">
                         <Input
@@ -2112,7 +2112,7 @@ function CalcFormDialog({
                         </Button>
                       </div>
                       {isForeign && computedAmt > 0 && (
-                        <div className="col-span-12 -mt-1 mb-1 pl-1 text-[10px] text-blue-600 dark:text-blue-400 italic">
+                        <div className="col-span-12 -mt-1 mb-1 pl-1 text-xs text-blue-600 dark:text-blue-400 italic">
                           {computedAmt.toLocaleString("en-US", { maximumFractionDigits: 2 })} {lineCur} × {l.fx_rate?.toFixed(4) ?? "—"} → <span className="font-mono font-medium not-italic">{converted.toLocaleString("en-US", { maximumFractionDigits: 2 })} {buyCur}</span>
                         </div>
                       )}
@@ -2128,7 +2128,7 @@ function CalcFormDialog({
           <div className="space-y-1.5">
             <Label className="flex items-center gap-1.5">
               {t("misc-payment-terms-label")}
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 gap-0.5">
+              <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 gap-0.5">
                 <Landmark className="size-2.5" /> {t("misc-drives-bank-costs")}
               </Badge>
             </Label>
@@ -2155,7 +2155,7 @@ function CalcFormDialog({
                     <Landmark className="size-3.5" />
                     <span className="text-xs font-medium">{t("misc-bank-trade-finance-costs")}</span>
                     {bankCosts.length > 0 && (
-                      <Badge variant="secondary" className="text-[10px] h-4 px-1.5">{bankCosts.length}</Badge>
+                      <Badge variant="secondary" className="text-xs h-4 px-1.5">{bankCosts.length}</Badge>
                     )}
                     <ChevronDown className={`size-3.5 transition-transform ${bankCostsOpen ? "rotate-180" : ""}`} />
                   </Button>
@@ -2199,7 +2199,7 @@ function CalcFormDialog({
                               <TableCell>
                                 <div className="font-medium">{cost.label}</div>
                                 {item?.description && (
-                                  <div className="text-[10px] text-muted-foreground">{item.description}</div>
+                                  <div className="text-xs text-muted-foreground">{item.description}</div>
                                 )}
                                 {overridden && (
                                   <Badge variant="outline" className="text-[9px] mt-0.5 h-3.5 px-1 gap-0.5 text-amber-600 border-amber-500/30">
@@ -2225,7 +2225,7 @@ function CalcFormDialog({
                     </Table>
                   </div>
                 )}
-                <p className="text-[11px] text-muted-foreground mt-1.5">
+                <p className="text-xs text-muted-foreground mt-1.5">
                   {t("misc-icc-bank-costs-hint")}
                 </p>
               </CollapsibleContent>
@@ -2241,7 +2241,7 @@ function CalcFormDialog({
                   <Button type="button" variant="ghost" size="sm" className="gap-1 px-2 hover:bg-muted/50">
                     <Send className="size-3.5" />
                     <span className="text-xs font-medium">{t("misc-international-transfer-fees")}</span>
-                    <Badge variant="secondary" className="text-[10px] h-4 px-1.5">{t("misc-num-transfers-suffix").replace("${n}", String(numTransfers))}</Badge>
+                    <Badge variant="secondary" className="text-xs h-4 px-1.5">{t("misc-num-transfers-suffix").replace("${n}", String(numTransfers))}</Badge>
                     <ChevronDown className={`size-3.5 transition-transform ${transferFeesOpen ? "rotate-180" : ""}`} />
                   </Button>
                 </CollapsibleTrigger>
@@ -2279,7 +2279,7 @@ function CalcFormDialog({
                               <TableCell>
                                 <div className="font-medium">{fee.label}</div>
                                 {def?.description && (
-                                  <div className="text-[10px] text-muted-foreground">{def.description}</div>
+                                  <div className="text-xs text-muted-foreground">{def.description}</div>
                                 )}
                                 {overridden && (
                                   <Badge variant="outline" className="text-[9px] mt-0.5 h-3.5 px-1 gap-0.5 text-amber-600 border-amber-500/30">
@@ -2309,7 +2309,7 @@ function CalcFormDialog({
                         const current = transferFeeOverrides[fee.id] ?? fee.defaultValue;
                         return (
                           <div key={fee.id} className="grid grid-cols-12 gap-2 items-center">
-                            <div className="col-span-6 text-[11px] text-muted-foreground truncate">{fee.label}</div>
+                            <div className="col-span-6 text-xs text-muted-foreground truncate">{fee.label}</div>
                             <div className="col-span-4">
                               <Input
                                 type="number"
@@ -2317,11 +2317,11 @@ function CalcFormDialog({
                                 min={0}
                                 value={current}
                                 onChange={(e) => applyTransferFeeOverride(fee.id, Number(e.target.value))}
-                                className="h-7 text-[11px] tabular"
+                                className="h-7 text-xs tabular"
                               />
                             </div>
                             <div className="col-span-2 flex items-center gap-1">
-                              <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                              <span className="text-xs text-muted-foreground whitespace-nowrap">
                                 {fee.basis === "percent" ? "%" : (form.sell_currency || "USD")}
                               </span>
                               {overridden && (
@@ -2329,7 +2329,7 @@ function CalcFormDialog({
                                   type="button"
                                   size="sm"
                                   variant="ghost"
-                                  className="h-7 px-1.5 text-[10px]"
+                                  className="h-7 px-1.5 text-xs"
                                   onClick={() => {
                                     const next = { ...transferFeeOverrides };
                                     delete next[fee.id];
@@ -2344,14 +2344,14 @@ function CalcFormDialog({
                         );
                       })}
                       {Object.keys(transferFeeOverrides).length > 0 && (
-                        <Button type="button" size="sm" variant="ghost" className="h-7 text-[11px]" onClick={resetTransferFeeOverrides}>
+                        <Button type="button" size="sm" variant="ghost" className="h-7 text-xs" onClick={resetTransferFeeOverrides}>
                           {t("misc-reset-all")}
                         </Button>
                       )}
                     </div>
                   </div>
                 )}
-                <p className="text-[11px] text-muted-foreground mt-1.5">
+                <p className="text-xs text-muted-foreground mt-1.5">
                   {t("misc-swift-fees-hint")}
                 </p>
               </CollapsibleContent>
@@ -2366,7 +2366,7 @@ function CalcFormDialog({
                   <Button type="button" variant="ghost" size="sm" className="gap-1 px-2 hover:bg-muted/50">
                     <FileCheck className="size-3.5" />
                     <span className="text-xs font-medium">{t("misc-documentation-costs")}</span>
-                    <Badge variant="secondary" className="text-[10px] h-4 px-1.5">{t("misc-num-docs-suffix").replace("${n}", String(selectedDocIds.length))}</Badge>
+                    <Badge variant="secondary" className="text-xs h-4 px-1.5">{t("misc-num-docs-suffix").replace("${n}", String(selectedDocIds.length))}</Badge>
                     <ChevronDown className={`size-3.5 transition-transform ${docsOpen ? "rotate-180" : ""}`} />
                   </Button>
                 </CollapsibleTrigger>
@@ -2400,7 +2400,7 @@ function CalcFormDialog({
                               <TableCell>
                                 <div className="font-medium">{doc.label}</div>
                                 {def?.description && (
-                                  <div className="text-[10px] text-muted-foreground">{def.description}</div>
+                                  <div className="text-xs text-muted-foreground">{def.description}</div>
                                 )}
                                 {overridden && (
                                   <Badge variant="outline" className="text-[9px] mt-0.5 h-3.5 px-1 gap-0.5 text-amber-600 border-amber-500/30">
@@ -2443,8 +2443,8 @@ function CalcFormDialog({
                               className="mt-0.5 size-3.5"
                             />
                             <div className="min-w-0">
-                              <div className="text-[11px] font-medium truncate">{doc.label}</div>
-                              <div className="text-[10px] text-muted-foreground truncate">{doc.description}</div>
+                              <div className="text-xs font-medium truncate">{doc.label}</div>
+                              <div className="text-xs text-muted-foreground truncate">{doc.description}</div>
                               <div className="flex items-center gap-1 mt-0.5">
                                 <Badge variant="outline" className="text-[9px] h-3 px-1 capitalize">{doc.category}</Badge>
                                 <Badge variant="outline" className="text-[9px] h-3 px-1 font-mono">{doc.basis}</Badge>
@@ -2462,9 +2462,9 @@ function CalcFormDialog({
                               value={current}
                               disabled={!selected}
                               onChange={(e) => applyDocOverride(doc.id, Number(e.target.value))}
-                              className="h-7 text-[11px] tabular"
+                              className="h-7 text-xs tabular"
                             />
-                            <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                            <span className="text-xs text-muted-foreground whitespace-nowrap">
                               {form.sell_currency || "USD"}
                             </span>
                           </div>
@@ -2472,13 +2472,13 @@ function CalcFormDialog({
                       );
                     })}
                     {Object.keys(docValueOverrides).length > 0 && (
-                      <Button type="button" size="sm" variant="ghost" className="h-7 text-[11px] mt-1" onClick={resetDocOverrides}>
+                      <Button type="button" size="sm" variant="ghost" className="h-7 text-xs mt-1" onClick={resetDocOverrides}>
                         {t("misc-reset-all-defaults")}
                       </Button>
                     )}
                   </div>
                 </div>
-                <p className="text-[11px] text-muted-foreground mt-1.5">
+                <p className="text-xs text-muted-foreground mt-1.5">
                   {t("misc-doc-costs-hint")}
                 </p>
               </CollapsibleContent>
@@ -2598,7 +2598,7 @@ function CalcFormDialog({
                     {fmtMoney(netProfit, form.sell_currency || "USD")}
                   </span>
                 </div>
-                <div className="flex justify-between text-muted-foreground text-[11px]">
+                <div className="flex justify-between text-muted-foreground text-xs">
                   <span>{t("misc-net-margin-colon")}</span>
                   <span>{netMarginPct.toFixed(1)}%</span>
                 </div>
@@ -2606,25 +2606,25 @@ function CalcFormDialog({
                 {/* ±10% variance row */}
                 <div className="grid grid-cols-3 gap-1.5 pt-1.5 mt-1 border-t border-border/40">
                   <div className="rounded border border-emerald-500/30 bg-emerald-500/5 p-1.5 text-center">
-                    <div className="text-[10px] text-muted-foreground">{t("misc-best-case-minus-10")}</div>
-                    <div className={`font-mono font-semibold text-[11px] ${bestCaseProfit >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                    <div className="text-xs text-muted-foreground">{t("misc-best-case-minus-10")}</div>
+                    <div className={`font-mono font-semibold text-xs ${bestCaseProfit >= 0 ? "text-emerald-600" : "text-red-600"}`}>
                       {fmtMoney(bestCaseProfit, form.sell_currency || "USD")}
                     </div>
                   </div>
                   <div className="rounded border border-blue-500/30 bg-blue-500/5 p-1.5 text-center">
-                    <div className="text-[10px] text-muted-foreground">{t("misc-expected")}</div>
-                    <div className={`font-mono font-semibold text-[11px] ${netProfit >= 0 ? "text-chart-1" : "text-destructive"}`}>
+                    <div className="text-xs text-muted-foreground">{t("misc-expected")}</div>
+                    <div className={`font-mono font-semibold text-xs ${netProfit >= 0 ? "text-chart-1" : "text-destructive"}`}>
                       {fmtMoney(netProfit, form.sell_currency || "USD")}
                     </div>
                   </div>
                   <div className="rounded border border-orange-500/30 bg-orange-500/5 p-1.5 text-center">
-                    <div className="text-[10px] text-muted-foreground">{t("misc-worst-case-plus-10")}</div>
-                    <div className={`font-mono font-semibold text-[11px] ${worstCaseProfit >= 0 ? "text-orange-600" : "text-red-600"}`}>
+                    <div className="text-xs text-muted-foreground">{t("misc-worst-case-plus-10")}</div>
+                    <div className={`font-mono font-semibold text-xs ${worstCaseProfit >= 0 ? "text-orange-600" : "text-red-600"}`}>
                       {fmtMoney(worstCaseProfit, form.sell_currency || "USD")}
                     </div>
                   </div>
                 </div>
-                <div className="flex justify-between text-[10px] text-muted-foreground">
+                <div className="flex justify-between text-xs text-muted-foreground">
                   <span className="flex items-center gap-1"><Gauge className="size-2.5" /> {t("misc-variance-spread-label")}</span>
                   <span className="font-mono">±{fmtMoney(varianceSpread / 2, form.sell_currency || "USD")}</span>
                 </div>
@@ -2681,7 +2681,7 @@ function CalcFormDialog({
         </div>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>{t("cancel")}</Button>
           <Button onClick={save} disabled={saving}>
             {saving ? t("misc-saving-toast") : t("save")}
@@ -2691,8 +2691,8 @@ function CalcFormDialog({
 
       {/* Bank cost rate overrides dialog */}
       <Dialog open={showBankOverrides} onOpenChange={setShowBankOverrides}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
             <DialogTitle className="flex items-center gap-2">
               <Landmark className="size-4" /> {t("misc-edit-bank-cost-rates")}
             </DialogTitle>
@@ -2700,7 +2700,7 @@ function CalcFormDialog({
               {t("misc-edit-bank-cost-rates-desc").replace("${currency}", form.sell_currency || "USD")}
             </DialogDescription>
           </DialogHeader>
-          <div className="max-h-[60vh] overflow-y-auto pr-1">
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
             {applicableBankCostItems.length === 0 ? (
               <p className="text-sm text-muted-foreground italic py-4 text-center">
                 {t("misc-select-payment-method-first")}
@@ -2714,8 +2714,8 @@ function CalcFormDialog({
                     <div key={item.id} className="grid grid-cols-12 gap-3 items-start">
                       <div className="col-span-7">
                         <Label className="text-xs font-medium">{item.label}</Label>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">{item.description}</p>
-                        <Badge variant="outline" className="text-[10px] mt-1 h-4 px-1.5 font-mono">
+                        <p className="text-xs text-muted-foreground mt-0.5">{item.description}</p>
+                        <Badge variant="outline" className="text-xs mt-1 h-4 px-1.5 font-mono">
                           basis: {item.basis}
                         </Badge>
                       </div>
@@ -2728,7 +2728,7 @@ function CalcFormDialog({
                           onChange={(e) => applyBankCostOverrides(item.id, Number(e.target.value))}
                           className="h-9 text-xs tabular"
                         />
-                        <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">
                           {item.basis === "percent" || item.basis === "per_period" ? "%" : form.sell_currency || "USD"}
                         </span>
                         {isOverridden && (
@@ -2736,7 +2736,7 @@ function CalcFormDialog({
                             type="button"
                             size="sm"
                             variant="ghost"
-                            className="h-9 px-2 text-[11px]"
+                            className="h-9 px-2 text-xs"
                             onClick={() => {
                               const next = { ...bankCostOverrides };
                               delete next[item.id];
@@ -2753,7 +2753,7 @@ function CalcFormDialog({
               </div>
             )}
           </div>
-          <DialogFooter className="gap-2">
+          <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4 gap-2">
             <Button variant="outline" onClick={resetBankCostOverrides}>
               {t("misc-reset-all-defaults")}
             </Button>
@@ -2768,7 +2768,7 @@ function CalcFormDialog({
 function PreviewCell({ label, value, accent }: { label: string; value: string; accent?: string }) {
   return (
     <div>
-      <p className="text-[11px] text-muted-foreground">{label}</p>
+      <p className="text-xs text-muted-foreground">{label}</p>
       <p className={`text-sm font-semibold tabular ${accent || ""}`}>{value}</p>
     </div>
   );

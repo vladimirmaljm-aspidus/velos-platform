@@ -149,12 +149,12 @@ function CompanyDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-lg max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{t("pf-enter-company-details")}</DialogDescription>
         </DialogHeader>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-2">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="md:col-span-2 space-y-1.5">
             <Label>{t("pf-name-label")}</Label>
             <Input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder={t("pf-name-placeholder")} />
@@ -201,7 +201,7 @@ function CompanyDialog({
             </Select>
           </div>
         </div>
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>{t("cancel")}</Button>
           <Button onClick={handleSave} disabled={saving}>
             {saving && <Loader2 className="size-4 mr-1.5 animate-spin" />}
@@ -240,12 +240,12 @@ function ViewUsersDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-lg max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle>{t("pf-users-of-tenant").replace("{tenant}", tenantName)}</DialogTitle>
           <DialogDescription>{t("pf-users-of-tenant-desc")}</DialogDescription>
         </DialogHeader>
-        <div className="max-h-72 overflow-y-auto custom-scroll">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
           {isLoading ? (
             <div className="space-y-2 p-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
           ) : !users || users.length === 0 ? (
@@ -280,7 +280,7 @@ function ViewUsersDialog({
             </Table>
           )}
         </div>
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>{t("close")}</Button>
         </DialogFooter>
       </DialogContent>
@@ -349,12 +349,12 @@ function AssignAdminDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-md max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle>{t("pf-assign-admin-title").replace("{tenant}", tenantName)}</DialogTitle>
           <DialogDescription>{t("pf-assign-admin-desc")}</DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 py-2">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
           <div className="space-y-1.5">
             <Label>{t("pf-select-user")}</Label>
             <Select value={userId} onValueChange={setUserId}>
@@ -369,7 +369,7 @@ function AssignAdminDialog({
             </Select>
           </div>
         </div>
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>{t("cancel")}</Button>
           <Button onClick={handleAssign} disabled={saving || !userId}>
             {saving && <Loader2 className="size-4 mr-1.5 animate-spin" />}

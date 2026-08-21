@@ -186,7 +186,7 @@ export function PlatformConfig() {
                   <TableRow key={t.id}>
                     <TableCell>
                       <div className="font-medium truncate">{t.name}</div>
-                      <div className="text-[11px] text-muted-foreground truncate">{t.id.slice(0, 8)}…</div>
+                      <div className="text-xs text-muted-foreground truncate">{t.id.slice(0, 8)}…</div>
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline" className={`text-xs ${PLAN_BADGE[t.plan] || ""}`}>{t.plan}</Badge>
@@ -248,7 +248,7 @@ export function PlatformConfig() {
                 <TableRow key={t.id}>
                   <TableCell>
                     <div className="font-medium truncate">{t.name}</div>
-                    <div className="text-[11px] text-muted-foreground truncate">{t.legal_name || "—"}</div>
+                    <div className="text-xs text-muted-foreground truncate">{t.legal_name || "—"}</div>
                   </TableCell>
                   <TableCell>
                     <Select value={t.plan} onValueChange={(v) => changeTenantField(t.id, "plan", v)}>
@@ -335,14 +335,15 @@ export function PlatformConfig() {
       {/* Tenant management dialog (quick links) */}
       {manageTenant && (
         <Dialog open={!!manageTenant} onOpenChange={(v) => { if (!v) setManageId(null); }}>
-          <DialogContent className="sm:max-w-lg">
-            <DialogHeader>
+          <DialogContent className="sm:max-w-lg max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+            <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
               <DialogTitle>Manage {manageTenant.name}</DialogTitle>
               <DialogDescription>
                 Quick actions. Each forwards to the canonical /api/tenants/[id] route.
               </DialogDescription>
             </DialogHeader>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Button
                 variant="outline"
                 className={manageTenant.status === "suspended" ? "bg-destructive/10 text-destructive border-destructive/30" : ""}
@@ -367,7 +368,8 @@ export function PlatformConfig() {
               <div className="flex justify-between"><span>Offers:</span><span className="tabular">{manageTenant.counts.offers ?? 0}</span></div>
               <div className="flex justify-between"><span>Invoices:</span><span className="tabular">{manageTenant.counts.invoices ?? 0}</span></div>
             </div>
-            <DialogFooter>
+            </div>
+            <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
               <Button variant="outline" onClick={() => setManageId(null)}>Close</Button>
             </DialogFooter>
           </DialogContent>

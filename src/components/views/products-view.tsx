@@ -452,6 +452,7 @@ export function ProductsView() {
           ) : (
             <>
               <div className="max-h-[calc(100vh-340px)] overflow-y-auto custom-scroll">
+                <div className="overflow-x-auto">
                 <Table>
                   <TableHeader className="sticky top-0 bg-card z-10">
                     <TableRow>
@@ -547,6 +548,7 @@ export function ProductsView() {
                     })}
                   </TableBody>
                 </Table>
+                </div>
               </div>
 
               {/* Pagination + Page size */}
@@ -813,10 +815,10 @@ function ProductDetail({ product }: { product: Product }) {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {info.map((x) => (
           <Card key={x.label} className="border-border/60 shadow-soft rounded-xl">
-            <CardContent className="p-3">
+            <CardContent className="p-4">
               <p className="text-xs text-muted-foreground">{x.label}</p>
               <p className="text-sm font-medium mt-0.5 break-words tabular">{x.value}</p>
             </CardContent>
@@ -829,10 +831,10 @@ function ProductDetail({ product }: { product: Product }) {
       {importedEntries.length > 0 && (
         <div>
           <p className="text-xs text-muted-foreground mb-2">{t(locale, "crm-product-details")}</p>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {importedEntries.map(([k, v]) => (
               <Card key={k} className="border-border/60 shadow-soft rounded-xl">
-                <CardContent className="p-3">
+                <CardContent className="p-4">
                   <p className="text-xs text-muted-foreground">{IMPORTED_KEY_LABELS[k]}</p>
                   <p className="text-sm font-medium mt-0.5 break-words">
                     {k === "image_url" && typeof v === "string" ? (
@@ -887,10 +889,10 @@ function ProductDetail({ product }: { product: Product }) {
       {logisticsEntries.length > 0 && (
         <div>
           <p className="text-xs text-muted-foreground mb-2">{t(locale, "crm-logistics-label")}</p>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {logisticsEntries.map(([label, value]) => (
               <Card key={label} className="border-border/60 shadow-soft rounded-xl">
-                <CardContent className="p-3">
+                <CardContent className="p-4">
                   <p className="text-xs text-muted-foreground">{label}</p>
                   <p className="text-sm font-medium mt-0.5 tabular">{value}</p>
                 </CardContent>
@@ -1015,16 +1017,16 @@ function ProductFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="xl">
-        <DialogHeader>
+      <DialogContent size="xl" className="max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle>{product ? t(locale, "crm-edit-product") : t(locale, "crm-new-product")}</DialogTitle>
           <DialogDescription>
             {product ? t(locale, "crm-update-product-details") : t(locale, "crm-start-with-basics")}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="max-h-[70vh] overflow-y-auto pr-1">
-        <div className="space-y-4 py-2">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
+        <div className="space-y-4">
           {/* ── Essential fields (always visible) ── */}
           <div className="space-y-3">
             <div className="space-y-1.5">
@@ -1111,7 +1113,7 @@ function ProductFormDialog({
                 )}
                 {t(locale, "crm-more-details")}
                 {!moreOpen && (form.cost || form.description || form.currency !== "USD" || form.reorder_level) && (
-                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{t(locale, "crm-filled")}</Badge>
+                  <Badge variant="secondary" className="text-xs px-1.5 py-0">{t(locale, "crm-filled")}</Badge>
                 )}
               </button>
             </CollapsibleTrigger>
@@ -1332,7 +1334,7 @@ function ProductFormDialog({
         </div>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>{t(locale, "cancel")}</Button>
           <Button onClick={save} disabled={saving}>
             {saving ? t(locale, "crm-saving") : product ? t(locale, "crm-update") : t(locale, "crm-create-product")}

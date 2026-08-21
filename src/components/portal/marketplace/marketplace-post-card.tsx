@@ -196,7 +196,7 @@ export function MarketplacePostCard({
 
         {/* ── Price (prominent, right-aligned) ────────────────────────── */}
         <div className="flex items-baseline justify-end gap-1.5">
-          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+          <span className="text-xs uppercase tracking-wider text-muted-foreground">
             {t("marketplace-price")}
           </span>
           <span className={priceClass}>{fmtPriceValue()}</span>

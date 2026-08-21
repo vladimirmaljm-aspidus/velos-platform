@@ -372,7 +372,7 @@ function CompanyColumn({
       {/* Premium ribbon */}
       {tier === "premium" && (
         <div className="absolute top-0 right-0">
-          <div className="bg-gradient-emerald text-primary-foreground text-[10px] font-semibold uppercase tracking-wider px-3 py-1 rounded-bl-lg flex items-center gap-1 shadow-soft">
+          <div className="bg-gradient-emerald text-primary-foreground text-xs font-semibold uppercase tracking-wider px-3 py-1 rounded-bl-lg flex items-center gap-1 shadow-soft">
             <Crown className="size-3" /> {t("portal-profile-premium")}
           </div>
         </div>
@@ -431,7 +431,7 @@ function CompanyColumn({
           <>
             <Separator />
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
                 {t("portal-profile-address")}
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -452,7 +452,7 @@ function CompanyColumn({
             <Separator />
             <div>
               <div className="flex items-center justify-between mb-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   {t("portal-profile-bank-details")}
                 </p>
                 <Badge className="gap-1 border-transparent bg-amber-500/15 text-amber-700 dark:text-amber-400">
@@ -488,7 +488,7 @@ function CompanyColumn({
         )}
 
         <Separator />
-        <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span>{t("portal-member-since").replace("{date}", fmtDate(tenant.created_at))}</span>
           <span className="capitalize">{t("portal-plan-label").replace("{plan}", tenant.plan || "")}</span>
         </div>
@@ -533,12 +533,12 @@ function ReadTile({
 }) {
   return (
     <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
-      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <Icon className="size-3" />
         {label}
       </div>
       {accent ? (
-        <Badge className={cn("mt-1.5 text-[11px]", accent)}>{value}</Badge>
+        <Badge className={cn("mt-1.5 text-xs", accent)}>{value}</Badge>
       ) : (
         <p className={cn("text-sm font-medium mt-1 truncate", mono && "font-mono tabular")}>
           {value}
@@ -565,7 +565,7 @@ function InfoRow({
         <Icon className="size-4 text-primary" />
       </div>
       <div className="min-w-0">
-        <p className="text-[11px] text-muted-foreground">{label}</p>
+        <p className="text-xs text-muted-foreground">{label}</p>
         <p className={cn("text-sm font-medium truncate", mono && "font-mono tabular")}>{value}</p>
       </div>
     </div>

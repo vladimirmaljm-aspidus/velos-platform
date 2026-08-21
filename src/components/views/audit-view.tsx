@@ -87,7 +87,7 @@ export function AuditView() {
       />
 
       <Card className="mb-4 border-border/60 shadow-soft rounded-xl">
-        <CardContent className="p-3">
+        <CardContent className="p-4 sm:p-5">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
             <Input
@@ -156,7 +156,7 @@ export function AuditView() {
                       </TableCell>
                       <TableCell className="hidden lg:table-cell max-w-[280px]">
                         {log.details ? (
-                          <pre className="text-[11px] font-mono bg-muted/60 rounded p-2 overflow-x-auto custom-scroll max-h-24">
+                          <pre className="text-xs font-mono bg-muted/60 rounded p-2 overflow-x-auto custom-scroll max-h-24">
                             {JSON.stringify(log.details, null, 2)}
                           </pre>
                         ) : (

@@ -219,7 +219,7 @@ export function PermissionTree({
             disabled={disabled}
           />
           <span className="text-sm font-medium">{t("admin-perm-full-access")}</span>
-          <Badge variant="secondary" className="text-[10px] font-mono">*</Badge>
+          <Badge variant="secondary" className="text-xs font-mono">*</Badge>
         </label>
         <div className="flex items-center gap-1">
           <Button
@@ -375,7 +375,7 @@ function ModuleRow({
           </div>
           <Badge
             variant={checkedCount > 0 ? "default" : "secondary"}
-            className="text-[10px] tabular-nums"
+            className="text-xs tabular-nums"
           >
             {checkedCount}/{actions.length}
           </Badge>

@@ -107,7 +107,7 @@ export function VerifyClient({ exists, documentType, code, cipheredRecipient = "
               <div className="size-12 rounded-xl overflow-hidden flex items-center justify-center mx-auto shadow-lg">
                 <Image src="/logo.svg" alt="VELOS" width={48} height={48} priority />
               </div>
-              <p className="text-[10px] tracking-[0.2em] uppercase text-slate-400 mt-2">VELOS</p>
+              <p className="text-xs tracking-[0.2em] uppercase text-slate-400 mt-2">VELOS</p>
             </div>
 
             <div className="relative mb-6">
@@ -141,7 +141,7 @@ export function VerifyClient({ exists, documentType, code, cipheredRecipient = "
               <div className="size-12 rounded-xl overflow-hidden flex items-center justify-center mx-auto shadow-lg">
                 <Image src="/logo.svg" alt="VELOS" width={48} height={48} priority />
               </div>
-              <p className="text-[10px] tracking-[0.2em] uppercase text-slate-400 mt-2">VELOS</p>
+              <p className="text-xs tracking-[0.2em] uppercase text-slate-400 mt-2">VELOS</p>
             </div>
 
             <div className="size-16 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-5">
@@ -187,7 +187,7 @@ export function VerifyClient({ exists, documentType, code, cipheredRecipient = "
                 <div className="size-12 rounded-xl overflow-hidden flex items-center justify-center mx-auto shadow-lg">
                   <Image src="/logo.svg" alt="VELOS" width={48} height={48} priority />
                 </div>
-                <p className="text-[10px] tracking-[0.2em] uppercase text-slate-400 mt-2">VELOS</p>
+                <p className="text-xs tracking-[0.2em] uppercase text-slate-400 mt-2">VELOS</p>
               </div>
               <div className="size-16 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-5">
                 <XCircle className="size-8 text-red-500" />
@@ -228,7 +228,7 @@ export function VerifyClient({ exists, documentType, code, cipheredRecipient = "
             </div>
             <div className="flex-1">
               <p className="font-semibold text-sm tracking-tight text-slate-800">VELOS</p>
-              <p className="text-[10px] tracking-[0.15em] uppercase text-slate-400">{t("misc-verify-trade-platform")}</p>
+              <p className="text-xs tracking-[0.15em] uppercase text-slate-400">{t("misc-verify-trade-platform")}</p>
             </div>
           </div>
 
@@ -345,7 +345,7 @@ export function VerifyClient({ exists, documentType, code, cipheredRecipient = "
               <div className="p-3 rounded-xl border border-slate-200/60 bg-slate-50/50">
                 <div className="flex items-center gap-2 mb-1">
                   <Fingerprint className="size-3 text-slate-400" />
-                  <p className="text-[10px] tracking-wider uppercase text-slate-400">{t("misc-verify-hash-label")}</p>
+                  <p className="text-xs tracking-wider uppercase text-slate-400">{t("misc-verify-hash-label")}</p>
                 </div>
                 <p className="font-mono text-xs text-slate-600 break-all">{v.verification_code}</p>
               </div>
@@ -362,7 +362,7 @@ export function VerifyClient({ exists, documentType, code, cipheredRecipient = "
 
           {/* Footer */}
           <div className="mt-8 pt-6 border-t border-slate-200/60 text-center">
-            <p className="text-[10px] text-slate-400">
+            <p className="text-xs text-slate-400">
               {t("misc-verify-copyright").replace("{year}", String(new Date().getFullYear()))}
             </p>
           </div>

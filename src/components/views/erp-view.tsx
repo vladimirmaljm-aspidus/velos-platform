@@ -808,14 +808,14 @@ function ChartOfAccounts() {
 
       {/* Add/Edit Account Dialog */}
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-        <DialogContent size="full">
-          <DialogHeader>
+        <DialogContent size="full" className="max-h-[88vh] flex flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
             <DialogTitle>{editAccount ? lbl("edit-account") : lbl("add-account")}</DialogTitle>
             <DialogDescription>
               {editAccount ? lbl("fin-update-account-desc") : lbl("fin-create-account-desc")}
             </DialogDescription>
           </DialogHeader>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-4">
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
               <Label>{lbl("account-code")}</Label>
               <Input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder={lbl("fin-erp-account-code-placeholder")} />
@@ -875,7 +875,7 @@ function ChartOfAccounts() {
               <Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder={lbl("fin-erp-optional-description-placeholder")} rows={3} />
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
             <Button variant="outline" onClick={() => setShowAddDialog(false)}>{lbl("cancel")}</Button>
             <Button onClick={() => saveMutation.mutate({ ...form, parent_id: form.parent_id === "none" ? "" : form.parent_id })} disabled={saveMutation.isPending}>
               {saveMutation.isPending ? lbl("fin-saving") : lbl("save")}
@@ -904,12 +904,12 @@ function ChartOfAccounts() {
 
       {/* Initialize Dialog */}
       <Dialog open={showInitDialog} onOpenChange={setShowInitDialog}>
-        <DialogContent size="lg">
-          <DialogHeader>
+        <DialogContent size="lg" className="max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
             <DialogTitle>{lbl("initialize-chart")}</DialogTitle>
             <DialogDescription>{lbl("initialize-desc")}</DialogDescription>
           </DialogHeader>
-          <div className="flex gap-4 py-4">
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 flex gap-4">
             <Button className="flex-1" onClick={() => initMutation.mutate("eu")} disabled={initMutation.isPending}>
               {lbl("fin-erp-initialize-eu")}
             </Button>
@@ -917,7 +917,7 @@ function ChartOfAccounts() {
               {lbl("fin-erp-initialize-uae")}
             </Button>
           </div>
-          <DialogFooter>
+          <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
             <Button variant="outline" onClick={() => setShowInitDialog(false)}>{lbl("cancel")}</Button>
           </DialogFooter>
         </DialogContent>
@@ -1175,7 +1175,7 @@ function JournalEntries() {
                     {entry.entry_number}
                     {/* E-2: flag revaluation entries inline so they stand out */}
                     {entry.is_revaluation && (
-                      <Badge variant="outline" className="ml-2 text-[10px] py-0 px-1.5 align-middle">{lbl("fin-revaluation-badge")}</Badge>
+                      <Badge variant="outline" className="ml-2 text-xs py-0 px-1.5 align-middle">{lbl("fin-revaluation-badge")}</Badge>
                     )}
                   </TableCell>
                   <TableCell>{fmtDate(entry.date)}</TableCell>
@@ -1197,7 +1197,7 @@ function JournalEntries() {
                         total too. For revaluation entries, debit_total
                         is already in the base currency. */}
                     {entry.base_currency && entry.base_currency !== entry.currency && (
-                      <div className="text-[10px] text-muted-foreground">
+                      <div className="text-xs text-muted-foreground">
                         ≈ {fmtMoney(entry.debit_total, entry.base_currency)}
                       </div>
                     )}
@@ -1205,7 +1205,7 @@ function JournalEntries() {
                   <TableCell className="text-right font-mono">
                     {fmtMoney(entry.credit_total, entry.currency)}
                     {entry.base_currency && entry.base_currency !== entry.currency && (
-                      <div className="text-[10px] text-muted-foreground">
+                      <div className="text-xs text-muted-foreground">
                         ≈ {fmtMoney(entry.credit_total, entry.base_currency)}
                       </div>
                     )}
@@ -1241,14 +1241,14 @@ function JournalEntries() {
 
       {/* Add/Edit Journal Entry Dialog */}
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-        <DialogContent size="full">
-          <DialogHeader>
+        <DialogContent size="full" className="max-h-[88vh] flex flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
             <DialogTitle>{editEntry ? lbl("edit-entry") : lbl("add-entry")}</DialogTitle>
             <DialogDescription>
               {editEntry ? lbl("fin-update-entry-desc") : lbl("fin-create-entry-desc")}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-6 py-4">
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-6">
             {/* Header fields */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
@@ -1405,15 +1405,16 @@ function JournalEntries() {
 
       {/* View Entry Dialog */}
       <Dialog open={!!viewEntry} onOpenChange={() => setViewEntry(null)}>
-        <DialogContent size="full">
-          <DialogHeader>
+        <DialogContent size="full" className="max-h-[88vh] flex flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
             <DialogTitle>{lbl("entry-detail")} — {viewEntry?.entry_number}</DialogTitle>
             <DialogDescription>
               {viewEntry?.description} — {fmtDate(viewEntry?.date)}
             </DialogDescription>
           </DialogHeader>
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
           {viewEntry && (
-            <div className="space-y-4 py-4">
+            <div className="space-y-4">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div><span className="text-xs text-muted-foreground">{lbl("status")}</span><div><Badge className={STATUS_BADGE[viewEntry.status]?.className ?? ""}>{lbl(STATUS_BADGE[viewEntry.status]?.key ?? "")}</Badge></div></div>
                 <div><span className="text-xs text-muted-foreground">{lbl("currency")}</span><div className="font-mono">{viewEntry.currency}</div></div>
@@ -1487,7 +1488,8 @@ function JournalEntries() {
               </div>
             </div>
           )}
-          <DialogFooter>
+          </div>
+          <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
             <Button variant="outline" onClick={() => setViewEntry(null)}>{lbl("close")}</Button>
           </DialogFooter>
         </DialogContent>
@@ -1495,12 +1497,12 @@ function JournalEntries() {
 
       {/* E-2 (multi-currency ERP) — FX Revaluation dialog */}
       <Dialog open={showRevalDialog} onOpenChange={setShowRevalDialog}>
-        <DialogContent size="full">
-          <DialogHeader>
+        <DialogContent size="full" className="max-h-[88vh] flex flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
             <DialogTitle>{lbl("fin-revalue-entry")}</DialogTitle>
             <DialogDescription>{lbl("fin-revalue-desc")}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label>{lbl("fin-reval-date")}</Label>
@@ -1981,12 +1983,12 @@ function BankAccounts() {
 
       {/* Add/Edit Bank Account Dialog */}
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-        <DialogContent size="full">
-          <DialogHeader>
+        <DialogContent size="full" className="max-h-[88vh] flex flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
             <DialogTitle>{editBankAccount ? lbl("edit-bank-account") : lbl("add-bank-account")}</DialogTitle>
             <DialogDescription>{lbl("fin-enter-bank-details-desc")}</DialogDescription>
           </DialogHeader>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-4">
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
               <Label>{lbl("bank-name")}</Label>
               <Input value={form.bank_name} onChange={(e) => setForm({ ...form, bank_name: e.target.value })} placeholder={lbl("fin-erp-bank-name-placeholder")} />
@@ -2030,7 +2032,7 @@ function BankAccounts() {
               <Label>{lbl("active")}</Label>
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
             <Button variant="outline" onClick={() => setShowAddDialog(false)}>{lbl("cancel")}</Button>
             <Button onClick={() => saveMutation.mutate(form)} disabled={saveMutation.isPending}>
               {saveMutation.isPending ? lbl("fin-saving") : lbl("save")}
@@ -2055,12 +2057,12 @@ function BankAccounts() {
 
       {/* Add Transaction Dialog */}
       <Dialog open={showTransactionDialog} onOpenChange={setShowTransactionDialog}>
-        <DialogContent size="full">
-          <DialogHeader>
+        <DialogContent size="full" className="max-h-[88vh] flex flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
             <DialogTitle>{lbl("add-transaction")}</DialogTitle>
             <DialogDescription>{lbl("fin-enter-transaction-desc")}</DialogDescription>
           </DialogHeader>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-4">
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
               <Label>{lbl("date")}</Label>
               <Input type="date" value={txForm.date} onChange={(e) => setTxForm({ ...txForm, date: e.target.value })} />
@@ -2092,7 +2094,7 @@ function BankAccounts() {
               <Input value={txForm.reference} onChange={(e) => setTxForm({ ...txForm, reference: e.target.value })} placeholder={lbl("fin-erp-reference-placeholder")} />
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
             <Button variant="outline" onClick={() => setShowTransactionDialog(false)}>{lbl("cancel")}</Button>
             <Button onClick={() => saveTxMutation.mutate(txForm)} disabled={saveTxMutation.isPending}>
               {saveTxMutation.isPending ? lbl("fin-saving") : lbl("save")}

@@ -141,7 +141,7 @@ export function PlatformAuditView() {
                     <TableCell className="text-xs tabular text-muted-foreground">{fmtDateTime(row.created_at)}</TableCell>
                     <TableCell className="text-sm">{row.tenant_id ? tenantName.get(row.tenant_id) || row.tenant_id.slice(0, 8) : <span className="text-primary font-semibold">{t("pf-platform-badge")}</span>}</TableCell>
                     <TableCell className="text-sm">{row.username || "—"}</TableCell>
-                    <TableCell><Badge variant="outline" className="font-mono text-[10px]">{row.action}</Badge></TableCell>
+                    <TableCell><Badge variant="outline" className="font-mono text-xs">{row.action}</Badge></TableCell>
                     <TableCell className="text-xs text-muted-foreground">{row.entity_type ? `${row.entity_type}${row.entity_id ? "#" + row.entity_id.slice(0, 8) : ""}` : "—"}</TableCell>
                     <TableCell className="text-xs tabular"><span className="inline-flex items-center gap-1.5">{row.ip || "—"}{row.ip && <MapLink ip={row.ip} />}</span></TableCell>
                     <TableCell className="text-right text-xs text-muted-foreground">{expanded === row.id ? t("pf-audit-hide") : t("pf-audit-show")}</TableCell>
@@ -149,7 +149,7 @@ export function PlatformAuditView() {
                   {expanded === row.id && (
                     <TableRow>
                       <TableCell colSpan={7} className="bg-muted/40">
-                        <pre className="text-[11px] font-mono whitespace-pre-wrap break-all overflow-x-auto">{JSON.stringify({ details: row.details, user_agent: row.user_agent }, null, 2)}</pre>
+                        <pre className="text-xs font-mono whitespace-pre-wrap break-all overflow-x-auto">{JSON.stringify({ details: row.details, user_agent: row.user_agent }, null, 2)}</pre>
                       </TableCell>
                     </TableRow>
                   )}

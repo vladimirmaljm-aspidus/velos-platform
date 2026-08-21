@@ -505,7 +505,7 @@ export function PortalDashboard() {
                           {o.number}
                         </span>
                         <Badge
-                          className={cn("text-[10px] px-1.5 py-0 capitalize", STATUS_STYLES[o.status])}
+                          className={cn("text-xs px-1.5 py-0 capitalize", STATUS_STYLES[o.status])}
                         >
                           {o.status}
                         </Badge>
@@ -516,7 +516,7 @@ export function PortalDashboard() {
                       <p className="text-sm font-semibold tabular">
                         {fmtMoney(o.total, o.currency)}
                       </p>
-                      <p className="text-[11px] text-muted-foreground tabular">
+                      <p className="text-xs text-muted-foreground tabular">
                         {fmtDate(o.created_at)}
                       </p>
                     </div>
@@ -571,14 +571,14 @@ export function PortalDashboard() {
                       </div>
                       <div className="min-w-0">
                         <p className="text-sm font-medium truncate">{d.filename}</p>
-                        <p className="text-[11px] text-muted-foreground tabular">
+                        <p className="text-xs text-muted-foreground tabular">
                           {fmtDate(d.created_at)}
                         </p>
                       </div>
                     </div>
                     <Badge
                       className={cn(
-                        "text-[10px] px-1.5 py-0 capitalize",
+                        "text-xs px-1.5 py-0 capitalize",
                         DOC_CATEGORY_STYLES[d.category]
                       )}
                     >
@@ -640,7 +640,7 @@ export function PortalDashboard() {
                         </span>
                         <Badge
                           className={cn(
-                            "text-[10px] px-1.5 py-0 capitalize",
+                            "text-xs px-1.5 py-0 capitalize",
                             INVOICE_STATUS_STYLES[inv.status]
                           )}
                         >
@@ -653,7 +653,7 @@ export function PortalDashboard() {
                       <p className="text-sm font-semibold tabular">
                         {fmtMoney(inv.total, inv.currency)}
                       </p>
-                      <p className="text-[11px] text-muted-foreground tabular">
+                      <p className="text-xs text-muted-foreground tabular">
                         {t("portal-due-label").replace("{date}", fmtDate(inv.due_date))}
                       </p>
                     </div>
@@ -710,7 +710,7 @@ export function PortalDashboard() {
                         </span>
                         <Badge
                           className={cn(
-                            "text-[10px] px-1.5 py-0 capitalize",
+                            "text-xs px-1.5 py-0 capitalize",
                             PROFORMA_STATUS_STYLES[pro.status]
                           )}
                         >
@@ -723,7 +723,7 @@ export function PortalDashboard() {
                       <p className="text-sm font-semibold tabular">
                         {fmtMoney(pro.total, pro.currency)}
                       </p>
-                      <p className="text-[11px] text-muted-foreground tabular">
+                      <p className="text-xs text-muted-foreground tabular">
                         {fmtDate(pro.issue_date)}
                       </p>
                     </div>
@@ -1036,7 +1036,7 @@ function KpiPremium({
           <p className={cn("text-2xl font-semibold tracking-tight mt-1.5 tabular truncate", accent)}>
             {value}
           </p>
-          {sub && <p className="text-[11px] text-muted-foreground mt-1 truncate">{sub}</p>}
+          {sub && <p className="text-xs text-muted-foreground mt-1 truncate">{sub}</p>}
         </div>
         <div
           className={cn(
@@ -1166,7 +1166,7 @@ function QuickLink({
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold truncate">{title}</p>
-          <p className="text-[11px] text-muted-foreground truncate mt-0.5">{desc}</p>
+          <p className="text-xs text-muted-foreground truncate mt-0.5">{desc}</p>
         </div>
       </div>
     </button>

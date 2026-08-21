@@ -384,7 +384,7 @@ export function TradeGlobeView() {
           </CardHeader>
           <CardContent className="p-0">
             <div className="px-4 pb-3 space-y-2 border-b border-border/60">
-              <p className="text-[11px] font-semibold uppercase text-muted-foreground">Or test any address pair</p>
+              <p className="text-xs font-semibold uppercase text-muted-foreground">Or test any address pair</p>
               <Input
                 placeholder="Origin address"
                 value={manualOrigin}
@@ -430,7 +430,7 @@ export function TradeGlobeView() {
                       >
                         <div className="flex items-center justify-between gap-2">
                           <span className="font-mono text-xs font-semibold">{req.number}</span>
-                          <Badge variant={statusVariant(req.status)} className="text-[10px]">
+                          <Badge variant={statusVariant(req.status)} className="text-xs">
                             {req.status}
                           </Badge>
                         </div>
@@ -539,10 +539,10 @@ export function TradeGlobeView() {
               {plan.intermediateWaypoints.length > 0 && (
                 <>
                   <Separator className="my-2" />
-                  <p className="text-muted-foreground text-[11px] uppercase font-semibold">Via</p>
+                  <p className="text-muted-foreground text-xs uppercase font-semibold">Via</p>
                   <div className="flex flex-wrap gap-1">
                     {plan.intermediateWaypoints.map((w) => (
-                      <Badge key={w.id} variant="outline" className="text-[10px]">{w.name}</Badge>
+                      <Badge key={w.id} variant="outline" className="text-xs">{w.name}</Badge>
                     ))}
                   </div>
                 </>
@@ -574,14 +574,14 @@ export function TradeGlobeView() {
                 <span>Total (indicative)</span>
                 <span className="font-mono">${plan.estimatedCost.totalUsd.toLocaleString()}</span>
               </div>
-              <p className="text-[11px] text-muted-foreground pt-1 flex items-start gap-1">
+              <p className="text-xs text-muted-foreground pt-1 flex items-start gap-1">
                 <Info className="size-3 shrink-0 mt-0.5" /> {plan.estimatedCost.disclaimer}
               </p>
 
               {plan.borderCrossings.length > 0 && (
                 <>
                   <Separator />
-                  <p className="text-muted-foreground text-[11px] uppercase font-semibold flex items-center gap-1">
+                  <p className="text-muted-foreground text-xs uppercase font-semibold flex items-center gap-1">
                     <Flag className="size-3" /> Border crossings
                   </p>
                   <div className="space-y-1">

@@ -395,7 +395,7 @@ export function GlobalSearch() {
         <Command
           shouldFilter={false}
           loop
-          className="[&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:pt-3 [&_[cmdk-group-heading]]:pb-1 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wider [&_[cmdk-group]]:px-2 [&_[cmdk-input-wrapper]_svg]:size-4 [&_[cmdk-input]]:h-12 [&_[cmdk-input]]:text-sm"
+          className="[&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:pt-3 [&_[cmdk-group-heading]]:pb-1 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wider [&_[cmdk-group]]:px-2 [&_[cmdk-input-wrapper]_svg]:size-4 [&_[cmdk-input]]:h-12 [&_[cmdk-input]]:text-sm"
         >
           <CommandInput
             placeholder={t("misc-gs-search-placeholder")}
@@ -420,7 +420,7 @@ export function GlobalSearch() {
                       >
                         <Clock className="size-4 text-muted-foreground" />
                         <span className="text-sm truncate flex-1">{r}</span>
-                        <kbd className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                        <kbd className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
                           {shortcutHint}
                         </kbd>
                       </CommandItem>
@@ -459,7 +459,7 @@ export function GlobalSearch() {
                       <Plus className="size-4" />
                     </span>
                     <span className="text-sm font-medium">{t("misc-gs-new-partner")}</span>
-                    <span className="ml-auto text-[11px] text-muted-foreground">{t("misc-gs-action-hint-partner")}</span>
+                    <span className="ml-auto text-xs text-muted-foreground">{t("misc-gs-action-hint-partner")}</span>
                   </CommandItem>
                   <CommandItem
                     value="action-new-offer"
@@ -470,7 +470,7 @@ export function GlobalSearch() {
                       <Plus className="size-4" />
                     </span>
                     <span className="text-sm font-medium">{t("misc-gs-new-offer")}</span>
-                    <span className="ml-auto text-[11px] text-muted-foreground">{t("misc-gs-action-hint-offer")}</span>
+                    <span className="ml-auto text-xs text-muted-foreground">{t("misc-gs-action-hint-offer")}</span>
                   </CommandItem>
                   <CommandItem
                     value="action-new-deal"
@@ -481,7 +481,7 @@ export function GlobalSearch() {
                       <Plus className="size-4" />
                     </span>
                     <span className="text-sm font-medium">{t("misc-gs-new-deal")}</span>
-                    <span className="ml-auto text-[11px] text-muted-foreground">{t("misc-gs-action-hint-deal")}</span>
+                    <span className="ml-auto text-xs text-muted-foreground">{t("misc-gs-action-hint-deal")}</span>
                   </CommandItem>
                   <CommandItem
                     value="action-new-invoice"
@@ -492,7 +492,7 @@ export function GlobalSearch() {
                       <Plus className="size-4" />
                     </span>
                     <span className="text-sm font-medium">{t("misc-gs-new-invoice")}</span>
-                    <span className="ml-auto text-[11px] text-muted-foreground">{t("misc-gs-action-hint-invoice")}</span>
+                    <span className="ml-auto text-xs text-muted-foreground">{t("misc-gs-action-hint-invoice")}</span>
                   </CommandItem>
                   <CommandItem
                     value="action-download-offer-pdf"
@@ -503,7 +503,7 @@ export function GlobalSearch() {
                       <FileDown className="size-4" />
                     </span>
                     <span className="text-sm font-medium">{t("misc-gs-download-offer-pdf")}</span>
-                    <span className="ml-auto text-[11px] text-muted-foreground">{t("offers")}</span>
+                    <span className="ml-auto text-xs text-muted-foreground">{t("offers")}</span>
                   </CommandItem>
                   <CommandItem
                     value="action-open-portal"
@@ -514,7 +514,7 @@ export function GlobalSearch() {
                       <ExternalLink className="size-4" />
                     </span>
                     <span className="text-sm font-medium">{t("misc-gs-open-portal")}</span>
-                    <span className="ml-auto text-[11px] text-muted-foreground">{t("misc-gs-portal-mode")}</span>
+                    <span className="ml-auto text-xs text-muted-foreground">{t("misc-gs-portal-mode")}</span>
                   </CommandItem>
                 </CommandGroup>
               </>
@@ -565,7 +565,7 @@ export function GlobalSearch() {
                                 {hit.primary}
                               </span>
                               {hit.secondary && (
-                                <span className="text-[11px] text-muted-foreground truncate">
+                                <span className="text-xs text-muted-foreground truncate">
                                   {hit.secondary}
                                 </span>
                               )}
@@ -579,7 +579,7 @@ export function GlobalSearch() {
                               <Badge
                                 variant="outline"
                                 className={cn(
-                                  "text-[10px] px-1.5 py-0 h-5 font-medium capitalize shrink-0",
+                                  "text-xs px-1.5 py-0 h-5 font-medium capitalize shrink-0",
                                   meta.badgeCls
                                 )}
                               >
@@ -594,14 +594,14 @@ export function GlobalSearch() {
                   );
                 })}
                 <CommandSeparator className="my-1" />
-                <div className="px-3 py-2 text-[11px] text-muted-foreground flex items-center justify-between">
+                <div className="px-3 py-2 text-xs text-muted-foreground flex items-center justify-between">
                   <span>
                     {t("misc-gs-result-count").replace("{n}", String(searchQ.data?.length || 0))}
                   </span>
                   <span className="flex items-center gap-1.5">
-                    <kbd className="bg-muted px-1.5 py-0.5 rounded text-[10px]">↑↓</kbd>
+                    <kbd className="bg-muted px-1.5 py-0.5 rounded text-xs">↑↓</kbd>
                     {t("misc-gs-navigate")}
-                    <kbd className="bg-muted px-1.5 py-0.5 rounded text-[10px] ml-1">↵</kbd>
+                    <kbd className="bg-muted px-1.5 py-0.5 rounded text-xs ml-1">↵</kbd>
                     {t("misc-gs-open")}
                   </span>
                 </div>
@@ -623,14 +623,14 @@ export function GlobalSearch() {
           </CommandList>
 
           {/* Footer */}
-          <div className="border-t bg-background/40 px-3 py-2 flex items-center justify-between text-[11px] text-muted-foreground">
+          <div className="border-t bg-background/40 px-3 py-2 flex items-center justify-between text-xs text-muted-foreground">
             <div className="flex items-center gap-2">
               <kbd className="bg-muted px-1.5 py-0.5 rounded font-mono">{shortcutHint}</kbd>
               <span>{t("misc-gs-to-toggle")}</span>
             </div>
             <div className="flex items-center gap-3">
               <span className="flex items-center gap-1">
-                <kbd className="bg-muted px-1.5 py-0.5 rounded text-[10px]">esc</kbd>
+                <kbd className="bg-muted px-1.5 py-0.5 rounded text-xs">esc</kbd>
                 {t("misc-gs-close")}
               </span>
             </div>

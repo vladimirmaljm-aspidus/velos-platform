@@ -139,10 +139,10 @@ function Tile({ icon: Icon, label, value, tone, hint }: { icon: React.ComponentT
     <Card className={`rounded-xl ${TONE[tone]}`}>
       <CardContent className="p-4">
         <div className="flex items-start justify-between">
-          <div><p className="text-[10px] uppercase tracking-wider">{label}</p><p className="text-2xl font-bold tabular mt-1">{value}</p></div>
+          <div><p className="text-xs uppercase tracking-wider">{label}</p><p className="text-2xl font-bold tabular mt-1">{value}</p></div>
           <Icon className="size-4 opacity-60" />
         </div>
-        {hint && <p className="text-[10px] opacity-70 mt-1">{hint}</p>}
+        {hint && <p className="text-xs opacity-70 mt-1">{hint}</p>}
       </CardContent>
     </Card>
   );

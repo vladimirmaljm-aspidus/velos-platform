@@ -55,7 +55,7 @@ export function SettingsCardHeader({
             {dirty && (
               <Badge
                 variant="outline"
-                className="text-[10px] uppercase tracking-wider bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30"
+                className="text-xs uppercase tracking-wider bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30"
               >
                 {t("pf-sa-unsaved")}
               </Badge>
@@ -93,7 +93,7 @@ export function SectionLabel({ children, hint }: { children: React.ReactNode; hi
     <div className="flex items-center gap-2 mb-2 mt-4 first:mt-0">
       <h4 className="text-sm font-medium">{children}</h4>
       <div className="h-px flex-1 bg-border/60" />
-      {hint && <span className="text-[11px] text-muted-foreground">{hint}</span>}
+      {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
     </div>
   );
 }
@@ -171,9 +171,9 @@ export function SettingRow({
             </Badge>
           )}
         </div>
-        {description && <p className="text-[11px] text-muted-foreground leading-snug">{description}</p>}
+        {description && <p className="text-xs text-muted-foreground leading-snug">{description}</p>}
         {impact && (
-          <p className="text-[11px] text-muted-foreground/80 leading-snug">
+          <p className="text-xs text-muted-foreground/80 leading-snug">
             <span className="font-medium text-foreground/70">{t("pf-sa-impact-label")} </span>
             {impact}
           </p>
@@ -181,7 +181,7 @@ export function SettingRow({
       </div>
       <div className="md:w-44 flex items-center gap-2 justify-self-end">
         {children}
-        {unit && <span className="text-[11px] text-muted-foreground whitespace-nowrap">{unit}</span>}
+        {unit && <span className="text-xs text-muted-foreground whitespace-nowrap">{unit}</span>}
       </div>
     </div>
   );
@@ -249,8 +249,8 @@ export function InfoNote({
         <Info className="size-4 text-muted-foreground shrink-0 mt-0.5" />
         <div className="space-y-1">
           {title && <p className="text-sm font-medium">{title}</p>}
-          {description && <p className="text-[11px] text-muted-foreground leading-snug">{description}</p>}
-          {children && <div className="text-[11px] text-muted-foreground leading-snug">{children}</div>}
+          {description && <p className="text-xs text-muted-foreground leading-snug">{description}</p>}
+          {children && <div className="text-xs text-muted-foreground leading-snug">{children}</div>}
         </div>
       </div>
     </div>
@@ -301,7 +301,7 @@ export function FieldRow({
     <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] items-start gap-3 py-1.5">
       <div className="space-y-1">
         <label className="text-sm font-medium">{label}</label>
-        {hint && <p className="text-[11px] text-muted-foreground leading-snug">{hint}</p>}
+        {hint && <p className="text-xs text-muted-foreground leading-snug">{hint}</p>}
       </div>
       <div className="md:w-40 flex items-center gap-2">{children}</div>
     </div>

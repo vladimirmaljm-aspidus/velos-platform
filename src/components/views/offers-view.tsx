@@ -367,7 +367,7 @@ function ProductContextPreview({
     null;
 
   return (
-    <div className="rounded-md border border-blue-500/20 bg-blue-50/40 dark:bg-blue-950/10 p-2 space-y-1.5 text-[11px]">
+    <div className="rounded-md border border-blue-500/20 bg-blue-50/40 dark:bg-blue-950/10 p-2 space-y-1.5 text-xs">
       {/* Row 1: image thumbnail + trade metadata pills */}
       <div className="flex items-start gap-2 flex-wrap">
         {image && (
@@ -1134,8 +1134,8 @@ function DealPickerDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="lg">
-        <DialogHeader>
+      <DialogContent size="lg" className="max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="size-5 text-amber-500" />
             {t("crm-create-offer-from-deal-dialog")}
@@ -1143,7 +1143,7 @@ function DealPickerDialog({
           <DialogDescription>{t("crm-create-offer-from-deal-desc")}</DialogDescription>
         </DialogHeader>
 
-        <div className="py-2">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
           <div className="relative mb-3">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
             <Input
@@ -1183,7 +1183,7 @@ function DealPickerDialog({
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isCreating}>{t("cancel")}</Button>
         </DialogFooter>
       </DialogContent>
@@ -1828,8 +1828,8 @@ function OfferDetail({
 
       {/* Save Version Dialog */}
       <Dialog open={showVersionDialog} onOpenChange={setShowVersionDialog}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
             <DialogTitle className="flex items-center gap-2">
               <GitBranch className="size-5" /> {t("crm-save-new-version")}
             </DialogTitle>
@@ -1837,7 +1837,7 @@ function OfferDetail({
               {t("crm-save-new-version-desc")}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-2">
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
             <div className="space-y-1.5">
               <Label>{t("crm-change-note")} *</Label>
               <Textarea
@@ -1870,7 +1870,7 @@ function OfferDetail({
               </div>
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
             <Button variant="outline" onClick={() => setShowVersionDialog(false)} disabled={savingVersion}>{t("cancel")}</Button>
             <Button onClick={handleSaveVersion} disabled={savingVersion || !changeNote.trim()}>
               {savingVersion ? (
@@ -2479,8 +2479,8 @@ function OfferFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="full">
-        <DialogHeader>
+      <DialogContent size="full" className="max-h-[88vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle className="flex items-center gap-2">
             {offer ? t("crm-edit-offer") : t("crm-new-offer")}
             <Sparkles className="size-4 text-amber-500" />
@@ -2494,6 +2494,7 @@ function OfferFormDialog({
             When this offer was pre-filled from a trade calculation, surface
             an inline banner explaining the orange highlights so the user
             knows what the visual cue means. */}
+        <div className="px-6 pt-4 space-y-2 shrink-0">
         {missingFields && missingFields.size > 0 && (
           <div className="rounded-lg border border-orange-300 bg-orange-50 dark:bg-orange-950/20 dark:border-orange-800 p-3 flex items-start gap-3">
             <Info className="size-4 text-orange-600 dark:text-orange-400 shrink-0 mt-0.5" />
@@ -2516,15 +2517,16 @@ function OfferFormDialog({
             </div>
           </div>
         )}
+        </div>
 
-        <div className="max-h-[70vh] overflow-y-auto pr-1 space-y-4 py-2">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
 
           {/* ─── Partner Selection (top — auto-fill partner details) ─── */}
           <div className="border rounded-lg p-4 space-y-3 bg-muted/30">
             <h3 className="text-sm font-semibold flex items-center gap-2">
               <Building2 className="h-4 w-4" /> {t("crm-partner-section")}
               {partnerContext && !loadingPartner && (
-                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 gap-0.5 ml-1">
+                <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 gap-0.5 ml-1">
                   <Sparkles className="size-2.5 text-amber-500" /> {t("crm-auto-filled")}
                 </Badge>
               )}
@@ -2651,7 +2653,7 @@ function OfferFormDialog({
                           {(partnerContext.deals || []).slice(0, 5).map((d: Deal) => (
                             <div key={d.id} className="flex items-center justify-between text-xs py-0.5">
                               <span className="truncate max-w-[140px]">{d.title}</span>
-                              <Badge variant="outline" className="text-[10px] h-4 px-1">{d.stage}</Badge>
+                              <Badge variant="outline" className="text-xs h-4 px-1">{d.stage}</Badge>
                               <span className="font-mono">{fmtMoney(d.value, d.currency)}</span>
                             </div>
                           ))}
@@ -2662,7 +2664,7 @@ function OfferFormDialog({
                           {(partnerContext.invoices || []).slice(0, 5).map((inv: any) => (
                             <div key={inv.id} className="flex items-center justify-between text-xs py-0.5">
                               <span className="font-mono">{inv.number}</span>
-                              <Badge variant="outline" className="text-[10px] h-4 px-1">{inv.status}</Badge>
+                              <Badge variant="outline" className="text-xs h-4 px-1">{inv.status}</Badge>
                               <span className="font-mono">{fmtMoney(inv.total, inv.currency)}</span>
                             </div>
                           ))}
@@ -2915,7 +2917,7 @@ function OfferFormDialog({
                               // failed). Keeps the old brand chip available
                               // even when HS code is shown in its own column.
                               (it as any).brand ? (
-                                <div className="flex items-center gap-2 text-[10px] text-muted-foreground flex-wrap">
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
                                   <span>{(it as any).brand}</span>
                                 </div>
                               ) : null
@@ -3010,7 +3012,7 @@ function OfferFormDialog({
                           {productContextMap[idx]?.latestSupplierOffer && (
                             <Badge
                               variant="outline"
-                              className="mt-0.5 text-[10px] h-4 px-1 font-mono border-blue-500/30 bg-blue-50/60 text-blue-700 dark:bg-blue-950/20 dark:text-blue-300"
+                              className="mt-0.5 text-xs h-4 px-1 font-mono border-blue-500/30 bg-blue-50/60 text-blue-700 dark:bg-blue-950/20 dark:text-blue-300"
                               title={t("fin-auto-filled-from-supplier-offer").replace("${number}", productContextMap[idx].latestSupplierOffer!.offer_number ? ` ${productContextMap[idx].latestSupplierOffer!.offer_number}` : "")}
                             >
                               {t("fin-supplier-prefix")} {fmtMoney(
@@ -3082,7 +3084,7 @@ function OfferFormDialog({
                 <Label className="flex items-center gap-1.5">
                   {t("crm-bank-account")}
                   {selectedBankAccountIdx !== null && !manualBankOverride && (
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 gap-0.5">
+                    <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 gap-0.5">
                       <Sparkles className="size-2.5 text-amber-500" /> {t("fin-auto-filled")}
                     </Badge>
                   )}
@@ -3125,7 +3127,7 @@ function OfferFormDialog({
                           <div className="flex items-center gap-2">
                             <span className="font-medium">{bankName}</span>
                             {currency && (
-                              <Badge variant="secondary" className="text-[10px] h-4 px-1">{currency}</Badge>
+                              <Badge variant="secondary" className="text-xs h-4 px-1">{currency}</Badge>
                             )}
                             <span className="text-xs text-muted-foreground font-mono">{accountNumber}</span>
                             {swift && (
@@ -3157,7 +3159,7 @@ function OfferFormDialog({
                 placeholder={t("crm-bank-details-placeholder")}
               />
               {manualBankOverride && selectedBankAccountIdx !== null && (
-                <p className="text-[11px] text-muted-foreground italic">
+                <p className="text-xs text-muted-foreground italic">
                   {t("crm-customized-note")}
                 </p>
               )}
@@ -3207,7 +3209,7 @@ function OfferFormDialog({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
               {/* Amount in words */}
               <div className="rounded-md border border-border/60 bg-card p-3">
-                <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">
                   {t("crm-amount-in-words")}
                 </p>
                 <p className="text-xs font-medium leading-snug">
@@ -3383,7 +3385,7 @@ function OfferFormDialog({
 
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>{t("cancel")}</Button>
           <Button onClick={save} disabled={saving}>
             {saving ? (

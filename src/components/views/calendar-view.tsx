@@ -233,7 +233,7 @@ export function CalendarView() {
                           return (
                             <div
                               key={e.id}
-                              className="flex items-center gap-1 text-[10px] px-1 py-0.5 rounded truncate"
+                              className="flex items-center gap-1 text-xs px-1 py-0.5 rounded truncate"
                               style={{ backgroundColor: `${e.color}20`, color: e.color }}
                               title={e.title}
                             >
@@ -243,7 +243,7 @@ export function CalendarView() {
                           );
                         })}
                         {dayEvents.length > 3 && (
-                          <div className="text-[10px] text-muted-foreground px-1">
+                          <div className="text-xs text-muted-foreground px-1">
                             +{dayEvents.length - 3} more
                           </div>
                         )}

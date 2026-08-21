@@ -228,7 +228,7 @@ export function TemplateContentEditor({ value, onChange, label, defaultSegments 
               }}
             />
             {dragOverSegId === seg.id && (
-              <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded bg-primary/5 text-[10px] font-medium text-primary">
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded bg-primary/5 text-xs font-medium text-primary">
                 {t("misc-tce-drop-here").replace("{n}", String(idx + 1))}
               </div>
             )}

@@ -163,6 +163,7 @@ export function PortalProformas() {
           <EmptyProformas t={t} />
         ) : (
           <div className="max-h-[calc(100vh-280px)] overflow-y-auto custom-scroll">
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader className="sticky top-0 bg-card z-10">
                 <TableRow className="hover:bg-transparent">
@@ -192,7 +193,7 @@ export function PortalProformas() {
                       <TableCell>
                         <Badge
                           className={cn(
-                            "text-[11px] gap-1 capitalize",
+                            "text-xs gap-1 capitalize",
                             STATUS_STYLES[pro.status]
                           )}
                         >
@@ -268,6 +269,7 @@ export function PortalProformas() {
                 })}
               </TableBody>
             </Table>
+            </div>
           </div>
         )}
       </div>
@@ -386,6 +388,7 @@ function ProformaDetail({
             </span>
           </h3>
           <div className="rounded-lg border border-border/60 overflow-hidden shadow-soft">
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader className="bg-muted/40">
                 <TableRow className="hover:bg-transparent">
@@ -405,7 +408,7 @@ function ProformaDetail({
                   <TableRow key={idx}>
                     <TableCell>
                       <p className="text-sm font-medium">{it.product_name}</p>
-                      <p className="text-[11px] text-muted-foreground font-mono tabular">
+                      <p className="text-xs text-muted-foreground font-mono tabular">
                         {it.sku}
                       </p>
                     </TableCell>
@@ -423,6 +426,7 @@ function ProformaDetail({
                 ))}
               </TableBody>
             </Table>
+            </div>
           </div>
         </div>
 
@@ -448,7 +452,7 @@ function ProformaDetail({
         {/* Notes */}
         {proforma.notes && (
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
               {t("portal-detail-notes")}
             </p>
             <p className="text-sm text-muted-foreground leading-relaxed">{proforma.notes}</p>
@@ -518,7 +522,7 @@ function SummaryTile({
 }) {
   return (
     <div className="rounded-lg border border-border/60 bg-card p-3 shadow-soft">
-      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <Icon className="size-3" />
         {label}
       </div>

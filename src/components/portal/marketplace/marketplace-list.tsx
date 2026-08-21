@@ -168,7 +168,7 @@ export function MarketplaceList({ onCreateClick }: { onCreateClick?: () => void 
         {onCreateClick && (
           <Button
             onClick={onCreateClick}
-            className="shrink-0 gap-1.5 self-start sm:self-auto"
+            className="shrink-0 gap-1.5 self-start sm:self-auto w-full sm:w-auto"
           >
             <Plus className="h-4 w-4" />
             {t("marketplace-create-post")}
@@ -179,7 +179,7 @@ export function MarketplaceList({ onCreateClick }: { onCreateClick?: () => void 
       {/* ─── Sticky filter bar ────────────────────────────────────────── */}
       <div className="sticky top-16 z-20 -mx-4 px-4 py-3 sm:mx-0 sm:px-0 sm:py-0 sm:space-y-3">
         <div className="rounded-xl border border-border/60 bg-background/80 backdrop-blur-md shadow-soft p-3 sm:bg-background/60 sm:border sm:border-border/60 sm:shadow-sm sm:backdrop-blur-sm">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
             <div className="relative flex-1 min-w-0">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
@@ -347,7 +347,7 @@ export function MarketplaceList({ onCreateClick }: { onCreateClick?: () => void 
                   </>
                 )}
               </Button>
-              <p className="text-[11px] text-muted-foreground mt-2 tabular">
+              <p className="text-xs text-muted-foreground mt-2 tabular">
                 {items.length} / {total}
               </p>
             </div>

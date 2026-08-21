@@ -84,7 +84,7 @@ export function TenantContextSwitcher() {
           {tt?.name || t("pf-tenant")}
         </span>
         {tt?.plan && (
-          <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 capitalize shrink-0">
+          <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 capitalize shrink-0">
             {tt.plan}
           </Badge>
         )}

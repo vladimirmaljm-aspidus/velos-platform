@@ -80,7 +80,7 @@ export function MarketplaceIntelligenceDashboard() {
         <div className="flex items-center gap-2">
           <Store className="h-4 w-4 text-muted-foreground" />
           <Select value={category} onValueChange={setCategory}>
-            <SelectTrigger className="w-[220px]">
+            <SelectTrigger className="w-full sm:w-[220px]">
               <SelectValue placeholder={t("marketplace-intel-category-all")} />
             </SelectTrigger>
             <SelectContent>

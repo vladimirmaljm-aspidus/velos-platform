@@ -529,7 +529,7 @@ export function DocumentTemplatesView() {
                       <span className="flex items-center gap-2">
                         <Building2 className="size-3.5 text-muted-foreground" />
                         <span className="truncate">{tn.name}</span>
-                        <Badge variant="outline" className="ml-1 text-[10px] capitalize">{tn.plan}</Badge>
+                        <Badge variant="outline" className="ml-1 text-xs capitalize">{tn.plan}</Badge>
                       </span>
                     </SelectItem>
                   ))}
@@ -895,7 +895,7 @@ function SealsTab({ tenantQuery }: { tenantQuery: string }) {
                   {appliesTo.length > 0 ? (
                     <div className="flex flex-wrap gap-1">
                       {appliesTo.map((tp) => (
-                        <Badge key={tp} variant="outline" className="text-[10px] capitalize">{t(TYPE_LABEL_KEYS[tp as TemplateType] || tp)}</Badge>
+                        <Badge key={tp} variant="outline" className="text-xs capitalize">{t(TYPE_LABEL_KEYS[tp as TemplateType] || tp)}</Badge>
                       ))}
                     </div>
                   ) : (
@@ -2057,7 +2057,7 @@ function SealEditorDialog({
                                   <X className="size-3.5 mr-1" /> {t("remove")}
                                 </Button>
                               )}
-                              <p className="text-[11px] text-muted-foreground max-w-[180px]">
+                              <p className="text-xs text-muted-foreground max-w-[180px]">
                                 {t("doc-png-transparency-hint")}
                               </p>
                             </div>
@@ -2239,7 +2239,7 @@ function SealPreview({ form }: { form: SealFormState }) {
       <div className="w-full h-full rounded-sm border border-dashed border-border/60 flex flex-col items-center justify-center text-muted-foreground">
         <FileText className="size-10 mb-2 opacity-30" />
         <p className="text-xs">A4 page outline</p>
-        <p className="text-[10px] mt-1 opacity-70">Seal is positioned relative to page edges</p>
+        <p className="text-xs mt-1 opacity-70">Seal is positioned relative to page edges</p>
       </div>
 
       {/* Seal */}
@@ -2597,7 +2597,7 @@ function TemplateEditorDialog({
                             <div className="rounded-md border border-border/60 bg-muted/20 p-3 space-y-3">
                               <div>
                                 <Label className="text-xs font-medium">{t("doc-qr-placement")}</Label>
-                                <p className="text-[11px] text-muted-foreground mt-0.5">
+                                <p className="text-xs text-muted-foreground mt-0.5">
                                   {t("doc-qr-placement-desc")}
                                 </p>
                               </div>
@@ -2620,7 +2620,7 @@ function TemplateEditorDialog({
                                   <div>
                                     <div className="flex items-center justify-between mb-1">
                                       <Label className="text-xs">{t("doc-qr-size-mm")}</Label>
-                                      <span className="text-[10px] tabular text-muted-foreground">
+                                      <span className="text-xs tabular text-muted-foreground">
                                         {form.qr_size_mm ?? 15} mm
                                       </span>
                                     </div>
@@ -2635,7 +2635,7 @@ function TemplateEditorDialog({
                                   <div>
                                     <div className="flex items-center justify-between mb-1">
                                       <Label className="text-xs">{t("doc-qr-opacity")}</Label>
-                                      <span className="text-[10px] tabular text-muted-foreground">
+                                      <span className="text-xs tabular text-muted-foreground">
                                         {Math.round((form.qr_opacity ?? 1) * 100)}%
                                       </span>
                                     </div>
@@ -2717,7 +2717,7 @@ function TemplateEditorDialog({
                           {AVAILABLE_VARIABLES.map((v) => (
                             <code
                               key={v.token}
-                              className="text-[10px] px-1.5 py-0.5 rounded bg-card border border-border/60 font-mono"
+                              className="text-xs px-1.5 py-0.5 rounded bg-card border border-border/60 font-mono"
                               title={t(v.label)}
                             >
                               {v.token}
@@ -2740,8 +2740,8 @@ function TemplateEditorDialog({
                 <span className="text-sm font-medium">{t("doc-live-preview")}</span>
               </div>
               <div className="flex items-center gap-1.5">
-                {linkedLetterhead && <Badge variant="outline" className="text-[10px]"><Building2 className="size-3" /> {linkedLetterhead.name}</Badge>}
-                {linkedSeal && form.seal_enabled && <Badge variant="outline" className="text-[10px]"><Stamp className="size-3" /> {linkedSeal.name}</Badge>}
+                {linkedLetterhead && <Badge variant="outline" className="text-xs"><Building2 className="size-3" /> {linkedLetterhead.name}</Badge>}
+                {linkedSeal && form.seal_enabled && <Badge variant="outline" className="text-xs"><Stamp className="size-3" /> {linkedSeal.name}</Badge>}
                 <Badge variant="outline" className="text-xs">{form.page_size}</Badge>
               </div>
             </div>
@@ -2805,7 +2805,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function MarginInput({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
   return (
     <div className="space-y-1">
-      <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{label}</Label>
+      <Label className="text-xs text-muted-foreground uppercase tracking-wide">{label}</Label>
       <Input
         type="number"
         value={value}

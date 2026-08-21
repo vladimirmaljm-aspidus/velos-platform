@@ -76,7 +76,7 @@ export function FreightCalculator() {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           {t("marketplace-freight-calculator-desc")}
         </p>
 
@@ -131,13 +131,13 @@ export function FreightCalculator() {
 
         {/* Result */}
         {q.isLoading && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-3 w-3 animate-spin" />
             {t("marketplace-freight-loading")}
           </div>
         )}
         {q.isError && (
-          <div className="text-xs text-rose-600">
+          <div className="text-sm text-rose-600">
             {(q.error as Error)?.message || "Failed to compute."}
           </div>
         )}
@@ -172,11 +172,11 @@ export function FreightCalculator() {
                 icon={MapPin}
               />
             </div>
-            <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/30 rounded-md p-2">
+            <div className="flex items-start gap-2 text-sm text-muted-foreground bg-muted/30 rounded-md p-3">
               <Info className="h-3 w-3 mt-0.5 shrink-0" />
               <span>{quote.notes}</span>
             </div>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Clock className="h-3 w-3" />
               {t("marketplace-freight-estimate-disclaimer")}
             </div>
@@ -210,8 +210,8 @@ function ResultCell({
   icon?: typeof MapPin;
 }) {
   return (
-    <div className={`rounded-md p-2 ${highlight ? "bg-emerald-500/10" : "bg-muted/30"}`}>
-      <p className="text-[10px] uppercase tracking-wide text-muted-foreground flex items-center gap-1">
+    <div className={`rounded-md p-3 ${highlight ? "bg-emerald-500/10" : "bg-muted/30"}`}>
+      <p className="text-xs uppercase tracking-wide text-muted-foreground flex items-center gap-1">
         {Icon && <Icon className="h-3 w-3" />}
         {label}
       </p>

@@ -281,7 +281,7 @@ function EnrollDialog({
               </p>
               <div className="grid grid-cols-2 gap-1 max-h-32 overflow-y-auto rounded border bg-muted/30 p-2">
                 {data.recoveryCodes.map((c, i) => (
-                  <code key={i} className="font-mono text-[10px]">{c}</code>
+                  <code key={i} className="font-mono text-xs">{c}</code>
                 ))}
               </div>
             </div>

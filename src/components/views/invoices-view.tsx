@@ -516,6 +516,7 @@ export function InvoicesView() {
             />
           ) : (
             <div className="max-h-[calc(100vh-280px)] overflow-y-auto custom-scroll">
+              <div className="overflow-x-auto">
               <Table>
                 <TableHeader className="sticky top-0 bg-card z-10">
                   <TableRow>
@@ -636,6 +637,7 @@ export function InvoicesView() {
                   })}
                 </TableBody>
               </Table>
+              </div>
             </div>
           )}
           {/* Pagination + Page size */}
@@ -828,8 +830,8 @@ function CreateFromOfferDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="xl">
-        <DialogHeader>
+      <DialogContent size="xl" className="max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="size-5 text-emerald-500" />
             {t("fin-create-invoice-from-offer")}
@@ -839,7 +841,7 @@ function CreateFromOfferDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="max-h-[70vh] overflow-y-auto pr-1">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
 
         <div className="relative mb-3">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
@@ -869,7 +871,7 @@ function CreateFromOfferDialog({
                 className="border-border/60 hover:border-emerald-400/50 hover:shadow-soft cursor-pointer transition-all duration-200"
                 onClick={() => onCreateFromOffer(offer.id)}
               >
-                <CardContent className="p-3">
+                <CardContent className="p-4">
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
@@ -912,7 +914,7 @@ function CreateFromOfferDialog({
         )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>{t("cancel")}</Button>
         </DialogFooter>
       </DialogContent>
@@ -1013,6 +1015,7 @@ function InvoiceDetail({
 
       {/* Line items table */}
       <div className="rounded-md border overflow-hidden mb-4">
+        <div className="overflow-x-auto">
         <Table>
           <TableHeader className="bg-muted/50">
             <TableRow>
@@ -1050,6 +1053,7 @@ function InvoiceDetail({
             ))}
           </TableBody>
         </Table>
+        </div>
       </div>
 
       {/* Totals */}
@@ -1145,6 +1149,7 @@ function InvoiceDetail({
           </div>
         ) : (
           <div className="rounded-lg border border-border/60 overflow-hidden">
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader className="bg-muted/50">
                 <TableRow>
@@ -1203,6 +1208,7 @@ function InvoiceDetail({
                 })}
               </TableBody>
             </Table>
+            </div>
           </div>
         )}
       </div>
@@ -1299,8 +1305,8 @@ function RecordPaymentDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
+      <DialogContent className="max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle className="flex items-center gap-2">
             <DollarSign className="size-5 text-emerald-600" />
             {t("fin-record-payment-with-number").replace("${number}", invoice.number)}
@@ -1310,8 +1316,8 @@ function RecordPaymentDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
-          <div className="grid grid-cols-2 gap-3">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="pay-amount">{t("amount")} ({invoice.currency || "USD"})</Label>
               <Input
@@ -1322,7 +1328,7 @@ function RecordPaymentDialog({
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
               />
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 {t("fin-outstanding-label")}: {fmtMoney(invoice.total ?? 0, invoice.currency || "USD")}
               </p>
             </div>
@@ -1370,7 +1376,7 @@ function RecordPaymentDialog({
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button variant="outline" onClick={() => setOpen(false)} disabled={submitting}>
             {t("cancel")}
           </Button>
@@ -1763,8 +1769,8 @@ function InvoiceFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="full">
-        <DialogHeader>
+      <DialogContent size="full" className="max-h-[88vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle className="flex items-center gap-2">
             {isEditing ? t("fin-edit-invoice") : t("fin-new-invoice")}
             {partnerContextLoading && (
@@ -1778,10 +1784,10 @@ function InvoiceFormDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="max-h-[70vh] overflow-y-auto pr-1">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
 
           {/* ── Essential section (always visible) ── */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 py-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="flex items-center gap-1.5">
                 {t("fin-partner-required")} *
@@ -1946,7 +1952,7 @@ function InvoiceFormDialog({
                               <span className="flex items-center gap-1.5">
                                 <span className="font-mono text-xs">{o.number}</span>
                                 <span className="text-muted-foreground">· {o.subject}</span>
-                                <Badge variant="secondary" className="ml-1 text-[10px] px-1 py-0">
+                                <Badge variant="secondary" className="ml-1 text-xs px-1 py-0">
                                   {o.status === "accepted" ? "✓" : "→"}
                                 </Badge>
                               </span>
@@ -2030,7 +2036,7 @@ function InvoiceFormDialog({
                               const desc = describeConversion(supplierUnit, it.unit);
                               if (!desc) return null;
                               return (
-                                <div className="text-[10px] text-amber-600 dark:text-amber-400 flex items-center gap-0.5 mt-0.5">
+                                <div className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-0.5 mt-0.5">
                                   <ArrowLeftRight className="size-2.5 shrink-0" />
                                   <span>{desc}</span>
                                 </div>
@@ -2175,7 +2181,7 @@ function InvoiceFormDialog({
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>{t("cancel")}</Button>
           <Button onClick={save} disabled={saving}>
             {saving ? t("fin-saving") : isEditing ? t("fin-save-changes") : t("fin-create-invoice-btn")}

@@ -341,15 +341,15 @@ function KpiTile({
   };
   return (
     <Card className={`rounded-xl ${TONE[tone]}`}>
-      <CardContent className="p-4">
+      <CardContent className="p-5">
         <div className="flex items-start justify-between">
           <div>
-            <p className="text-[10px] uppercase tracking-wider">{label}</p>
+            <p className="text-xs uppercase tracking-wider">{label}</p>
             <p className="text-2xl font-bold tabular mt-1">{value}</p>
           </div>
           <Icon className="size-4 opacity-60" />
         </div>
-        {hint && <p className="text-[10px] opacity-70 mt-1">{hint}</p>}
+        {hint && <p className="text-xs opacity-70 mt-1">{hint}</p>}
       </CardContent>
     </Card>
   );
@@ -571,7 +571,7 @@ function PostsTab() {
                   posts.map((p) => (
                     <TableRow key={p.id} className="hover:bg-muted/40">
                       <TableCell>
-                        <Badge variant="outline" className="text-[10px] capitalize">{p.post_type}</Badge>
+                        <Badge variant="outline" className="text-xs capitalize">{p.post_type}</Badge>
                       </TableCell>
                       <TableCell className="text-xs font-medium max-w-[200px] truncate" title={p.product_name}>
                         <div className="flex items-center gap-1.5">
@@ -590,7 +590,7 @@ function PostsTab() {
                         {p.quantity} {p.unit}
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className={`text-[10px] ${POST_STATUS_TONE[p.status] ?? ""}`}>
+                        <Badge variant="outline" className={`text-xs ${POST_STATUS_TONE[p.status] ?? ""}`}>
                           {p.status}
                         </Badge>
                       </TableCell>
@@ -869,7 +869,7 @@ function VerificationTab() {
                       <TableCell className="text-xs">{r.company_country ?? "—"}</TableCell>
                       <TableCell className="text-xs max-w-[200px] truncate" title={r.company_email ?? ""}>{r.company_email ?? "—"}</TableCell>
                       <TableCell>
-                        <Badge variant="outline" className={`text-[10px] capitalize ${VERIFICATION_TONE[r.verification_level] ?? ""}`}>
+                        <Badge variant="outline" className={`text-xs capitalize ${VERIFICATION_TONE[r.verification_level] ?? ""}`}>
                           {r.verification_level}
                         </Badge>
                       </TableCell>
@@ -901,14 +901,14 @@ function VerificationTab() {
       </Card>
 
       <Dialog open={!!dialogRow} onOpenChange={(o) => !o && setDialogRow(null)}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
             <DialogTitle>{t("pf-ma-dialog-verify-title")}</DialogTitle>
             <DialogDescription>
               {t("pf-ma-dialog-verify-desc")} — <span className="font-medium">{dialogRow?.company_name}</span>
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-2">
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-3">
             <div className="space-y-1.5">
               <Label className="text-xs">{t("pf-ma-label-set-level")}</Label>
               <Select value={dialogLevel} onValueChange={setDialogLevel}>
@@ -928,7 +928,7 @@ function VerificationTab() {
                 placeholder={t("pf-ma-reason-placeholder")} />
             </div>
             {dialogRow && (
-              <div className="text-[10px] text-muted-foreground space-y-0.5 pt-2 border-t">
+              <div className="text-xs text-muted-foreground space-y-0.5 pt-2 border-t">
                 <div>{t("pf-ma-col-country")}: {dialogRow.company_country ?? "—"}</div>
                 <div>{t("email")}: {dialogRow.company_email ?? "—"}</div>
                 <div>{t("pf-ma-col-rating")}: {dialogRow.rating_average.toFixed(1)} ({dialogRow.rating_count})</div>
@@ -938,7 +938,7 @@ function VerificationTab() {
               </div>
             )}
           </div>
-          <DialogFooter className="gap-2">
+          <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4 gap-2">
             <Button variant="outline" onClick={() => dialogRow && verifyMut.mutate({ partnerId: dialogRow.partner_id, action: "reject", reason: dialogReason })}
               disabled={verifyMut.isPending}>
               <XCircle className="size-3.5 mr-1 text-red-600" />
@@ -1095,7 +1095,7 @@ function ReviewsTab() {
                   reviews.map((r) => (
                     <TableRow key={r.id} className="hover:bg-muted/40">
                       <TableCell>
-                        <Badge variant="outline" className="text-[10px] tabular">
+                        <Badge variant="outline" className="text-xs tabular">
                           ★ {r.rating}
                         </Badge>
                       </TableCell>
@@ -1110,7 +1110,7 @@ function ReviewsTab() {
                       </TableCell>
                       <TableCell>
                         {r.is_flagged ? (
-                          <div className="text-[10px]">
+                          <div className="text-xs">
                             <Badge variant="outline" className="text-red-700 dark:text-red-400">
                               <Flag className="size-3 mr-1" />
                               {t("pf-ma-flagged")}
@@ -1129,7 +1129,7 @@ function ReviewsTab() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className={`text-[10px] ${r.is_public ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300"}`}>
+                        <Badge variant="outline" className={`text-xs ${r.is_public ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300"}`}>
                           {r.is_public ? t("pf-ma-visible") : t("pf-ma-hidden")}
                         </Badge>
                       </TableCell>
@@ -1337,14 +1337,14 @@ function CategoriesTab() {
                           title={c.is_featured ? t("pf-ma-action-unfeature") : t("pf-ma-action-feature")}
                           onClick={() => toggleFeaturedMut.mutate({ id: c.id, current: c.is_featured })}
                         >
-                          <Badge variant="outline" className={`text-[10px] cursor-pointer ${c.is_featured ? "border-primary/30 bg-primary/10 text-primary" : "border-slate-400/30 bg-slate-400/10 text-slate-700 dark:text-slate-300"}`}>
+                          <Badge variant="outline" className={`text-xs cursor-pointer ${c.is_featured ? "border-primary/30 bg-primary/10 text-primary" : "border-slate-400/30 bg-slate-400/10 text-slate-700 dark:text-slate-300"}`}>
                             {c.is_featured ? <Sparkles className="size-3 mr-1" /> : null}
                             {c.is_featured ? t("yes") : t("no")}
                           </Badge>
                         </button>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className={`text-[10px] ${c.is_active ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300"}`}>
+                        <Badge variant="outline" className={`text-xs ${c.is_active ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300"}`}>
                           {c.is_active ? t("active") : t("inactive")}
                         </Badge>
                       </TableCell>
@@ -1420,12 +1420,12 @@ function CategoryDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogHeader>
+      <DialogContent className="max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle>{category ? t("pf-ma-dialog-edit-category") : t("pf-ma-dialog-new-category")}</DialogTitle>
           <DialogDescription>{t("pf-ma-categories-desc")}</DialogDescription>
         </DialogHeader>
-        <div className="space-y-3 py-2">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-3">
           <div className="space-y-1.5">
             <Label className="text-xs">{t("name")} *</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Metals" />
@@ -1465,7 +1465,7 @@ function CategoryDialog({
             </Select>
           </div>
         </div>
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button variant="outline" onClick={onClose}>{t("cancel")}</Button>
           <Button
             disabled={pending || !name.trim()}
@@ -1625,7 +1625,7 @@ function BlacklistTab() {
                       <TableCell className="text-xs max-w-[240px] truncate" title={r.reason ?? ""}>{r.reason ?? "—"}</TableCell>
                       <TableCell className="text-xs">{r.blocked_by ?? "—"}</TableCell>
                       <TableCell>
-                        <Badge variant="outline" className={`text-[10px] ${r.active ? "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-400" : "border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300"}`}>
+                        <Badge variant="outline" className={`text-xs ${r.active ? "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-400" : "border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300"}`}>
                           {r.active ? t("pf-ma-blocked") : t("pf-ma-removed")}
                         </Badge>
                       </TableCell>
@@ -1653,17 +1653,17 @@ function BlacklistTab() {
       </Card>
 
       <Dialog open={dialogOpen} onOpenChange={(o) => !o && setDialogOpen(false)}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
             <DialogTitle>{t("pf-ma-dialog-blacklist-title")}</DialogTitle>
             <DialogDescription>{t("pf-ma-dialog-blacklist-desc")}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-2">
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-3">
             <div className="space-y-1.5">
               <Label className="text-xs">{t("pf-ma-label-partner-id")} *</Label>
               <Input value={newPartnerId} onChange={(e) => setNewPartnerId(e.target.value)}
                 placeholder="UUID of the partner to block" />
-              <p className="text-[10px] text-muted-foreground">{t("pf-ma-hint-partner-id")}</p>
+              <p className="text-xs text-muted-foreground">{t("pf-ma-hint-partner-id")}</p>
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">{t("pf-ma-col-reason")}</Label>
@@ -1671,7 +1671,7 @@ function BlacklistTab() {
                 placeholder={t("pf-ma-reason-placeholder")} />
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
             <Button variant="outline" onClick={() => setDialogOpen(false)}>{t("cancel")}</Button>
             <Button disabled={addMut.isPending || !newPartnerId.trim()} onClick={() => addMut.mutate()}>
               <Ban className="size-3.5 mr-1" />
@@ -1812,7 +1812,7 @@ function StatsTab() {
               )}
             </div>
             {pieData.length > 0 && (
-              <div className="flex flex-wrap gap-3 justify-center mt-2 text-[11px]">
+              <div className="flex flex-wrap gap-3 justify-center mt-2 text-xs">
                 {pieData.map((e, i) => (
                   <span key={e.name} className="flex items-center gap-1.5">
                     <span className="size-2.5 rounded-sm" style={{

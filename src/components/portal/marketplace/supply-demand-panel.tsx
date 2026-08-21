@@ -127,7 +127,7 @@ export function SupplyDemandPanel({ category, days = 30 }: SupplyDemandPanelProp
       <CardContent className="space-y-3">
         <div className="text-center">
           <p className={`text-3xl font-bold ${balanceColor[balance]}`}>{index}</p>
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">
             {t("marketplace-intel-supply-demand-index-label")}
           </p>
         </div>

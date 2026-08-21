@@ -322,7 +322,7 @@ export function Topbar() {
             </Button>
           </TooltipTrigger>
           <TooltipContent side="bottom" className="text-xs">
-            {t(locale, "search")} <kbd className="ml-1 text-[10px] bg-muted px-1 py-0.5 rounded">⌘K</kbd>
+            {t(locale, "search")} <kbd className="ml-1 text-xs bg-muted px-1 py-0.5 rounded">⌘K</kbd>
           </TooltipContent>
         </Tooltip>
 
@@ -362,7 +362,7 @@ export function Topbar() {
               <div className="flex items-center gap-2 min-w-0">
                 <h3 className="text-sm font-semibold truncate">{t(locale, "notifications")}</h3>
                 {unreadCount > 0 && (
-                  <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 text-[10px] font-semibold tabular">
+                  <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 text-xs font-semibold tabular">
                     {unreadCount}
                   </span>
                 )}
@@ -430,7 +430,7 @@ export function Topbar() {
                             <p className={cn("text-sm truncate", n.read ? "font-medium" : "font-semibold")}>
                               {n.title}
                             </p>
-                            <span className="text-[10px] text-muted-foreground ml-auto shrink-0 tabular">
+                            <span className="text-xs text-muted-foreground ml-auto shrink-0 tabular">
                               {fmtRelative(n.created_at)}
                             </span>
                           </div>
@@ -574,7 +574,7 @@ export function Topbar() {
         {user && (
           <Badge
             variant="outline"
-            className="hidden md:inline-flex capitalize gap-1 h-7 px-2 rounded-md border-border/50 text-[11px] font-medium text-muted-foreground smooth"
+            className="hidden md:inline-flex capitalize gap-1 h-7 px-2 rounded-md border-border/50 text-xs font-medium text-muted-foreground smooth"
           >
             {admin ? <ShieldCheck className="size-3 text-primary" /> : null}
             <span>{admin ? "Admin" : user.role}</span>
@@ -591,7 +591,7 @@ export function Topbar() {
               className="flex items-center gap-2 rounded-lg px-1.5 py-1.5 hover:bg-muted/50 smooth outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-1"
             >
               <Avatar className="size-7 ring-1 ring-border/60 smooth">
-                <AvatarFallback className="bg-primary/10 text-primary text-[11px] font-semibold smooth">
+                <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold smooth">
                   {initials(user?.full_name || user?.username)}
                 </AvatarFallback>
               </Avatar>
@@ -599,7 +599,7 @@ export function Topbar() {
                 <span className="text-[13px] font-medium text-foreground truncate max-w-[110px]">
                   {user?.full_name || user?.username}
                 </span>
-                <span className="text-[10px] text-muted-foreground truncate max-w-[110px]">
+                <span className="text-xs text-muted-foreground truncate max-w-[110px]">
                   {user?.email}
                 </span>
               </div>
@@ -624,12 +624,12 @@ export function Topbar() {
                   <p className="text-sm font-semibold truncate">
                     {user?.full_name || user?.username}
                   </p>
-                  <p className="text-[11px] text-muted-foreground truncate">
+                  <p className="text-xs text-muted-foreground truncate">
                     {user?.email}
                   </p>
                   <Badge
                     variant="secondary"
-                    className="w-fit mt-1 capitalize text-[10px] h-5 px-1.5 rounded-md font-medium"
+                    className="w-fit mt-1 capitalize text-xs h-5 px-1.5 rounded-md font-medium"
                   >
                     {admin ? (
                       <ShieldCheck className="size-2.5 mr-0.5 text-primary" />

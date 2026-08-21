@@ -33,7 +33,7 @@ export function WorkspaceView() {
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-semibold">{t("misc-coming-soon")}</h2>
-                <Badge variant="outline" className="text-[10px]">{t("misc-in-development")}</Badge>
+                <Badge variant="outline" className="text-xs">{t("misc-in-development")}</Badge>
               </div>
               <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
                 {t("misc-workspace-intro")} <strong>{t("tasks")}</strong> {t("misc-workspace-for-todos")} <strong>{t("quick-notes")}</strong> {t("misc-workspace-for-notes")}.

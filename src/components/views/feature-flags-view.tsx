@@ -417,7 +417,7 @@ export function FeatureFlagsView({ embedded = false }: { embedded?: boolean } = 
                       <span className="flex items-center gap-2">
                         <Building2 className="size-3.5 text-muted-foreground" />
                         <span className="truncate">{t.name}</span>
-                        <Badge variant="outline" className="ml-1 text-[10px] capitalize">
+                        <Badge variant="outline" className="ml-1 text-xs capitalize">
                           {t.plan}
                         </Badge>
                       </span>
@@ -656,7 +656,7 @@ function LimitField({
         onChange={(e) => onChange(Math.max(0, Number(e.target.value) || 0))}
         className="tabular h-10"
       />
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
         {value === 0 ? t("admin-flags-unlimited") : value.toLocaleString()}
       </p>
     </div>
@@ -685,7 +685,7 @@ function BetaRow({
           <Badge
             variant="outline"
             className={cn(
-              "text-[10px] capitalize",
+              "text-xs capitalize",
               enabled
                 ? "border-emerald-500/40 text-emerald-700 dark:text-emerald-400 bg-emerald-500/10"
                 : "text-muted-foreground"

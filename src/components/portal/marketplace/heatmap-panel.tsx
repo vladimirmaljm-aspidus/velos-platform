@@ -132,7 +132,7 @@ export function HeatmapPanel({ category, type, days = 30 }: HeatmapPanelProps) {
           {t("marketplace-intel-sample-size").replace("{n}", String(sampleSize))}{" "}
           · {t("marketplace-intel-heatmap-legend")}
         </p>
-        <div className="flex items-center justify-center gap-3 text-[10px] text-muted-foreground">
+        <div className="flex items-center justify-center gap-3 text-xs text-muted-foreground">
           <span className="flex items-center gap-1">
             <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
             {t("marketplace-intel-heatmap-low")}

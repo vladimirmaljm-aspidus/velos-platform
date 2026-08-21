@@ -134,7 +134,7 @@ export function ESGRating({
             <Award className={cn("h-6 w-6", ratingMeta.cls.split(" ").filter((c) => c.startsWith("text-")).join(" "))} />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
               {t("marketplace-esg-overall-rating")}
             </p>
             <div className="flex items-baseline gap-2 mt-0.5">
@@ -201,7 +201,7 @@ export function ESGRating({
           </p>
         )}
 
-        <p className="text-[10px] text-muted-foreground border-t pt-2">
+        <p className="text-xs text-muted-foreground border-t pt-3">
           {t("marketplace-esg-methodology")}
         </p>
       </CardContent>

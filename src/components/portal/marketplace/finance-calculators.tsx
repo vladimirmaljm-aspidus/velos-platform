@@ -156,7 +156,7 @@ function FactoringCalculator() {
 
   return (
     <div className="space-y-4">
-      <p className="text-xs text-muted-foreground">
+      <p className="text-sm text-muted-foreground">
         {t("marketplace-finance-factoring-desc")}
       </p>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -218,14 +218,14 @@ function FactoringCalculator() {
           <div className="flex items-center gap-3 rounded-md bg-gradient-to-br from-emerald-500/10 to-blue-500/10 p-4">
             <Landmark className="h-8 w-8 text-emerald-600 shrink-0" />
             <div className="flex-1">
-              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
                 {t("marketplace-finance-factoring-net-payout")}
               </p>
               <p className="text-2xl font-bold tracking-tight">
                 {cost.currency}{" "}
                 {cost.net_payout.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
-              <p className="text-xs text-muted-foreground mt-1">{cost.notes}</p>
+              <p className="text-sm text-muted-foreground mt-1">{cost.notes}</p>
             </div>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
@@ -269,7 +269,7 @@ function InsuranceCalculator() {
 
   return (
     <div className="space-y-4">
-      <p className="text-xs text-muted-foreground">
+      <p className="text-sm text-muted-foreground">
         {t("marketplace-finance-insurance-desc")}
       </p>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -334,7 +334,7 @@ function InsuranceCalculator() {
           <div className="flex items-center gap-3 rounded-md bg-gradient-to-br from-emerald-500/10 to-blue-500/10 p-4">
             <Shield className="h-8 w-8 text-emerald-600 shrink-0" />
             <div className="flex-1">
-              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
                 {t("marketplace-finance-insurance-annual-premium")}
               </p>
               <p className="text-2xl font-bold tracking-tight">
@@ -342,7 +342,7 @@ function InsuranceCalculator() {
                 {premium.premium.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 <span className="text-sm font-normal text-muted-foreground ml-1">/yr</span>
               </p>
-              <p className="text-xs text-muted-foreground mt-1">{premium.notes}</p>
+              <p className="text-sm text-muted-foreground mt-1">{premium.notes}</p>
             </div>
             <Badge variant="outline" className={RISK_BADGE_CLASS[premium.risk_level]}>
               {t(RISK_LEVEL_LABEL_KEY[premium.risk_level])}
@@ -378,7 +378,7 @@ function LCChecklistCalculator() {
 
   return (
     <div className="space-y-4">
-      <p className="text-xs text-muted-foreground">
+      <p className="text-sm text-muted-foreground">
         {t("marketplace-finance-lc-desc")}
       </p>
       <div>
@@ -402,9 +402,9 @@ function LCChecklistCalculator() {
         <p className="text-xs font-medium text-muted-foreground">
           {t("marketplace-finance-lc-required-docs")}
         </p>
-        <ul className="space-y-1.5">
+        <ul className="space-y-2">
           {checklist.required_documents.map((d) => (
-            <li key={d.code} className="flex items-start gap-2 text-xs">
+            <li key={d.code} className="flex items-start gap-2 text-sm">
               <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
               <span>{t(d.label_key)}</span>
             </li>
@@ -420,9 +420,9 @@ function LCChecklistCalculator() {
             <p className="text-xs font-medium text-muted-foreground">
               {t("marketplace-finance-lc-optional-docs")}
             </p>
-            <ul className="space-y-1.5">
+            <ul className="space-y-2">
               {checklist.optional_documents.map((d) => (
-                <li key={d.code} className="flex items-start gap-2 text-xs">
+                <li key={d.code} className="flex items-start gap-2 text-sm">
                   <Circle className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
                   <span>{t(d.label_key)}</span>
                 </li>
@@ -432,7 +432,7 @@ function LCChecklistCalculator() {
         </>
       )}
 
-      <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/30 rounded-md p-2">
+      <div className="flex items-start gap-2 text-sm text-muted-foreground bg-muted/30 rounded-md p-3">
         <Info className="h-3 w-3 mt-0.5 shrink-0" />
         <span>{checklist.notes}</span>
       </div>
@@ -444,8 +444,8 @@ function LCChecklistCalculator() {
 
 function ResultCell({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md bg-muted/30 p-2">
-      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
+    <div className="rounded-md bg-muted/30 p-3">
+      <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className="font-medium mt-0.5">{value}</p>
     </div>
   );
@@ -453,7 +453,7 @@ function ResultCell({ label, value }: { label: string; value: string }) {
 
 function CalcLoading({ label }: { label: string }) {
   return (
-    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+    <div className="flex items-center gap-2 text-sm text-muted-foreground">
       <Loader2 className="h-3 w-3 animate-spin" />
       {label}
     </div>
@@ -462,7 +462,7 @@ function CalcLoading({ label }: { label: string }) {
 
 function CalcError({ message }: { message?: string }) {
   return (
-    <div className="text-xs text-rose-600">{message || "Failed to compute."}</div>
+    <div className="text-sm text-rose-600">{message || "Failed to compute."}</div>
   );
 }
 

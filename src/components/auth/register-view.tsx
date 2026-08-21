@@ -273,7 +273,7 @@ export function RegisterView({ onSwitchToLogin }: RegisterViewProps) {
               <p className="text-sm font-semibold tracking-tight text-foreground">
                 VELOS
               </p>
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 {t("login-brand-tagline")}
               </p>
             </div>
@@ -537,14 +537,14 @@ export function RegisterView({ onSwitchToLogin }: RegisterViewProps) {
                 )}
               </div>
 
-              <p className="mt-5 flex items-center justify-center gap-1.5 text-center text-[11px] text-muted-foreground/60">
+              <p className="mt-5 flex items-center justify-center gap-1.5 text-center text-xs text-muted-foreground/60">
                 <ShieldCheck className="size-3.5" />
                 {t("register-trial-note")}
               </p>
             </CardContent>
           </Card>
 
-          <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-[11px] text-muted-foreground/50 lg:hidden">
+          <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-xs text-muted-foreground/50 lg:hidden">
             <Building2 className="size-3" />
             © {new Date().getFullYear()} VELOS. {t("login-rights")}
           </p>

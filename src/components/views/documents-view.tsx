@@ -191,7 +191,7 @@ export function DocumentsView() {
                 className="border-border/60 shadow-soft rounded-xl cursor-pointer hover:shadow-soft-md transition-shadow hover:border-foreground/20"
                 onClick={() => setDetailId(doc.id)}
               >
-                <CardContent className="p-4">
+                <CardContent className="p-5">
                   <div className="flex items-start justify-between mb-3">
                     <div className="size-10 rounded-md bg-muted/60 flex items-center justify-center text-muted-foreground shrink-0">
                       <FileText className="size-5" />
@@ -427,14 +427,14 @@ function DocumentFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="lg">
-        <DialogHeader>
+      <DialogContent size="lg" className="max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle>{t("doc-add-document")}</DialogTitle>
           <DialogDescription>{t("doc-add-document-desc")}</DialogDescription>
         </DialogHeader>
 
-        <div className="max-h-[70vh] overflow-y-auto pr-1">
-        <div className="grid grid-cols-1 gap-3 py-2">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
+        <div className="grid grid-cols-1 gap-3">
           {/* File picker — replaces the manual filename/MIME/size/path inputs. */}
           <div className="space-y-1.5">
             <Label>{t("doc-file-name")} *</Label>
@@ -467,7 +467,7 @@ function DocumentFormDialog({
             <p className="text-xs text-muted-foreground">{t("doc-max-size-hint")}</p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>{t("fin-partner")} *</Label>
               <PartnerPicker
@@ -517,7 +517,7 @@ function DocumentFormDialog({
         </div>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>{t("cancel")}</Button>
           <Button onClick={save} disabled={saving}>
             {saving ? t("doc-uploading") : t("save")}

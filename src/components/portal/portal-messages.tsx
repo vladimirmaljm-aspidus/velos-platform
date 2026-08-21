@@ -185,7 +185,7 @@ export function PortalMessages() {
             <div key={day} className="space-y-3">
               <div className="flex items-center gap-2 my-2">
                 <div className="flex-1 h-px bg-border" />
-                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">{dayLabel(day, t)}</span>
+                <span className="text-xs uppercase tracking-wider text-muted-foreground">{dayLabel(day, t)}</span>
                 <div className="flex-1 h-px bg-border" />
               </div>
               {msgs.map((m) => <Bubble key={m.id} m={m} partnerName={partnerName} />)}
@@ -237,7 +237,7 @@ export function PortalMessages() {
             {sendMut.isPending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
           </Button>
         </div>
-        <p className="text-[11px] text-muted-foreground mt-2 px-1">
+        <p className="text-xs text-muted-foreground mt-2 px-1">
           {t("portal-messages-privacy")}
         </p>
       </div>
@@ -251,7 +251,7 @@ function Bubble({ m, partnerName }: { m: PortalMessage; partnerName: string }) {
     <div className={cn("flex items-end gap-2", isMine ? "justify-end" : "justify-start")}>
       {!isMine && (
         <Avatar className="size-7 shrink-0">
-          <AvatarFallback className="bg-primary/10 text-primary text-[10px] font-semibold">AS</AvatarFallback>
+          <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">AS</AvatarFallback>
         </Avatar>
       )}
       <div
@@ -277,14 +277,14 @@ function Bubble({ m, partnerName }: { m: PortalMessage; partnerName: string }) {
             {m.attachment_name}
           </a>
         )}
-        <div className={cn("flex items-center gap-1 mt-1 text-[10px] tabular", isMine ? "text-primary-foreground/70 justify-end" : "text-muted-foreground")}>
+        <div className={cn("flex items-center gap-1 mt-1 text-xs tabular", isMine ? "text-primary-foreground/70 justify-end" : "text-muted-foreground")}>
           <span title={fmtDateTime(m.created_at)}>{new Date(m.created_at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}</span>
           {isMine && (m.read_at ? <CheckCheck className="size-3" /> : <Check className="size-3" />)}
         </div>
       </div>
       {isMine && (
         <Avatar className="size-7 shrink-0">
-          <AvatarFallback className="bg-muted text-muted-foreground text-[10px] font-semibold">
+          <AvatarFallback className="bg-muted text-muted-foreground text-xs font-semibold">
             {initials(partnerName)}
           </AvatarFallback>
         </Avatar>

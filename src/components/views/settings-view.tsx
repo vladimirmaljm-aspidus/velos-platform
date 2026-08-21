@@ -544,7 +544,7 @@ function LogoUpload() {
           ) : (
             <div className="flex flex-col items-center gap-1 text-muted-foreground/40">
               <Building2 className="size-8" />
-              <span className="text-[10px]">{t("admin-settings-no-logo")}</span>
+              <span className="text-xs">{t("admin-settings-no-logo")}</span>
             </div>
           )}
         </div>
@@ -765,7 +765,7 @@ function CommsTab() {
                   onChange={(e) => set("resend_from_email", e.target.value)}
                   placeholder="onboarding@resend.dev (testing) or noreply@yourdomain.com (production)"
                 />
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-xs text-muted-foreground">
                   Use <code className="bg-muted px-1 rounded">onboarding@resend.dev</code> for testing.
                   For production, use an email on a domain you've verified in Resend.
                 </p>
@@ -844,7 +844,7 @@ function CommsTab() {
                   onChange={(e) => set("postmark_from_email", e.target.value)}
                   placeholder="noreply@yourdomain.com"
                 />
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-xs text-muted-foreground">
                   Must match a confirmed sender signature in Postmark.
                 </p>
               </div>
@@ -855,7 +855,7 @@ function CommsTab() {
                   onChange={(e) => set("postmark_message_stream", e.target.value)}
                   placeholder="outbound"
                 />
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-xs text-muted-foreground">
                   Default is "outbound". Use "broadcast" for bulk emails.
                 </p>
               </div>
@@ -918,7 +918,7 @@ function ProviderCard({
       )}
       <div className="flex items-baseline justify-between gap-1">
         <span className="text-sm font-semibold">{title}</span>
-        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">{subtitle}</span>
+        <span className="text-xs text-muted-foreground uppercase tracking-wider">{subtitle}</span>
       </div>
       <p className="text-xs text-muted-foreground mt-1">{description}</p>
     </button>
@@ -1131,7 +1131,7 @@ function IntegrationsTab() {
     <div className="space-y-4">
       {/* Intro */}
       <Card className="border-blue-500/30 bg-blue-50/50 dark:bg-blue-950/20">
-        <CardContent className="p-4">
+        <CardContent className="p-5">
           <div className="flex items-start gap-3">
             <Globe className="size-5 text-blue-600 shrink-0 mt-0.5" />
             <div>

@@ -531,7 +531,7 @@ function Partner360Content({
                 <Card key={s} className="card-premium p-4">
                   <p className="text-xs text-muted-foreground">{t(STAGE_LABEL_KEYS[s])}</p>
                   <p className="text-2xl font-semibold mt-1 tabular">{items.length}</p>
-                  <p className="text-[11px] text-muted-foreground mt-0.5 tabular">
+                  <p className="text-xs text-muted-foreground mt-0.5 tabular">
                     {fmtMoney(items.reduce((sum, d) => sum + (d.value || 0), 0))}
                   </p>
                 </Card>
@@ -878,7 +878,7 @@ function HeaderCard({
             <p className={`text-2xl font-semibold tabular ${riskColor(partner.risk_score)}`}>
               {partner.risk_score}
             </p>
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               {partner.risk_score < 30 ? t("crm-risk-low") : partner.risk_score < 60 ? t("crm-risk-medium") : t("crm-risk-high")}
             </p>
           </div>
@@ -1081,16 +1081,16 @@ function DocumentsTab({
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium truncate" title={d.filename}>{d.filename}</p>
-                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                      <p className="text-xs text-muted-foreground mt-0.5">
                         {t(CATEGORY_LABEL_KEYS[d.category]) || d.category} · {fmtBytes(d.size)}
                       </p>
-                      <p className="text-[11px] text-muted-foreground tabular mt-0.5">
+                      <p className="text-xs text-muted-foreground tabular mt-0.5">
                         {fmtRelative(d.created_at)}
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-1 mt-3 pt-3 border-t border-border/40">
-                    <Badge variant={d.visible_to_partner ? "default" : "secondary"} className="text-[10px]">
+                    <Badge variant={d.visible_to_partner ? "default" : "secondary"} className="text-xs">
                       {d.visible_to_partner ? t("crm-visible") : t("crm-hidden")}
                     </Badge>
                     <div className="ml-auto flex items-center gap-1">
@@ -1228,7 +1228,7 @@ function KycTab({
                     }`}>
                       <StepIcon className="size-4" />
                     </div>
-                    <p className="text-[10px] text-muted-foreground capitalize">{t(KYC_STATUS_LABEL_KEYS[s])}</p>
+                    <p className="text-xs text-muted-foreground capitalize">{t(KYC_STATUS_LABEL_KEYS[s])}</p>
                   </div>
                   {i < steps.length - 1 && (
                     <div className={`flex-1 h-0.5 mx-2 -mt-5 ${i < currentIdx ? "bg-emerald-500" : "bg-border"}`} />
@@ -1332,7 +1332,7 @@ function KycTab({
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-medium truncate" title={doc.filename}>{doc.filename}</p>
-                    <p className="text-[11px] text-muted-foreground tabular">
+                    <p className="text-xs text-muted-foreground tabular">
                       {fmtBytes(doc.size)} · {fmtRelative(doc.uploaded_at)}
                     </p>
                   </div>
@@ -1723,14 +1723,14 @@ function PortalTab({
       </Card>
 
       <Dialog open={showChangeTier} onOpenChange={setShowChangeTier}>
-        <DialogContent size="md">
-          <DialogHeader>
+        <DialogContent size="md" className="max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
             <DialogTitle>{t("crm-change-portal-tier")}</DialogTitle>
             <DialogDescription>
               {t("crm-change-tier-desc")}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2 py-2">
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-2">
             {TIER_ORDER.map((tierOpt) => {
               const current = portalAccess?.tier === tierOpt.value;
               return (
@@ -1746,7 +1746,7 @@ function PortalTab({
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-sm">{tierOpt.label}</span>
-                      {current && <Badge variant="outline" className="text-[10px]">{t("crm-current")}</Badge>}
+                      {current && <Badge variant="outline" className="text-xs">{t("crm-current")}</Badge>}
                     </div>
                     <p className="text-xs text-muted-foreground">{tierOpt.hint}</p>
                   </div>
@@ -1754,7 +1754,7 @@ function PortalTab({
               );
             })}
           </div>
-          <DialogFooter>
+          <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
             <Button variant="outline" onClick={() => setShowChangeTier(false)}>{t("cancel")}</Button>
             <Button
               onClick={() => changeTierMut.mutate(nextTier)}
@@ -1767,18 +1767,18 @@ function PortalTab({
       </Dialog>
 
       <Dialog open={showChangeEmail} onOpenChange={setShowChangeEmail}>
-        <DialogContent size="md">
-          <DialogHeader>
+        <DialogContent size="md" className="max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
             <DialogTitle>{t("crm-change-portal-login-email")}</DialogTitle>
             <DialogDescription>
               The client&apos;s existing session will be invalidated. A welcome email with a set-password link is sent to the new address.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-2">
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-3">
             <Label>{t("crm-new-email")}</Label>
             <Input type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} placeholder="client@example.com" />
           </div>
-          <DialogFooter>
+          <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
             <Button variant="outline" onClick={() => setShowChangeEmail(false)}>{t("cancel")}</Button>
             <Button onClick={() => changeEmailMut.mutate(newEmail)} disabled={changeEmailMut.isPending || !newEmail}>
               {changeEmailMut.isPending ? t("crm-saving-ellipsis") : t("crm-change-email-btn")}
@@ -1891,12 +1891,12 @@ function UploadDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="md">
-        <DialogHeader>
+      <DialogContent size="md" className="max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle>{t("crm-upload-document")}</DialogTitle>
           <DialogDescription>{t("crm-upload-document-desc")}</DialogDescription>
         </DialogHeader>
-        <div className="space-y-3 py-2">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-3">
           <div className="space-y-1.5">
             <Label>{t("crm-filename")}</Label>
             <Input
@@ -1930,7 +1930,7 @@ function UploadDialog({
             </Label>
           </div>
         </div>
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button onClick={save} disabled={saving}>
             {saving ? "Saving…" : "Save"}
@@ -1955,12 +1955,12 @@ function ConfirmDelete({
   const t = useT();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="md">
-        <DialogHeader>
+      <DialogContent size="md" className="max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle>{t("crm-delete-document-title")}</DialogTitle>
           <DialogDescription>{t("crm-delete-document-desc")}</DialogDescription>
         </DialogHeader>
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button
             onClick={onConfirm}
@@ -2024,13 +2024,13 @@ function QuickEditDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="lg">
-        <DialogHeader>
+      <DialogContent size="lg" className="max-h-[88vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle>{t("crm-edit-partner")}</DialogTitle>
           <DialogDescription>{t("crm-update-partner-info")}</DialogDescription>
         </DialogHeader>
-        <div className="max-h-[70vh] overflow-y-auto pr-1">
-        <div className="space-y-3 py-2">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
+        <div className="space-y-3">
           <div className="space-y-1.5">
             <Label>{t("crm-name-required")}</Label>
             <Input value={form.name || ""} onChange={(e) => set("name", e.target.value)} />
@@ -2096,7 +2096,7 @@ function QuickEditDialog({
           </div>
         </div>
         </div>
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button onClick={save} disabled={saving}>
             {saving ? t("crm-saving-ellipsis") : t("crm-save-changes")}

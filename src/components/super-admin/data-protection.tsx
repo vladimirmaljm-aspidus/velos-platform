@@ -173,7 +173,7 @@ export function DataProtection() {
               tone={data.vault.needs_rotation ? "warn" : "ok"}
             />
           </div>
-          <p className="text-[11px] text-muted-foreground">{t("pf-sa-dp-vault-desc")}</p>
+          <p className="text-xs text-muted-foreground">{t("pf-sa-dp-vault-desc")}</p>
 
           {Object.keys(data.vault.by_version).length > 0 && (
             <div>
@@ -220,7 +220,7 @@ export function DataProtection() {
                     <Badge variant="outline" className="capitalize text-xs">{f.category}</Badge>
                   </TableCell>
                   <TableCell>
-                    <code className="text-[11px] font-mono">{f.field}</code>
+                    <code className="text-xs font-mono">{f.field}</code>
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">{f.description}</TableCell>
                 </TableRow>
@@ -251,9 +251,9 @@ export function DataProtection() {
             <TableBody>
               {data.retention_policy.map((r) => (
                 <TableRow key={r.table}>
-                  <TableCell><code className="text-[11px] font-mono">{r.table}</code></TableCell>
+                  <TableCell><code className="text-xs font-mono">{r.table}</code></TableCell>
                   <TableCell>
-                    <Badge variant="outline" className={`text-[10px] uppercase tracking-wider ${KIND_BADGE[r.kind] || ""}`}>
+                    <Badge variant="outline" className={`text-xs uppercase tracking-wider ${KIND_BADGE[r.kind] || ""}`}>
                       {r.kind}
                     </Badge>
                   </TableCell>
@@ -323,8 +323,8 @@ export function DataProtection() {
 
       {/* Rotation confirmation dialog */}
       <Dialog open={rotateOpen} onOpenChange={setRotateOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-md max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
             <DialogTitle>Rotate Vault Keys?</DialogTitle>
             <DialogDescription>
               This re-encrypts every <code>vault_secrets</code> row with the CURRENT key version
@@ -332,7 +332,7 @@ export function DataProtection() {
               in env yet, this is a no-op. Legacy rows: <strong>{data.vault.legacy_count}</strong>.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
+          <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
             <Button variant="outline" onClick={() => setRotateOpen(false)}>Cancel</Button>
             <Button onClick={rotateKeys} disabled={rotating} className="bg-gradient-emerald text-white">
               {rotating ? <Loader2 className="size-4 mr-1.5 animate-spin" /> : <RotateCw className="size-4 mr-1.5" />}
@@ -354,7 +354,7 @@ function Tile({ label, value, tone }: { label: string; value: string; tone: "ok"
   }[tone];
   return (
     <div className={`rounded-xl border ${cls} p-3`}>
-      <p className="text-[10px] uppercase tracking-wider opacity-70">{label}</p>
+      <p className="text-xs uppercase tracking-wider opacity-70">{label}</p>
       <p className="text-xl font-bold tabular mt-1">{value}</p>
     </div>
   );

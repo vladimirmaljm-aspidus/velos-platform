@@ -603,7 +603,7 @@ function SubmissionSummary({ submission, t }: { submission: KycSubmission; t: (k
               <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
                 {s.rows.map((r, i) => (
                   <div key={i} className="min-w-0">
-                    <dt className="text-[11px] uppercase tracking-wider text-muted-foreground/70 font-medium">
+                    <dt className="text-xs uppercase tracking-wider text-muted-foreground/70 font-medium">
                       {r.label}
                     </dt>
                     <dd
@@ -824,7 +824,7 @@ function KycWizard({
           </p>
         </div>
         {lastSavedAt && (
-          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <Check className="size-3 text-emerald-600" />
             {t("portal-kyc-draft-saved").replace("{date}", fmtDateTime(lastSavedAt))}
           </div>
@@ -1058,7 +1058,7 @@ function StepIndicator({
                 </div>
                 <span
                   className={cn(
-                    "text-[10px] sm:text-[11px] font-medium whitespace-nowrap transition-colors",
+                    "text-xs sm:text-xs font-medium whitespace-nowrap transition-colors",
                     isCurrent ? "text-foreground" : "text-muted-foreground"
                   )}
                 >
@@ -1753,13 +1753,13 @@ function StepDocuments({
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-sm font-medium">{t(dt.labelKey)}</p>
                     {isRequired ? (
-                      <Badge className="text-[10px] py-0 h-4 border-transparent bg-primary/10 text-primary">
+                      <Badge className="text-xs py-0 h-4 border-transparent bg-primary/10 text-primary">
                         {t("portal-kyc-doc-required")}
                       </Badge>
                     ) : (
                       <Badge
                         variant="outline"
-                        className="text-[10px] py-0 h-4 text-muted-foreground"
+                        className="text-xs py-0 h-4 text-muted-foreground"
                       >
                         {t("portal-kyc-doc-optional")}
                       </Badge>
@@ -1778,7 +1778,7 @@ function StepDocuments({
                     <p className="text-xs font-medium truncate">
                       {uploaded.filename}
                     </p>
-                    <p className="text-[10px] text-muted-foreground tabular">
+                    <p className="text-xs text-muted-foreground tabular">
                       {fmtBytes(uploaded.size)} · {fmtDate(uploaded.uploaded_at)}
                     </p>
                   </div>
@@ -1820,7 +1820,7 @@ function StepDocuments({
                   <span className="text-xs font-medium">
                     {isUploading ? t("portal-kyc-doc-uploading") : t("portal-kyc-doc-click-upload")}
                   </span>
-                  <span className="text-[10px] text-muted-foreground">
+                  <span className="text-xs text-muted-foreground">
                     {t("portal-kyc-doc-formats")}
                   </span>
                 </label>

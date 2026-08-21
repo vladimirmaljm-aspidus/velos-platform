@@ -65,12 +65,12 @@ function SuperAdminSubscriptionsPanel() {
     <div className="mb-6 space-y-4">
       {/* Summary tiles */}
       <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-        <div className="rounded-xl border border-border/60 p-3 bg-card"><p className="text-[10px] uppercase tracking-wider text-muted-foreground">{t("admin-plans-summary-tenants")}</p><p className="text-xl font-bold tabular mt-0.5">{fmtNumber(totals.total_tenants)}</p></div>
-        <div className="rounded-xl border border-emerald-500/30 p-3 bg-emerald-500/5"><p className="text-[10px] uppercase tracking-wider text-emerald-700 dark:text-emerald-400">{t("admin-active-badge")}</p><p className="text-xl font-bold tabular mt-0.5 text-emerald-700 dark:text-emerald-400">{fmtNumber(totals.active)}</p></div>
-        <div className="rounded-xl border border-blue-500/30 p-3 bg-blue-500/5"><p className="text-[10px] uppercase tracking-wider text-blue-700 dark:text-blue-400">{t("admin-plans-status-trial")}</p><p className="text-xl font-bold tabular mt-0.5 text-blue-700 dark:text-blue-400">{fmtNumber(totals.trial)}</p></div>
-        <div className="rounded-xl border border-amber-500/30 p-3 bg-amber-500/5"><p className="text-[10px] uppercase tracking-wider text-amber-700 dark:text-amber-400">{t("admin-plans-summary-expiring-7d")}</p><p className="text-xl font-bold tabular mt-0.5 text-amber-700 dark:text-amber-400">{fmtNumber(totals.expiring_within_7d)}</p></div>
-        <div className="rounded-xl border border-destructive/30 p-3 bg-destructive/5"><p className="text-[10px] uppercase tracking-wider text-destructive">{t("admin-plans-status-expired")}</p><p className="text-xl font-bold tabular mt-0.5 text-destructive">{fmtNumber(totals.expired)}</p></div>
-        <div className="rounded-xl border border-border/60 p-3 bg-card"><p className="text-[10px] uppercase tracking-wider text-muted-foreground">{t("admin-plans-summary-mrr")}</p><p className="text-xl font-bold tabular mt-0.5">{fmtMoney(totals.monthly_recurring_revenue, "EUR")}</p></div>
+        <div className="rounded-xl border border-border/60 p-3 bg-card"><p className="text-xs uppercase tracking-wider text-muted-foreground">{t("admin-plans-summary-tenants")}</p><p className="text-xl font-bold tabular mt-0.5">{fmtNumber(totals.total_tenants)}</p></div>
+        <div className="rounded-xl border border-emerald-500/30 p-3 bg-emerald-500/5"><p className="text-xs uppercase tracking-wider text-emerald-700 dark:text-emerald-400">{t("admin-active-badge")}</p><p className="text-xl font-bold tabular mt-0.5 text-emerald-700 dark:text-emerald-400">{fmtNumber(totals.active)}</p></div>
+        <div className="rounded-xl border border-blue-500/30 p-3 bg-blue-500/5"><p className="text-xs uppercase tracking-wider text-blue-700 dark:text-blue-400">{t("admin-plans-status-trial")}</p><p className="text-xl font-bold tabular mt-0.5 text-blue-700 dark:text-blue-400">{fmtNumber(totals.trial)}</p></div>
+        <div className="rounded-xl border border-amber-500/30 p-3 bg-amber-500/5"><p className="text-xs uppercase tracking-wider text-amber-700 dark:text-amber-400">{t("admin-plans-summary-expiring-7d")}</p><p className="text-xl font-bold tabular mt-0.5 text-amber-700 dark:text-amber-400">{fmtNumber(totals.expiring_within_7d)}</p></div>
+        <div className="rounded-xl border border-destructive/30 p-3 bg-destructive/5"><p className="text-xs uppercase tracking-wider text-destructive">{t("admin-plans-status-expired")}</p><p className="text-xl font-bold tabular mt-0.5 text-destructive">{fmtNumber(totals.expired)}</p></div>
+        <div className="rounded-xl border border-border/60 p-3 bg-card"><p className="text-xs uppercase tracking-wider text-muted-foreground">{t("admin-plans-summary-mrr")}</p><p className="text-xl font-bold tabular mt-0.5">{fmtMoney(totals.monthly_recurring_revenue, "EUR")}</p></div>
       </div>
 
       <Card>
@@ -188,9 +188,9 @@ export function PlansView() {
           const included = (() => { try { return JSON.parse(plan.included_modules || "[]"); } catch { return []; } })();
           return (
             <Card key={plan.id} className={`relative rounded-xl overflow-hidden flex flex-col ${isFeatured ? "border-primary/50 shadow-soft-md ring-1 ring-primary/30" : "border-border/60"} ${isCurrent ? "ring-2 ring-emerald-500/40" : ""}`}>
-              {(isFeatured || isCurrent) && <div className={`absolute top-0 inset-x-0 text-center py-1 text-[10px] font-semibold uppercase tracking-wider ${isCurrent ? "bg-emerald-500 text-white" : "bg-primary text-primary-foreground"}`}>{isCurrent ? t("admin-plans-current-plan") : t("admin-plans-most-popular")}</div>}
+              {(isFeatured || isCurrent) && <div className={`absolute top-0 inset-x-0 text-center py-1 text-xs font-semibold uppercase tracking-wider ${isCurrent ? "bg-emerald-500 text-white" : "bg-primary text-primary-foreground"}`}>{isCurrent ? t("admin-plans-current-plan") : t("admin-plans-most-popular")}</div>}
               <CardHeader className={isFeatured || isCurrent ? "pt-8 pb-3" : "pb-3"}>
-                <div className="flex items-center justify-between"><CardTitle className="text-lg flex items-center gap-2"><Icon className="size-4" />{plan.name}</CardTitle><Badge variant="outline" className="text-[10px]">{plan.currency}</Badge></div>
+                <div className="flex items-center justify-between"><CardTitle className="text-lg flex items-center gap-2"><Icon className="size-4" />{plan.name}</CardTitle><Badge variant="outline" className="text-xs">{plan.currency}</Badge></div>
                 {plan.description && <CardDescription className="text-xs">{plan.description}</CardDescription>}
               </CardHeader>
               <CardContent className="flex-1 flex flex-col gap-4">
@@ -208,7 +208,7 @@ export function PlansView() {
                   {!plan.custom_branding && <div className="flex items-center gap-2"><X className="size-3 text-muted-foreground shrink-0" /><span className="text-muted-foreground">{t("admin-plans-no-custom-branding")}</span></div>}
                   {!plan.api_access && <div className="flex items-center gap-2"><X className="size-3 text-muted-foreground shrink-0" /><span className="text-muted-foreground">{t("admin-plans-no-api-access")}</span></div>}
                 </div>
-                <div className="border-t border-border/40 pt-2"><p className="text-[10px] font-semibold text-muted-foreground uppercase mb-1.5">{t("admin-plans-modules")}</p><div className="flex flex-wrap gap-1">{included.map((code: string, i: number) => <Badge key={i} variant="outline" className="text-[10px] py-0">{code}</Badge>)}</div></div>
+                <div className="border-t border-border/40 pt-2"><p className="text-xs font-semibold text-muted-foreground uppercase mb-1.5">{t("admin-plans-modules")}</p><div className="flex flex-wrap gap-1">{included.map((code: string, i: number) => <Badge key={i} variant="outline" className="text-xs py-0">{code}</Badge>)}</div></div>
               </CardContent>
               <CardFooter className="pt-0">
                 {isCurrent ? (
@@ -228,13 +228,13 @@ export function PlansView() {
       </div>
       {upgradeDialog && (
         <Dialog open={!!upgradeDialog} onOpenChange={(o) => !o && setUpgradeDialog(null)}>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader><DialogTitle className="flex items-center gap-2"><TrendingUp className="size-5 text-primary" />{t("admin-plans-upgrade-dialog-title").replace("${plan}", upgradeDialog.name)}</DialogTitle><DialogDescription>{t("admin-plans-upgrade-dialog-desc")}</DialogDescription></DialogHeader>
-            <div className="space-y-3 py-2">
+          <DialogContent className="sm:max-w-md max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+            <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60"><DialogTitle className="flex items-center gap-2"><TrendingUp className="size-5 text-primary" />{t("admin-plans-upgrade-dialog-title").replace("${plan}", upgradeDialog.name)}</DialogTitle><DialogDescription>{t("admin-plans-upgrade-dialog-desc")}</DialogDescription></DialogHeader>
+            <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-3">
               <div className="rounded-lg bg-muted/40 border border-border/60 p-3"><div className="flex items-center justify-between mb-2"><span className="text-sm font-medium">{upgradeDialog.name}</span><span className="text-sm font-bold">{fmtMoney(upgradeDialog.price_monthly, upgradeDialog.currency)}/mo</span></div><div className="text-xs text-muted-foreground">{upgradeDialog.max_users} users · {upgradeDialog.max_partners === 0 ? t("admin-plans-unlimited") : upgradeDialog.max_partners} partners · {upgradeDialog.storage_mb >= 1000 ? `${upgradeDialog.storage_mb / 1000}GB` : `${upgradeDialog.storage_mb}MB`} storage</div></div>
               <div><label className="text-sm font-medium">{t("admin-plans-upgrade-message-label")}</label><Textarea placeholder={t("admin-plans-upgrade-message-placeholder")} value={message} onChange={(e) => setMessage(e.target.value)} rows={3} className="mt-1" /></div>
             </div>
-            <DialogFooter><Button variant="outline" onClick={() => setUpgradeDialog(null)}>{t("cancel")}</Button><Button onClick={() => upgradeMut.mutate(upgradeDialog)} disabled={upgradeMut.isPending}>{upgradeMut.isPending ? t("admin-plans-upgrade-sending") : t("admin-plans-upgrade-send")}</Button></DialogFooter>
+            <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4"><Button variant="outline" onClick={() => setUpgradeDialog(null)}>{t("cancel")}</Button><Button onClick={() => upgradeMut.mutate(upgradeDialog)} disabled={upgradeMut.isPending}>{upgradeMut.isPending ? t("admin-plans-upgrade-sending") : t("admin-plans-upgrade-send")}</Button></DialogFooter>
           </DialogContent>
         </Dialog>
       )}

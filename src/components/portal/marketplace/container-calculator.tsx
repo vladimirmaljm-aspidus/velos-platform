@@ -75,7 +75,7 @@ export function ContainerCalculator() {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           {t("marketplace-container-calculator-desc")}
         </p>
 
@@ -120,33 +120,33 @@ export function ContainerCalculator() {
         </div>
 
         {/* Container spec card */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs bg-muted/30 rounded-md p-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm bg-muted/30 rounded-md p-3">
           <div>
-            <p className="text-[10px] uppercase text-muted-foreground">{t("marketplace-container-max-payload")}</p>
+            <p className="text-xs uppercase text-muted-foreground">{t("marketplace-container-max-payload")}</p>
             <p className="font-medium mt-0.5">{spec.max_payload_kg.toLocaleString()} kg</p>
           </div>
           <div>
-            <p className="text-[10px] uppercase text-muted-foreground">{t("marketplace-container-max-volume")}</p>
+            <p className="text-xs uppercase text-muted-foreground">{t("marketplace-container-max-volume")}</p>
             <p className="font-medium mt-0.5">{spec.max_volume_m3} m³</p>
           </div>
           <div>
-            <p className="text-[10px] uppercase text-muted-foreground">{t("marketplace-container-tare")}</p>
+            <p className="text-xs uppercase text-muted-foreground">{t("marketplace-container-tare")}</p>
             <p className="font-medium mt-0.5">{spec.tare_kg.toLocaleString()} kg</p>
           </div>
           <div>
-            <p className="text-[10px] uppercase text-muted-foreground">{t("marketplace-container-max-gross")}</p>
+            <p className="text-xs uppercase text-muted-foreground">{t("marketplace-container-max-gross")}</p>
             <p className="font-medium mt-0.5">{spec.max_gross_kg.toLocaleString()} kg</p>
           </div>
         </div>
 
         {q.isLoading && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-3 w-3 animate-spin" />
             {t("marketplace-container-loading")}
           </div>
         )}
         {q.isError && (
-          <div className="text-xs text-rose-600">
+          <div className="text-sm text-rose-600">
             {(q.error as Error)?.message || "Failed to compute."}
           </div>
         )}
@@ -201,7 +201,7 @@ export function ContainerCalculator() {
               </div>
             </div>
 
-            <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/30 rounded-md p-2">
+            <div className="flex items-start gap-2 text-sm text-muted-foreground bg-muted/30 rounded-md p-3">
               <Info className="h-3 w-3 mt-0.5 shrink-0" />
               <span>{result.notes}</span>
             </div>
@@ -235,8 +235,8 @@ function ResultCell({
   icon?: typeof Boxes;
 }) {
   return (
-    <div className={`rounded-md p-2 ${highlight ? "bg-emerald-500/10" : "bg-muted/30"}`}>
-      <p className="text-[10px] uppercase tracking-wide text-muted-foreground flex items-center gap-1">
+    <div className={`rounded-md p-3 ${highlight ? "bg-emerald-500/10" : "bg-muted/30"}`}>
+      <p className="text-xs uppercase tracking-wide text-muted-foreground flex items-center gap-1">
         {Icon && <Icon className="h-3 w-3" />}
         {label}
       </p>

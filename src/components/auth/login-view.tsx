@@ -222,7 +222,7 @@ export function LoginView({ onSwitchToRegister }: LoginViewProps) {
               <p className="text-sm font-semibold tracking-tight text-foreground">
                 VELOS
               </p>
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 {t("login-brand-tagline")}
               </p>
             </div>
@@ -393,7 +393,7 @@ export function LoginView({ onSwitchToRegister }: LoginViewProps) {
 
           {/* Copyright — shown here on mobile only; the desktop branding
               panel already has its own copyright line. */}
-          <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-[11px] text-muted-foreground/50 lg:hidden">
+          <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-xs text-muted-foreground/50 lg:hidden">
             <Building2 className="size-3" />
             © {new Date().getFullYear()} VELOS. {t("login-rights")}
           </p>

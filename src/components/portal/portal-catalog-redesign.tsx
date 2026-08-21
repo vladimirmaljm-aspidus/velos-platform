@@ -413,7 +413,7 @@ function ProductCard({
         {product.category && (
           <Badge
             className={cn(
-              "absolute top-2 left-2 text-[10px] px-2 py-0.5 shadow-sm",
+              "absolute top-2 left-2 text-xs px-2 py-0.5 shadow-sm",
               categoryClass(product.category),
             )}
           >
@@ -433,7 +433,7 @@ function ProductCard({
         </h3>
 
         {/* SKU · unit line */}
-        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
           {product.sku ? (
             <>
               <span className="font-mono">{product.sku}</span>
@@ -508,7 +508,7 @@ function ProductDetailDrawer({
           <span className="text-base leading-tight">{product.name}</span>
         </SheetTitle>
         <SheetDescription className="flex flex-wrap items-center gap-2">
-          <Badge className={cn("text-[11px]", categoryClass(product.category))}>
+          <Badge className={cn("text-xs", categoryClass(product.category))}>
             {product.category}
           </Badge>
           {product.origin_country && (
@@ -565,7 +565,7 @@ function ProductDetailDrawer({
             <div className="rounded-xl border border-border/60 overflow-hidden bg-card">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="bg-muted/40 text-[11px] uppercase tracking-wide text-muted-foreground">
+                  <tr className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
                     <th className="px-3 py-1.5 text-left font-medium">
                       {t("portal-catalog-coa-parameter")}
                     </th>
@@ -651,7 +651,7 @@ function ProductDetailDrawer({
         )}
 
         {/* ─── Meta ────────────────────────────────────────────────────── */}
-        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground border-t border-border/60 pt-3">
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground border-t border-border/60 pt-3">
           <MapPin className="size-3" />
           {t("portal-catalog-last-updated").replace("{date}", fmtDate(product.updated_at))}
         </div>
@@ -662,7 +662,7 @@ function ProductDetailDrawer({
             <ShoppingCart className="size-4" />
             {t("portal-catalog-request-quote")}
           </Button>
-          <p className="text-[11px] text-muted-foreground text-center mt-2">
+          <p className="text-xs text-muted-foreground text-center mt-2">
             {t("portal-catalog-request-quote-desc")}
           </p>
         </div>
@@ -707,7 +707,7 @@ function InfoTile({
 }) {
   return (
     <div className="rounded-lg border border-border/60 bg-card p-2.5 shadow-soft">
-      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <Icon className="size-3" />
         {label}
       </div>

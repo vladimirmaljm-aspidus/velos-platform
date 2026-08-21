@@ -350,7 +350,7 @@ export function SecuritySettings() {
               { value: "relaxed", label: t("pf-sa-sec-preset-relaxed") },
             ]}
           />
-          <div className="text-[11px] text-muted-foreground leading-snug">
+          <div className="text-xs text-muted-foreground leading-snug">
             {activePreset === "strict" && t("pf-sa-sec-preset-strict-desc")}
             {activePreset === "balanced" && t("pf-sa-sec-preset-balanced-desc")}
             {activePreset === "relaxed" && t("pf-sa-sec-preset-relaxed-desc")}
@@ -609,7 +609,7 @@ export function SecuritySettings() {
         />
         <CardContent className="space-y-3">
           <InfoNote description={t("pf-sa-2fa-info")} />
-          <p className="text-[11px] text-muted-foreground">{t("pf-sa-2fa-learn-more")}</p>
+          <p className="text-xs text-muted-foreground">{t("pf-sa-2fa-learn-more")}</p>
           <SuperAdminExemptNote />
         </CardContent>
       </Card>

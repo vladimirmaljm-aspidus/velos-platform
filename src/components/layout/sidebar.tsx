@@ -271,7 +271,7 @@ export function Sidebar({ hideCollapseToggle = false, forceExpanded = false }: {
           <p className="font-semibold text-[15px] tracking-tight text-sidebar-foreground truncate leading-tight">
             VELOS
           </p>
-          <p className="text-[10px] text-sidebar-foreground/55 truncate leading-tight mt-0.5">
+          <p className="text-xs text-sidebar-foreground/55 truncate leading-tight mt-0.5">
             {t(locale, "trade-platform")}
           </p>
         </div>
@@ -329,7 +329,7 @@ export function Sidebar({ hideCollapseToggle = false, forceExpanded = false }: {
                 "overflow-hidden transition-all duration-300",
                 sidebarCollapsed ? "h-0 opacity-0 mb-0" : "h-auto opacity-100 mb-2"
               )}>
-                <p className="px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-sidebar-foreground/45 select-none">
+                <p className="px-3 text-xs font-semibold uppercase tracking-[0.12em] text-sidebar-foreground/45 select-none">
                   {sectionLabel}
                 </p>
               </div>
@@ -383,7 +383,7 @@ export function Sidebar({ hideCollapseToggle = false, forceExpanded = false }: {
               <p className="text-[13px] font-medium text-sidebar-foreground truncate leading-tight">
                 {user.full_name || user.username}
               </p>
-              <p className="text-[10px] text-sidebar-foreground/55 truncate leading-tight mt-0.5">
+              <p className="text-xs text-sidebar-foreground/55 truncate leading-tight mt-0.5">
                 {formatRole(user.role)}
               </p>
             </div>
@@ -514,7 +514,7 @@ function NavItemButton({ icon: Icon, label, active, collapsed, onClick, badgeCou
 
       {/* Expanded-mode badge pill */}
       {!collapsed && !!badgeCount && badgeCount > 0 && (
-        <span className="shrink-0 min-w-[18px] h-[18px] px-1.5 rounded-full bg-primary text-[10px] font-semibold text-primary-foreground flex items-center justify-center leading-none tabular-nums">
+        <span className="shrink-0 min-w-[18px] h-[18px] px-1.5 rounded-full bg-primary text-xs font-semibold text-primary-foreground flex items-center justify-center leading-none tabular-nums">
           {badgeCount > 99 ? "99+" : badgeCount}
         </span>
       )}

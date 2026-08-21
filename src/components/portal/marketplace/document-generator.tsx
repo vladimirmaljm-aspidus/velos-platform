@@ -215,7 +215,7 @@ export function DocumentGenerator({
           <div className="space-y-3 rounded-md border border-dashed p-3">
             <div className="flex flex-wrap items-end gap-3">
               <div className="flex-1 min-w-[200px]">
-                <label className="text-[10px] uppercase text-muted-foreground mb-1 block">
+                <label className="text-xs uppercase text-muted-foreground mb-1 block">
                   {t("marketplace-document-type")}
                 </label>
                 <Select value={selectedType} onValueChange={(v) => setSelectedType(v as MarketplaceTradeDocumentType)}>
@@ -243,7 +243,7 @@ export function DocumentGenerator({
                 {t("marketplace-document-generate")}
               </Button>
             </div>
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               {t("marketplace-document-generate-hint")}
             </p>
           </div>
@@ -368,15 +368,15 @@ function DocumentPreviewDialog({ doc, typeLabel, onClose }: DocumentPreviewDialo
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle>{typeLabel}</DialogTitle>
           <DialogDescription>
             {doc?.reference_number ? `${doc.reference_number} · ` : ""}
             {fmtDateTime(doc?.created_at || new Date().toISOString())}
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-1 text-xs font-mono">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-1 text-xs font-mono">
           {rows.length === 0 ? (
             <div className="text-muted-foreground">
               {t("marketplace-document-empty-data")}
@@ -390,7 +390,7 @@ function DocumentPreviewDialog({ doc, typeLabel, onClose }: DocumentPreviewDialo
             ))
           )}
         </div>
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button variant="outline" onClick={onClose}>
             {t("marketplace-document-close")}
           </Button>

@@ -227,7 +227,7 @@ export function SeasonalPanel({ category, currency = "USD" }: SeasonalPanelProps
             </ComposedChart>
           </ResponsiveContainer>
         </div>
-        <div className="flex items-center justify-center gap-3 text-[10px] text-muted-foreground">
+        <div className="flex items-center justify-center gap-3 text-xs text-muted-foreground">
           <span className="flex items-center gap-1">
             <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
             {t("marketplace-intel-seasonal-high")}

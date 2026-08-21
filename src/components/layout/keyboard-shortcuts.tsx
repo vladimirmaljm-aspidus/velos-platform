@@ -112,12 +112,12 @@ export function KeyboardShortcuts() {
 
   return (
     <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-md max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle>{t("misc-keyboard-shortcuts-title")}</DialogTitle>
           <DialogDescription>{t("misc-keyboard-shortcuts-desc")}</DialogDescription>
         </DialogHeader>
-        <div className="space-y-2 text-sm">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-2 text-sm">
           <Row keys={["⌘", "K"]} desc="Open global search" />
           <Row keys={["/"]} desc="Focus search" />
           <Row keys={["?"]} desc="Show this help" />

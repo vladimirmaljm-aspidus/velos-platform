@@ -533,17 +533,18 @@ function UserFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="lg">
-        <DialogHeader>
+      <DialogContent size="lg" className="max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle>{user ? t("admin-users-form-title-edit") : t("admin-users-form-title-new")}</DialogTitle>
           <DialogDescription>
             {user ? t("admin-users-form-desc-edit") : t("admin-users-form-desc-new")}
           </DialogDescription>
         </DialogHeader>
 
-        {/* Show created password info after successful creation */}
-        {createdPassword && (
-          <div className="p-3 rounded-lg border border-green-200 bg-green-50 dark:bg-green-950/20 dark:border-green-800 space-y-2">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
+          {/* Show created password info after successful creation */}
+          {createdPassword && (
+            <div className="p-3 rounded-lg border border-green-200 bg-green-50 dark:bg-green-950/20 dark:border-green-800 space-y-2">
             <p className="text-sm font-medium text-green-800 dark:text-green-300">{t("admin-users-created-title")}</p>
             <div className="space-y-1 text-sm">
               <div className="flex items-center gap-2">
@@ -569,8 +570,7 @@ function UserFormDialog({
           </div>
         )}
 
-        <div className="max-h-[70vh] overflow-y-auto pr-1">
-          <div className="space-y-4 py-2">
+        <div className="space-y-4 pt-2">
 
             {/* Full Name — first field */}
             <div className="space-y-1.5">
@@ -780,7 +780,7 @@ function UserFormDialog({
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <Label>{t("admin-users-form-custom-permissions")}</Label>
-                      <span className="text-[11px] text-muted-foreground">
+                      <span className="text-xs text-muted-foreground">
                         {t("admin-users-form-permissions-hint")}
                       </span>
                     </div>
@@ -797,7 +797,7 @@ function UserFormDialog({
           </div>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>{t("cancel")}</Button>
           <Button onClick={save} disabled={saving}>
             {saving ? t("admin-saving") : user ? t("admin-users-form-save-changes") : t("admin-users-form-create")}

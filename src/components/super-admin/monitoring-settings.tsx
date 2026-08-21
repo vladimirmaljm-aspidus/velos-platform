@@ -217,7 +217,7 @@ export function MonitoringSettings() {
         />
         <CardContent className="space-y-3">
           <FieldRow label={t("pf-sa-mon-sentry-status-label")} hint={t("pf-sa-mon-sentry-desc")}>
-            <Badge variant="outline" className={`uppercase text-[10px] tracking-wider ${
+            <Badge variant="outline" className={`uppercase text-xs tracking-wider ${
               sentryStatus === "enabled" ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30" :
               sentryStatus === "disabled" ? "bg-destructive/10 text-destructive border-destructive/30" :
               "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30"
@@ -263,7 +263,7 @@ export function MonitoringSettings() {
             <Label className="text-xs">Subscribed Events</Label>
             <div className="flex flex-wrap gap-1.5 border rounded-md p-2 min-h-[60px]">
               {config.securityWebhook.events.map((e) => (
-                <Badge key={e} variant="outline" className="text-[10px] font-mono">
+                <Badge key={e} variant="outline" className="text-xs font-mono">
                   {e}
                   <button
                     onClick={() => patchNested("securityWebhook", "events", config.securityWebhook.events.filter((x) => x !== e))}
@@ -372,7 +372,7 @@ export function MonitoringSettings() {
                     <Input
                       value={r.type}
                       onChange={(e) => patchAlertRouting(i, { type: e.target.value })}
-                      className="h-8 font-mono text-[11px]"
+                      className="h-8 font-mono text-xs"
                       placeholder="auth.login_locked"
                     />
                   </TableCell>
@@ -380,7 +380,7 @@ export function MonitoringSettings() {
                     <Input
                       value={r.recipients.join(", ")}
                       onChange={(e) => patchAlertRouting(i, { recipients: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })}
-                      className="h-8 text-[11px]"
+                      className="h-8 text-xs"
                       placeholder="security@example.com, dpo@example.com"
                     />
                   </TableCell>
@@ -440,7 +440,7 @@ function EventAdder({ onAdd }: { onAdd: (event: string) => void }) {
         <SelectTrigger className="h-8 w-64 text-xs"><SelectValue placeholder="Pick event…" /></SelectTrigger>
         <SelectContent>
           {EVENT_SUGGESTIONS.map((e) => (
-            <SelectItem key={e} value={e}><code className="text-[11px]">{e}</code></SelectItem>
+            <SelectItem key={e} value={e}><code className="text-xs">{e}</code></SelectItem>
           ))}
         </SelectContent>
       </Select>

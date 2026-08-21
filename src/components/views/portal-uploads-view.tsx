@@ -189,7 +189,7 @@ export function PortalUploadsView() {
                     </div>
                     <div className="flex flex-wrap gap-1 mt-2">
                       {Object.entries(p.categories).map(([c, n]) => (
-                        <Badge key={c} variant="outline" className={cn("text-[10px] capitalize", CAT_STYLE[c] || "")}>
+                        <Badge key={c} variant="outline" className={cn("text-xs capitalize", CAT_STYLE[c] || "")}>
                           {c} {n}
                         </Badge>
                       ))}
@@ -275,12 +275,12 @@ export function PortalUploadsView() {
                             <p className="text-sm font-medium truncate max-w-[280px]">{f.filename}</p>
                             {f.doc_type && <p className="text-xs text-muted-foreground">{f.doc_type}</p>}
                             {f.description && <p className="text-xs text-muted-foreground italic truncate max-w-[280px]">{f.description}</p>}
-                            {isDeleted && <Badge variant="destructive" className="text-[10px] mt-1">{t("misc-deleted-label")} {fmtRelative(f.deleted_at!)}</Badge>}
+                            {isDeleted && <Badge variant="destructive" className="text-xs mt-1">{t("misc-deleted-label")} {fmtRelative(f.deleted_at!)}</Badge>}
                           </div>
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className={cn("text-[10px] capitalize", CAT_STYLE[f.category])}>{f.category}</Badge>
+                        <Badge variant="outline" className={cn("text-xs capitalize", CAT_STYLE[f.category])}>{f.category}</Badge>
                       </TableCell>
                       <TableCell className="text-right tabular text-sm">{fmtBytes(f.size_bytes)}</TableCell>
                       <TableCell className="text-xs text-muted-foreground" title={fmtDateTime(f.uploaded_at)}>{fmtRelative(f.uploaded_at)}</TableCell>
@@ -343,7 +343,7 @@ export function PortalUploadsView() {
 function StatTile({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-xl border border-border/60 p-3 bg-card">
-      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="text-xs uppercase tracking-wider text-muted-foreground">{label}</p>
       <p className="text-xl font-bold tabular mt-0.5">{value.toLocaleString()}</p>
     </div>
   );

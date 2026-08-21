@@ -394,7 +394,7 @@ function renderFieldContent(
     case "doc_title":
       return (
         <div className="flex h-full w-full items-center">
-          <span className="text-[11px] font-extrabold tracking-[0.15em]" style={{ color: primaryColor }}>
+          <span className="text-xs font-extrabold tracking-[0.15em]" style={{ color: primaryColor }}>
             {docTypeLabel}
           </span>
         </div>
@@ -1341,7 +1341,7 @@ export function TemplateVisualEditor({
               </div>
             ))}
             <div className="mt-3 border-t pt-3">
-              <p className="mb-2 text-[10px] text-muted-foreground">
+              <p className="mb-2 text-xs text-muted-foreground">
                 {t("misc-tve-quick-add")}
               </p>
               <div className="flex flex-col gap-1">
@@ -1388,7 +1388,7 @@ export function TemplateVisualEditor({
                 <div key={pageIdx} className="flex flex-col">
                   {/* Page label */}
                   <div className="mb-1 flex items-center justify-between">
-                    <span className="text-[10px] font-medium text-muted-foreground">
+                    <span className="text-xs font-medium text-muted-foreground">
                       {t("misc-tve-page-n-of-m").replace("{n}", String(pageIdx + 1)).replace("{m}", String(pageCount))}
                     </span>
                     {pageIdx > 0 && (
@@ -1427,7 +1427,7 @@ export function TemplateVisualEditor({
             </div>
 
             {/* Legend */}
-            <div className="mt-3 flex flex-wrap items-center gap-3 text-[10px] text-muted-foreground">
+            <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
               <span className="flex items-center gap-1">
                 <span className="inline-block size-2.5 rounded-sm border border-primary bg-primary/10" />
                 {t("misc-tve-selected")}
@@ -1461,7 +1461,7 @@ export function TemplateVisualEditor({
                   <h3 className="text-xs font-semibold uppercase text-muted-foreground">
                     {t("misc-tve-properties")}
                   </h3>
-                  <Badge variant="outline" className="text-[10px]">
+                  <Badge variant="outline" className="text-xs">
                     {selected.type}
                   </Badge>
                 </div>
@@ -1573,7 +1573,7 @@ export function TemplateVisualEditor({
                     <div>
                       <div className="mb-1 flex items-center justify-between">
                         <Label className="text-xs">{t("misc-tve-width-mm")}</Label>
-                        <span className="text-[10px] tabular text-muted-foreground">
+                        <span className="text-xs tabular text-muted-foreground">
                           {Math.round(selected.width)}mm
                         </span>
                       </div>
@@ -1590,7 +1590,7 @@ export function TemplateVisualEditor({
                     <div>
                       <div className="mb-1 flex items-center justify-between">
                         <Label className="text-xs">{t("misc-tve-height-mm")}</Label>
-                        <span className="text-[10px] tabular text-muted-foreground">
+                        <span className="text-xs tabular text-muted-foreground">
                           {Math.round(selected.height)}mm
                         </span>
                       </div>
@@ -1633,7 +1633,7 @@ export function TemplateVisualEditor({
                         </Button>
                       </div>
                     </div>
-                    <div className="rounded border bg-muted/30 p-2 text-[10px] text-muted-foreground">
+                    <div className="rounded border bg-muted/30 p-2 text-xs text-muted-foreground">
                       {letterhead?.logo_url
                         ? t("misc-tve-source-from-letterhead")
                         : t("misc-tve-no-logo-hint")}
@@ -1663,7 +1663,7 @@ export function TemplateVisualEditor({
                       <div>
                         <div className="mb-1 flex items-center justify-between">
                           <Label className="text-xs">{t("misc-tve-width-mm")}</Label>
-                          <span className="text-[10px] tabular text-muted-foreground">
+                          <span className="text-xs tabular text-muted-foreground">
                             {Math.round(selected.width)}
                           </span>
                         </div>
@@ -1680,7 +1680,7 @@ export function TemplateVisualEditor({
                       <div>
                         <div className="mb-1 flex items-center justify-between">
                           <Label className="text-xs">{t("misc-tve-height-mm")}</Label>
-                          <span className="text-[10px] tabular text-muted-foreground">
+                          <span className="text-xs tabular text-muted-foreground">
                             {Math.round(selected.height)}
                           </span>
                         </div>
@@ -1708,7 +1708,7 @@ export function TemplateVisualEditor({
                     </h4>
                     {/* Draggable placeholder palette — drag a chip into the text area below */}
                     <div>
-                      <Label className="text-[10px] text-muted-foreground">
+                      <Label className="text-xs text-muted-foreground">
                         {t("misc-tve-drag-placeholders")}
                       </Label>
                       <div className="mt-1 flex max-h-28 flex-wrap gap-1 overflow-y-auto rounded border bg-muted/30 p-1.5">
@@ -1720,7 +1720,7 @@ export function TemplateVisualEditor({
                               e.dataTransfer.setData("text/plain", ph.key);
                               e.dataTransfer.effectAllowed = "copy";
                             }}
-                            className="flex items-center gap-1 rounded border bg-background px-1.5 py-0.5 text-[10px] cursor-grab hover:border-primary/40 hover:bg-primary/5 active:cursor-grabbing select-none"
+                            className="flex items-center gap-1 rounded border bg-background px-1.5 py-0.5 text-xs cursor-grab hover:border-primary/40 hover:bg-primary/5 active:cursor-grabbing select-none"
                             title={`Drag into the text area: ${ph.key}`}
                           >
                             <GripVertical className="size-2.5 text-muted-foreground/70" />
@@ -1780,12 +1780,12 @@ export function TemplateVisualEditor({
                         dragOverContent && "ring-2 ring-primary ring-offset-1"
                       )}
                     />
-                    <p className="text-[10px] text-muted-foreground">
+                    <p className="text-xs text-muted-foreground">
                       Placeholders: {"{company_name}"}, {"{address}"}, {"{reg}"},{" "}
                       {"{vat}"}, {"{date}"}, {"{doc_number}"}, {"{page_number}"}
                     </p>
                     {selected.type !== "custom_text" && (
-                      <p className="text-[10px] italic text-muted-foreground">
+                      <p className="text-xs italic text-muted-foreground">
                         {t("misc-tve-default-text-hint").replace("{type}", selected.type)}
                       </p>
                     )}
@@ -1852,7 +1852,7 @@ export function TemplateVisualEditor({
                 <Separator />
 
                 {/* Quick geometry info + delete */}
-                <div className="rounded border bg-muted/30 p-2 text-[10px] text-muted-foreground">
+                <div className="rounded border bg-muted/30 p-2 text-xs text-muted-foreground">
                   <div className="flex justify-between">
                     <span>{t("misc-tve-right-edge")}</span>
                     <span className="font-mono">
@@ -1923,7 +1923,7 @@ export function TemplateVisualEditor({
               <div className="grid grid-cols-2 gap-2">
                 {(["top", "bottom", "left", "right"] as const).map((m) => (
                   <div key={m}>
-                    <Label className="text-[10px] capitalize text-muted-foreground">
+                    <Label className="text-xs capitalize text-muted-foreground">
                       {t(`misc-tve-margin-${m}`)}
                     </Label>
                     <Input
@@ -1940,7 +1940,7 @@ export function TemplateVisualEditor({
               </div>
             </div>
 
-            <p className="text-[10px] text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               {t("misc-tve-snap-threshold-hint")
                 .replace("{n}", String(SNAP_THRESHOLD))
                 .replace("{s}", String(BASE_SCALE))

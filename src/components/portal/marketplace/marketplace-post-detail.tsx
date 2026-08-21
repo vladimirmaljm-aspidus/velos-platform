@@ -391,7 +391,7 @@ export function MarketplacePostDetail({ postId }: { postId: string }) {
                 <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
                   {specEntries.map((s) => (
                     <div key={s.label} className="flex flex-col py-1.5 border-b border-border/40 last:border-0">
-                      <dt className="text-[11px] uppercase tracking-wider text-muted-foreground">{s.label}</dt>
+                      <dt className="text-xs uppercase tracking-wider text-muted-foreground">{s.label}</dt>
                       <dd className="text-sm font-medium mt-0.5">{s.value}</dd>
                     </div>
                   ))}
@@ -508,7 +508,7 @@ export function MarketplacePostDetail({ postId }: { postId: string }) {
               <div className="absolute top-0 right-0 size-24 bg-emerald-500/10 blur-3xl rounded-full" />
               <CardContent className="relative p-5 space-y-4">
                 <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     {t("marketplace-detail-company-card")}
                   </p>
                 </div>
@@ -540,7 +540,7 @@ export function MarketplacePostDetail({ postId }: { postId: string }) {
                     {t(`marketplace-verification-${post.verification_level}`)}
                   </Badge>
                 )}
-                <p className="text-[11px] text-muted-foreground leading-relaxed border-t border-border/40 pt-3">
+                <p className="text-xs text-muted-foreground leading-relaxed border-t border-border/40 pt-3">
                   {t("marketplace-detail-contact-hint")}
                 </p>
               </CardContent>

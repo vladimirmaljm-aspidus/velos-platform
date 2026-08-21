@@ -239,10 +239,10 @@ export function VerificationLogsView() {
                   const mapUrl = mapLinkForRow(log);
                   return (
                     <TableRow key={log.id}>
-                      <TableCell className="font-mono text-[11px]">{log.verification_code}</TableCell>
+                      <TableCell className="font-mono text-xs">{log.verification_code}</TableCell>
                       <TableCell className="text-xs">{log.document_type || "—"}</TableCell>
-                      <TableCell className="font-mono text-[11px]">{log.document_number || "—"}</TableCell>
-                      <TableCell className="font-mono text-[11px]">{log.ip || "—"}</TableCell>
+                      <TableCell className="font-mono text-xs">{log.document_number || "—"}</TableCell>
+                      <TableCell className="font-mono text-xs">{log.ip || "—"}</TableCell>
                       <TableCell>
                         <div className="text-xs space-y-0.5">
                           {log.country && <div className="font-medium">{log.country}</div>}
@@ -256,12 +256,12 @@ export function VerificationLogsView() {
                             <DeviceIcon type={log.device_type} />
                             <span>{log.device_name || log.device_type || "—"}</span>
                           </div>
-                          {log.os && <div className="text-muted-foreground text-[11px]">{log.os}</div>}
+                          {log.os && <div className="text-muted-foreground text-xs">{log.os}</div>}
                         </div>
                       </TableCell>
                       <TableCell className="text-xs">{log.browser || "—"}</TableCell>
                       <TableCell>
-                        <Badge variant="outline" className={`text-[11px] ${RESULT_BADGE[log.result]}`}>
+                        <Badge variant="outline" className={`text-xs ${RESULT_BADGE[log.result]}`}>
                           {log.result}
                         </Badge>
                       </TableCell>

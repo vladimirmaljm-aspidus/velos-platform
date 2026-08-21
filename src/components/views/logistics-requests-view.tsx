@@ -270,7 +270,7 @@ export function LogisticsRequestsView() {
                         {r.cargo_description || "—"}
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className={cn("text-[10px] capitalize", STATUS_STYLE[r.status])}>{statusLabel(locale, r.status)}</Badge>
+                        <Badge variant="outline" className={cn("text-xs capitalize", STATUS_STYLE[r.status])}>{statusLabel(locale, r.status)}</Badge>
                       </TableCell>
                       <TableCell className="text-right text-xs text-muted-foreground" title={fmtDateTime(r.created_at)}>{fmtRelative(r.created_at)}</TableCell>
                     </TableRow>
@@ -419,7 +419,7 @@ function RequestDetailSheet({
           <SheetTitle className="flex items-center gap-2">
             <ModeIcon className={cn("size-5", meta?.color)} />
             {req.number}
-            <Badge variant="outline" className={cn("text-[10px] capitalize ml-2", STATUS_STYLE[req.status])}>{statusLabel(locale, req.status)}</Badge>
+            <Badge variant="outline" className={cn("text-xs capitalize ml-2", STATUS_STYLE[req.status])}>{statusLabel(locale, req.status)}</Badge>
           </SheetTitle>
           <SheetDescription>
             {partner?.name || req.partner_id.slice(0, 8)} · {modeLabel}
@@ -459,10 +459,10 @@ function RequestDetailSheet({
               {req.hs_codes && <p className="text-xs"><span className="text-muted-foreground">{t(locale, "log-field-hs-codes")}</span> {req.hs_codes}</p>}
               {req.cargo_value != null && <p className="text-xs"><span className="text-muted-foreground">{t(locale, "log-field-value")}</span> {req.cargo_value} {req.cargo_currency}</p>}
               <div className="flex flex-wrap gap-1 mt-1">
-                {req.is_hazardous && <Badge variant="destructive" className="text-[10px]">{t(locale, "log-badge-hazardous")}</Badge>}
-                {req.is_temperature_controlled && <Badge variant="outline" className="text-[10px]">{t(locale, "log-badge-temp-controlled")} {req.temperature_range || t(locale, "log-badge-controlled")}</Badge>}
-                {req.insurance_required && <Badge variant="outline" className="text-[10px]">{t(locale, "log-badge-insurance")}</Badge>}
-                {req.urgency !== "normal" && <Badge variant="outline" className="text-[10px] capitalize">{req.urgency}</Badge>}
+                {req.is_hazardous && <Badge variant="destructive" className="text-xs">{t(locale, "log-badge-hazardous")}</Badge>}
+                {req.is_temperature_controlled && <Badge variant="outline" className="text-xs">{t(locale, "log-badge-temp-controlled")} {req.temperature_range || t(locale, "log-badge-controlled")}</Badge>}
+                {req.insurance_required && <Badge variant="outline" className="text-xs">{t(locale, "log-badge-insurance")}</Badge>}
+                {req.urgency !== "normal" && <Badge variant="outline" className="text-xs capitalize">{req.urgency}</Badge>}
               </div>
             </div>
           </section>
@@ -579,7 +579,7 @@ function RequestDetailSheet({
 
               {/* Tracking + carrier — most useful once the shipment is in progress. */}
               <div className="pt-2 border-t">
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">{t(locale, "log-shipment-tracking")}</p>
+                <p className="text-xs uppercase tracking-wider text-muted-foreground mb-2">{t(locale, "log-shipment-tracking")}</p>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <Label className="text-xs">{t(locale, "log-field-carrier")}</Label>
@@ -669,7 +669,7 @@ function AddressCard({ title, data, locale }: { title: string; data: any; locale
   const mapsUrl = bits ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(bits)}` : null;
   return (
     <div className="rounded-lg border p-3 text-sm space-y-1">
-      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{title}</p>
+      <p className="text-xs uppercase tracking-wider text-muted-foreground">{title}</p>
       <p className="font-medium">{data.company || "—"}</p>
       <p className="text-xs text-muted-foreground">{bits || "—"}</p>
       {data.port && <p className="text-xs"><span className="text-muted-foreground">{t(locale, "log-field-port")}</span> {data.port}</p>}
@@ -722,7 +722,7 @@ function TimelineList({ events, loading, locale }: { events: LogisticsEvent[]; l
                 {e.from_status && e.to_status && e.from_status !== e.to_status && (
                   <span className="text-muted-foreground">{e.from_status} → {e.to_status}</span>
                 )}
-                <Badge variant="outline" className="text-[10px] capitalize">{e.actor_role}</Badge>
+                <Badge variant="outline" className="text-xs capitalize">{e.actor_role}</Badge>
                 <span className="text-muted-foreground" title={fmtDateTime(e.created_at)}>{fmtRelative(e.created_at)}</span>
               </div>
               {e.message && <p className="text-muted-foreground mt-0.5">{e.message}</p>}
@@ -737,7 +737,7 @@ function TimelineList({ events, loading, locale }: { events: LogisticsEvent[]; l
 function StatTile({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-xl border border-border/60 p-3 bg-card">
-      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="text-xs uppercase tracking-wider text-muted-foreground">{label}</p>
       <p className="text-xl font-bold tabular mt-0.5">{value.toLocaleString()}</p>
     </div>
   );

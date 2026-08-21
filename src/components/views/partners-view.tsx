@@ -463,6 +463,7 @@ export function PartnersView() {
           ) : (
             <>
               <div className="max-h-[calc(100vh-340px)] overflow-y-auto custom-scroll">
+                <div className="overflow-x-auto">
                 <Table>
                   <TableHeader className="sticky top-0 bg-card z-10">
                     <TableRow>
@@ -568,6 +569,7 @@ export function PartnersView() {
                     ))}
                   </TableBody>
                 </Table>
+                </div>
               </div>
 
               {/* Pagination */}
@@ -921,15 +923,15 @@ function PartnerDetail({ partner, deals }: { partner: Partner; deals: any[] }) {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 gap-2 mb-4">
+      <div className="grid grid-cols-2 gap-3 mb-4">
         <Card className="border-border/60 shadow-soft rounded-xl">
-          <CardContent className="p-3">
+          <CardContent className="p-4">
             <p className="text-xs text-muted-foreground">{t("crm-risk")}</p>
             <p className={`text-2xl font-semibold tabular ${riskColor(partner.risk_score)}`}>{partner.risk_score}</p>
           </CardContent>
         </Card>
         <Card className="border-border/60 shadow-soft rounded-xl">
-          <CardContent className="p-3">
+          <CardContent className="p-4">
             <p className="text-xs text-muted-foreground">{t("crm-deals-tab")}</p>
             <p className="text-2xl font-semibold tabular">{fmtNumber(deals.length)}</p>
           </CardContent>
@@ -1398,8 +1400,8 @@ function PartnerDetail({ partner, deals }: { partner: Partner; deals: any[] }) {
 
       {/* Activate Portal Dialog */}
       <Dialog open={showActivateDialog} onOpenChange={setShowActivateDialog}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-lg max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
             <DialogTitle className="flex items-center gap-2">
               <Zap className="size-5" />
               {t("crm-activate-portal-access")}
@@ -1409,7 +1411,8 @@ function PartnerDetail({ partner, deals }: { partner: Partner; deals: any[] }) {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-5 py-2">
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
+          <div className="space-y-5">
             {/* Portal Email */}
             <div className="space-y-2">
               <Label htmlFor="portal-email">{t("crm-portal-email")}</Label>
@@ -1453,7 +1456,7 @@ function PartnerDetail({ partner, deals }: { partner: Partner; deals: any[] }) {
                       <p className="text-xs text-muted-foreground mt-0.5">{info.description}</p>
                       <div className="flex flex-wrap gap-1 mt-2">
                         {info.features.map((f) => (
-                          <Badge key={f} variant={isSelected ? "secondary" : "outline"} className="text-[10px] px-1.5 py-0">
+                          <Badge key={f} variant={isSelected ? "secondary" : "outline"} className="text-xs px-1.5 py-0">
                             {f}
                           </Badge>
                         ))}
@@ -1464,8 +1467,9 @@ function PartnerDetail({ partner, deals }: { partner: Partner; deals: any[] }) {
               </div>
             </div>
           </div>
+          </div>
 
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4 gap-2 sm:gap-0">
             <Button variant="outline" onClick={() => setShowActivateDialog(false)}>
               {t("cancel")}
             </Button>
@@ -1593,16 +1597,16 @@ function PartnerFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="xl">
-        <DialogHeader>
+      <DialogContent size="xl" className="max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle>{partner ? t("crm-edit-partner") : t("crm-new-partner")}</DialogTitle>
           <DialogDescription>
             {partner ? t("crm-update-partner-info") : quickCreate ? t("crm-quick-create-basics") : t("crm-add-detailed-partner-info")}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="max-h-[70vh] overflow-y-auto pr-1 custom-scroll">
-          <div className="space-y-4 py-2">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 custom-scroll">
+          <div className="space-y-4">
 
             {/* Quick Create Toggle (only for new partners) */}
             {!isEditing && (
@@ -1807,7 +1811,7 @@ function PartnerFormDialog({
                       {moreOpen ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
                       {t("crm-more-details")}
                       {!moreOpen && (form.address_line || form.city || form.tax_id || form.bank_name || form.notes || form.contact_name) && (
-                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{t("crm-filled")}</Badge>
+                        <Badge variant="secondary" className="text-xs px-1.5 py-0">{t("crm-filled")}</Badge>
                       )}
                     </button>
                   </CollapsibleTrigger>
@@ -1998,7 +2002,7 @@ function PartnerFormDialog({
           </div>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>{t("cancel")}</Button>
           <Button onClick={save} disabled={saving}>
             {saving ? t("crm-saving-ellipsis") : (partner ? t("crm-save-changes") : quickCreate ? t("crm-create-partner") : t("crm-create-partner"))}

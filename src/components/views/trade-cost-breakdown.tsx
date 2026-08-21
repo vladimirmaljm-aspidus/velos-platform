@@ -318,7 +318,7 @@ export function CostBreakdownPanel(props: CostBreakdownPanelProps) {
           </span>
         </CardTitle>
         {displayCurrency !== (sellCurrency || "USD").toUpperCase() && (
-          <p className="text-[10px] text-muted-foreground flex items-center gap-1.5 mt-1">
+          <p className="text-xs text-muted-foreground flex items-center gap-1.5 mt-1">
             <span className="font-medium">1 {sellCurrency} = {displayRate.toFixed(4)} {displayCurrency}</span>
             <span className="opacity-50">·</span>
             <span>{rateMapLoading ? t("misc-fetching-live") : (rateMapAt ? t("misc-updated-time").replace("${time}", new Date(rateMapAt).toLocaleTimeString()) : t("misc-no-rate-available"))}</span>
@@ -393,7 +393,7 @@ export function CostBreakdownPanel(props: CostBreakdownPanelProps) {
                       </span>
                     </div>
                     {isForeign && (
-                      <div className="flex justify-between text-[10px] text-blue-600 dark:text-blue-400">
+                      <div className="flex justify-between text-xs text-blue-600 dark:text-blue-400">
                         <span className="italic">
                           FX {line.fx_rate?.toFixed(4) || "—"} →
                         </span>
@@ -701,13 +701,13 @@ export function CostBreakdownPanel(props: CostBreakdownPanelProps) {
           <div className="flex items-center gap-1.5 text-xs font-semibold uppercase text-muted-foreground">
             <Gauge className="size-3" /> {t("misc-scenario-analysis")}
           </div>
-          <p className="text-[10px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             {t("misc-scenario-desc")}
           </p>
           <div className="grid grid-cols-3 gap-2">
             {/* Best case */}
             <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900 rounded p-2 text-center">
-              <div className="text-[10px] text-muted-foreground">{t("misc-best-case")}</div>
+              <div className="text-xs text-muted-foreground">{t("misc-best-case")}</div>
               <div
                 className={cn(
                   "font-mono font-semibold text-xs",
@@ -719,7 +719,7 @@ export function CostBreakdownPanel(props: CostBreakdownPanelProps) {
             </div>
             {/* Expected */}
             <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 rounded p-2 text-center">
-              <div className="text-[10px] text-muted-foreground">{t("misc-expected")}</div>
+              <div className="text-xs text-muted-foreground">{t("misc-expected")}</div>
               <div
                 className={cn(
                   "font-mono font-semibold text-xs",
@@ -731,7 +731,7 @@ export function CostBreakdownPanel(props: CostBreakdownPanelProps) {
             </div>
             {/* Worst case */}
             <div className="bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-900 rounded p-2 text-center">
-              <div className="text-[10px] text-muted-foreground">{t("misc-worst-case")}</div>
+              <div className="text-xs text-muted-foreground">{t("misc-worst-case")}</div>
               <div
                 className={cn(
                   "font-mono font-semibold text-xs",
@@ -742,7 +742,7 @@ export function CostBreakdownPanel(props: CostBreakdownPanelProps) {
               </div>
             </div>
           </div>
-          <div className="flex justify-between text-[10px] text-muted-foreground pt-1">
+          <div className="flex justify-between text-xs text-muted-foreground pt-1">
             <span>{t("misc-variance-spread")}</span>
             <span className="font-mono">
               ±{fmtMoney(halfSpread, sellCurrency)}
@@ -810,7 +810,7 @@ export function CostBreakdownPanel(props: CostBreakdownPanelProps) {
                   title={`Profit: ${fmtMoney(netProfit, sellCurrency)}`}
                 />
               </div>
-              <div className="flex flex-wrap gap-2 text-[10px] text-muted-foreground">
+              <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1">
                   <span className="w-2 h-2 rounded-full bg-blue-500" /> {t("misc-legend-buy")}
                 </span>

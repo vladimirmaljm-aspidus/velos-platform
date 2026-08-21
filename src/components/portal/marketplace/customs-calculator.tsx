@@ -198,7 +198,7 @@ function ResultCell({
 }) {
   return (
     <div className={`rounded-md p-2 ${highlight ? "bg-emerald-500/10" : "bg-muted/30"}`}>
-      <p className="text-[10px] uppercase tracking-wide text-muted-foreground flex items-center gap-1">
+      <p className="text-xs uppercase tracking-wide text-muted-foreground flex items-center gap-1">
         {Icon && <Icon className="h-3 w-3" />}
         {label}
       </p>

@@ -306,7 +306,7 @@ export function IncidentManagement() {
                         <Badge variant="outline" className="text-xs">{TYPE_LABEL[i.type]}</Badge>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className={`text-[10px] uppercase tracking-wider ${SEVERITY_BADGE[i.severity]}`}>
+                        <Badge variant="outline" className={`text-xs uppercase tracking-wider ${SEVERITY_BADGE[i.severity]}`}>
                           {i.severity}
                         </Badge>
                       </TableCell>
@@ -401,14 +401,14 @@ function CreateIncidentDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-lg max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle>Create Security Incident</DialogTitle>
           <DialogDescription>
             Document a security event for tracking. If type is &quot;data_breach&quot;, the GDPR Art. 33 72-hour notification deadline is auto-computed.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-3">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-3">
           <div className="space-y-1.5">
             <Label>Title</Label>
             <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Suspected unauthorized access to vault" />
@@ -417,7 +417,7 @@ function CreateIncidentDialog({
             <Label>Description</Label>
             <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} placeholder="What happened, what was affected, what's the initial assessment." />
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="space-y-1.5">
               <Label>Type</Label>
               <Select value={type} onValueChange={(v) => setType(v as IncidentType)}>
@@ -447,7 +447,7 @@ function CreateIncidentDialog({
             </div>
           </div>
         </div>
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button onClick={handleSave} disabled={saving || !title.trim()} className="bg-gradient-emerald text-white">
             {saving && <Loader2 className="size-4 mr-1.5 animate-spin" />}
@@ -506,12 +506,12 @@ function IncidentDetailDialog({
 
   return (
     <Dialog open={!!incident} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto custom-scroll">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle className="flex items-center gap-2 flex-wrap">
             <ShieldAlert className="size-4 text-destructive" />
             {incident.description.slice(0, 100) || incident.id}
-            <Badge variant="outline" className={`text-[10px] uppercase tracking-wider ${SEVERITY_BADGE[incident.severity]}`}>
+            <Badge variant="outline" className={`text-xs uppercase tracking-wider ${SEVERITY_BADGE[incident.severity]}`}>
               {incident.severity}
             </Badge>
           </DialogTitle>
@@ -521,7 +521,7 @@ function IncidentDetailDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
           {incident.description && (
             <div className="bg-muted/40 rounded-md p-3 text-sm whitespace-pre-wrap">{incident.description}</div>
           )}
@@ -605,7 +605,7 @@ function IncidentDetailDialog({
           </div>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
         </DialogFooter>
       </DialogContent>
@@ -622,7 +622,7 @@ function Tile({ label, value, tone }: { label: string; value: string; tone: "ok"
   }[tone];
   return (
     <div className={`rounded-xl border ${cls} p-3`}>
-      <p className="text-[10px] uppercase tracking-wider opacity-70">{label}</p>
+      <p className="text-xs uppercase tracking-wider opacity-70">{label}</p>
       <p className="text-xl font-bold tabular mt-1">{value}</p>
     </div>
   );

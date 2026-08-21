@@ -192,7 +192,7 @@ export function PortalNotifications() {
                       <span className="text-xs text-muted-foreground tabular">
                         {fmtRelative(notif.created_at)}
                       </span>
-                      <Badge variant="outline" className="text-[10px] capitalize px-1.5 py-0">
+                      <Badge variant="outline" className="text-xs capitalize px-1.5 py-0">
                         {notif.type.replace(/_/g, " ")}
                       </Badge>
 

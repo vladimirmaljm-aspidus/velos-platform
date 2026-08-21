@@ -175,7 +175,7 @@ export function CarbonFootprint() {
             <div className="flex items-center gap-3 rounded-md bg-gradient-to-br from-emerald-500/10 to-blue-500/10 p-4">
               <Leaf className="h-8 w-8 text-emerald-600 shrink-0" />
               <div className="flex-1">
-                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">
                   {t("marketplace-carbon-estimated-co2")}
                 </p>
                 <p className="text-2xl font-bold tracking-tight">
@@ -260,7 +260,7 @@ function ResultCell({
 }) {
   return (
     <div className="rounded-md bg-muted/30 p-2">
-      <p className="text-[10px] uppercase tracking-wide text-muted-foreground flex items-center gap-1">
+      <p className="text-xs uppercase tracking-wide text-muted-foreground flex items-center gap-1">
         <Icon className="h-3 w-3" />
         {label}
       </p>

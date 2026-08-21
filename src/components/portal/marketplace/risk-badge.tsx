@@ -131,7 +131,7 @@ export function RiskBadge({ postId, compact = true, className }: RiskBadgeProps)
               {triggered.map((f) => (
                 <li key={f.factor} className="text-muted-foreground">
                   <span className="font-medium text-foreground">• {t(`marketplace-risk-factor-${f.factor}`)}</span>
-                  <span className="block text-[10px] mt-0.5">{f.description}</span>
+                  <span className="block text-xs mt-0.5">{f.description}</span>
                 </li>
               ))}
             </ul>

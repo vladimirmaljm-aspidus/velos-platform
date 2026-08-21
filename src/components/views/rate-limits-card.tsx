@@ -230,13 +230,13 @@ export function RateLimitsCard() {
                       <Label htmlFor={String(f.attemptsKey)} className="text-xs">
                         {f.label}
                       </Label>
-                      <p className="text-[11px] text-muted-foreground leading-snug">
+                      <p className="text-xs text-muted-foreground leading-snug">
                         {f.hint}
                       </p>
                     </div>
                     <div className="flex items-end gap-2">
                       <div className="space-y-1">
-                        <Label htmlFor={String(f.attemptsKey)} className="text-[11px] text-muted-foreground">
+                        <Label htmlFor={String(f.attemptsKey)} className="text-xs text-muted-foreground">
                           Max attempts
                         </Label>
                         <Input
@@ -249,7 +249,7 @@ export function RateLimitsCard() {
                         />
                       </div>
                       <div className="space-y-1">
-                        <Label htmlFor={String(f.windowKey)} className="text-[11px] text-muted-foreground">
+                        <Label htmlFor={String(f.windowKey)} className="text-xs text-muted-foreground">
                           Window (min)
                         </Label>
                         <Input
@@ -276,7 +276,7 @@ export function RateLimitsCard() {
                 <h4 className="text-sm font-medium">Middleware caps (hardcoded)</h4>
                 <Separator className="flex-1" />
               </div>
-              <p className="text-[11px] text-muted-foreground leading-snug">
+              <p className="text-xs text-muted-foreground leading-snug">
                 Edge-middleware rate cap on /api/auth/login + /api/portal/login.
                 Applied before the request reaches your app code, so it can't read
                 DB-backed settings. Hardcoded at 30 req/min per IP for hot-path
@@ -284,7 +284,7 @@ export function RateLimitsCard() {
               </p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <Label className="text-[11px] text-muted-foreground">
+                  <Label className="text-xs text-muted-foreground">
                     Staff login (req/min)
                   </Label>
                   <div className="h-9 px-3 flex items-center rounded-md border border-input bg-muted/40 text-sm tabular">
@@ -292,7 +292,7 @@ export function RateLimitsCard() {
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-[11px] text-muted-foreground">
+                  <Label className="text-xs text-muted-foreground">
                     Portal login (req/min)
                   </Label>
                   <div className="h-9 px-3 flex items-center rounded-md border border-input bg-muted/40 text-sm tabular">

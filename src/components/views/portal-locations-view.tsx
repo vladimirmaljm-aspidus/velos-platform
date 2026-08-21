@@ -114,9 +114,9 @@ function statusBadge(status: string) {
 }
 
 function sourceBadge(source: PortalLocation["source"]) {
-  if (source === "gps") return <Badge variant="default" className="text-[10px]">GPS</Badge>;
-  if (source === "ip") return <Badge variant="secondary" className="text-[10px]">IP</Badge>;
-  return <Badge variant="outline" className="text-[10px]">Unknown</Badge>;
+  if (source === "gps") return <Badge variant="default" className="text-xs">GPS</Badge>;
+  if (source === "ip") return <Badge variant="secondary" className="text-xs">IP</Badge>;
+  return <Badge variant="outline" className="text-xs">Unknown</Badge>;
 }
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -225,7 +225,7 @@ export function PortalLocationsView() {
                             <User className="size-4 text-muted-foreground shrink-0" />
                             <div className="min-w-0">
                               <p className="font-medium truncate">{loc.email || "—"}</p>
-                              <p className="text-[11px] text-muted-foreground">
+                              <p className="text-xs text-muted-foreground">
                                 {t("portal-loc-tier-prefix")} {loc.tier}
                               </p>
                             </div>
@@ -452,7 +452,7 @@ function StatTile({
         alert && value > 0 && "border-destructive/40 bg-destructive/5"
       )}
     >
-      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+      <p className="text-xs uppercase tracking-wider text-muted-foreground">
         {label}
       </p>
       <p

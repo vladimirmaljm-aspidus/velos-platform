@@ -103,7 +103,7 @@ export function MarketNewsPanel({ category, num = 10 }: MarketNewsPanelProps) {
         ) : (
           <>
             {q.data.source === "cache" && (
-              <p className="text-[10px] uppercase tracking-wide text-muted-foreground text-center">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground text-center">
                 {t("marketplace-intel-news-cached")}
               </p>
             )}
@@ -129,7 +129,7 @@ export function MarketNewsPanel({ category, num = 10 }: MarketNewsPanelProps) {
                       {item.snippet}
                     </p>
                   )}
-                  <div className="flex items-center gap-2 mt-2 text-[10px] text-muted-foreground">
+                  <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
                     <span className="font-medium">{item.source}</span>
                     {item.date && (
                       <>

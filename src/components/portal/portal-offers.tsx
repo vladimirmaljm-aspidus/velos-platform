@@ -159,6 +159,7 @@ export function PortalOffers() {
           <EmptyOffers t={t} />
         ) : (
           <div className="max-h-[calc(100vh-280px)] overflow-y-auto custom-scroll">
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader className="sticky top-0 bg-card z-10">
                 <TableRow className="hover:bg-transparent">
@@ -186,7 +187,7 @@ export function PortalOffers() {
                       <TableCell>
                         <Badge
                           className={cn(
-                            "text-[11px] gap-1 capitalize",
+                            "text-xs gap-1 capitalize",
                             STATUS_STYLES[o.status]
                           )}
                         >
@@ -256,6 +257,7 @@ export function PortalOffers() {
                 })}
               </TableBody>
             </Table>
+            </div>
           </div>
         )}
       </div>
@@ -382,6 +384,7 @@ function OfferDetail({
             </span>
           </h3>
           <div className="rounded-lg border border-border/60 overflow-hidden shadow-soft">
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader className="bg-muted/40">
                 <TableRow className="hover:bg-transparent">
@@ -401,7 +404,7 @@ function OfferDetail({
                   <TableRow key={idx}>
                     <TableCell>
                       <p className="text-sm font-medium">{it.product_name}</p>
-                      <p className="text-[11px] text-muted-foreground font-mono tabular">
+                      <p className="text-xs text-muted-foreground font-mono tabular">
                         {it.sku}
                       </p>
                     </TableCell>
@@ -419,6 +422,7 @@ function OfferDetail({
                 ))}
               </TableBody>
             </Table>
+            </div>
           </div>
         </div>
 
@@ -446,7 +450,7 @@ function OfferDetail({
           <div className="space-y-3">
             {offer.notes && (
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
                   {t("portal-detail-notes")}
                 </p>
                 <p className="text-sm text-muted-foreground leading-relaxed">{offer.notes}</p>
@@ -454,7 +458,7 @@ function OfferDetail({
             )}
             {offer.terms && (
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
                   {t("portal-detail-terms")}
                 </p>
                 <p className="text-sm text-muted-foreground leading-relaxed">{offer.terms}</p>
@@ -466,7 +470,7 @@ function OfferDetail({
         {/* Accept / Reject actions — only available when offer is awaiting a response. */}
         {canRespond && (
           <div className="border-t border-border/60 pt-4 space-y-2">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               {t("portal-detail-your-response")}
             </p>
             <div className="grid grid-cols-2 gap-2">
@@ -488,7 +492,7 @@ function OfferDetail({
                 {responding ? "…" : t("portal-detail-reject")}
               </Button>
             </div>
-            <p className="text-[11px] text-muted-foreground leading-relaxed">
+            <p className="text-xs text-muted-foreground leading-relaxed">
               {t("portal-detail-accept-desc")}
             </p>
           </div>
@@ -538,7 +542,7 @@ function SummaryTile({
 }) {
   return (
     <div className="rounded-lg border border-border/60 bg-card p-3 shadow-soft">
-      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <Icon className="size-3" />
         {label}
       </div>

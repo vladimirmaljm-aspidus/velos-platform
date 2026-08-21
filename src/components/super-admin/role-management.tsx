@@ -172,18 +172,18 @@ function RoleOverridesCard() {
                   </TableCell>
                   <TableCell>
                     {o.tenant_id ? (
-                      <code className="text-[11px] text-muted-foreground">{o.tenant_id.slice(0, 8)}…</code>
+                      <code className="text-xs text-muted-foreground">{o.tenant_id.slice(0, 8)}…</code>
                     ) : (
-                      <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 text-[10px] uppercase">Platform</Badge>
+                      <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 text-xs uppercase">Platform</Badge>
                     )}
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-1 max-w-md">
                       {o.permissions.slice(0, 5).map((p) => (
-                        <code key={p} className="text-[10px] bg-muted/60 px-1 py-0.5 rounded">{p}</code>
+                        <code key={p} className="text-xs bg-muted/60 px-1 py-0.5 rounded">{p}</code>
                       ))}
                       {o.permissions.length > 5 && (
-                        <span className="text-[10px] text-muted-foreground">+{o.permissions.length - 5} more</span>
+                        <span className="text-xs text-muted-foreground">+{o.permissions.length - 5} more</span>
                       )}
                     </div>
                   </TableCell>
@@ -258,12 +258,13 @@ function CreateOverrideDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle>Create Role Override</DialogTitle>
           <DialogDescription>Grant or deny a set of permissions for a specific role, optionally scoped to one tenant.</DialogDescription>
         </DialogHeader>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="space-y-1.5">
             <Label>Role</Label>
             <Select value={role} onValueChange={setRole}>
@@ -288,11 +289,11 @@ function CreateOverrideDialog({
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-1.5 col-span-2">
+          <div className="space-y-1.5 sm:col-span-2">
             <Label>Tenant ID (optional — leave blank for platform-wide)</Label>
             <Input value={tenantId} onChange={(e) => setTenantId(e.target.value)} placeholder="e.g. 7e3f8c2a-…" />
           </div>
-          <div className="space-y-1.5 col-span-2">
+          <div className="space-y-1.5 sm:col-span-2">
             <Label>Notes</Label>
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Why this override? (auditable)" />
           </div>
@@ -321,7 +322,8 @@ function CreateOverrideDialog({
             ))}
           </div>
         </div>
-        <DialogFooter>
+        </div>
+        <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button onClick={handleSave} disabled={saving || perms.length === 0}>
             {saving && <Loader2 className="size-4 mr-1.5 animate-spin" />}
@@ -448,7 +450,7 @@ function SodMatrixCard() {
                   <Input
                     value={r.permissions_a.join(", ")}
                     onChange={(e) => patchRule(r.id, { permissions_a: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })}
-                    className="h-8 font-mono text-[11px]"
+                    className="h-8 font-mono text-xs"
                     placeholder="invoices.create"
                   />
                 </TableCell>
@@ -456,7 +458,7 @@ function SodMatrixCard() {
                   <Input
                     value={r.permissions_b.join(", ")}
                     onChange={(e) => patchRule(r.id, { permissions_b: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })}
-                    className="h-8 font-mono text-[11px]"
+                    className="h-8 font-mono text-xs"
                     placeholder="invoices.send"
                   />
                 </TableCell>
@@ -536,7 +538,7 @@ function PermissionCatalogCard() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5 max-h-96 overflow-y-auto custom-scroll border rounded-md p-2">
           {filtered.map((p) => (
             <div key={p.key} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-muted/40">
-              <code className="text-[11px] font-mono flex-1 truncate">{p.key}</code>
+              <code className="text-xs font-mono flex-1 truncate">{p.key}</code>
               <Badge variant="outline" className={`text-[9px] uppercase tracking-wider ${scopeBadge(p.scope)}`}>
                 {p.scope}
               </Badge>

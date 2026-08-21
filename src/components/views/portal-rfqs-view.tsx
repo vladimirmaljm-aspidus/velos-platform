@@ -277,7 +277,7 @@ export function PortalRfqsView() {
                         </div>
                       </TableCell>
                       <TableCell className="hidden lg:table-cell">
-                        <Badge variant="outline" className="text-[11px]">
+                        <Badge variant="outline" className="text-xs">
                           {categoryLabel(rfq.category)}
                         </Badge>
                       </TableCell>
@@ -762,7 +762,7 @@ function InfoRow({
     <div className="flex items-start gap-2">
       <Icon className="size-3.5 text-muted-foreground mt-0.5 shrink-0" />
       <div className="min-w-0 flex-1">
-        <p className="text-[11px] text-muted-foreground">{label}</p>
+        <p className="text-xs text-muted-foreground">{label}</p>
         <p className="text-sm break-words">{value}</p>
       </div>
     </div>

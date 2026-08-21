@@ -155,7 +155,7 @@ function VerifyByCodeTab() {
               className="font-mono"
               autoCapitalize="characters"
             />
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               {t("admin-verify-code-hint")}
             </p>
           </div>
@@ -258,7 +258,7 @@ function VerifyResultView({ result }: { result: VerifyResult }) {
 function DetailField({ icon: Icon, label, value, mono }: { icon: any; label: string; value: string; mono?: boolean }) {
   return (
     <div className="rounded-lg border border-border/60 bg-card p-3">
-      <div className="text-[10px] text-muted-foreground uppercase tracking-wide flex items-center gap-1 mb-1">
+      <div className="text-xs text-muted-foreground uppercase tracking-wide flex items-center gap-1 mb-1">
         <Icon className="size-3" /> {label}
       </div>
       <div className={`text-sm font-medium truncate ${mono ? "font-mono" : ""}`}>{value}</div>
@@ -410,11 +410,11 @@ function VerificationRecordView({ v }: { v: DocumentVerification }) {
           </div>
         </div>
         <div className="flex-1 min-w-0 text-center sm:text-left">
-          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{t("admin-verify-code-label")}</div>
+          <div className="text-xs uppercase tracking-wide text-muted-foreground">{t("admin-verify-code-label")}</div>
           <div className="font-mono text-sm font-semibold break-all bg-muted/40 rounded-md p-2 border border-border/60">
             {code}
           </div>
-          <div className="text-[11px] text-muted-foreground mt-2 flex items-center justify-center sm:justify-start gap-1.5">
+          <div className="text-xs text-muted-foreground mt-2 flex items-center justify-center sm:justify-start gap-1.5">
             <ScanLine className="size-3" /> {t("admin-verify-scan-hint")}
           </div>
         </div>
@@ -431,7 +431,7 @@ function VerificationRecordView({ v }: { v: DocumentVerification }) {
 
       <div className="space-y-1.5">
         <Label className="text-xs">{t("admin-verify-stored-hash")}</Label>
-        <div className="font-mono text-[10px] break-all bg-muted/40 rounded-md p-2 border border-border/60">
+        <div className="font-mono text-xs break-all bg-muted/40 rounded-md p-2 border border-border/60">
           {v.pdf_hash}
         </div>
       </div>
@@ -697,12 +697,12 @@ function HashRow({ label, value, match }: { label: string; value: string; match:
       <div className="flex items-center justify-between">
         <Label className="text-xs">{label}</Label>
         {match ? (
-          <Badge variant="outline" className="text-[10px] bg-chart-1/10 text-chart-1 border-chart-1/30">{t("admin-verify-match")}</Badge>
+          <Badge variant="outline" className="text-xs bg-chart-1/10 text-chart-1 border-chart-1/30">{t("admin-verify-match")}</Badge>
         ) : (
-          <Badge variant="outline" className="text-[10px] bg-destructive/10 text-destructive border-destructive/30">{t("admin-verify-differ")}</Badge>
+          <Badge variant="outline" className="text-xs bg-destructive/10 text-destructive border-destructive/30">{t("admin-verify-differ")}</Badge>
         )}
       </div>
-      <div className="font-mono text-[10px] break-all bg-muted/40 rounded-md p-2 border border-border/60">
+      <div className="font-mono text-xs break-all bg-muted/40 rounded-md p-2 border border-border/60">
         {value}
       </div>
     </div>

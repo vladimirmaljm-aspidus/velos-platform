@@ -367,6 +367,7 @@ export function DealsView() {
         <Card className="border-border/60 shadow-soft rounded-xl">
           <CardContent className="p-0">
             <div className="overflow-y-auto custom-scroll">
+              <div className="overflow-x-auto">
               <Table>
                 <TableHeader className="sticky top-0 bg-card z-10">
                   <TableRow>
@@ -422,6 +423,7 @@ export function DealsView() {
                   ))}
                 </TableBody>
               </Table>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -578,7 +580,7 @@ function PipelineView({
                       </div>
                       <div className="flex items-center justify-between gap-2 mt-2">
                         <Progress value={d.probability} className="h-1 w-16" />
-                        <span className="text-[11px] font-mono tabular text-muted-foreground">{d.probability}%</span>
+                        <span className="text-xs font-mono tabular text-muted-foreground">{d.probability}%</span>
                       </div>
                     </button>
                   ))}
@@ -830,7 +832,7 @@ function DealDetail({
                   <div key={x.label} className="p-2 rounded bg-muted/50">
                     <div className="flex items-center gap-1.5 mb-0.5">
                       <Icon className="size-3 text-muted-foreground" />
-                      <p className="text-[10px] text-muted-foreground">{x.label}</p>
+                      <p className="text-xs text-muted-foreground">{x.label}</p>
                     </div>
                     <p className={`text-xs font-medium font-mono tabular ${x.accent || ""}`}>{x.value}</p>
                   </div>
@@ -863,26 +865,26 @@ function DealDetail({
             <div className="grid grid-cols-3 gap-2">
               <div className="text-center p-2 rounded-lg bg-card/80 border border-border/40">
                 <DollarSign className="size-3.5 text-chart-3 mx-auto mb-1" />
-                <p className="text-[10px] text-muted-foreground">{t("crm-total-value")}</p>
+                <p className="text-xs text-muted-foreground">{t("crm-total-value")}</p>
                 <p className="text-xs font-semibold font-mono tabular">{fmtMoney(quickStats.totalDealsValue, quickStats.currency)}</p>
               </div>
               <div className="text-center p-2 rounded-lg bg-card/80 border border-border/40">
                 <Target className="size-3.5 text-chart-4 mx-auto mb-1" />
-                <p className="text-[10px] text-muted-foreground">{t("crm-win-rate")}</p>
+                <p className="text-xs text-muted-foreground">{t("crm-win-rate")}</p>
                 <p className="text-xs font-semibold font-mono tabular">{quickStats.winRate}%</p>
               </div>
               <div className="text-center p-2 rounded-lg bg-card/80 border border-border/40">
                 <TrendingUp className="size-3.5 text-chart-1 mx-auto mb-1" />
-                <p className="text-[10px] text-muted-foreground">{t("crm-avg-deal")}</p>
+                <p className="text-xs text-muted-foreground">{t("crm-avg-deal")}</p>
                 <p className="text-xs font-semibold font-mono tabular">{fmtMoney(quickStats.avgDealSize, quickStats.currency)}</p>
               </div>
             </div>
             {partnerCtx && partnerCtx.deals.length > 0 && (
               <div className="pt-1">
-                <p className="text-[10px] text-muted-foreground mb-1">{t("crm-recent-deals-won").replace("${won}", String(quickStats.wonDeals)).replace("${total}", String(quickStats.totalDeals))}</p>
+                <p className="text-xs text-muted-foreground mb-1">{t("crm-recent-deals-won").replace("${won}", String(quickStats.wonDeals)).replace("${total}", String(quickStats.totalDeals))}</p>
                 <div className="space-y-1 max-h-24 overflow-y-auto custom-scroll">
                   {partnerCtx.deals.slice(0, 5).map((d) => (
-                    <div key={d.id} className="flex items-center justify-between text-[11px] px-1.5 py-0.5 rounded bg-muted/40">
+                    <div key={d.id} className="flex items-center justify-between text-xs px-1.5 py-0.5 rounded bg-muted/40">
                       <span className="truncate max-w-[60%]">{d.title}</span>
                       <div className="flex items-center gap-1.5">
                         <span className="font-mono tabular text-muted-foreground">{fmtMoney(d.value, d.currency)}</span>
@@ -1227,15 +1229,15 @@ function DealFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="xl">
-        <DialogHeader>
+      <DialogContent size="xl" className="max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle>{deal ? t("crm-edit-deal") : t("crm-new-deal")}</DialogTitle>
           <DialogDescription>
             {deal ? t("crm-update-deal-details") : t("crm-create-deal-desc")}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="max-h-[70vh] overflow-y-auto pr-1 space-y-4 py-2">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
           {/* ===== Essential fields (always visible) ===== */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="md:col-span-2 space-y-1.5">
@@ -1267,7 +1269,7 @@ function DealFormDialog({
               <Label>{t("crm-value")}</Label>
               <Input type="number" min={0} step="0.01" value={form.value ?? 0} onChange={(e) => set("value", Number(e.target.value))} />
               {form.value && Number(form.value) > 0 && form.partner_id && (
-                <p className="text-[10px] text-chart-3 flex items-center gap-1">
+                <p className="text-xs text-chart-3 flex items-center gap-1">
                   <CheckCircle2 className="size-3" /> {t("crm-auto-staged-qualified")}
                 </p>
               )}
@@ -1287,7 +1289,7 @@ function DealFormDialog({
           {/* Auto-fill info card when partner is selected */}
           {selectedPartner && (
             <Card className="border-primary/20 bg-primary/5 shadow-soft rounded-xl">
-              <CardContent className="p-3">
+              <CardContent className="p-4">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="size-3.5 text-primary" />
@@ -1347,33 +1349,33 @@ function DealFormDialog({
                       </div>
                     ) : quickStats ? (
                       <div>
-                        <p className="text-[10px] font-medium text-muted-foreground mb-1.5">{t("crm-partner-quick-stats")}</p>
+                        <p className="text-xs font-medium text-muted-foreground mb-1.5">{t("crm-partner-quick-stats")}</p>
                         <div className="grid grid-cols-3 gap-2">
                           <div className="text-center p-1.5 rounded bg-card/80 border border-border/40">
                             <p className="text-[9px] text-muted-foreground">{t("crm-total-value")}</p>
-                            <p className="text-[11px] font-semibold font-mono tabular">{fmtMoney(quickStats.totalDealsValue, quickStats.currency)}</p>
+                            <p className="text-xs font-semibold font-mono tabular">{fmtMoney(quickStats.totalDealsValue, quickStats.currency)}</p>
                           </div>
                           <div className="text-center p-1.5 rounded bg-card/80 border border-border/40">
                             <p className="text-[9px] text-muted-foreground">{t("crm-win-rate")}</p>
-                            <p className="text-[11px] font-semibold font-mono tabular">{quickStats.winRate}%</p>
+                            <p className="text-xs font-semibold font-mono tabular">{quickStats.winRate}%</p>
                           </div>
                           <div className="text-center p-1.5 rounded bg-card/80 border border-border/40">
                             <p className="text-[9px] text-muted-foreground">{t("crm-avg-deal")}</p>
-                            <p className="text-[11px] font-semibold font-mono tabular">{fmtMoney(quickStats.avgDealSize, quickStats.currency)}</p>
+                            <p className="text-xs font-semibold font-mono tabular">{fmtMoney(quickStats.avgDealSize, quickStats.currency)}</p>
                           </div>
                         </div>
                       </div>
                     ) : (
-                      <p className="text-[10px] text-muted-foreground">{t("crm-no-historical-data-partner")}</p>
+                      <p className="text-xs text-muted-foreground">{t("crm-no-historical-data-partner")}</p>
                     )}
 
                     {/* Recent deals */}
                     {partnerCtx && partnerCtx.deals.length > 0 && (
                       <div>
-                        <p className="text-[10px] font-medium text-muted-foreground mb-1">{t("crm-recent-deals")}</p>
+                        <p className="text-xs font-medium text-muted-foreground mb-1">{t("crm-recent-deals")}</p>
                         <div className="space-y-1 max-h-28 overflow-y-auto custom-scroll">
                           {partnerCtx.deals.slice(0, 5).map((d) => (
-                            <div key={d.id} className="flex items-center justify-between text-[11px] px-2 py-1 rounded bg-muted/40">
+                            <div key={d.id} className="flex items-center justify-between text-xs px-2 py-1 rounded bg-muted/40">
                               <span className="truncate max-w-[55%]">{d.title}</span>
                               <div className="flex items-center gap-1.5">
                                 <span className="font-mono tabular text-muted-foreground">{fmtMoney(d.value, d.currency)}</span>
@@ -1390,10 +1392,10 @@ function DealFormDialog({
                     {/* Recent offers */}
                     {partnerCtx && partnerCtx.offers.length > 0 && (
                       <div>
-                        <p className="text-[10px] font-medium text-muted-foreground mb-1">{t("crm-recent-offers")}</p>
+                        <p className="text-xs font-medium text-muted-foreground mb-1">{t("crm-recent-offers")}</p>
                         <div className="space-y-1 max-h-28 overflow-y-auto custom-scroll">
                           {partnerCtx.offers.slice(0, 5).map((o) => (
-                            <div key={o.id} className="flex items-center justify-between text-[11px] px-2 py-1 rounded bg-muted/40">
+                            <div key={o.id} className="flex items-center justify-between text-xs px-2 py-1 rounded bg-muted/40">
                               <span className="truncate max-w-[55%]">{o.number}</span>
                               <div className="flex items-center gap-1.5">
                                 <span className="font-mono tabular text-muted-foreground">{fmtMoney(o.total, o.currency)}</span>
@@ -1432,7 +1434,7 @@ function DealFormDialog({
                     />
                   </div>
                   {form.stage && STAGE_PROBABILITY[form.stage] !== undefined && (
-                    <p className="text-[10px] text-muted-foreground">
+                    <p className="text-xs text-muted-foreground">
                       {t("crm-suggested-for")} {t(STAGE_LABEL_KEYS[form.stage])}: {STAGE_PROBABILITY[form.stage]}%
                     </p>
                   )}
@@ -1482,7 +1484,7 @@ function DealFormDialog({
                       onChange={(e) => set("exchange_rate", Number(e.target.value) as Deal["exchange_rate"])}
                       placeholder="1.00"
                     />
-                    <p className="text-[10px] text-muted-foreground">
+                    <p className="text-xs text-muted-foreground">
                       {t("crm-exchange-rate-desc")}
                     </p>
                   </div>
@@ -1512,7 +1514,7 @@ function DealFormDialog({
                       onChange={(e) => set("selling_price", Number(e.target.value) as Deal["selling_price"])}
                       placeholder="0.00"
                     />
-                    <p className="text-[10px] text-muted-foreground">{t("crm-selling-price-desc")}</p>
+                    <p className="text-xs text-muted-foreground">{t("crm-selling-price-desc")}</p>
                   </div>
                   <div className="space-y-1.5">
                     <Label>{t("crm-selling-currency")}</Label>
@@ -1556,41 +1558,41 @@ function DealFormDialog({
                     </div>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs">
                       <div>
-                        <p className="text-[10px] text-muted-foreground">{t("crm-buy-cost-total")}</p>
+                        <p className="text-xs text-muted-foreground">{t("crm-buy-cost-total")}</p>
                         <p className="font-mono tabular">{fmtMoney(formCalc.buyCost, form.purchase_currency || form.currency || "USD")}</p>
                       </div>
                       <div>
-                        <p className="text-[10px] text-muted-foreground">{t("crm-selling-price-total")}</p>
+                        <p className="text-xs text-muted-foreground">{t("crm-selling-price-total")}</p>
                         <p className="font-mono tabular">{fmtMoney(formCalc.sellingPrice, form.selling_currency || form.currency || "USD")}</p>
                       </div>
                       <div>
-                        <p className="text-[10px] text-muted-foreground">{t("crm-bank-costs")}</p>
+                        <p className="text-xs text-muted-foreground">{t("crm-bank-costs")}</p>
                         <p className="font-mono tabular">{fmtMoney(formCalc.bankCosts, form.currency || "USD")}</p>
                       </div>
                       <div>
-                        <p className="text-[10px] text-muted-foreground">{t("crm-other-costs")}</p>
+                        <p className="text-xs text-muted-foreground">{t("crm-other-costs")}</p>
                         <p className="font-mono tabular">{fmtMoney(formCalc.otherCosts, form.currency || "USD")}</p>
                       </div>
                       <div>
-                        <p className="text-[10px] text-muted-foreground">{t("crm-commission")}</p>
+                        <p className="text-xs text-muted-foreground">{t("crm-commission")}</p>
                         <p className="font-mono tabular">{fmtMoney(formCalc.commission, commissionPreview?.currency || form.currency || "USD")}</p>
                       </div>
                       <div>
-                        <p className="text-[10px] text-muted-foreground">{t("crm-exchange-rate")}</p>
+                        <p className="text-xs text-muted-foreground">{t("crm-exchange-rate")}</p>
                         <p className="font-mono tabular">{formCalc.exchangeRate}</p>
                       </div>
                       <div className="border-t pt-1">
-                        <p className="text-[10px] text-muted-foreground">{t("crm-total-cost")}</p>
+                        <p className="text-xs text-muted-foreground">{t("crm-total-cost")}</p>
                         <p className="font-mono tabular font-semibold">{fmtMoney(formCalc.totalCost, form.currency || "USD")}</p>
                       </div>
                       <div className="border-t pt-1">
-                        <p className="text-[10px] text-muted-foreground">{t("crm-profit")}</p>
+                        <p className="text-xs text-muted-foreground">{t("crm-profit")}</p>
                         <p className={`font-mono tabular font-semibold ${formCalc.profit >= 0 ? "text-chart-1" : "text-destructive"}`}>
                           {fmtMoney(formCalc.profit, form.currency || "USD")}
                         </p>
                       </div>
                       <div className="border-t pt-1">
-                        <p className="text-[10px] text-muted-foreground">{t("crm-margin-label")}</p>
+                        <p className="text-xs text-muted-foreground">{t("crm-margin-label")}</p>
                         <p className={`font-mono tabular font-semibold ${formCalc.marginPct >= 0 ? "text-chart-1" : "text-destructive"}`}>
                           {formCalc.marginPct.toFixed(1)}%
                         </p>
@@ -1641,7 +1643,7 @@ function DealFormDialog({
                 {/* Commission preview */}
                 {commissionPreview && form.commission_agent_id && (
                   <Card className="border-primary/20 bg-primary/5 shadow-soft rounded-xl">
-                    <CardContent className="p-3">
+                    <CardContent className="p-4">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <CheckCircle2 className="size-3.5 text-primary" />
@@ -1651,7 +1653,7 @@ function DealFormDialog({
                           {fmtMoney(commissionPreview.calculated_commission, commissionPreview.currency)}
                         </span>
                       </div>
-                      <div className="mt-2 text-[10px] text-muted-foreground space-y-0.5">
+                      <div className="mt-2 text-xs text-muted-foreground space-y-0.5">
                         <p>{t("crm-commission-type-label")} {commissionPreview.breakdown?.formula}</p>
                         <p>{t("crm-commission-deal-value-label")} {fmtMoney(form.value || 0, form.currency || "USD")}</p>
                         <p>{t("crm-commission-deal-profit-label")} {fmtMoney((form.value || 0) - (form.buy_cost || 0), form.currency || "USD")}</p>
@@ -1675,7 +1677,7 @@ function DealFormDialog({
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>{t("cancel")}</Button>
           <Button onClick={save} disabled={saving}>
             {saving ? t("crm-saving-ellipsis") : deal ? t("crm-save-changes") : t("crm-create-deal")}

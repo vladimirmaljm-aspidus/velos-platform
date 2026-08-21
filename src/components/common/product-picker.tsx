@@ -178,7 +178,7 @@ export function ProductPicker({
               {showSku && (
                 <Badge
                   variant="secondary"
-                  className="text-[10px] h-4 px-1 shrink-0 font-mono"
+                  className="text-xs h-4 px-1 shrink-0 font-mono"
                 >
                   {showSku}
                 </Badge>
@@ -286,13 +286,13 @@ const ProductItem = React.memo(function ProductItem({
           {p.sku && (
             <Badge
               variant="outline"
-              className="text-[10px] h-4 px-1 font-mono shrink-0"
+              className="text-xs h-4 px-1 font-mono shrink-0"
             >
               {p.sku}
             </Badge>
           )}
         </div>
-        <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 mt-0.5 flex-wrap">
+        <div className="text-xs text-muted-foreground flex items-center gap-1.5 mt-0.5 flex-wrap">
           {p.hs_code && <span className="font-mono">HS {p.hs_code}</span>}
           {p.brand && <span>· {p.brand}</span>}
           <span>· {p.unit}</span>

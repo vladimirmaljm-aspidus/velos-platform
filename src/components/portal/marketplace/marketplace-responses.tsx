@@ -202,14 +202,14 @@ export function MarketplaceResponses() {
               <Inbox className="h-3.5 w-3.5" />
               {t("marketplace-received-offers")}
               {received.length > 0 && (
-                <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">{received.length}</Badge>
+                <Badge variant="secondary" className="ml-1 h-4 px-1 text-xs">{received.length}</Badge>
               )}
             </TabsTrigger>
             <TabsTrigger value="sent" className="gap-1">
               <Send className="h-3.5 w-3.5" />
               {t("marketplace-sent-offers")}
               {sent.length > 0 && (
-                <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">{sent.length}</Badge>
+                <Badge variant="secondary" className="ml-1 h-4 px-1 text-xs">{sent.length}</Badge>
               )}
             </TabsTrigger>
           </TabsList>

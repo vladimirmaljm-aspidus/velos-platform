@@ -291,7 +291,7 @@ function regulationTypeBadge(type: CustomsRegulation["type"]) {
     documentation: "bg-[var(--chart-3)] text-black",
   };
   return (
-    <Badge className={`${colors[type] || "bg-secondary text-secondary-foreground"} text-[10px]`}>
+    <Badge className={`${colors[type] || "bg-secondary text-secondary-foreground"} text-xs`}>
       {type.charAt(0).toUpperCase() + type.slice(1)}
     </Badge>
   );
@@ -399,12 +399,12 @@ export function ApiIntegrationsView() {
                     <p className="font-semibold text-sm">{t(intg.nameKey)}</p>
                     <div className="flex items-center gap-1.5 mt-1">
                       {intg.connected ? (
-                        <Badge className="bg-emerald-600 text-white gap-1 text-[10px]">
+                        <Badge className="bg-emerald-600 text-white gap-1 text-xs">
                           <CheckCircle2 className="size-3" />
                           {t("api-connected")}
                         </Badge>
                       ) : (
-                        <Badge variant="destructive" className="gap-1 text-[10px]">
+                        <Badge variant="destructive" className="gap-1 text-xs">
                           <XCircle className="size-3" />
                           {t("api-disconnected")}
                         </Badge>
@@ -626,12 +626,12 @@ function CustomsTab({
                           {hs.description}
                         </TableCell>
                         <TableCell className="text-xs text-center tabular">
-                          <Badge variant="outline" className="font-mono text-[10px]">
+                          <Badge variant="outline" className="font-mono text-xs">
                             {hs.dutyRate}
                           </Badge>
                         </TableCell>
                         <TableCell className="text-xs text-center tabular">
-                          <Badge variant="outline" className="font-mono text-[10px]">
+                          <Badge variant="outline" className="font-mono text-xs">
                             {hs.vatRate}
                           </Badge>
                         </TableCell>
@@ -641,7 +641,7 @@ function CustomsTab({
                               <Badge
                                 key={i}
                                 variant="secondary"
-                                className="text-[10px] leading-tight"
+                                className="text-xs leading-tight"
                               >
                                 {r}
                               </Badge>
@@ -649,7 +649,7 @@ function CustomsTab({
                           </div>
                         </TableCell>
                         <TableCell className="text-xs text-center">
-                          <Badge className="bg-[var(--chart-1)] text-white text-[10px]">
+                          <Badge className="bg-[var(--chart-1)] text-white text-xs">
                             {hs.region}
                           </Badge>
                         </TableCell>
@@ -830,7 +830,7 @@ function ShipmentCard({ shipment }: { shipment: Shipment }) {
             <div>
               <div className="flex items-center gap-2">
                 <p className="font-semibold text-sm font-mono">{shipment.trackingNumber}</p>
-                <Badge className={`${statusColor(shipment.status)} text-[10px]`}>
+                <Badge className={`${statusColor(shipment.status)} text-xs`}>
                   {shipment.status.replace("_", " ")}
                 </Badge>
               </div>
@@ -838,7 +838,7 @@ function ShipmentCard({ shipment }: { shipment: Shipment }) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Badge className={`${customsStatusColor(shipment.customsStatus)} text-[10px]`}>
+            <Badge className={`${customsStatusColor(shipment.customsStatus)} text-xs`}>
               Customs: {shipment.customsStatus}
             </Badge>
           </div>
@@ -885,7 +885,7 @@ function ShipmentCard({ shipment }: { shipment: Shipment }) {
         {shipment.containers.length > 0 && (
           <div className="flex flex-wrap gap-1 mb-3">
             {shipment.containers.map((c) => (
-              <Badge key={c} variant="outline" className="text-[10px] font-mono">
+              <Badge key={c} variant="outline" className="text-xs font-mono">
                 {c}
               </Badge>
             ))}
@@ -1143,7 +1143,7 @@ function MarketNewsTab({
                         <div className="flex items-center gap-2 mb-1">
                           <Badge
                             variant="outline"
-                            className="text-[10px] capitalize shrink-0"
+                            className="text-xs capitalize shrink-0"
                           >
                             {article.category}
                           </Badge>
@@ -1168,7 +1168,7 @@ function MarketNewsTab({
                           <Badge
                             key={tag}
                             variant="secondary"
-                            className="text-[10px]"
+                            className="text-xs"
                           >
                             {tag}
                           </Badge>

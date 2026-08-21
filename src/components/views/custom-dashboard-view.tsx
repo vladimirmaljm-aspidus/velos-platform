@@ -609,7 +609,7 @@ function PipelineWidgetContent() {
                   style={{ height: `${height}%` }}
                 />
               </div>
-              <span className="text-[10px] font-semibold text-muted-foreground truncate w-full text-center">
+              <span className="text-xs font-semibold text-muted-foreground truncate w-full text-center">
                 {name}
               </span>
               <span className="text-sm font-bold tabular">{fmtNumber(count)}</span>
@@ -672,19 +672,19 @@ function TasksWidgetContent() {
       <div className="grid grid-cols-3 gap-3">
         <div className="rounded-lg bg-primary/10 p-3 text-center">
           <p className="text-lg font-bold tabular text-primary">{tasks.inProgress}</p>
-          <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">
+          <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
             {t(locale, "active")}
           </p>
         </div>
         <div className="rounded-lg bg-success/10 p-3 text-center">
           <p className="text-lg font-bold tabular text-success">{tasks.completed}</p>
-          <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">
+          <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
             {t(locale, "completed")}
           </p>
         </div>
         <div className="rounded-lg bg-destructive/10 p-3 text-center">
           <p className="text-lg font-bold tabular text-destructive">{tasks.overdue}</p>
-          <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">
+          <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
             {t(locale, "failed")}
           </p>
         </div>
@@ -740,14 +740,14 @@ function MarketNewsWidgetContent() {
             <div className="flex items-start gap-2">
               <Badge
                 variant="secondary"
-                className={`text-[10px] font-semibold shrink-0 ${impactStyles[a.impact] ?? impactStyles.neutral}`}
+                className={`text-xs font-semibold shrink-0 ${impactStyles[a.impact] ?? impactStyles.neutral}`}
               >
                 {a.impact}
               </Badge>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium leading-snug line-clamp-2">{a.title}</p>
                 <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{a.summary}</p>
-                <div className="flex items-center gap-2 mt-1.5 text-[10px] text-muted-foreground">
+                <div className="flex items-center gap-2 mt-1.5 text-xs text-muted-foreground">
                   <span className="font-medium">{a.source}</span>
                   <span>&middot;</span>
                   <span>{fmtRelative(a.timestamp)}</span>
@@ -808,11 +808,11 @@ function CustomsWidgetContent() {
               >
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-bold tabular text-primary">{hs.code}</p>
-                  <p className="text-[11px] text-muted-foreground truncate">{hs.description}</p>
+                  <p className="text-xs text-muted-foreground truncate">{hs.description}</p>
                 </div>
                 <div className="text-right shrink-0 ml-3">
                   <p className="text-xs font-semibold tabular">{hs.dutyRate}</p>
-                  <p className="text-[10px] text-muted-foreground">VAT {hs.vatRate}</p>
+                  <p className="text-xs text-muted-foreground">VAT {hs.vatRate}</p>
                 </div>
               </div>
             ))}
@@ -838,14 +838,14 @@ function CustomsWidgetContent() {
                   <div className="flex items-center gap-2 mb-1">
                     <Badge
                       variant="secondary"
-                      className={`text-[10px] font-semibold ${impactColor[reg.impact] ?? impactColor.low}`}
+                      className={`text-xs font-semibold ${impactColor[reg.impact] ?? impactColor.low}`}
                     >
                       {reg.impact}
                     </Badge>
-                    <span className="text-[10px] text-muted-foreground">{reg.country}</span>
+                    <span className="text-xs text-muted-foreground">{reg.country}</span>
                   </div>
                   <p className="text-xs font-medium line-clamp-2">{reg.title}</p>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                  <p className="text-xs text-muted-foreground mt-0.5">
                     Effective: {reg.effectiveDate}
                   </p>
                 </div>
@@ -919,7 +919,7 @@ function LogisticsWidgetContent() {
             <Badge
               key={status}
               variant="secondary"
-              className={`text-[10px] font-semibold gap-1 ${cfg.color}`}
+              className={`text-xs font-semibold gap-1 ${cfg.color}`}
             >
               <Icon className="size-3" />
               {cfg.label}: {fmtNumber(count)}
@@ -944,23 +944,23 @@ function LogisticsWidgetContent() {
                 </div>
                 <Badge
                   variant="secondary"
-                  className={`text-[10px] font-semibold ${cfg.color}`}
+                  className={`text-xs font-semibold ${cfg.color}`}
                 >
                   {cfg.label}
                 </Badge>
               </div>
-              <div className="flex items-center gap-1 text-[11px] text-muted-foreground mb-2">
+              <div className="flex items-center gap-1 text-xs text-muted-foreground mb-2">
                 <span className="truncate">{s.origin}</span>
                 <ArrowUpRight className="size-3 shrink-0" />
                 <span className="truncate">{s.destination}</span>
               </div>
               <div className="flex items-center gap-2">
                 <Progress value={s.progress} className="h-1.5 flex-1" />
-                <span className="text-[10px] font-bold tabular text-muted-foreground shrink-0">
+                <span className="text-xs font-bold tabular text-muted-foreground shrink-0">
                   {s.progress}%
                 </span>
               </div>
-              <p className="text-[10px] text-muted-foreground mt-1.5">
+              <p className="text-xs text-muted-foreground mt-1.5">
                 {s.currentLocation} &middot; ETA: {fmtRelative(s.eta)}
               </p>
             </div>
@@ -1135,14 +1135,14 @@ export function CustomDashboardView() {
                 {t(locale, "add-widget")}
               </Button>
             </DialogTrigger>
-            <DialogContent size="md">
-              <DialogHeader>
+            <DialogContent size="md" className="max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+              <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
                 <DialogTitle>{t(locale, "add-widget")}</DialogTitle>
                 <DialogDescription>
                   {t(locale, "drag-hint")}
                 </DialogDescription>
               </DialogHeader>
-              <div className="grid grid-cols-2 gap-3 py-4">
+              <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 grid grid-cols-2 gap-3">
                 {availableTypes.map((type) => {
                   const meta = WIDGET_META[type];
                   const Icon = meta.icon;
@@ -1162,7 +1162,7 @@ export function CustomDashboardView() {
                   );
                 })}
               </div>
-              <DialogFooter>
+              <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
                 <Button
                   variant="outline"
                   size="sm"

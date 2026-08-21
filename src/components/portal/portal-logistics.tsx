@@ -255,13 +255,13 @@ function LogisticsRequestForm({ open, onClose, onCreated, prefill, profile }: { 
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-4xl max-h-[92vh] overflow-y-auto custom-scroll">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-4xl max-h-[88vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle className="flex items-center gap-2"><Truck className="size-5 text-primary" /> {t("portal-logistics-dialog-title")}</DialogTitle>
           <DialogDescription>{t("portal-logistics-dialog-desc")}</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
           {/* Transport */}
           <Section title={t("portal-logistics-section-transport")} open={openSec.transport} onToggle={() => setOpenSec({ ...openSec, transport: !openSec.transport })}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -331,7 +331,7 @@ function LogisticsRequestForm({ open, onClose, onCreated, prefill, profile }: { 
           </Section>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button variant="outline" onClick={onClose} disabled={submitting}>{t("portal-action-cancel")}</Button>
           <Button onClick={submit} disabled={submitting}>
             {submitting ? <Loader2 className="size-4 mr-2 animate-spin" /> : <Send className="size-4 mr-2" />}

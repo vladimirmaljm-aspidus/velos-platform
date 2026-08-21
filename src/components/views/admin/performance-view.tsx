@@ -308,7 +308,7 @@ export function PerformanceView() {
             </div>
           </div>
           {data && data.summary.totalRequests > 0 && (
-            <p className="text-[10px] text-muted-foreground mt-2">
+            <p className="text-xs text-muted-foreground mt-2">
               {t("pf-apm-buffer-note")
                 .replace("{n}", String(data.summary.totalRequests))
                 .replace("{cap}", String(data.bufferCapacity))}
@@ -489,7 +489,7 @@ export function PerformanceView() {
                   )}
                 </div>
                 {errorSeries.length > 0 && (
-                  <div className="flex flex-wrap gap-3 justify-center mt-2 text-[11px]">
+                  <div className="flex flex-wrap gap-3 justify-center mt-2 text-xs">
                     {errorSeries.map((e) => (
                       <span key={e.name} className="flex items-center gap-1.5">
                         <span
@@ -592,12 +592,12 @@ function Tile({
       <CardContent className="p-4">
         <div className="flex items-start justify-between">
           <div>
-            <p className="text-[10px] uppercase tracking-wider">{label}</p>
+            <p className="text-xs uppercase tracking-wider">{label}</p>
             <p className="text-2xl font-bold tabular mt-1">{value}</p>
           </div>
           <Icon className="size-4 opacity-60" />
         </div>
-        {hint && <p className="text-[10px] opacity-70 mt-1">{hint}</p>}
+        {hint && <p className="text-xs opacity-70 mt-1">{hint}</p>}
       </CardContent>
     </Card>
   );
@@ -649,7 +649,7 @@ function RouteTable({
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.route} className="border-b last:border-0 hover:bg-muted/40">
-                    <td className="py-1.5 pr-2 font-mono text-[11px] max-w-[260px] truncate" title={r.route}>
+                    <td className="py-1.5 pr-2 font-mono text-xs max-w-[260px] truncate" title={r.route}>
                       {r.route}
                     </td>
                     <td className={`py-1.5 px-2 text-right tabular ${highlight === "count" ? "font-semibold text-primary" : ""}`}>
@@ -689,10 +689,10 @@ function ResponseTimeTooltip(props: TooltipProps<number, string>) {
         <span className="text-muted-foreground">ms: </span>
         <span className="font-mono text-foreground">{p.ms}</span>
       </div>
-      <div className="text-muted-foreground text-[10px] max-w-[280px] truncate">
+      <div className="text-muted-foreground text-xs max-w-[280px] truncate">
         {p.route}
       </div>
-      <div className="text-muted-foreground text-[10px]">HTTP {p.status}</div>
+      <div className="text-muted-foreground text-xs">HTTP {p.status}</div>
     </div>
   );
 }
@@ -727,7 +727,7 @@ function VolumeTooltip(props: TooltipProps<number, string>) {
   const p = payload[0].payload as { route: string; count: number };
   return (
     <div style={TOOLTIP_STYLE} className="px-3 py-2 space-y-0.5">
-      <div className="font-mono text-foreground text-[11px] max-w-[280px] truncate">
+      <div className="font-mono text-foreground text-xs max-w-[280px] truncate">
         {p.route}
       </div>
       <div>

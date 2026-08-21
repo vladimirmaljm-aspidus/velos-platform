@@ -149,7 +149,7 @@ export function PartnerPicker({
               <Building2 className="size-3.5 text-muted-foreground shrink-0" />
               <span className="truncate text-sm">{showName}</span>
               {selected?.country && (
-                <Badge variant="outline" className="text-[10px] h-4 px-1 shrink-0">
+                <Badge variant="outline" className="text-xs h-4 px-1 shrink-0">
                   {selected.country}
                 </Badge>
               )}
@@ -247,21 +247,21 @@ const PartnerItem = React.memo(function PartnerItem({
           <span className="font-medium truncate text-sm">{p.name}</span>
           <Badge
             variant="outline"
-            className="text-[10px] h-4 px-1 shrink-0"
+            className="text-xs h-4 px-1 shrink-0"
           >
             {p.type}
           </Badge>
           {p.country && (
             <Badge
               variant="secondary"
-              className="text-[10px] h-4 px-1 shrink-0"
+              className="text-xs h-4 px-1 shrink-0"
             >
               {p.country}
             </Badge>
           )}
         </div>
         {(p.email || p.city || p.contact_name) && (
-          <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 mt-0.5 flex-wrap">
+          <div className="text-xs text-muted-foreground flex items-center gap-1.5 mt-0.5 flex-wrap">
             {p.contact_name && <span>{p.contact_name}</span>}
             {p.contact_name && p.email && <span>·</span>}
             {p.email && <span className="truncate">{p.email}</span>}

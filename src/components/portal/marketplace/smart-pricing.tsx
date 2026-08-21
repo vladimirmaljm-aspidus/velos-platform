@@ -135,12 +135,12 @@ export function SmartPricing({ productName, targetPrice, currency }: SmartPricin
   return (
     <Card className="bg-muted/30">
       <CardHeader className="pb-2">
-        <CardTitle className="text-xs font-medium flex items-center gap-1.5 text-muted-foreground">
+        <CardTitle className="text-sm font-medium flex items-center gap-1.5 text-muted-foreground">
           <Lightbulb className="h-3 w-3" />
           {t("marketplace-smart-pricing-title")}
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-2">
+      <CardContent className="space-y-3">
         {/* Assessment badge */}
         {assessmentMeta && targetPrice !== null && (
           <div className="flex items-center gap-2">
@@ -148,12 +148,12 @@ export function SmartPricing({ productName, targetPrice, currency }: SmartPricin
               <assessmentMeta.icon className="h-3 w-3 mr-1" />
               {assessmentMeta.label}
             </Badge>
-            <span className="text-xs text-muted-foreground">{assessmentMeta.desc}</span>
+            <span className="text-sm text-muted-foreground">{assessmentMeta.desc}</span>
           </div>
         )}
 
         {/* Stats grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
           <StatBox label={t("marketplace-smart-pricing-average")} value={s.average_price} currency={currency} highlight />
           <StatBox label={t("marketplace-smart-pricing-median")} value={s.median_price} currency={currency} />
           <StatBox label={t("marketplace-smart-pricing-min")} value={s.min_price} currency={currency} />
@@ -191,8 +191,8 @@ function StatBox({
   highlight?: boolean;
 }) {
   return (
-    <div className={highlight ? "rounded-md bg-background/80 p-1.5" : "p-1.5"}>
-      <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{label}</p>
+    <div className={highlight ? "rounded-md bg-background/80 p-2" : "p-2"}>
+      <p className="text-xs text-muted-foreground uppercase tracking-wide">{label}</p>
       <p className="font-medium mt-0.5">{fmtMoney(value, currency)}</p>
     </div>
   );

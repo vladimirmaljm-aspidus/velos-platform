@@ -184,13 +184,14 @@ export function PlanUpgradeQueueView() {
       </Card>
 
       <Dialog open={!!reviewing} onOpenChange={(o) => !o && setReviewing(null)}>
-        <DialogContent size="md">
-          <DialogHeader>
+        <DialogContent size="md" className="max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
             <DialogTitle>{t("pf-review-upgrade")}</DialogTitle>
             <DialogDescription>
               {reviewing && `${tenantName.get(reviewing.tenant_id) || t("pf-tenant")} — ${reviewing.current_plan || "—"} → ${reviewing.requested_plan}`}
             </DialogDescription>
           </DialogHeader>
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-3">
           {reviewing?.message && (
             <div className="rounded-lg bg-muted/40 p-3 text-sm">
               <p className="text-xs text-muted-foreground mb-1">{t("pf-client-message")}</p>
@@ -213,7 +214,7 @@ export function PlanUpgradeQueueView() {
               <div>
                 <Label className="text-xs">{t("pf-subscription-length")}</Label>
                 <Input type="number" min={1} value={months} onChange={(e) => setMonths(Number(e.target.value) || 12)} />
-                <p className="text-[10px] text-muted-foreground mt-1">{t("pf-subscription-stamp-hint").replace("{n}", String(months))}</p>
+                <p className="text-xs text-muted-foreground mt-1">{t("pf-subscription-stamp-hint").replace("{n}", String(months))}</p>
               </div>
             )}
             <div>
@@ -221,7 +222,8 @@ export function PlanUpgradeQueueView() {
               <Textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder={t("pf-note-placeholder")} />
             </div>
           </div>
-          <DialogFooter>
+          </div>
+          <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
             <Button variant="outline" onClick={() => setReviewing(null)}>{t("cancel")}</Button>
             <Button onClick={() => reviewMut.mutate()} disabled={reviewMut.isPending}>
               {reviewMut.isPending ? t("pf-saving") : decision === "approve" ? t("pf-approve-upgrade") : t("reject")}

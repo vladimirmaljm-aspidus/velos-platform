@@ -342,7 +342,7 @@ function StatBox({
 }) {
   return (
     <div className={highlight ? "rounded-md bg-muted/40 p-2" : "p-2"}>
-      <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{label}</p>
+      <p className="text-xs text-muted-foreground uppercase tracking-wide">{label}</p>
       <p className="font-medium mt-0.5 text-sm">{value}</p>
     </div>
   );

@@ -226,18 +226,18 @@ export function PortalDocuments() {
                     </p>
                     <div className="flex items-center gap-2 mt-1.5">
                       <Badge
-                        className={cn("text-[10px] px-1.5 py-0", meta.badgeClass)}
+                        className={cn("text-xs px-1.5 py-0", meta.badgeClass)}
                       >
                         {t(meta.labelKey)}
                       </Badge>
-                      <span className="text-[11px] text-muted-foreground tabular">
+                      <span className="text-xs text-muted-foreground tabular">
                         {fmtBytes(doc.size)}
                       </span>
                     </div>
                   </div>
                 </div>
                 <div className="mt-4 flex items-center justify-between">
-                  <span className="text-[11px] text-muted-foreground tabular">
+                  <span className="text-xs text-muted-foreground tabular">
                     {t("portal-doc-uploaded").replace("{date}", fmtDate(doc.created_at))}
                   </span>
                   <div className="flex items-center gap-1.5">

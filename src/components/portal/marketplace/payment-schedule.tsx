@@ -233,14 +233,14 @@ export function PaymentSchedule({ instrumentId, isOwner }: PaymentScheduleProps)
                           : "text-muted-foreground"
                     }`}
                   />
-                  <span className="text-[10px] text-muted-foreground">#{m.sequence}</span>
+                  <span className="text-xs text-muted-foreground">#{m.sequence}</span>
                 </div>
 
                 {/* Description + meta */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-sm font-medium truncate">{m.description}</p>
-                    <Badge variant="outline" className={`text-[10px] h-5 ${STATUS_BADGE_CLASS[m.status as MilestoneStatus]}`}>
+                    <Badge variant="outline" className={`text-xs h-5 ${STATUS_BADGE_CLASS[m.status as MilestoneStatus]}`}>
                       {t(MILESTONE_STATUS_LABEL_KEY[m.status as MilestoneStatus])}
                     </Badge>
                   </div>
@@ -272,7 +272,7 @@ export function PaymentSchedule({ instrumentId, isOwner }: PaymentScheduleProps)
                     )}
                   </div>
                   {(isOverdue || isDueSoon) && m.status !== "paid" && m.status !== "cancelled" && (
-                    <p className={`text-[11px] mt-1 flex items-center gap-1 ${isOverdue ? "text-rose-600" : "text-amber-600"}`}>
+                    <p className={`text-xs mt-1 flex items-center gap-1 ${isOverdue ? "text-rose-600" : "text-amber-600"}`}>
                       <Clock className="h-3 w-3" />
                       {isOverdue
                         ? t("marketplace-finance-overdue-by").replace(
@@ -342,7 +342,7 @@ function SummaryCell({
 }) {
   return (
     <div className="rounded-md bg-muted/30 p-2">
-      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
       <p
         className={`font-medium mt-0.5 ${
           tone === "emerald" ? "text-emerald-700 dark:text-emerald-400" : ""

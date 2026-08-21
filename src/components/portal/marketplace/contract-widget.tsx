@@ -418,12 +418,12 @@ export function ContractWidget({ postId, currency, unit, isOwner }: ContractWidg
 
       {/* Create contract dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
             <DialogTitle>{t("marketplace-contract-create-title")}</DialogTitle>
             <DialogDescription>{t("marketplace-contract-create-desc")}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-2">
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
             <div>
               <Label htmlFor="c-total">{t("marketplace-contract-total")} *</Label>
               <Input
@@ -433,7 +433,7 @@ export function ContractWidget({ postId, currency, unit, isOwner }: ContractWidg
                 onChange={(e) => setCreateForm({ ...createForm, total_quantity: e.target.value })}
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <Label htmlFor="c-freq">{t("marketplace-contract-frequency-label")}</Label>
                 <select
@@ -462,7 +462,7 @@ export function ContractWidget({ postId, currency, unit, isOwner }: ContractWidg
                 </select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <Label htmlFor="c-start">{t("marketplace-contract-start-date")}</Label>
                 <Input
@@ -483,7 +483,7 @@ export function ContractWidget({ postId, currency, unit, isOwner }: ContractWidg
               </div>
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
             <Button variant="outline" onClick={() => setCreateOpen(false)}>{t("portal-action-cancel")}</Button>
             <Button
               onClick={() => createContract.mutate()}
@@ -503,12 +503,12 @@ export function ContractWidget({ postId, currency, unit, isOwner }: ContractWidg
 
       {/* Edit delivery dialog */}
       <Dialog open={!!editingId} onOpenChange={(o) => !o && setEditingId(null)}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
             <DialogTitle>{t("marketplace-delivery-edit-title")}</DialogTitle>
             <DialogDescription>{t("marketplace-delivery-edit-desc")}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-2">
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
             <div>
               <Label htmlFor="d-status">{t("marketplace-col-status")}</Label>
               <select
@@ -545,7 +545,7 @@ export function ContractWidget({ postId, currency, unit, isOwner }: ContractWidg
               />
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
             <Button variant="outline" onClick={() => setEditingId(null)}>{t("portal-action-cancel")}</Button>
             <Button onClick={() => editingId && updateDelivery.mutate({ deliveryId: editingId })}>
               {updateDelivery.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : null}

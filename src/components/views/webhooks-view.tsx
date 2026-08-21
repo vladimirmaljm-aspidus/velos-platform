@@ -251,7 +251,7 @@ export function WebhooksView() {
                     <div className="flex flex-wrap gap-1 max-w-full">
                       {wh.events && wh.events.length > 0 ? (
                         wh.events.map((e) => (
-                          <Badge key={e} className={eventColor(e) + " text-[10px]"}>{e}</Badge>
+                          <Badge key={e} className={eventColor(e) + " text-xs"}>{e}</Badge>
                         ))
                       ) : (
                         <span className="text-xs text-muted-foreground">{t("admin-webhooks-no-events")}</span>
@@ -422,16 +422,16 @@ function WebhookFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="lg">
-        <DialogHeader>
+      <DialogContent size="lg" className="max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle>{webhook ? t("admin-webhooks-form-title-edit") : t("admin-webhooks-form-title-new")}</DialogTitle>
           <DialogDescription>
             {t("admin-webhooks-form-desc")}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="max-h-[70vh] overflow-y-auto pr-1">
-        <div className="grid gap-3 py-2">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
+        <div className="grid gap-3">
           <div className="space-y-1.5">
             <Label>{t("admin-webhooks-form-name")}</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Slack notifications" />
@@ -469,7 +469,7 @@ function WebhookFormDialog({
                   if (!list.includes("security.*")) list.push("security.*");
                   setEvents(list.join(", "));
                 }}
-                className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200 text-[11px] font-mono hover:bg-amber-200 dark:hover:bg-amber-900/60 transition-colors"
+                className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200 text-xs font-mono hover:bg-amber-200 dark:hover:bg-amber-900/60 transition-colors"
                 title="Fire on every security event (login failures, CSRF blocks, impersonation, IDOR probes, IDS escalations, …)"
               >
                 security.*
@@ -501,7 +501,7 @@ function WebhookFormDialog({
                     if (!list.includes(ev)) list.push(ev);
                     setEvents(list.join(", "));
                   }}
-                  className="px-2 py-0.5 rounded-md bg-muted text-foreground/80 dark:text-foreground/70 text-[11px] font-mono hover:bg-muted/70 transition-colors"
+                  className="px-2 py-0.5 rounded-md bg-muted text-foreground/80 dark:text-foreground/70 text-xs font-mono hover:bg-muted/70 transition-colors"
                   title={`Fire only on ${ev}`}
                 >
                   {ev}
@@ -545,7 +545,7 @@ function WebhookFormDialog({
                     if (!list.includes(ev)) list.push(ev);
                     setEvents(list.join(", "));
                   }}
-                  className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200 text-[11px] font-mono hover:bg-amber-200 dark:hover:bg-amber-900/60 transition-colors"
+                  className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200 text-xs font-mono hover:bg-amber-200 dark:hover:bg-amber-900/60 transition-colors"
                   title={`Fire only on ${ev}`}
                 >
                   {ev}
@@ -564,7 +564,7 @@ function WebhookFormDialog({
         </div>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>{t("cancel")}</Button>
           <Button onClick={save} disabled={saving}>
             {saving ? t("admin-saving") : t("save")}
@@ -645,8 +645,8 @@ function WebhookDeliveriesDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="lg">
-        <DialogHeader>
+      <DialogContent size="lg" className="max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle>
             {t("admin-webhooks-deliveries-title")}
             {webhook ? ` — ${webhook.name}` : ""}
@@ -656,7 +656,7 @@ function WebhookDeliveriesDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="max-h-[70vh] overflow-y-auto custom-scroll pr-1">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
           {isLoading ? (
             <div className="grid gap-2 py-2">
               {Array.from({ length: 4 }).map((_, i) => (
@@ -670,7 +670,7 @@ function WebhookDeliveriesDialog({
           ) : (
             <div className="grid gap-2 py-2">
               {/* Header row (hidden on mobile — table is too wide) */}
-              <div className="hidden md:grid grid-cols-[1.5fr_1fr_0.7fr_0.7fr_1fr_0.7fr] gap-2 px-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+              <div className="hidden md:grid grid-cols-[1.5fr_1fr_0.7fr_0.7fr_1fr_0.7fr] gap-2 px-2 text-xs uppercase tracking-wide text-muted-foreground">
                 <div>{t("admin-webhooks-deliveries-col-event")}</div>
                 <div>{t("admin-webhooks-deliveries-col-status")}</div>
                 <div>{t("admin-webhooks-deliveries-col-attempts")}</div>
@@ -706,7 +706,7 @@ function WebhookDeliveriesDialog({
                     )}
                   </div>
                   {d.response_body && (
-                    <div className="col-span-full mt-1 px-2 py-1 rounded bg-background/60 font-mono text-[10px] text-muted-foreground whitespace-pre-wrap break-all max-h-24 overflow-y-auto custom-scroll">
+                    <div className="col-span-full mt-1 px-2 py-1 rounded bg-background/60 font-mono text-xs text-muted-foreground whitespace-pre-wrap break-all max-h-24 overflow-y-auto custom-scroll">
                       {d.response_body}
                     </div>
                   )}
@@ -716,7 +716,7 @@ function WebhookDeliveriesDialog({
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>{t("close")}</Button>
         </DialogFooter>
       </DialogContent>

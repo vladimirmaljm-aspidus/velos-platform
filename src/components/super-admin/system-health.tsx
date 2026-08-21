@@ -260,7 +260,7 @@ export function SystemHealth() {
                   {data.db.largest_tables.map((t) => (
                     <TableRow key={`${t.schemaname}.${t.tablename}`}>
                       <TableCell className="text-xs font-mono">{t.schemaname}</TableCell>
-                      <TableCell><code className="text-[11px] font-mono">{t.tablename}</code></TableCell>
+                      <TableCell><code className="text-xs font-mono">{t.tablename}</code></TableCell>
                       <TableCell className="text-right tabular text-xs">{t.size_pretty} <span className="text-muted-foreground">({Number(t.size_bytes).toLocaleString()} B)</span></TableCell>
                     </TableRow>
                   ))}
@@ -283,7 +283,7 @@ export function SystemHealth() {
               <TableBody>
                 {Object.entries(data.db.table_counts).map(([table, count]) => (
                   <TableRow key={table}>
-                    <TableCell><code className="text-[11px] font-mono">{table}</code></TableCell>
+                    <TableCell><code className="text-xs font-mono">{table}</code></TableCell>
                     <TableCell className="text-right tabular">{count < 0 ? "—" : count >= 1000 ? "1000+" : count}</TableCell>
                     <TableCell className="text-right">
                       {count >= 0 ? <CheckCircle2 className="size-4 text-emerald-500 inline" /> : <XCircle className="size-4 text-destructive inline" />}
@@ -312,7 +312,7 @@ export function SystemHealth() {
         <CardContent className="space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium">Sentry status</span>
-            <Badge variant="outline" className={`uppercase text-[10px] tracking-wider ${
+            <Badge variant="outline" className={`uppercase text-xs tracking-wider ${
               data.sentry === "enabled" ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30" :
               data.sentry === "disabled" ? "bg-destructive/10 text-destructive border-destructive/30" :
               "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30"
@@ -365,15 +365,15 @@ export function SystemHealth() {
               ) : data.crons.map((c) => (
                 <TableRow key={c.jobid}>
                   <TableCell>
-                    <code className="text-[11px] font-mono">{c.jobname}</code>
-                    {c.path && <div className="text-[10px] text-muted-foreground font-mono mt-0.5">{c.path}</div>}
+                    <code className="text-xs font-mono">{c.jobname}</code>
+                    {c.path && <div className="text-xs text-muted-foreground font-mono mt-0.5">{c.path}</div>}
                   </TableCell>
                   <TableCell><Badge variant="outline" className="text-xs font-mono">{c.schedule}</Badge></TableCell>
                   <TableCell>
                     {c.active ? (
-                      <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30">ACTIVE</Badge>
+                      <Badge variant="outline" className="text-xs bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30">ACTIVE</Badge>
                     ) : (
-                      <Badge variant="outline" className="text-[10px] bg-muted text-muted-foreground">PAUSED</Badge>
+                      <Badge variant="outline" className="text-xs bg-muted text-muted-foreground">PAUSED</Badge>
                     )}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground tabular">
@@ -381,7 +381,7 @@ export function SystemHealth() {
                   </TableCell>
                   <TableCell>
                     {c.last_run_status ? (
-                      <Badge variant="outline" className={`text-[10px] uppercase ${
+                      <Badge variant="outline" className={`text-xs uppercase ${
                         c.last_run_status === "succeeded"
                           ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30"
                           : "bg-destructive/10 text-destructive border-destructive/30"
@@ -406,7 +406,7 @@ export function SystemHealth() {
           only on the Data Protection tab to avoid two sources of truth
           for the same read-only data. */}
 
-      <p className="text-[10px] text-muted-foreground text-center">
+      <p className="text-xs text-muted-foreground text-center">
         Auto-refreshing every 30s · Snapshot taken {fmtDateTime(data.timestamp)} · Process uptime {uptimeStr}
       </p>
     </div>
@@ -432,12 +432,12 @@ function Tile({
     <div className={`rounded-xl border ${cls} p-3`}>
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-[10px] uppercase tracking-wider opacity-70">{label}</p>
+          <p className="text-xs uppercase tracking-wider opacity-70">{label}</p>
           <p className="text-xl font-bold tabular mt-1">{value}</p>
         </div>
         <Icon className="size-4 opacity-60" />
       </div>
-      {hint && <p className="text-[10px] opacity-70 mt-1">{hint}</p>}
+      {hint && <p className="text-xs opacity-70 mt-1">{hint}</p>}
     </div>
   );
 }

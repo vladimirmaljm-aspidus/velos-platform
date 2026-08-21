@@ -184,10 +184,10 @@ export function PortalCatalog() {
               >
                 <div className="bg-card rounded-[calc(var(--radius-xl)-1px)] p-5 h-full">
                   <div className="flex items-start justify-between gap-2 mb-3">
-                    <Badge className={cn("text-[10px] px-1.5 py-0", categoryClass(p.category))}>
+                    <Badge className={cn("text-xs px-1.5 py-0", categoryClass(p.category))}>
                       {p.category}
                     </Badge>
-                    <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
                       <span className="text-base leading-none">{flagEmoji(p.origin_country)}</span>
                       <span className="font-medium">{p.origin_country || "—"}</span>
                     </div>
@@ -196,11 +196,11 @@ export function PortalCatalog() {
                     {p.name}
                   </p>
                   {p.description && (
-                    <p className="text-xs text-muted-foreground mt-1.5 line-clamp-2 leading-relaxed">
+                    <p className="text-sm text-muted-foreground mt-1.5 line-clamp-2 leading-relaxed">
                       {p.description}
                     </p>
                   )}
-                  <div className="flex items-center gap-1.5 mt-3 text-[11px] text-muted-foreground">
+                  <div className="flex items-center gap-1.5 mt-3 text-xs text-muted-foreground">
                     <Hash className="size-3" />
                     <span className="font-mono tabular">{p.hs_code || "—"}</span>
                     <span className="mx-1">·</span>
@@ -212,7 +212,7 @@ export function PortalCatalog() {
                       {specEntries.map((s) => (
                         <span
                           key={s.name}
-                          className="text-[10px] px-1.5 py-0.5 rounded bg-muted/70 text-muted-foreground"
+                          className="text-xs px-1.5 py-0.5 rounded bg-muted/70 text-muted-foreground"
                         >
                           <span className="font-medium">{s.name}:</span> {s.value}
                         </span>
@@ -320,7 +320,7 @@ function CatalogDetail({ product, onRequestQuote }: { product: ProductCatalogEnt
           {product.name}
         </SheetTitle>
         <SheetDescription className="flex flex-wrap items-center gap-2">
-          <Badge className={cn("text-[11px]", categoryClass(product.category))}>
+          <Badge className={cn("text-xs", categoryClass(product.category))}>
             {product.category}
           </Badge>
           {product.origin_country && (
@@ -407,7 +407,7 @@ function CatalogDetail({ product, onRequestQuote }: { product: ProductCatalogEnt
           </div>
         )}
 
-        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground border-t border-border/60 pt-3">
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground border-t border-border/60 pt-3">
           <MapPin className="size-3" />
           {t("portal-catalog-last-updated").replace("{date}", fmtDate(product.updated_at))}
         </div>
@@ -423,7 +423,7 @@ function CatalogDetail({ product, onRequestQuote }: { product: ProductCatalogEnt
               <ShoppingCart className="size-4" />
               {t("portal-catalog-request-quote")}
             </Button>
-            <p className="text-[11px] text-muted-foreground text-center mt-2">
+            <p className="text-xs text-muted-foreground text-center mt-2">
               {t("portal-catalog-request-quote-desc")}
             </p>
           </div>
@@ -446,7 +446,7 @@ function InfoTile({
 }) {
   return (
     <div className="rounded-lg border border-border/60 bg-card p-3 shadow-soft">
-      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <Icon className="size-3" />
         {label}
       </div>

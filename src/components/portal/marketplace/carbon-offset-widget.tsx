@@ -155,7 +155,7 @@ export function CarbonOffsetWidget({
         <div className="rounded-md bg-gradient-to-br from-emerald-500/10 to-blue-500/10 p-4 flex items-center gap-3">
           <TrendingDown className="h-8 w-8 text-emerald-600 shrink-0" />
           <div className="flex-1">
-            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
               {t("marketplace-esg-offsets-retired-total")}
             </p>
             <p className="text-2xl font-bold tracking-tight">
@@ -338,13 +338,13 @@ function CreateOffsetDialog({
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-md max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle>{t("marketplace-esg-offsets-create-title")}</DialogTitle>
           <DialogDescription>{t("marketplace-esg-offsets-create-desc")}</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-3">
           <div>
             <Label htmlFor="oc-co2">{t("marketplace-esg-offsets-co2-label")}</Label>
             <Input
@@ -406,12 +406,12 @@ function CreateOffsetDialog({
                 : "—"}
             </span>
           </div>
-          <p className="text-[10px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             {t("marketplace-esg-offsets-cost-disclaimer")}
           </p>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button variant="outline" onClick={onClose}>{t("portal-action-cancel")}</Button>
           <Button
             onClick={() => createMut.mutate()}

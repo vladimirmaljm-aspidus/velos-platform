@@ -481,13 +481,13 @@ function ProductDetail({
 
       <div className="grid grid-cols-2 gap-2">
         <Card className="border-border/60 shadow-soft rounded-xl">
-          <CardContent className="p-3">
+          <CardContent className="p-4 sm:p-5">
             <p className="text-xs text-muted-foreground flex items-center gap-1"><Hash className="size-3" /> {t(locale, "crm-hs-code")}</p>
             <p className="text-sm font-mono tabular mt-1">{product.hs_code || "—"}</p>
           </CardContent>
         </Card>
         <Card className="border-border/60 shadow-soft rounded-xl">
-          <CardContent className="p-3">
+          <CardContent className="p-4 sm:p-5">
             <p className="text-xs text-muted-foreground flex items-center gap-1"><Boxes className="size-3" /> {t(locale, "crm-base-unit")}</p>
             <p className="text-sm mt-1">{unitLabel(product.base_unit)}</p>
           </CardContent>
@@ -515,7 +515,7 @@ function ProductDetail({
           <div className="grid grid-cols-2 gap-2">
             {importedEntries.map((s) => (
               <Card key={s.name} className="border-border/60 shadow-soft rounded-xl">
-                <CardContent className="p-3">
+                <CardContent className="p-4 sm:p-5">
                   <p className="text-xs text-muted-foreground">{IMPORTED_KEY_LABELS[s.name] || s.name}</p>
                   <p className="text-sm font-medium mt-0.5 break-words">
                     {s.name === "image_url" ? (
@@ -680,16 +680,16 @@ function ProductFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="xl">
-        <DialogHeader>
+      <DialogContent size="xl" className="max-h-[88vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle>{product ? t(locale, "crm-edit-product") : t(locale, "crm-new-product")}</DialogTitle>
           <DialogDescription>
             {product ? t(locale, "crm-update-catalog-entry") : t(locale, "crm-start-with-basics")}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="max-h-[70vh] overflow-y-auto pr-1">
-        <div className="space-y-4 py-2">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
+        <div className="space-y-4">
           {/* ── Essential fields (always visible) ── */}
           <div className="space-y-3">
             <div className="space-y-1.5">
@@ -754,7 +754,7 @@ function ProductFormDialog({
                 )}
                 {t(locale, "crm-more-details")}
                 {!moreOpen && (form.description || form.origin_country || specs.length > 0) && (
-                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{t(locale, "crm-filled")}</Badge>
+                  <Badge variant="secondary" className="text-xs px-1.5 py-0">{t(locale, "crm-filled")}</Badge>
                 )}
               </button>
             </CollapsibleTrigger>
@@ -825,7 +825,7 @@ function ProductFormDialog({
         </div>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>{t(locale, "cancel")}</Button>
           <Button onClick={save} disabled={saving}>
             {saving ? t(locale, "crm-saving") : product ? t(locale, "crm-update") : t(locale, "crm-create-product")}

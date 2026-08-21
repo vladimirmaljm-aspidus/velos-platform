@@ -201,14 +201,14 @@ function MetricBox({
   const t = useT();
   return (
     <div className="border rounded-md p-3 space-y-1.5" title={tooltip}>
-      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+      <p className="text-xs uppercase tracking-wide text-muted-foreground">
         {label}
       </p>
       <div className="flex items-end justify-between">
         <p className="text-lg font-semibold leading-none">{user}</p>
         {badge}
       </div>
-      <p className="text-[10px] text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
         {lowerIsBetter && "↓ "}
         {higherIsBetter && "↑ "}
         {t("marketplace-intel-benchmark-market")}:{" "}

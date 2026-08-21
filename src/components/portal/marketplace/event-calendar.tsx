@@ -106,7 +106,7 @@ export function EventCalendar({ onCreateClick }: { onCreateClick?: () => void })
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -117,7 +117,7 @@ export function EventCalendar({ onCreateClick }: { onCreateClick?: () => void })
           />
         </div>
         <Select value={type} onValueChange={setType}>
-          <SelectTrigger className="sm:w-44">
+          <SelectTrigger className="w-full sm:w-44">
             <SelectValue placeholder={t("marketplace-community-event-type")} />
           </SelectTrigger>
           <SelectContent>
@@ -130,7 +130,7 @@ export function EventCalendar({ onCreateClick }: { onCreateClick?: () => void })
           </SelectContent>
         </Select>
         {onCreateClick && (
-          <Button onClick={onCreateClick} className="gap-1.5">
+          <Button onClick={onCreateClick} className="gap-1.5 w-full sm:w-auto">
             <Plus className="h-4 w-4" />
             {t("marketplace-community-create-event")}
           </Button>
@@ -151,14 +151,14 @@ export function EventCalendar({ onCreateClick }: { onCreateClick?: () => void })
         </div>
       ) : (
         <>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             {t("marketplace-community-results-count").replace("{n}", String(total))}
           </p>
-          <div className="space-y-3">
+          <div className="space-y-4">
             {items.map((ev) => (
               <Card key={ev.id}>
-                <CardContent className="p-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="space-y-1.5 min-w-0 flex-1">
+                <CardContent className="p-5 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="space-y-2 min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       {ev.event_type && (
                         <Badge variant="secondary" className="capitalize">

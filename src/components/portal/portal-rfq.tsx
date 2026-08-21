@@ -605,16 +605,16 @@ function RfqCard({ rfq }: { rfq: PortalRfq }) {
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[11px] font-mono text-muted-foreground tabular">
+            <span className="text-xs font-mono text-muted-foreground tabular">
               {rfq.number}
             </span>
-            <Badge className={cn("text-[10px] py-0 h-4 gap-0.5", meta.className)}>
+            <Badge className={cn("text-xs py-0 h-4 gap-0.5", meta.className)}>
               <StatusIcon className="size-2.5" />
               {t(meta.labelKey)}
             </Badge>
           </div>
           <p className="text-sm font-medium truncate mt-1">{rfq.product_name}</p>
-          <div className="flex items-center gap-3 mt-1.5 text-[11px] text-muted-foreground tabular">
+          <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground tabular">
             <span>
               {rfq.quantity} {rfq.unit}
             </span>
@@ -666,7 +666,7 @@ function RfqCard({ rfq }: { rfq: PortalRfq }) {
 
           {rfq.product_description && (
             <div>
-              <p className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-medium mb-0.5">
+              <p className="text-xs uppercase tracking-wider text-muted-foreground/70 font-medium mb-0.5">
                 {t("portal-rfq-detail-description")}
               </p>
               <p className="text-xs text-foreground leading-relaxed">
@@ -677,7 +677,7 @@ function RfqCard({ rfq }: { rfq: PortalRfq }) {
 
           {rfq.specifications && (
             <div>
-              <p className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-medium mb-0.5">
+              <p className="text-xs uppercase tracking-wider text-muted-foreground/70 font-medium mb-0.5">
                 {t("portal-rfq-detail-specifications")}
               </p>
               <p className="text-xs text-foreground leading-relaxed">
@@ -688,7 +688,7 @@ function RfqCard({ rfq }: { rfq: PortalRfq }) {
 
           {rfq.notes && (
             <div>
-              <p className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-medium mb-0.5">
+              <p className="text-xs uppercase tracking-wider text-muted-foreground/70 font-medium mb-0.5">
                 {t("portal-rfq-detail-notes")}
               </p>
               <p className="text-xs text-foreground leading-relaxed">
@@ -896,7 +896,7 @@ function DetailRow({
 }) {
   return (
     <div className="min-w-0">
-      <p className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-medium">
+      <p className="text-xs uppercase tracking-wider text-muted-foreground/70 font-medium">
         {label}
       </p>
       <p

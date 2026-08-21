@@ -605,7 +605,7 @@ export function PortalShell({
                       <Bell className="size-[18px] text-muted-foreground" />
                     )}
                     {unreadNotifCount > 0 && (
-                      <span className="absolute top-1.5 right-1.5 inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-semibold tabular leading-none ring-2 ring-background">
+                      <span className="absolute top-1.5 right-1.5 inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-destructive text-destructive-foreground text-xs font-semibold tabular leading-none ring-2 ring-background">
                         {unreadNotifCount > 99 ? "99+" : unreadNotifCount}
                       </span>
                     )}
@@ -615,7 +615,7 @@ export function PortalShell({
                   <div className="flex items-center justify-between px-3 py-2.5 border-b border-border/60">
                     <div>
                       <p className="text-sm font-semibold">{t("portal-shell-notifications")}</p>
-                      <p className="text-[11px] text-muted-foreground">
+                      <p className="text-xs text-muted-foreground">
                         {unreadNotifCount > 0
                           ? t("portal-unread").replace("{n}", String(unreadNotifCount))
                           : t("portal-shell-notifications-empty")}
@@ -625,7 +625,7 @@ export function PortalShell({
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-7 px-2 text-[11px] gap-1"
+                        className="h-7 px-2 text-xs gap-1"
                         onClick={markAllNotifsRead}
                       >
                         <CheckCheck className="size-3.5" />
@@ -651,9 +651,9 @@ export function PortalShell({
                           <div className={cn("min-w-0 flex-1", n.read && "pl-4")}>
                             <p className="text-xs font-medium line-clamp-2">{n.title}</p>
                             {n.message && (
-                              <p className="text-[11px] text-muted-foreground line-clamp-2 mt-0.5">{n.message}</p>
+                              <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{n.message}</p>
                             )}
-                            <p className="text-[10px] text-muted-foreground mt-0.5 tabular">
+                            <p className="text-xs text-muted-foreground mt-0.5 tabular">
                               {fmtRelative(n.created_at)}
                             </p>
                           </div>
@@ -678,7 +678,7 @@ export function PortalShell({
                 <span className="text-sm font-medium max-w-[180px] truncate">
                   {partnerName}
                 </span>
-                <span className="text-[11px] text-muted-foreground">
+                <span className="text-xs text-muted-foreground">
                   {t("portal-last-login")} {fmtRelative(portalAccess.last_login_at)}
                 </span>
               </div>
@@ -732,7 +732,7 @@ export function PortalShell({
                 <DropdownMenuContent align="end" className="w-56 p-0">
                   <div className="px-3 py-3 border-b border-border/60">
                     <p className="text-sm font-semibold truncate">{partnerName}</p>
-                    <p className="text-[11px] text-muted-foreground truncate">
+                    <p className="text-xs text-muted-foreground truncate">
                       {t("portal-shell-welcome-short").replace("{name}", partnerName.split(" ")[0])}
                     </p>
                     <div className="mt-2">
@@ -879,7 +879,7 @@ function SidebarContent({
         {!collapsed && (
           <div className="min-w-0 flex-1">
             <p className="font-semibold text-sm tracking-tight truncate">{t("portal-brand-title")}</p>
-            <p className="text-[10px] text-muted-foreground truncate">{t("portal-brand-subtitle")}</p>
+            <p className="text-xs text-muted-foreground truncate">{t("portal-brand-subtitle")}</p>
           </div>
         )}
       </div>
@@ -898,7 +898,7 @@ function SidebarContent({
             </div>
           ) : collapsed ? (
             <Avatar className="size-9 ring-1 ring-border" title={partnerName}>
-              <AvatarFallback className="bg-primary/10 text-primary text-[11px] font-medium">
+              <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
                 {initials(partnerName)}
               </AvatarFallback>
             </Avatar>
@@ -906,7 +906,7 @@ function SidebarContent({
             <div className="relative">
               <div className="flex items-center gap-2 mb-2">
                 <Avatar className="size-9 ring-1 ring-border">
-                  <AvatarFallback className="bg-primary/10 text-primary text-[11px] font-medium">
+                  <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
                     {initials(partnerName)}
                   </AvatarFallback>
                 </Avatar>
@@ -914,7 +914,7 @@ function SidebarContent({
                   <p className="text-sm font-semibold truncate" title={partnerName}>
                     {partnerName}
                   </p>
-                  <p className="text-[11px] text-muted-foreground truncate">
+                  <p className="text-xs text-muted-foreground truncate">
                     {partner?.entity_type === "individual" ? t("portal-individual") : t("portal-company")}
                     {partner?.country ? ` · ${partner.country}` : ""}
                   </p>
@@ -936,7 +936,7 @@ function SidebarContent({
       <nav className="flex-1 overflow-y-auto custom-scroll px-3 py-4 space-y-5">
         <div className="space-y-1">
           {!collapsed && (
-            <p className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+            <p className="px-3 pb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">
               {t("portal-section-workspace")}
             </p>
           )}
@@ -974,7 +974,7 @@ function SidebarContent({
                 />
                 {!collapsed && <span className="truncate flex-1 text-left">{t(item.labelKey)}</span>}
                 {badgeCount > 0 && (
-                  <Badge className="bg-destructive text-destructive-foreground text-[10px] px-1.5 py-0 h-5 min-w-[20px] justify-center rounded-full tabular">
+                  <Badge className="bg-destructive text-destructive-foreground text-xs px-1.5 py-0 h-5 min-w-[20px] justify-center rounded-full tabular">
                     {badgeCount > 99 ? "99+" : badgeCount}
                   </Badge>
                 )}
@@ -986,7 +986,7 @@ function SidebarContent({
         {/* Account section */}
         {!collapsed ? (
           <div className="space-y-1">
-            <p className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+            <p className="px-3 pb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">
               {t("portal-section-account")}
             </p>
             {accountItems.map((item, idx) => {

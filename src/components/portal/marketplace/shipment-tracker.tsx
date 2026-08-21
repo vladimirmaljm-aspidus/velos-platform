@@ -231,7 +231,7 @@ export function ShipmentTracker({ shipmentId, isBookingPartner }: ShipmentTracke
           <div className="flex items-center gap-2">
             <MapPin className="h-4 w-4 text-emerald-600" />
             <div>
-              <p className="text-[10px] uppercase text-muted-foreground">{t("marketplace-shipment-loading-port")}</p>
+              <p className="text-xs uppercase text-muted-foreground">{t("marketplace-shipment-loading-port")}</p>
               <p className="font-medium">{shipment.loading_port || "—"}</p>
             </div>
           </div>
@@ -241,7 +241,7 @@ export function ShipmentTracker({ shipmentId, isBookingPartner }: ShipmentTracke
           <div className="flex items-center gap-2">
             <MapPin className="h-4 w-4 text-rose-600" />
             <div className="text-right">
-              <p className="text-[10px] uppercase text-muted-foreground">{t("marketplace-shipment-discharge-port")}</p>
+              <p className="text-xs uppercase text-muted-foreground">{t("marketplace-shipment-discharge-port")}</p>
               <p className="font-medium">{shipment.discharge_port || "—"}</p>
             </div>
           </div>
@@ -360,7 +360,7 @@ export function ShipmentTracker({ shipmentId, isBookingPartner }: ShipmentTracke
                   <div key={e.id} className="flex items-start gap-3 text-xs border-l-2 border-muted pl-3">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <Badge variant="outline" className={`text-[10px] h-5 ${STATUS_BADGE_CLASS[e.status as ShipmentStatus] || ""}`}>
+                        <Badge variant="outline" className={`text-xs h-5 ${STATUS_BADGE_CLASS[e.status as ShipmentStatus] || ""}`}>
                           {t(STATUS_LABEL_KEY[e.status as ShipmentStatus] || e.status)}
                         </Badge>
                         {e.location && (
@@ -487,7 +487,7 @@ function InfoCell({
 }) {
   return (
     <div className="rounded-md bg-muted/30 p-2">
-      <p className="text-[10px] uppercase tracking-wide text-muted-foreground flex items-center gap-1">
+      <p className="text-xs uppercase tracking-wide text-muted-foreground flex items-center gap-1">
         {Icon && <Icon className="h-3 w-3" />}
         {label}
       </p>
@@ -501,7 +501,7 @@ function InfoCell({
 function DateCell({ label, value }: { label: string; value: string | null | undefined }) {
   return (
     <div>
-      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className="font-medium mt-0.5">{value ? fmtDateTime(value) : "—"}</p>
     </div>
   );

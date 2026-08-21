@@ -239,7 +239,7 @@ export function AuctionWidget({ postId, post }: AuctionWidgetProps) {
                 {t("marketplace-auction-min-next-bid").replace("{n}", fmtMoney(suggestedBid, post.currency))}
               </p>
             )}
-            <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
               <Input
                 type="number"
                 step="0.01"
@@ -247,10 +247,12 @@ export function AuctionWidget({ postId, post }: AuctionWidgetProps) {
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 disabled={!canBid || placeBid.isPending}
+                className="w-full sm:flex-1"
               />
               <Button
                 onClick={() => placeBid.mutate()}
                 disabled={!canBid || !amount || placeBid.isPending}
+                className="w-full sm:w-auto"
               >
                 {placeBid.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <TrendingUp className="h-4 w-4 mr-1" />}
                 {t("marketplace-auction-place-bid")}

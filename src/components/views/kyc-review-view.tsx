@@ -449,10 +449,10 @@ function StatusFlow({ status, rejectionReason }: { status: KycSubmissionStatus; 
         return (
           <div key={s.key} className="flex items-center min-w-fit">
             <div className="flex flex-col items-center gap-1.5 px-1">
-              <div className={`size-7 rounded-full border-2 flex items-center justify-center text-[11px] font-semibold tabular smooth ${dotClass}`}>
+              <div className={`size-7 rounded-full border-2 flex items-center justify-center text-xs font-semibold tabular smooth ${dotClass}`}>
                 {isDone && !isCurrent ? <Check className="size-3.5" /> : i + 1}
               </div>
-              <span className={`text-[10px] uppercase tracking-wide font-medium whitespace-nowrap ${isCurrent ? "text-foreground" : "text-muted-foreground"}`}>
+              <span className={`text-xs uppercase tracking-wide font-medium whitespace-nowrap ${isCurrent ? "text-foreground" : "text-muted-foreground"}`}>
                 {t(s.labelKey)}
               </span>
             </div>
@@ -814,7 +814,7 @@ function ReviewDialog({
                                 <Icon className="size-5" />
                               </div>
                               <div className="min-w-0 flex-1">
-                                <Badge variant="outline" className="mb-1 text-[10px]">
+                                <Badge variant="outline" className="mb-1 text-xs">
                                   {t(DOC_TYPE_LABEL_KEYS[doc.type])}
                                 </Badge>
                                 <p className="text-sm font-medium truncate" title={doc.filename}>

@@ -802,7 +802,7 @@ function MessageBubble({
               {isOwn ? t("marketplace-negotiation-you") : t("marketplace-negotiation-other-party")}
             </span>
             {isOffer && (
-              <Badge variant="outline" className="text-[10px] py-0 px-1.5 h-4">
+              <Badge variant="outline" className="text-xs py-0 px-1.5 h-4">
                 {msg.message_type === "counter_offer"
                   ? t("marketplace-negotiation-counter-offer")
                   : t("marketplace-negotiation-make-offer")}
@@ -865,7 +865,7 @@ function MessageBubble({
           )}
 
           {/* Timestamp */}
-          <p className="text-[10px] text-muted-foreground mt-1">
+          <p className="text-xs text-muted-foreground mt-1">
             {fmtRelative(msg.created_at)}
           </p>
         </div>
@@ -1155,25 +1155,25 @@ function NegotiationsList() {
           <TabsList>
             <TabsTrigger value="active" className="gap-1">
               {t("marketplace-negotiations-tab-active")}
-              <Badge variant="secondary" className="ml-1 text-[10px] py-0 px-1.5 h-4">
+              <Badge variant="secondary" className="ml-1 text-xs py-0 px-1.5 h-4">
                 {activeItems.length}
               </Badge>
             </TabsTrigger>
             <TabsTrigger value="accepted" className="gap-1">
               {t("marketplace-negotiations-tab-accepted")}
-              <Badge variant="secondary" className="ml-1 text-[10px] py-0 px-1.5 h-4">
+              <Badge variant="secondary" className="ml-1 text-xs py-0 px-1.5 h-4">
                 {acceptedItems.length}
               </Badge>
             </TabsTrigger>
             <TabsTrigger value="rejected" className="gap-1">
               {t("marketplace-negotiations-tab-rejected")}
-              <Badge variant="secondary" className="ml-1 text-[10px] py-0 px-1.5 h-4">
+              <Badge variant="secondary" className="ml-1 text-xs py-0 px-1.5 h-4">
                 {rejectedItems.length}
               </Badge>
             </TabsTrigger>
             <TabsTrigger value="expired" className="gap-1">
               {t("marketplace-negotiations-tab-expired")}
-              <Badge variant="secondary" className="ml-1 text-[10px] py-0 px-1.5 h-4">
+              <Badge variant="secondary" className="ml-1 text-xs py-0 px-1.5 h-4">
                 {expiredItems.length}
               </Badge>
             </TabsTrigger>

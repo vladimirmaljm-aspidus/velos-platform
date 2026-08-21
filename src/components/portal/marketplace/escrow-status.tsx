@@ -179,7 +179,7 @@ export function EscrowStatus({ instrumentId, canRelease }: EscrowStatusProps) {
         <div className="flex items-center gap-3 rounded-md bg-gradient-to-br from-amber-500/10 to-emerald-500/10 p-4">
           <Shield className="h-8 w-8 text-amber-600 shrink-0" />
           <div className="flex-1">
-            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
               {t("marketplace-finance-escrow-amount-held")}
             </p>
             <p className="text-2xl font-bold tracking-tight">
@@ -312,7 +312,7 @@ function InfoCell({
 }) {
   return (
     <div className="rounded-md bg-muted/30 p-2">
-      <p className="text-[10px] uppercase tracking-wide text-muted-foreground flex items-center gap-1">
+      <p className="text-xs uppercase tracking-wide text-muted-foreground flex items-center gap-1">
         {Icon && <Icon className="h-3 w-3" />}
         {label}
       </p>

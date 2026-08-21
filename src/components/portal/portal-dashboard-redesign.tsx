@@ -515,9 +515,9 @@ export function PortalDashboardRedesign() {
                         <div className="min-w-0 flex-1">
                           <p className="text-xs font-medium line-clamp-2">{n.title}</p>
                           {n.message && (
-                            <p className="text-[11px] text-muted-foreground line-clamp-1 mt-0.5">{n.message}</p>
+                            <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">{n.message}</p>
                           )}
-                          <p className="text-[10px] text-muted-foreground mt-0.5 tabular">
+                          <p className="text-xs text-muted-foreground mt-0.5 tabular">
                             {fmtRelative(n.created_at)}
                           </p>
                         </div>
@@ -590,13 +590,13 @@ export function PortalDashboardRedesign() {
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <Badge className={cn("text-[10px] px-1.5 py-0", badge.cls)}>
+                          <Badge className={cn("text-xs px-1.5 py-0", badge.cls)}>
                             {t(badge.labelKey)}
                           </Badge>
-                          <span className="text-[10px] text-muted-foreground capitalize">{p.status}</span>
+                          <span className="text-xs text-muted-foreground capitalize">{p.status}</span>
                         </div>
                         <p className="text-sm font-medium truncate mt-0.5">{p.product_name}</p>
-                        <div className="flex items-center gap-3 mt-0.5 text-[11px] text-muted-foreground">
+                        <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground">
                           <span className="inline-flex items-center gap-1">
                             <Eye className="size-3" />
                             <span className="tabular">{p.views_count}</span>
@@ -612,7 +612,7 @@ export function PortalDashboardRedesign() {
                         <p className="text-sm font-semibold tabular">
                           {p.target_price ? fmtMoney(p.target_price, p.currency) : "—"}
                         </p>
-                        <p className="text-[11px] text-muted-foreground tabular">
+                        <p className="text-xs text-muted-foreground tabular">
                           {p.quantity.toLocaleString()} {p.unit}
                         </p>
                       </div>
@@ -678,11 +678,11 @@ export function PortalDashboardRedesign() {
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <Badge className="text-[10px] px-1.5 py-0 capitalize border-transparent bg-sky-500/15 text-sky-700 dark:text-sky-400">
+                        <Badge className="text-xs px-1.5 py-0 capitalize border-transparent bg-sky-500/15 text-sky-700 dark:text-sky-400">
                           {r.status}
                         </Badge>
                         {r.is_counter && (
-                          <Badge className="text-[10px] px-1.5 py-0 border-transparent bg-amber-500/15 text-amber-700 dark:text-amber-400">
+                          <Badge className="text-xs px-1.5 py-0 border-transparent bg-amber-500/15 text-amber-700 dark:text-amber-400">
                             Counter
                           </Badge>
                         )}
@@ -690,7 +690,7 @@ export function PortalDashboardRedesign() {
                       <p className="text-sm font-medium truncate mt-0.5">
                         {r.message ? r.message : `Response on ${fmtDate(r.created_at)}`}
                       </p>
-                      <p className="text-[11px] text-muted-foreground tabular mt-0.5">
+                      <p className="text-xs text-muted-foreground tabular mt-0.5">
                         {fmtRelative(r.created_at)}
                       </p>
                     </div>
@@ -699,7 +699,7 @@ export function PortalDashboardRedesign() {
                         {r.unit_price ? fmtMoney(r.unit_price, r.currency) : "—"}
                       </p>
                       {r.quantity && (
-                        <p className="text-[11px] text-muted-foreground tabular">
+                        <p className="text-xs text-muted-foreground tabular">
                           {r.quantity.toLocaleString()}
                         </p>
                       )}

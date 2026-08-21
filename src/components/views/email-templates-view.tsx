@@ -326,7 +326,7 @@ export function EmailTemplatesView() {
                                 {tpl.isDefault && (
                                   <Badge
                                     variant="outline"
-                                    className="text-[10px] px-1.5 py-0 h-4 shrink-0"
+                                    className="text-xs px-1.5 py-0 h-4 shrink-0"
                                   >
                                     {t("default")}
                                   </Badge>
@@ -347,11 +347,11 @@ export function EmailTemplatesView() {
                           <div className="flex items-center gap-1.5 mt-2">
                             <Badge
                               variant="outline"
-                              className={`text-[10px] px-1.5 py-0 h-4 ${catMeta.className}`}
+                              className={`text-xs px-1.5 py-0 h-4 ${catMeta.className}`}
                             >
                               {catMeta.label}
                             </Badge>
-                            <span className="text-[10px] text-muted-foreground ml-auto">
+                            <span className="text-xs text-muted-foreground ml-auto">
                               {tpl.variables.length}{" "}
                               {"vars"}
                             </span>
@@ -646,12 +646,12 @@ function TemplateEditorPanel({
                 </span>
                 <Badge
                   variant="secondary"
-                  className="text-[10px] ml-auto"
+                  className="text-xs ml-auto"
                 >
                   {template.variables.length}
                 </Badge>
               </div>
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 {t("variableHint")}
               </p>
               <div className="flex flex-wrap gap-1.5">
@@ -680,7 +680,7 @@ function TemplateEditorPanel({
               </CardTitle>
               <div className="inline-flex rounded-md border border-border/60 p-[2px]">
                 <button
-                  className={`px-2 py-0.5 text-[11px] font-medium rounded transition-colors ${
+                  className={`px-2 py-0.5 text-xs font-medium rounded transition-colors ${
                     previewMode === "visual"
                       ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
                       : "text-muted-foreground hover:text-foreground"
@@ -690,7 +690,7 @@ function TemplateEditorPanel({
                   {t("visualView")}
                 </button>
                 <button
-                  className={`px-2 py-0.5 text-[11px] font-medium rounded transition-colors ${
+                  className={`px-2 py-0.5 text-xs font-medium rounded transition-colors ${
                     previewMode === "code"
                       ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
                       : "text-muted-foreground hover:text-foreground"
@@ -705,7 +705,7 @@ function TemplateEditorPanel({
           <CardContent className="p-4 pt-0">
             {/* Subject Preview */}
             <div className="mb-3 p-3 rounded-lg bg-muted/30 border border-border/40">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold mb-1">
+              <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-1">
                 {t("subject")}
               </p>
               <p className="text-sm font-medium">
@@ -722,7 +722,7 @@ function TemplateEditorPanel({
                     <div className="size-2 rounded-full bg-amber-400/60" />
                     <div className="size-2 rounded-full bg-emerald-400/60" />
                   </div>
-                  <span className="text-[10px] text-muted-foreground ml-1">
+                  <span className="text-xs text-muted-foreground ml-1">
                     {"Preview"}
                   </span>
                 </div>
@@ -812,8 +812,8 @@ function NewTemplateDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="lg">
-        <DialogHeader>
+      <DialogContent size="lg" className="max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle className="flex items-center gap-2">
             <Plus className="size-5" /> {t("createTemplate")}
           </DialogTitle>
@@ -822,7 +822,8 @@ function NewTemplateDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-3 py-2">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
+        <div className="grid gap-3">
           <div className="space-y-1.5">
             <Label className="text-xs">Name</Label>
             <Input
@@ -877,8 +878,9 @@ function NewTemplateDialog({
             />
           </div>
         </div>
+        </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {t("cancel")}
           </Button>

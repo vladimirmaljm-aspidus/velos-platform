@@ -301,8 +301,8 @@ export function MarketplaceCreatePost({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="max-w-3xl max-h-[88vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle className="flex items-center gap-2">
             <StepIcon className="size-5 text-emerald-700 dark:text-emerald-400" />
             {t("marketplace-create-post")}
@@ -311,6 +311,7 @@ export function MarketplaceCreatePost({
         </DialogHeader>
 
         {/* ─── Progress indicator ──────────────────────────────────────── */}
+        <div className="shrink-0 px-6 pt-4 space-y-2">
         <div className="flex items-center gap-1.5">
           {STEPS.map((s, i) => {
             const Icon = s.icon;
@@ -320,7 +321,7 @@ export function MarketplaceCreatePost({
               <div key={s.key} className="flex items-center gap-1.5 flex-1">
                 <div
                   className={cn(
-                    "size-7 rounded-full flex items-center justify-center shrink-0 smooth border text-[11px] font-semibold tabular",
+                    "size-7 rounded-full flex items-center justify-center shrink-0 smooth border text-xs font-semibold tabular",
                     done && "bg-emerald-500 border-emerald-500 text-white",
                     active && "bg-emerald-500/10 border-emerald-500/40 text-emerald-700 dark:text-emerald-400",
                     !done && !active && "bg-muted border-border text-muted-foreground",
@@ -331,7 +332,7 @@ export function MarketplaceCreatePost({
                 <div className="flex-1 hidden sm:block">
                   <p
                     className={cn(
-                      "text-[11px] font-medium truncate",
+                      "text-xs font-medium truncate",
                       active ? "text-foreground" : "text-muted-foreground",
                     )}
                   >
@@ -345,14 +346,15 @@ export function MarketplaceCreatePost({
             );
           })}
         </div>
-        <p className="text-[11px] text-muted-foreground text-center sm:text-left">
+        <p className="text-xs text-muted-foreground text-center sm:text-left">
           {t("marketplace-wizard-progress").replace("{n}", String(step + 1)).replace("{total}", String(STEPS.length))}
         </p>
+        </div>
 
         <Separator />
 
         {/* ─── Step content ────────────────────────────────────────────── */}
-        <div className="space-y-5 min-h-[280px]">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-5">
           {/* STEP 1 — type + product + category */}
           {step === 0 && (
             <div className="space-y-5">
@@ -399,7 +401,7 @@ export function MarketplaceCreatePost({
                 {/* Auto-suggest */}
                 {productSuggestions.length > 0 && (
                   <div className="rounded-lg border border-border/60 bg-card p-2 space-y-1">
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-1.5 inline-flex items-center gap-1">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground px-1.5 inline-flex items-center gap-1">
                       <Sparkles className="size-3" />
                       {t("marketplace-wizard-product-suggestions")}
                     </p>
@@ -670,7 +672,7 @@ export function MarketplaceCreatePost({
                   }
                   placeholder="Moisture: 14% max, Protein: 12% min, …"
                 />
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-xs text-muted-foreground">
                   Separate specs with commas — they'll show up as badges on the post.
                 </p>
                 {form.quality_specs.length > 0 && (
@@ -767,6 +769,7 @@ export function MarketplaceCreatePost({
         </div>
 
         {/* ─── Wizard navigation ─────────────────────────────────────────── */}
+        <div className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4 space-y-2">
         <Separator />
         <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
           <div className="flex gap-2">
@@ -819,7 +822,7 @@ export function MarketplaceCreatePost({
 
         {/* Reset link — only on step 1, subtle. */}
         {step === 0 && (
-          <p className="text-[11px] text-muted-foreground text-center">
+          <p className="text-xs text-muted-foreground text-center">
             <button
               type="button"
               onClick={reset}
@@ -829,6 +832,7 @@ export function MarketplaceCreatePost({
             </button>
           </p>
         )}
+        </div>
       </DialogContent>
     </Dialog>
   );
