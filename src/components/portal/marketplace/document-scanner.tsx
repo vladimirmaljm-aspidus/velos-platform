@@ -212,12 +212,13 @@ export function DocumentScanner({ onFill }: DocumentScannerProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  // ── Mutation: parse document via relay (client-side) or Vercel API ─────
-  // When NEXT_PUBLIC_ZAI_RELAY_URL is set (production), the browser calls
-  // the relay directly — bypassing Vercel's network block to the Z.AI
-  // internal API. The relay (on the sandbox) can reach internal-api.z.ai.
-  // When the env var is NOT set (sandbox/local dev), falls back to the
-  // Vercel API which uses the local .z-ai-config.
+  // ── Mutation: parse document via edge proxy (CORS-free) or Vercel API ──
+  // The browser can't call the sandbox relay directly (FC gateway returns
+  // 400 for CORS preflight). Instead, we call a Vercel EDGE FUNCTION at
+  // /api/ai/relay-proxy which is same-origin (no CORS) and forwards to
+  // the relay server-side (with x-session-id header, no preflight).
+  // Falls back to /api/marketplace/parse-document (Vercel serverless)
+  // when the edge proxy isn't available (sandbox/local dev).
   const parse = useMutation({
     mutationFn: async (vars: {
       type: ParseType;
@@ -226,13 +227,10 @@ export function DocumentScanner({ onFill }: DocumentScannerProps) {
     }) => {
       const relayUrl = process.env.NEXT_PUBLIC_ZAI_RELAY_URL;
       if (relayUrl) {
-        // Client-side call to the relay (browser → sandbox → Z.AI)
-        const r = await fetch(`${relayUrl}/parse-document?XTransformPort=3030`, {
+        // Call the edge proxy (same origin → no CORS, no preflight).
+        const r = await fetch("/api/ai/relay-proxy", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-session-id": "velos-relay-1",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(vars),
         });
         if (!r.ok) {
