@@ -25,7 +25,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  Plus, Search, KeyRound, Pencil, Trash2, Lock, ShieldCheck, EyeOff, Database, Mail, CreditCard, Box,
+  Plus, Search, KeyRound, Pencil, Trash2, Lock, ShieldCheck, ShieldAlert, EyeOff, Database, Mail, CreditCard, Box,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
@@ -72,6 +72,35 @@ export function VaultView() {
 
   const user = useAppStore((s) => s.user);
   const admin = isAdmin(user);
+  const isSuperAdminUser = !!user && user.role === "super_admin";
+
+  // ── Plan gate — TRIAL tenants do NOT get the vault. ─────────────────────
+  // The vault stores AES-256-GCM-encrypted tenant secrets (SMTP creds,
+  // payment gateway keys, DB DSNs). A trial tenant with vault access is
+  // a security risk: trial accounts can be farmed to probe the platform's
+  // secret-storage surface for 14 days before anyone notices. The sidebar
+  // ALREADY hides this item via the `module_vault` feature flag (default
+  // false for every new tenant) AND `/api/vault` enforces the flag
+  // server-side via `requireFeature(..., "module_vault", isSA)` — this
+  // is the in-view defense for the direct-URL navigation case so a trial
+  // admin sees a clean "upgrade your plan" card instead of a fetch error.
+  // Mirrors the `planAllowed` gate on api-keys-view.tsx and
+  // webhooks-view.tsx.
+  const subQ = useQuery({
+    queryKey: ["subscription-status-vault"],
+    queryFn: async () => {
+      const r = await fetch("/api/subscription/status");
+      if (!r.ok) return null;
+      return r.json() as Promise<{
+        subscription: { is_trial?: boolean } | null;
+      }>;
+    },
+    staleTime: 60_000,
+    refetchOnWindowFocus: true,
+  });
+  const isTrial = !!subQ.data?.subscription?.is_trial;
+  const planAllowed = isSuperAdminUser || !isTrial;
+
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounced(search, 300);
@@ -90,7 +119,7 @@ export function VaultView() {
       if (!r.ok) throw new Error("Failed to load vault");
       return r.json() as Promise<{ items: SafeSecret[]; total: number }>;
     },
-    enabled: admin,
+    enabled: admin && planAllowed,
   });
 
   const deleteMut = useMutation({
@@ -111,6 +140,29 @@ export function VaultView() {
       <div>
         <PageHeader title={t("admin-vault-title")} description={t("admin-vault-desc")} />
         <AdminRequired />
+      </div>
+    );
+  }
+
+  if (!planAllowed) {
+    return (
+      <div>
+        <PageHeader title={t("admin-vault-title")} description={t("admin-vault-desc")} />
+        <Card className="border-amber-500/40 bg-amber-50/50 dark:bg-amber-950/20 rounded-xl">
+          <CardContent className="p-6 flex items-start gap-3">
+            <ShieldAlert className="size-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
+                {t("admin-access-required")}
+              </p>
+              <p className="text-xs text-amber-700 dark:text-amber-300">
+                The encrypted vault is a paid-plan integration surface and
+                is not available during the trial. Upgrade your workspace to
+                store SMTP, payment-gateway, and database secrets securely.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }

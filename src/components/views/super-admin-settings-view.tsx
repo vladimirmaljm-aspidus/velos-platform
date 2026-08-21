@@ -13,6 +13,7 @@ import { MonitoringSettings } from "@/components/super-admin/monitoring-settings
 import { IncidentManagement } from "@/components/super-admin/incident-management";
 import { SystemHealth } from "@/components/super-admin/system-health";
 import { PlatformConfig } from "@/components/super-admin/platform-config";
+import { WhiteLabelConfig } from "@/components/super-admin/white-label-config";
 
 /**
  * SuperAdminSettingsView — D-AUDIT-3 redesign.
@@ -108,8 +109,12 @@ export function SuperAdminSettingsView() {
           {/* D-AUDIT-3: consolidated — tenant roster + feature flags
               (formerly the "Platform" tab) now live alongside the
               system-health metrics. Both surface per-instance + per-tenant
-              operational state, so they belong together. */}
+              operational state, so they belong together.
+              UI-SUPER-AUDIT: white-label config card added on top so
+              super-admins can finally set per-tenant branding without
+              hitting the API directly. */}
           <div className="space-y-6">
+            <WhiteLabelConfig />
             <SystemHealth />
             <PlatformConfig />
           </div>

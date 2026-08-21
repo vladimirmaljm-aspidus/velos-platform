@@ -27,6 +27,7 @@ import {
   EyeOff,
   Building2,
   Sparkles,
+  Store,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store/app-store";
 import { useI18nStore, useT } from "@/lib/i18n/store";
@@ -382,6 +383,18 @@ export function LoginView({ onSwitchToRegister }: LoginViewProps) {
                   </button>
                 </div>
               )}
+
+              {/* Client Portal link — clients log in here, not the admin app */}
+              <div className="mt-3 flex items-center justify-center gap-1.5 text-sm text-muted-foreground border-t pt-4">
+                <Store className="size-4 text-muted-foreground/70" />
+                <span>Are you a client?</span>
+                <a
+                  href="/portal"
+                  className="font-medium text-primary hover:text-primary/80 underline-offset-4 hover:underline transition-colors"
+                >
+                  Go to Client Portal →
+                </a>
+              </div>
 
               {/* Bottom note */}
               <p className="mt-6 flex items-center justify-center gap-1.5 text-center text-xs text-muted-foreground/60">

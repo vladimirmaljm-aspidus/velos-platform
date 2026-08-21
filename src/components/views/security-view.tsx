@@ -77,6 +77,35 @@ export function SecurityView() {
 
   const user = useAppStore((s) => s.user);
   const admin = isAdmin(user);
+  const isSuperAdminUser = !!user && user.role === "super_admin";
+
+  // ── Plan gate — TRIAL tenants do NOT get the security center. ─────────
+  // The security center exposes session revocation, login history (IP +
+  // user-agent), trusted-device / known-IP allow-listing — powerful
+  // surfaces that a trial tenant shouldn't configure. The sidebar
+  // ALREADY hides this item via the `module_security` feature flag
+  // (default false for every new tenant) AND the
+  // `/api/security/*` routes enforce the flag server-side via
+  // `requireFeature(..., "module_security", isSA)` — this is the in-view
+  // defense for the direct-URL navigation case so a trial admin sees a
+  // clean "upgrade your plan" card instead of a fetch error. Mirrors the
+  // `planAllowed` gate on api-keys-view.tsx, webhooks-view.tsx, and
+  // vault-view.tsx.
+  const subQ = useQuery({
+    queryKey: ["subscription-status-security"],
+    queryFn: async () => {
+      const r = await fetch("/api/subscription/status");
+      if (!r.ok) return null;
+      return r.json() as Promise<{
+        subscription: { is_trial?: boolean } | null;
+      }>;
+    },
+    staleTime: 60_000,
+    refetchOnWindowFocus: true,
+  });
+  const isTrial = !!subQ.data?.subscription?.is_trial;
+  const planAllowed = isSuperAdminUser || !isTrial;
+
   const [tab, setTab] = useState("sessions");
 
   const sessionsQ = useQuery({
@@ -86,7 +115,7 @@ export function SecurityView() {
       if (!r.ok) throw new Error("Failed to load sessions");
       return r.json() as Promise<{ items: SecuritySession[] }>;
     },
-    enabled: admin,
+    enabled: admin && planAllowed,
   });
   const loginQ = useQuery({
     queryKey: ["security", tenantKey, "login-history"],
@@ -95,7 +124,7 @@ export function SecurityView() {
       if (!r.ok) throw new Error("Failed to load login history");
       return r.json() as Promise<{ items: LoginHistoryEntry[] }>;
     },
-    enabled: admin,
+    enabled: admin && planAllowed,
   });
   const ipsQ = useQuery({
     queryKey: ["security", tenantKey, "known-ips"],
@@ -104,7 +133,7 @@ export function SecurityView() {
       if (!r.ok) throw new Error("Failed to load known IPs");
       return r.json() as Promise<{ items: KnownIp[] }>;
     },
-    enabled: admin,
+    enabled: admin && planAllowed,
   });
   const devicesQ = useQuery({
     queryKey: ["security", tenantKey, "trusted-devices"],
@@ -113,7 +142,7 @@ export function SecurityView() {
       if (!r.ok) throw new Error("Failed to load trusted devices");
       return r.json() as Promise<{ items: TrustedDevice[] }>;
     },
-    enabled: admin,
+    enabled: admin && planAllowed,
   });
 
   if (!admin) {
@@ -124,6 +153,34 @@ export function SecurityView() {
           description={t("admin-security-desc")}
         />
         <AdminRequired />
+      </div>
+    );
+  }
+
+  if (!planAllowed) {
+    return (
+      <div>
+        <PageHeader
+          title={t("admin-security-title")}
+          description={t("admin-security-desc")}
+        />
+        <Card className="border-amber-500/40 bg-amber-50/50 dark:bg-amber-950/20 rounded-xl">
+          <CardContent className="p-6 flex items-start gap-3">
+            <ShieldAlert className="size-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
+                {t("admin-access-required")}
+              </p>
+              <p className="text-xs text-amber-700 dark:text-amber-300">
+                The security center (session revocation, login history,
+                trusted devices, known IPs) is a paid-plan surface and is
+                not available during the trial. Upgrade your workspace to
+                monitor and revoke active sessions and review login
+                activity.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }

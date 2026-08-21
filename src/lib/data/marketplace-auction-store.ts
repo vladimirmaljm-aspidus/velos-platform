@@ -144,19 +144,39 @@ export async function placeBid(
       .eq("id", postId);
     if (updErr) throw updErr;
   } else if (auctionType === "dutch") {
-    // First bid wins. Mark bid as winning, set winner_id on post, close.
-    await sb
-      .from("marketplace_auction_bids")
-      .update({ is_winning: true })
-      .eq("id", bid.id);
-    await sb
+    // First bid wins. The settlement is atomic via a conditional UPDATE
+    // — we only flip the post to closed+winner if auction_winner_id is
+    // STILL null. This guards against the concurrent-bidder race where
+    // two bidders simultaneously read `current_price` and both think
+    // they're the first to accept. Without the guard, both bids would
+    // be marked `is_winning = true` and the post's winner_id would be
+    // whichever UPDATE committed last — an inconsistent state. With
+    // the guard, only the FIRST committed UPDATE affects the row; the
+    // second sees 0 affected rows and we roll back (delete the bid).
+    const { data: settled, error: settleErr } = await sb
       .from("marketplace_posts")
       .update({
         auction_current_price: amount,
         auction_winner_id: partnerId,
         status: "closed",
       })
-      .eq("id", postId);
+      .eq("id", postId)
+      .is("auction_winner_id", null) // CRITICAL: only if not already won
+      .select("id")
+      .maybeSingle();
+    if (settleErr) throw settleErr;
+    if (!settled) {
+      // Another bidder won between our read and our write. Roll back
+      // the bid we just inserted (it lost the race) and surface a 409.
+      await sb.from("marketplace_auction_bids").delete().eq("id", bid.id);
+      throw new Error("Auction has already closed.");
+    }
+    // We won — flip our bid to is_winning. Conditional on winner_id =
+    // us so a stale concurrent writer can't undo our settlement.
+    await sb
+      .from("marketplace_auction_bids")
+      .update({ is_winning: true })
+      .eq("id", bid.id);
     bid.is_winning = true;
   }
 
@@ -332,15 +352,26 @@ export async function processAuctionEnd(
     }
   }
 
-  const { error: updErr } = await sb
+  // Conditional UPDATE — only flips the post to closed+winner when
+  // auction_winner_id is still null. Guards against two concurrent
+  // cron ticks (or cron + lazy on-demand settle) both computing the
+  // same winner and racing on the UPDATE. The winning UPDATE returns
+  // the updated row; a stale concurrent UPDATE affects 0 rows and is
+  // a no-op. Idempotent on the bid's is_winning flag too (re-setting
+  // true→true).
+  const { data: settled, error: updErr } = await sb
     .from("marketplace_posts")
     .update({
       auction_winner_id: winnerId,
       auction_current_price: highest ? Number(highest.bid_amount) : post.auction_current_price,
       status: "closed",
     })
-    .eq("id", postId);
+    .eq("id", postId)
+    .is("auction_winner_id", null)
+    .select("id")
+    .maybeSingle();
   if (updErr) throw updErr;
+  void settled; // 0-row result means another caller settled it first
 
   const { tenant_id: _t, partner_id: _p, ...rest } = post;
   return {

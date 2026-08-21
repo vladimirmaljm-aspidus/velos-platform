@@ -388,7 +388,13 @@ async function attemptDelivery(
  *
  * Never throws — all errors are caught per-delivery.
  *
- * Returns a summary for the cron endpoint to log.
+ * Returns a summary for the cron endpoint to log. The summary's
+ * `delivered` counter is computed by RE-FETCHING each delivery row
+ * after the retry attempt — `attemptDelivery` updates the row's
+ * `status` to "delivered" on a 2xx response, so reading the row back
+ * is the authoritative source of truth. (Previously the counter was
+ * bumped only via a `void delivered;` placeholder and was always 0,
+ * which made the audit log + cron dashboard misleading.)
  */
 export async function retryFailedDeliveries(
   store: Store,
@@ -449,15 +455,27 @@ export async function retryFailedDeliveries(
 
     try {
       await attemptDelivery(store, webhook, delivery, body, signature, nextAttempt);
-      // We can't easily read back the row here without an extra SELECT —
-      // assume the call updated it. The cron endpoint logs the count only.
-      if (nextAttempt >= MAX_WEBHOOK_ATTEMPTS) {
+      // Re-fetch the delivery row to read the actual outcome. The
+      // `attemptDelivery` helper updated `status` (delivered|failed),
+      // `attempts`, `response_status`, `delivered_at`, and
+      // `next_attempt_at`. The authoritative outcome is on the row.
+      let outcome: WebhookDelivery | null = null;
+      try {
+        outcome = await store.getWebhookDelivery?.(delivery.id) ?? null;
+      } catch (e) {
+        // Helper may not implement getWebhookDelivery (older stores). Fall
+        // back to the heuristic below — we lose accuracy but don't crash.
+        console.warn(`[webhooks] retry: getWebhookDelivery(${delivery.id}) failed:`, e);
+      }
+      if (outcome?.status === "delivered") {
+        delivered++;
+      } else if (nextAttempt >= MAX_WEBHOOK_ATTEMPTS) {
+        // Final attempt + still failed — count as permanently failing.
+        stillFailing++;
+      } else {
+        // Non-final retry that didn't deliver (still in status=failed).
         stillFailing++;
       }
-      // Heuristic: if the most recent response_status was 2xx, count as
-      // delivered. (attemptDelivery already updated the row; we just don't
-      // have the result here without re-fetching.)
-      void delivered; // reserved — caller can re-query if it wants exact counts
     } catch (e) {
       console.error(`[webhooks] retry attempt ${nextAttempt} for ${delivery.id} failed:`, e);
       stillFailing++;

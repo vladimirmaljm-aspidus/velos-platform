@@ -3,6 +3,8 @@ import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { createAnswer, listAnswers } from "@/lib/data/marketplace-community-store";
 import { audit } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
+import { getSupabase } from "@/lib/supabase/client";
+import { notifyMarketplaceAnswerPosted } from "@/lib/notif/helper";
 import { withApm } from "@/lib/monitoring/apm";
 
 export const runtime = "nodejs";
@@ -69,6 +71,33 @@ async function _post(req: NextRequest, ctx: RouteCtx) {
       );
     } catch (e) {
       console.error("[marketplace.community.answers.create] audit failed:", e);
+    }
+    // LOGIC-AUDIT-2 Fix 2: notify the question author that their question
+    // got a new answer. Fire-and-forget — a notification failure must not
+    // block the answerer's HTTP response (the answer is already saved).
+    // Skip if the answerer IS the question author (self-answer case).
+    try {
+      const sb = getSupabase();
+      const { data: qRow } = await sb
+        .from("marketplace_questions")
+        .select("partner_id, title")
+        .eq("id", id)
+        .maybeSingle();
+      const q = qRow as { partner_id?: string; title?: string } | null;
+      if (q?.partner_id && q.partner_id !== access.partner_id) {
+        const store = await getStore();
+        const answerer = await store.getPartner(access.partner_id);
+        const answererName = answerer?.name || access.portal_email || "A member";
+        await notifyMarketplaceAnswerPosted(
+          access.tenant_id,
+          q.partner_id,
+          answererName,
+          q.title || "(untitled question)",
+          id,
+        );
+      }
+    } catch (e) {
+      console.error("[marketplace.community.answers.create] notify failed:", e);
     }
     return NextResponse.json(created, { status: 201 });
   } catch (e: any) {

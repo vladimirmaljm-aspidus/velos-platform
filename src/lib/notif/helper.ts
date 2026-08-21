@@ -149,3 +149,61 @@ export async function notifyPortalInviteSent(tenantId: string, partnerName: stri
     entityId: accessId,
   });
 }
+
+// ============================================================
+// Marketplace Q&A notifications (LOGIC-AUDIT-2 Fix 2)
+// ============================================================
+// Previously neither questions nor answers fired any notification —
+// a question author had to manually poll the page to see whether
+// someone had answered, and group members had to browse the group
+// feed to see new questions. These helpers close that automation gap
+// for the two highest-value events:
+//   • New answer on a question → notify the question author
+//   • New question in a group → notify each group member
+//     (the API route iterates the member list per-recipient)
+// Both fire-and-forget — failures are caught in `notify()`.
+//
+// `partnerId` here is the RECIPIENT (the partner the notification is
+// addressed to), not the actor. The actor's name is in the message
+// body for context.
+
+export async function notifyMarketplaceAnswerPosted(
+  tenantId: string,
+  authorPartnerId: string,
+  answererName: string,
+  questionTitle: string,
+  questionId: string,
+) {
+  await notify({
+    tenantId,
+    partnerId: authorPartnerId,
+    type: "marketplace_message_received",
+    title: "New answer to your question",
+    message: `${answererName} answered: "${questionTitle.length > 80 ? questionTitle.slice(0, 80) + "…" : questionTitle}"`,
+    entityType: "marketplace_questions",
+    entityId: questionId,
+    actionUrl: `/portal/marketplace/community`,
+    actionLabel: "View answer",
+  });
+}
+
+export async function notifyMarketplaceQuestionAskedToMember(
+  tenantId: string,
+  recipientPartnerId: string,
+  askerName: string,
+  questionTitle: string,
+  questionId: string,
+  groupName?: string | null,
+) {
+  await notify({
+    tenantId,
+    partnerId: recipientPartnerId,
+    type: "marketplace_message_received",
+    title: "New question" + (groupName ? ` in ${groupName}` : ""),
+    message: `${askerName} asked: "${questionTitle.length > 100 ? questionTitle.slice(0, 100) + "…" : questionTitle}"`,
+    entityType: "marketplace_questions",
+    entityId: questionId,
+    actionUrl: `/portal/marketplace/community`,
+    actionLabel: "View question",
+  });
+}

@@ -297,6 +297,50 @@ export async function POST(req: NextRequest) {
       locked_until: null,
     } as any);
 
+    // ── SEC-AUDIT (Data leakage + permission audit): seed feature_flags ────
+    // Trial tenants MUST get an explicit `feature_flags` row with the secure
+    // schema defaults (CRM/finance/logistics ON; vault/api_keys/webhooks/
+    // mail_queue/security OFF). Without this row, `requireFeature()` in
+    // src/lib/api/feature-guard.ts saw `data === null` → `flags = {}` →
+    // `flags[module] === undefined`, which (before the fail-closed fix)
+    // silently granted trial admins access to vault_secrets, api_keys,
+    // webhooks, mail_queue, and the security center. Combined with
+    // `can()`'s rule-3 (`role === "admin"` → implicit grant of every
+    // non-platform permission, ignoring the user's `permissions` array),
+    // the TRIAL_ADMIN_PERMISSIONS list above was effectively a no-op for
+    // admin callers — only the feature-flag gate could deny them. Seeding
+    // the row + the fail-closed check together restore the trial tiering.
+    try {
+      await store.upsertFeatureFlags({
+        tenant_id: tenant.id,
+        // Broad-access modules the trial CAN use (matches Prisma schema
+        // @default(true) on TenantFeatureFlags).
+        module_crm: true,
+        module_finance: true,
+        module_logistics: true,
+        // Restricted modules explicitly OFF for trial (matches
+        // @default(false) on TenantFeatureFlags). A super-admin flips
+        // these on during the upgrade flow.
+        module_trade: false,
+        module_inventory: false,
+        module_portal: false,
+        module_kyc: false,
+        module_document_templates: false,
+        module_document_verification: false,
+        module_vault: false,
+        module_api_keys: false,
+        module_webhooks: false,
+        module_mail_queue: false,
+        module_security: false,
+        max_users: 5,
+        updated_by: user.id,
+      } as any);
+    } catch (e) {
+      console.error("[register] upsertFeatureFlags failed:", e);
+      // Non-fatal — the fail-closed `requireFeature` check will deny
+      // restricted modules until a super-admin creates the row.
+    }
+
     // ── Audit the new tenant + user creation ───────────────────────────────
     try {
       await store.appendAudit({

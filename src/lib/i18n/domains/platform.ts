@@ -347,6 +347,9 @@ export const PLATFORM: Record<Locale, Record<string, string>> = {
     "pf-audit-prev": "Prev",
     "pf-audit-next": "Next",
     "pf-audit-entries-page": "{total} entries · page {page} of {pages}",
+    "pf-audit-export-csv": "Export CSV",
+    "pf-audit-export-failed": "Failed to export CSV",
+    "pf-audit-export-empty": "Nothing to export",
 
     // ── platform-dashboard-view tab labels (new ones; existing: pf-tab-flags, pf-tab-plans, pf-tab-audit, pf-tab-health) ──
     "pf-tab-overview": "Overview",
@@ -638,6 +641,12 @@ export const PLATFORM: Record<Locale, Record<string, string>> = {
     "pf-sa-sys-tenants-desc": "Suspend / cancel / activate tenants, change their plan. Suspend triggers a session-kill cascade.",
     "pf-sa-sys-refresh": "Refresh",
     "pf-sa-sys-autorefresh-hint": "Auto-refreshing every 30s",
+    "pf-sa-sys-brand-title": "White-label & Branding",
+    "pf-sa-sys-brand-desc": "Per-tenant marketplace branding — name, logo, colors, custom domain, footer. Choose a tenant to configure.",
+    "pf-sa-sys-brand-tenant": "Tenant",
+    "pf-sa-sys-brand-choose": "Choose a tenant to edit branding for.",
+    "pf-sa-sys-brand-reset": "Reset to defaults",
+    "pf-sa-sys-brand-preview": "Preview",
 
     // ── Marketplace admin panel (task UI-2) ──
     "pf-ma-title": "Marketplace Admin",
@@ -1113,6 +1122,9 @@ export const PLATFORM: Record<Locale, Record<string, string>> = {
     "pf-audit-prev": "Preth.",
     "pf-audit-next": "Sledeće",
     "pf-audit-entries-page": "{total} unosa · strana {page} od {pages}",
+    "pf-audit-export-csv": "Izvezi CSV",
+    "pf-audit-export-failed": "Izvoz CSV nije uspeo",
+    "pf-audit-export-empty": "Nema šta da se izveze",
 
     // ── platform-dashboard-view tab labels (new ones) ──
     "pf-tab-overview": "Pregled",
@@ -1336,6 +1348,12 @@ export const PLATFORM: Record<Locale, Record<string, string>> = {
     "pf-sa-sys-tenants-desc": "Suspenduj / otkaži / aktiviraj tenante, promeni im plan. Suspendovanje pokreće kaskadu gašenja sesija.",
     "pf-sa-sys-refresh": "Osveži",
     "pf-sa-sys-autorefresh-hint": "Auto-osvežavanje na 30s",
+    "pf-sa-sys-brand-title": "White-label i brendiranje",
+    "pf-sa-sys-brand-desc": "Brendiranje marketplace-a po tenantu — naziv, logo, boje, prilagođeni domen, footer. Izaberi tenant za konfiguraciju.",
+    "pf-sa-sys-brand-tenant": "Tenant",
+    "pf-sa-sys-brand-choose": "Izaberi tenant za uređivanje brendiranja.",
+    "pf-sa-sys-brand-reset": "Vrati na podrazumevano",
+    "pf-sa-sys-brand-preview": "Pregled",
 
     // ── Marketplace admin panel (task UI-2) ──
     "pf-ma-title": "Admin berze",
@@ -1811,6 +1829,9 @@ export const PLATFORM: Record<Locale, Record<string, string>> = {
     "pf-audit-prev": "Önceki",
     "pf-audit-next": "Sonraki",
     "pf-audit-entries-page": "{total} kayıt · sayfa {page} / {pages}",
+    "pf-audit-export-csv": "CSV Dışa Aktar",
+    "pf-audit-export-failed": "CSV dışa aktarımı başarısız",
+    "pf-audit-export-empty": "Dışa aktarılacak kayıt yok",
 
     // ── platform-dashboard-view tab labels (new ones) ──
     "pf-tab-overview": "Genel Bakış",
@@ -2034,6 +2055,12 @@ export const PLATFORM: Record<Locale, Record<string, string>> = {
     "pf-sa-sys-tenants-desc": "Tenant'ları askıya al / iptal et / etkinleştir, planlarını değiştir. Askıya alma bir oturum öldürme kaskadı tetikler.",
     "pf-sa-sys-refresh": "Yenile",
     "pf-sa-sys-autorefresh-hint": "30sn'de bir otomatik yenileme",
+    "pf-sa-sys-brand-title": "White-label ve Marka",
+    "pf-sa-sys-brand-desc": "Tenant başına pazar markası — ad, logo, renkler, özel alan adı, footer. Yapılandırmak için bir tenant seçin.",
+    "pf-sa-sys-brand-tenant": "Tenant",
+    "pf-sa-sys-brand-choose": "Marka düzenlemek için bir tenant seçin.",
+    "pf-sa-sys-brand-reset": "Varsayılana sıfırla",
+    "pf-sa-sys-brand-preview": "Önizleme",
 
     // ── Marketplace admin panel (task UI-2) ──
     "pf-ma-title": "Pazar Yöneticisi",
@@ -2509,6 +2536,9 @@ export const PLATFORM: Record<Locale, Record<string, string>> = {
     "pf-audit-prev": "Zurück",
     "pf-audit-next": "Weiter",
     "pf-audit-entries-page": "{total} Einträge · Seite {page} von {pages}",
+    "pf-audit-export-csv": "CSV exportieren",
+    "pf-audit-export-failed": "CSV-Export fehlgeschlagen",
+    "pf-audit-export-empty": "Nichts zu exportieren",
 
     // ── platform-dashboard-view tab labels (new ones) ──
     "pf-tab-overview": "Übersicht",
@@ -2732,6 +2762,12 @@ export const PLATFORM: Record<Locale, Record<string, string>> = {
     "pf-sa-sys-tenants-desc": "Mandanten sperren / kündigen / aktivieren, Plan ändern. Sperren löst eine Sitzungs-Kill-Kaskade aus.",
     "pf-sa-sys-refresh": "Aktualisieren",
     "pf-sa-sys-autorefresh-hint": "Automatische Aktualisierung alle 30s",
+    "pf-sa-sys-brand-title": "White-label & Branding",
+    "pf-sa-sys-brand-desc": "Mandantenbezogenes Marketplace-Branding — Name, Logo, Farben, eigene Domain, Footer. Mandant zur Konfiguration auswählen.",
+    "pf-sa-sys-brand-tenant": "Mandant",
+    "pf-sa-sys-brand-choose": "Mandant auswählen, um das Branding zu bearbeiten.",
+    "pf-sa-sys-brand-reset": "Auf Standard zurücksetzen",
+    "pf-sa-sys-brand-preview": "Vorschau",
 
     // ── Marketplace admin panel (task UI-2) ──
     "pf-ma-title": "Marktplatz-Admin",
@@ -3207,6 +3243,9 @@ export const PLATFORM: Record<Locale, Record<string, string>> = {
     "pf-audit-prev": "Пред.",
     "pf-audit-next": "След.",
     "pf-audit-entries-page": "{total} записей · стр. {page} из {pages}",
+    "pf-audit-export-csv": "Экспорт CSV",
+    "pf-audit-export-failed": "Не удалось экспортировать CSV",
+    "pf-audit-export-empty": "Нечего экспортировать",
 
     // ── platform-dashboard-view tab labels (new ones) ──
     "pf-tab-overview": "Обзор",
@@ -3430,6 +3469,12 @@ export const PLATFORM: Record<Locale, Record<string, string>> = {
     "pf-sa-sys-tenants-desc": "Блокировать / отменять / активировать арендаторов, менять их план. Блокировка запускает каскад уничтожения сессий.",
     "pf-sa-sys-refresh": "Обновить",
     "pf-sa-sys-autorefresh-hint": "Автообновление каждые 30с",
+    "pf-sa-sys-brand-title": "White-label и брендирование",
+    "pf-sa-sys-brand-desc": "Брендирование маркетплейса по арендатору — название, логотип, цвета, свой домен, футер. Выберите арендатора для настройки.",
+    "pf-sa-sys-brand-tenant": "Арендатор",
+    "pf-sa-sys-brand-choose": "Выберите арендатора для редактирования брендирования.",
+    "pf-sa-sys-brand-reset": "Сбросить к значениям по умолчанию",
+    "pf-sa-sys-brand-preview": "Предпросмотр",
 
     // ── Marketplace admin panel (task UI-2) ──
     "pf-ma-title": "Админ биржи",

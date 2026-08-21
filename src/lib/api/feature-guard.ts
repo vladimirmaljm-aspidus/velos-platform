@@ -63,7 +63,29 @@ export async function requireFeature(
     return NextResponse.json({ error: "Tenant context required." }, { status: 400 });
   }
   const flags = await loadFlags(tenantId);
-  if (flags[featureFlag] === false) {
+  // SEC-AUDIT (Data leakage + permission audit): FAIL-CLOSED.
+  // Previously this check was `flags[featureFlag] === false`, which only
+  // blocked when the flag was explicitly `false`. A tenant with NO
+  // `feature_flags` row (e.g. one created via /api/auth/register, which
+  // historically did not seed the row) returned `data === null` →
+  // `flags = {}` → `flags[featureFlag] === undefined` → check PASSED,
+  // silently granting the trial tenant access to vault_secrets,
+  // api_keys, webhooks, mail_queue, and the security center.
+  //
+  // Combined with `can()`'s rule 3 (`role === "admin"` → implicit grant
+  // of every non-platform permission), this meant a trial tenant admin
+  // could mint API keys, register outbound webhooks, reveal vault
+  // secrets, and read the cross-tenant mail queue despite the
+  // TRIAL_ADMIN_PERMISSIONS array explicitly excluding those scopes.
+  //
+  // The fix is two-pronged:
+  //   1. FAIL-CLOSED here: any flag that is not strictly `true` is denied.
+  //      This covers `undefined` (no row), `null`, and explicit `false`.
+  //   2. /api/auth/register now seeds a `feature_flags` row with the
+  //      schema defaults (CRM/finance/logistics ON; vault/api_keys/
+  //      webhooks/mail_queue/security OFF) so new trial tenants get a
+  //      clean "module disabled" 402 instead of a silent bypass.
+  if (flags[featureFlag] !== true) {
     return NextResponse.json(
       {
         error: `This module is not included in your plan. Upgrade your subscription to enable ${featureFlag.replace("module_", "").replace("_", " ")}.`,

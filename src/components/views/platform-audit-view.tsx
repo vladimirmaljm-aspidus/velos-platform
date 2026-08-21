@@ -8,13 +8,14 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ScrollText, Search, ChevronLeft, ChevronRight, RefreshCw, ShieldAlert } from "lucide-react";
+import { ScrollText, Search, ChevronLeft, ChevronRight, RefreshCw, ShieldAlert, Download } from "lucide-react";
 import { fmtDateTime } from "@/lib/utils/format";
 import { MapLink } from "@/components/common/map-link";
 import { useDebounced } from "@/lib/hooks/use-debounced";
 import { useT } from "@/lib/i18n/store";
 import { useAppStore, isSuperAdmin } from "@/lib/store/app-store";
 import { PageHeader } from "@/components/common/page-header";
+import { toast } from "sonner";
 
 interface AuditRow {
   id: string; tenant_id: string | null; user_id: string | null; username: string | null;
@@ -82,6 +83,48 @@ export function PlatformAuditView() {
   // The access-denied early return is placed AFTER this hook call.
   const tenantName = React.useMemo(() => new Map(tenants.map((t) => [t.id, t.name])), [tenants]);
 
+  // UI-SUPER-AUDIT: client-side CSV export of the CURRENT page. The
+  // server caps every fetch at 5,000 rows so a "full export" would be
+  // massive; the operators who asked for this need a quick way to
+  // pull the filtered page they're looking at into a spreadsheet for
+  // an audit-meeting handout. For a true full export they can bump
+  // `limit` server-side. The CSV uses the same field shape as the
+  // table to make copy-paste mappings obvious.
+  function exportCsv() {
+    if (!items.length) { toast(t("pf-audit-export-empty")); return; }
+    const cols = [
+      "when", "tenant", "user", "action", "entity_type", "entity_id", "ip", "details",
+    ];
+    const rows = items.map((r) => ({
+      when: fmtDateTime(r.created_at),
+      tenant: r.tenant_id ? (tenantName.get(r.tenant_id) || r.tenant_id) : "platform",
+      user: r.username || "",
+      action: r.action,
+      entity_type: r.entity_type || "",
+      entity_id: r.entity_id || "",
+      ip: r.ip || "",
+      details: r.details ? JSON.stringify(r.details) : "",
+    }));
+    const escape = (v: unknown) => {
+      const s = v === null || v === undefined ? "" : String(v);
+      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    try {
+      const csv = `${cols.join(",")}\n${rows.map((r) => cols.map((c) => escape((r as any)[c])).join(",")).join("\n")}`;
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `audit-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      toast.error(t("pf-audit-export-failed"), { description: e?.message });
+    }
+  }
+
   if (!isSuper) {
     return (
       <div>
@@ -108,7 +151,12 @@ export function PlatformAuditView() {
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div><CardTitle className="flex items-center gap-2 text-base"><ScrollText className="size-4 text-primary" /> {t("pf-audit-title")}</CardTitle><CardDescription className="text-xs">{t("pf-audit-desc")}</CardDescription></div>
-          <Button size="sm" variant="outline" onClick={() => auditQ.refetch()}><RefreshCw className={`size-3.5 mr-1 ${auditQ.isFetching ? "animate-spin" : ""}`} /> {t("refresh")}</Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={exportCsv} disabled={!items.length} title={t("pf-audit-export-csv")}>
+              <Download className="size-3.5 mr-1" /> {t("pf-audit-export-csv")}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => auditQ.refetch()}><RefreshCw className={`size-3.5 mr-1 ${auditQ.isFetching ? "animate-spin" : ""}`} /> {t("refresh")}</Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="pt-0 space-y-3">

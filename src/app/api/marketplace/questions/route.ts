@@ -3,6 +3,8 @@ import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { createQuestion, listQuestions } from "@/lib/data/marketplace-community-store";
 import { audit } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
+import { getSupabase } from "@/lib/supabase/client";
+import { notifyMarketplaceQuestionAskedToMember } from "@/lib/notif/helper";
 import { withApm } from "@/lib/monitoring/apm";
 
 export const runtime = "nodejs";
@@ -90,6 +92,50 @@ async function _post(req: NextRequest) {
       );
     } catch (e) {
       console.error("[marketplace.community.questions.create] audit failed:", e);
+    }
+    // LOGIC-AUDIT-2 Fix 2: notify other group members that a new question
+    // was asked. Fire-and-forget — a notification failure must not block
+    // the HTTP response (the question is already saved). We skip the
+    // asker themselves. Standalone (no group) questions don't notify —
+    // there's no defined audience other than the global feed, which the
+    // community page already surfaces.
+    if (created.group_id) {
+      try {
+        const sb = getSupabase();
+        const [membersRes, groupRes] = await Promise.all([
+          sb
+            .from("marketplace_group_members")
+            .select("partner_id")
+            .eq("group_id", created.group_id)
+            .neq("partner_id", access.partner_id),
+          sb
+            .from("marketplace_groups")
+            .select("name")
+            .eq("id", created.group_id)
+            .maybeSingle(),
+        ]);
+        const groupName = (groupRes.data as { name?: string } | null)?.name ?? null;
+        const memberPartnerIds = ((membersRes.data as Array<{ partner_id: string }> | null) || []).map((m) => m.partner_id);
+        // Look up the asker's display name for the message body.
+        const askerPartner = await (await getStore()).getPartner(access.partner_id);
+        const askerName = askerPartner?.name || access.portal_email || "A member";
+        for (const recipientPartnerId of memberPartnerIds) {
+          try {
+            await notifyMarketplaceQuestionAskedToMember(
+              access.tenant_id,
+              recipientPartnerId,
+              askerName,
+              created.title,
+              created.id,
+              groupName,
+            );
+          } catch (e) {
+            console.error("[marketplace.community.questions.create] member notify failed:", e);
+          }
+        }
+      } catch (e) {
+        console.error("[marketplace.community.questions.create] group notify setup failed:", e);
+      }
     }
     return NextResponse.json(created, { status: 201 });
   } catch (e: any) {
