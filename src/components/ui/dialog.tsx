@@ -7,10 +7,14 @@ import { XIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useT } from "@/lib/i18n/store"
 
+// Width tiers bumped up one level so forms/wizards get more horizontal room
+// (the user complained that dialogs felt cramped on small laptops and on
+// mobile). Mobile is already near-full-width thanks to the base
+// `w-full max-w-[calc(100%-2rem)]`; these classes only cap desktop width.
 const dialogSizeClasses: Record<string, string> = {
-  sm: "sm:max-w-md",
-  md: "sm:max-w-lg",
-  lg: "sm:max-w-2xl",
+  sm: "sm:max-w-lg",
+  md: "sm:max-w-2xl",
+  lg: "sm:max-w-3xl",
   xl: "sm:max-w-4xl",
   full: "sm:max-w-[95vw] h-[90vh]",
 }
@@ -116,6 +120,11 @@ function DialogFooter({ className, ...props }: React.ComponentProps<"div">) {
       data-slot="dialog-footer"
       className={cn(
         "flex flex-col-reverse gap-2 sm:flex-row sm:justify-end",
+        // Make every direct child (typically <Button>) stretch to full width on
+        // mobile so touch users get big tap targets, then shrink back to auto
+        // on >= sm screens. Centralized fix for "mobile users can't work
+        // properly" — applies to every dialog footer at once.
+        "[&>button]:w-full [&>button]:sm:w-auto",
         className
       )}
       {...props}

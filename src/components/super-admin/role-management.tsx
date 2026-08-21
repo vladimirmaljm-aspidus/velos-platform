@@ -258,7 +258,7 @@ function CreateOverrideDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+      <DialogContent className="w-[95vw] sm:max-w-3xl max-h-[88vh] flex flex-col gap-0 overflow-hidden p-0">
         <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle>Create Role Override</DialogTitle>
           <DialogDescription>Grant or deny a set of permissions for a specific role, optionally scoped to one tenant.</DialogDescription>

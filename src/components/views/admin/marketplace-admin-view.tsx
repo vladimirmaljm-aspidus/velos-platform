@@ -901,7 +901,7 @@ function VerificationTab() {
       </Card>
 
       <Dialog open={!!dialogRow} onOpenChange={(o) => !o && setDialogRow(null)}>
-        <DialogContent className="max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogContent className="w-[95vw] max-w-3xl max-h-[88vh] flex flex-col gap-0 overflow-hidden p-0">
           <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
             <DialogTitle>{t("pf-ma-dialog-verify-title")}</DialogTitle>
             <DialogDescription>
@@ -1420,7 +1420,7 @@ function CategoryDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+      <DialogContent className="w-[95vw] max-w-3xl max-h-[88vh] flex flex-col gap-0 overflow-hidden p-0">
         <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle>{category ? t("pf-ma-dialog-edit-category") : t("pf-ma-dialog-new-category")}</DialogTitle>
           <DialogDescription>{t("pf-ma-categories-desc")}</DialogDescription>
@@ -1653,7 +1653,7 @@ function BlacklistTab() {
       </Card>
 
       <Dialog open={dialogOpen} onOpenChange={(o) => !o && setDialogOpen(false)}>
-        <DialogContent className="max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogContent className="w-[95vw] max-w-3xl max-h-[88vh] flex flex-col gap-0 overflow-hidden p-0">
           <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
             <DialogTitle>{t("pf-ma-dialog-blacklist-title")}</DialogTitle>
             <DialogDescription>{t("pf-ma-dialog-blacklist-desc")}</DialogDescription>

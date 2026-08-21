@@ -231,7 +231,7 @@ function EnrollDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="w-[95vw] sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Enable Two-Factor Authentication</DialogTitle>
           <DialogDescription>
@@ -377,7 +377,7 @@ function DisableDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="w-[95vw] sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Disable Two-Factor Authentication</DialogTitle>
           <DialogDescription>

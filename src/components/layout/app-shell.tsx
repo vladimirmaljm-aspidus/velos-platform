@@ -147,7 +147,7 @@ function MobileSidebar({ open, onOpenChange }: { open: boolean; onOpenChange: (v
   const t = useT();
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="left" className="w-72 p-0 bg-sidebar text-sidebar-foreground border-sidebar-border">
+      <SheetContent side="left" className="w-[85vw] max-w-[400px] p-0 bg-sidebar text-sidebar-foreground border-sidebar-border h-screen">
         {/* Visually-hidden title for accessibility */}
         <SheetTitle className="sr-only">{t("misc-navigation-sr")}</SheetTitle>
         <div className="h-full overflow-hidden">

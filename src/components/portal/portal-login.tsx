@@ -450,7 +450,7 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
                       {t("portal-login-setup-link")}
                     </button>
                   </DialogTrigger>
-                  <DialogContent className="max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+                  <DialogContent className="w-[95vw] max-w-2xl max-h-[88vh] flex flex-col gap-0 overflow-hidden p-0">
                     <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
                       <DialogTitle className="flex items-center gap-2">
                         <KeyRound className="size-4 text-primary" />
@@ -528,7 +528,7 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
 
               {/* Forgot password dialog */}
               <Dialog open={forgotOpen} onOpenChange={setForgotOpen}>
-                <DialogContent className="sm:max-w-md max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+                <DialogContent className="w-[95vw] sm:max-w-lg max-h-[88vh] flex flex-col gap-0 overflow-hidden p-0">
                   <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
                     <DialogTitle className="flex items-center gap-2">
                       <KeyRound className="size-4 text-primary" />
@@ -568,7 +568,7 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
 
               {/* Reset password dialog (triggered by URL param) */}
               <Dialog open={!!resetToken} onOpenChange={(o) => { if (!o) { setResetToken(""); window.history.replaceState({}, "", "/portal/login"); } }}>
-                <DialogContent className="sm:max-w-md max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+                <DialogContent className="w-[95vw] sm:max-w-lg max-h-[88vh] flex flex-col gap-0 overflow-hidden p-0">
                   <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
                     <DialogTitle className="flex items-center gap-2">
                       <KeyRound className="size-4 text-primary" />

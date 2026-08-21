@@ -112,7 +112,7 @@ export function KeyboardShortcuts() {
 
   return (
     <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
-      <DialogContent className="sm:max-w-md max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+      <DialogContent className="w-[95vw] sm:max-w-lg max-h-[88vh] flex flex-col gap-0 overflow-hidden p-0">
         <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle>{t("misc-keyboard-shortcuts-title")}</DialogTitle>
           <DialogDescription>{t("misc-keyboard-shortcuts-desc")}</DialogDescription>

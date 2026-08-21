@@ -335,7 +335,7 @@ export function PlatformConfig() {
       {/* Tenant management dialog (quick links) */}
       {manageTenant && (
         <Dialog open={!!manageTenant} onOpenChange={(v) => { if (!v) setManageId(null); }}>
-          <DialogContent className="sm:max-w-lg max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+          <DialogContent className="w-[95vw] sm:max-w-2xl max-h-[88vh] flex flex-col gap-0 overflow-hidden p-0">
             <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
               <DialogTitle>Manage {manageTenant.name}</DialogTitle>
               <DialogDescription>

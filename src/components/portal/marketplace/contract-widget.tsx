@@ -418,7 +418,7 @@ export function ContractWidget({ postId, currency, unit, isOwner }: ContractWidg
 
       {/* Create contract dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogContent className="w-[95vw] max-w-2xl max-h-[88vh] flex flex-col gap-0 overflow-hidden p-0">
           <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
             <DialogTitle>{t("marketplace-contract-create-title")}</DialogTitle>
             <DialogDescription>{t("marketplace-contract-create-desc")}</DialogDescription>
@@ -503,7 +503,7 @@ export function ContractWidget({ postId, currency, unit, isOwner }: ContractWidg
 
       {/* Edit delivery dialog */}
       <Dialog open={!!editingId} onOpenChange={(o) => !o && setEditingId(null)}>
-        <DialogContent className="max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogContent className="w-[95vw] max-w-2xl max-h-[88vh] flex flex-col gap-0 overflow-hidden p-0">
           <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
             <DialogTitle>{t("marketplace-delivery-edit-title")}</DialogTitle>
             <DialogDescription>{t("marketplace-delivery-edit-desc")}</DialogDescription>

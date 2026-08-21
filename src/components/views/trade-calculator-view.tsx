@@ -2691,7 +2691,7 @@ function CalcFormDialog({
 
       {/* Bank cost rate overrides dialog */}
       <Dialog open={showBankOverrides} onOpenChange={setShowBankOverrides}>
-        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogContent className="w-[95vw] max-w-3xl max-h-[88vh] flex flex-col gap-0 overflow-hidden p-0">
           <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
             <DialogTitle className="flex items-center gap-2">
               <Landmark className="size-4" /> {t("misc-edit-bank-cost-rates")}

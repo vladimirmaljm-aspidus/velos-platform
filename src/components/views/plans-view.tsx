@@ -228,7 +228,7 @@ export function PlansView() {
       </div>
       {upgradeDialog && (
         <Dialog open={!!upgradeDialog} onOpenChange={(o) => !o && setUpgradeDialog(null)}>
-          <DialogContent className="sm:max-w-md max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+          <DialogContent className="w-[95vw] sm:max-w-lg max-h-[88vh] flex flex-col gap-0 overflow-hidden p-0">
             <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60"><DialogTitle className="flex items-center gap-2"><TrendingUp className="size-5 text-primary" />{t("admin-plans-upgrade-dialog-title").replace("${plan}", upgradeDialog.name)}</DialogTitle><DialogDescription>{t("admin-plans-upgrade-dialog-desc")}</DialogDescription></DialogHeader>
             <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-3">
               <div className="rounded-lg bg-muted/40 border border-border/60 p-3"><div className="flex items-center justify-between mb-2"><span className="text-sm font-medium">{upgradeDialog.name}</span><span className="text-sm font-bold">{fmtMoney(upgradeDialog.price_monthly, upgradeDialog.currency)}/mo</span></div><div className="text-xs text-muted-foreground">{upgradeDialog.max_users} users · {upgradeDialog.max_partners === 0 ? t("admin-plans-unlimited") : upgradeDialog.max_partners} partners · {upgradeDialog.storage_mb >= 1000 ? `${upgradeDialog.storage_mb / 1000}GB` : `${upgradeDialog.storage_mb}MB`} storage</div></div>
