@@ -178,7 +178,7 @@ export function SettingsView() {
     <div>
       <PageHeader title={t("admin-settings-title")} description={t("admin-settings-desc")} />
       <Tabs defaultValue="company">
-        <TabsList className="flex w-full max-w-2xl overflow-x-auto justify-start sm:grid sm:grid-cols-6">
+        <TabsList className="flex w-full max-w-2xl overflow-x-auto justify-start sm:grid sm:grid-cols-7">
           <TabsTrigger value="company">{t("admin-settings-tab-company")}</TabsTrigger>
           {canManageDangerousSettings && (
             <TabsTrigger value="security">{t("admin-settings-tab-security")}</TabsTrigger>
@@ -189,6 +189,14 @@ export function SettingsView() {
           <TabsTrigger value="integrations">{t("admin-settings-tab-integrations")}</TabsTrigger>
           <TabsTrigger value="preferences">{t("admin-settings-tab-preferences")}</TabsTrigger>
           <TabsTrigger value="memorandum">{t("admin-settings-tab-memorandum")}</TabsTrigger>
+          {/* FEAT-1 (Password change in Settings): always visible to
+              every admin (super_admin + tenant admin). The form posts
+              to /api/auth/change-password which is open to any
+              authenticated user — non-admins don't reach this view
+              because the sidebar gates Settings behind `settings.read`,
+              but the API itself is open to all logged-in users so they
+              could call it directly. */}
+          <TabsTrigger value="password">{t("admin-settings-tab-password")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="company" className="mt-4 space-y-4">
@@ -216,6 +224,9 @@ export function SettingsView() {
         </TabsContent>
         <TabsContent value="memorandum" className="mt-4">
           <MemorandumTab />
+        </TabsContent>
+        <TabsContent value="password" className="mt-4">
+          <ChangePasswordTab />
         </TabsContent>
       </Tabs>
     </div>
@@ -2535,5 +2546,211 @@ function SelectField({
         </SelectContent>
       </Select>
     </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   FEAT-1 (Password change in Settings) — self-service password rotation.
+   ═══════════════════════════════════════════════════════════════════════════ */
+/**
+ * `ChangePasswordTab` — visible to every admin (super_admin + tenant
+ * admin) under the Settings → Password tab. The form posts to
+ * `/api/auth/change-password` which is open to any authenticated user
+ * (the API doesn't gate on role — non-admins who somehow reach the
+ * endpoint can also rotate their own password).
+ *
+ * UX:
+ *   • three password inputs (current / new / confirm) — each with a
+ *     show/hide eye toggle (passwords are masked by default but the
+ *     user can reveal for typing sanity-check)
+ *   • inline validation: new === confirm, new meets platform min
+ *     length (8 by default — server is the source of truth and the
+ *     toast surfaces the exact policy message on failure)
+ *   • on success: toast "Password changed successfully" + reset form
+ *   • on failure: surface the API's error message verbatim (the
+ *     server returns specific messages for "Current password is
+ *     incorrect" / "New password does not meet requirements" / etc.)
+ *
+ * The current session is re-minted server-side after the change (see
+ * the route's header comment), so the user stays logged in — only
+ * OTHER sessions (other tabs, stolen cookies) are invalidated.
+ */
+function ChangePasswordTab() {
+  const t = useT();
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNext, setShowNext] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Local validation gates — the server is the source of truth
+  // (it loads the platform policy from settings.security_config), so
+  // even if these pass, a weak password will be rejected by the API.
+  // The min length here is the DEFAULT_POLICY (8) — if the platform
+  // policy is stricter, the server's error message will tell the user.
+  const MIN_LENGTH = 8;
+  const confirmMismatch = confirm.length > 0 && next !== confirm;
+  const tooShort = next.length > 0 && next.length < MIN_LENGTH;
+  const canSubmit =
+    current.length > 0 &&
+    next.length >= MIN_LENGTH &&
+    next === confirm &&
+    !submitting;
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!canSubmit) return;
+    setSubmitting(true);
+    try {
+      const r = await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          current_password: current,
+          new_password: next,
+          confirm_password: confirm,
+        }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        // Surface the server's specific error message verbatim
+        // ("Current password is incorrect." / "New password does not
+        // meet requirements." etc.).
+        toast.error(data?.error || t("admin-settings-save-failed"));
+        return;
+      }
+      toast.success("Password changed successfully");
+      setCurrent("");
+      setNext("");
+      setConfirm("");
+    } catch (e) {
+      console.error("[change-password]", e);
+      toast.error("Network error — please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Card className="rounded-xl">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <UserCog className="size-5" />
+          {t("admin-settings-tab-password")}
+        </CardTitle>
+        <CardDescription>
+          Change the password you use to sign in to VELOS. Other active
+          sessions on different devices will be signed out.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={onSubmit} className="space-y-4 max-w-md">
+          {/* Current password */}
+          <div className="space-y-1.5">
+            <Label htmlFor="chpw-current">Current password</Label>
+            <div className="relative">
+              <Input
+                id="chpw-current"
+                type={showCurrent ? "text" : "password"}
+                value={current}
+                onChange={(e) => setCurrent(e.target.value)}
+                autoComplete="current-password"
+                disabled={submitting}
+                className="pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowCurrent((v) => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-foreground"
+                tabIndex={-1}
+                aria-label={showCurrent ? "Hide current password" : "Show current password"}
+              >
+                {showCurrent ? "Hide" : "Show"}
+              </button>
+            </div>
+          </div>
+
+          {/* New password */}
+          <div className="space-y-1.5">
+            <Label htmlFor="chpw-new">New password</Label>
+            <div className="relative">
+              <Input
+                id="chpw-new"
+                type={showNext ? "text" : "password"}
+                value={next}
+                onChange={(e) => setNext(e.target.value)}
+                autoComplete="new-password"
+                disabled={submitting}
+                className="pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowNext((v) => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-foreground"
+                tabIndex={-1}
+                aria-label={showNext ? "Hide new password" : "Show new password"}
+              >
+                {showNext ? "Hide" : "Show"}
+              </button>
+            </div>
+            {tooShort && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">
+                Password must be at least {MIN_LENGTH} characters.
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Must meet the platform password policy (min length, uppercase,
+              lowercase, number — symbols optional).
+            </p>
+          </div>
+
+          {/* Confirm new password */}
+          <div className="space-y-1.5">
+            <Label htmlFor="chpw-confirm">Confirm new password</Label>
+            <div className="relative">
+              <Input
+                id="chpw-confirm"
+                type={showConfirm ? "text" : "password"}
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+                autoComplete="new-password"
+                disabled={submitting}
+                className="pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirm((v) => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-foreground"
+                tabIndex={-1}
+                aria-label={showConfirm ? "Hide confirm password" : "Show confirm password"}
+              >
+                {showConfirm ? "Hide" : "Show"}
+              </button>
+            </div>
+            {confirmMismatch && (
+              <p className="text-xs text-red-600 dark:text-red-400">
+                Passwords do not match.
+              </p>
+            )}
+          </div>
+
+          <Button type="submit" disabled={!canSubmit}>
+            {submitting ? (
+              <>
+                <Loader2 className="size-4 mr-2 animate-spin" />
+                Saving…
+              </>
+            ) : (
+              <>
+                <Save className="size-4 mr-2" />
+                Change password
+              </>
+            )}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
   );
 }

@@ -409,8 +409,53 @@ export async function POST(req: NextRequest) {
     // Suspended / cancelled tenants must not be able to log in — otherwise a
     // client whose subscription expired could keep working normally. Super
     // admins bypass (they need to be able to unblock the tenant).
+    //
+    // FEAT-1 (Trial approval): also gate on `pending_approval` — a self-
+    // registered tenant whose signup hasn't been approved by a super_admin
+    // yet cannot log in. The user sees a 403 with "Your account is pending
+    // approval. Please contact your administrator." rather than a generic
+    // auth failure (so they know to wait, not retry).
     if (user.role !== "super_admin" && user.tenant_id) {
       const tenant = await store.getTenant(user.tenant_id) as any;
+      if (tenant?.status === "pending_approval") {
+        try {
+          await store.recordLoginHistory({
+            user_id: user.id,
+            username: user.username,
+            ip,
+            user_agent: userAgent,
+            country,
+            success: false,
+            reason: "Tenant pending_approval",
+          });
+        } catch { /* non-critical */ }
+        await store.appendAudit({
+          user_id: user.id,
+          username: user.username,
+          action: "login.blocked",
+          entity_type: "auth",
+          entity_id: user.id,
+          details: { reason: "tenant_pending_approval" },
+          ip,
+          user_agent: userAgent,
+        });
+        reportSecurityEvent({
+          type: "login.blocked",
+          userId: user.id,
+          tenantId: user.tenant_id ?? undefined,
+          ip,
+          details: { reason: "tenant_pending_approval" },
+          severity: "warning",
+        });
+        return NextResponse.json(
+          {
+            error:
+              "Your account is pending approval. Please contact your administrator.",
+            tenant_status: "pending_approval",
+          },
+          { status: 403 },
+        );
+      }
       if (tenant?.status === "suspended" || tenant?.status === "cancelled") {
         try {
           await store.recordLoginHistory({

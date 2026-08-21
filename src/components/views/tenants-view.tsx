@@ -72,12 +72,23 @@ const PLAN_BADGE: Record<Plan, string> = {
   custom: "bg-violet-500/15 text-violet-700 dark:text-violet-400 border-violet-500/30",
 };
 
+// FEAT-2: complete the TenantStatus Record (FEAT-1 widened TenantStatus
+// to include `pending_approval` and `trial`, but these two Records were
+// left with only the legacy `active | suspended | cancelled` keys — TS
+// correctly flagged the partial Record as a type error. The new keys
+// mirror the styling already in use for neighbouring statuses.
 const STATUS_LABEL_KEYS: Record<TenantStatus, string> = {
-  active: "active", suspended: "pf-status-suspended", cancelled: "pf-status-cancelled",
+  pending_approval: "pf-status-pending-approval",
+  active: "active",
+  trial: "pf-status-trial",
+  suspended: "pf-status-suspended",
+  cancelled: "pf-status-cancelled",
 };
 
 const STATUS_BADGE: Record<TenantStatus, string> = {
+  pending_approval: "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30",
   active: "bg-chart-1/15 text-chart-1 border-chart-1/30",
+  trial: "bg-chart-4/15 text-chart-4 border-chart-4/30",
   suspended: "bg-destructive/10 text-destructive border-destructive/30",
   cancelled: "bg-muted text-muted-foreground border-border",
 };

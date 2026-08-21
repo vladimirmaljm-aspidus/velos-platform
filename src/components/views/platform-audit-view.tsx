@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ScrollText, Search, ChevronLeft, ChevronRight, RefreshCw, ShieldAlert, Download } from "lucide-react";
+import { ScrollText, Search, ChevronLeft, ChevronRight, RefreshCw, ShieldAlert, Download, X } from "lucide-react";
 import { fmtDateTime } from "@/lib/utils/format";
 import { MapLink } from "@/components/common/map-link";
 import { useDebounced } from "@/lib/hooks/use-debounced";
@@ -27,12 +27,41 @@ interface Tenant { id: string; name: string; }
 
 const PAGE_SIZE = 50;
 
+// FEAT-2 (Issue 2): curated action-type quick-filter options so operators
+// can one-click slice the audit log by domain ("show me every security
+// event", "show me every marketplace event", etc.). These map to substrings
+// of audit_logs.action (which uses dot-namespaced actions like
+// `kyc.approve`, `marketplace.bid.place`, `auth.login`, etc.). The values
+// are intentionally prefixes so `kyc` catches `kyc.submit`, `kyc.approve`,
+// `kyc.reject`, `kyc.resubmit`. The "Other" / blank option shows
+// everything.
+const ACTION_QUICK_FILTERS: { label: string; value: string }[] = [
+  { label: "All actions", value: "" },
+  { label: "Auth & sessions", value: "auth" },
+  { label: "Login & logout", value: "login" },
+  { label: "Tenant & signup", value: "tenant" },
+  { label: "KYC", value: "kyc" },
+  { label: "Marketplace", value: "marketplace" },
+  { label: "Offers", value: "offer" },
+  { label: "Invoices", value: "invoice" },
+  { label: "Proformas", value: "proforma" },
+  { label: "Portal", value: "portal" },
+  { label: "Vault", value: "vault" },
+  { label: "Webhooks", value: "webhook" },
+  { label: "API keys", value: "api_key" },
+  { label: "Security", value: "security" },
+  { label: "Cron jobs", value: "cron" },
+];
+
 export function PlatformAuditView() {
   const [tenantId, setTenantId] = React.useState<string>("");
   const [search, setSearch] = React.useState("");
   const debouncedSearch = useDebounced(search, 300);
   const [action, setAction] = React.useState("");
   const [user, setUser] = React.useState("");
+  const [entityType, setEntityType] = React.useState("");
+  const [dateFrom, setDateFrom] = React.useState("");
+  const [dateTo, setDateTo] = React.useState("");
   const [page, setPage] = React.useState(0);
   const [expanded, setExpanded] = React.useState<string | null>(null);
   const t = useT();
@@ -61,12 +90,15 @@ export function PlatformAuditView() {
   if (tenantId) q.set("tenant_id", tenantId);
   if (action) q.set("action", action);
   if (user) q.set("user", user);
+  if (entityType) q.set("entity_type", entityType);
+  if (dateFrom) q.set("date_from", dateFrom);
+  if (dateTo) q.set("date_to", dateTo);
   if (debouncedSearch) q.set("search", debouncedSearch);
   q.set("limit", String(PAGE_SIZE));
   q.set("offset", String(page * PAGE_SIZE));
 
   const auditQ = useQuery({
-    queryKey: ["platform-audit", tenantId, action, user, debouncedSearch, page],
+    queryKey: ["platform-audit", tenantId, action, user, entityType, dateFrom, dateTo, debouncedSearch, page],
     queryFn: async () => {
       const r = await fetch(`/api/super-admin/audit?${q.toString()}`);
       if (!r.ok) throw new Error("Failed to load audit");
@@ -81,7 +113,14 @@ export function PlatformAuditView() {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   // useMemo must run unconditionally to comply with react-hooks/rules-of-hooks.
   // The access-denied early return is placed AFTER this hook call.
-  const tenantName = React.useMemo(() => new Map(tenants.map((t) => [t.id, t.name])), [tenants]);
+  const tenantName = React.useMemo(() => new Map(tenants.map((tn) => [tn.id, tn.name])), [tenants]);
+
+  const hasActiveFilters = !!(tenantId || action || user || entityType || dateFrom || dateTo || debouncedSearch);
+
+  function clearFilters() {
+    setTenantId(""); setAction(""); setUser(""); setEntityType("");
+    setDateFrom(""); setDateTo(""); setSearch(""); setPage(0);
+  }
 
   // UI-SUPER-AUDIT: client-side CSV export of the CURRENT page. The
   // server caps every fetch at 5,000 rows so a "full export" would be
@@ -160,14 +199,40 @@ export function PlatformAuditView() {
         </div>
       </CardHeader>
       <CardContent className="pt-0 space-y-3">
+        {/* ── Filter bar ───────────────────────────────────────────────
+            FEAT-2 (Issue 2): the previous filter bar exposed only
+            search + tenant + action-contains + username-contains. The
+            user said "no log page shows everything needed" — they were
+            right: the action-contains input was a free-text guess, the
+            entity_type and date range dimensions were missing entirely
+            even though the API supported them on the server side. Now
+            there's a curated action quick-filter dropdown, an entity-
+            type input, and date-from / date-to date pickers. The Clear
+            button resets every filter at once (operators were getting
+            trapped in narrow filter combinations with no easy escape). */}
         <div className="flex flex-wrap gap-2 items-center">
           <div className="relative flex-1 min-w-[180px]"><Search className="absolute left-2.5 top-2.5 size-4 text-muted-foreground" /><Input placeholder={t("pf-audit-search-placeholder")} value={search} onChange={(e) => { setPage(0); setSearch(e.target.value); }} className="pl-8" /></div>
           <Select value={tenantId || "all"} onValueChange={(v) => { setPage(0); setTenantId(v === "all" ? "" : v); }}>
             <SelectTrigger className="w-[180px]"><SelectValue placeholder={t("pf-tenant")} /></SelectTrigger>
             <SelectContent><SelectItem value="all">{t("pf-all-tenants")}</SelectItem>{tenants.map((tn) => <SelectItem key={tn.id} value={tn.id}>{tn.name}</SelectItem>)}</SelectContent>
           </Select>
-          <Input placeholder={t("pf-audit-action-contains")} value={action} onChange={(e) => { setPage(0); setAction(e.target.value); }} className="w-[160px]" />
+          <Select value={action} onValueChange={(v) => { setPage(0); setAction(v === "__all" ? "" : v); }}>
+            <SelectTrigger className="w-[170px]"><SelectValue placeholder="Action type" /></SelectTrigger>
+            <SelectContent>
+              {ACTION_QUICK_FILTERS.map((f) => (
+                <SelectItem key={f.label} value={f.value || "__all"}>{f.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Input placeholder="Entity type (e.g. tenant)" value={entityType} onChange={(e) => { setPage(0); setEntityType(e.target.value); }} className="w-[170px]" />
           <Input placeholder={t("pf-audit-username")} value={user} onChange={(e) => { setPage(0); setUser(e.target.value); }} className="w-[140px]" />
+          <Input type="date" value={dateFrom} onChange={(e) => { setPage(0); setDateFrom(e.target.value); }} className="w-[150px]" title="From date" />
+          <Input type="date" value={dateTo} onChange={(e) => { setPage(0); setDateTo(e.target.value); }} className="w-[150px]" title="To date" />
+          {hasActiveFilters && (
+            <Button size="sm" variant="ghost" onClick={clearFilters} title="Clear all filters">
+              <X className="size-3.5 mr-1" /> Clear
+            </Button>
+          )}
         </div>
         <div className="border rounded-lg overflow-x-auto">
           <Table>

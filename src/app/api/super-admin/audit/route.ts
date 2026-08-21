@@ -7,8 +7,13 @@ export const runtime = "nodejs";
 /**
  * GET /api/super-admin/audit
  * Cross-tenant audit log viewer for platform super_admins.
- * Query params: tenant_id, action, user (username), date_from, date_to,
- *               search, limit, offset.
+ * Query params: tenant_id, action, user (username), entity_type,
+ *               date_from, date_to, search, limit, offset.
+ *
+ * FEAT-2 (Issue 2): added `entity_type` filter so the platform-audit view
+ * can slice by entity ("show me every KYC event", "show me every login").
+ * The store doesn't expose entity_type as a server-side filter, so we
+ * apply it in memory alongside the existing action/user/date filters.
  */
 export async function GET(req: NextRequest) {
   try {
@@ -20,6 +25,7 @@ export async function GET(req: NextRequest) {
   const search = url.searchParams.get("search") || undefined;
   const action = url.searchParams.get("action") || undefined;
   const user = url.searchParams.get("user") || undefined;
+  const entityType = url.searchParams.get("entity_type") || undefined;
   const dateFrom = url.searchParams.get("date_from") || undefined;
   const dateTo = url.searchParams.get("date_to") || undefined;
   const limit = url.searchParams.get("limit") ? Math.min(Number(url.searchParams.get("limit")), 500) : 100;
@@ -36,12 +42,19 @@ export async function GET(req: NextRequest) {
   let items = result.items;
   if (action) items = items.filter((i) => i.action?.includes(action));
   if (user) items = items.filter((i) => (i.username || "").toLowerCase().includes(user.toLowerCase()));
+  if (entityType) items = items.filter((i) => (i.entity_type || "").toLowerCase().includes(entityType.toLowerCase()));
   if (dateFrom) {
     const t = new Date(dateFrom).getTime();
     items = items.filter((i) => new Date((i as any).created_at).getTime() >= t);
   }
   if (dateTo) {
-    const t = new Date(dateTo).getTime();
+    // date_to is inclusive of the entire day — push to end-of-day so a
+    // user filtering by "today" actually sees today's events.
+    const endOfDay = new Date(dateTo);
+    if (!isNaN(endOfDay.getTime())) {
+      endOfDay.setHours(23, 59, 59, 999);
+    }
+    const t = endOfDay.getTime();
     items = items.filter((i) => new Date((i as any).created_at).getTime() <= t);
   }
 

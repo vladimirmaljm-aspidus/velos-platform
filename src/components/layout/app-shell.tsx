@@ -75,6 +75,10 @@ const VerificationLogsView = dynamic(() => import("@/components/views/verificati
 const PerformanceView = dynamic(() => import("@/components/views/admin/performance-view").then((m) => m.PerformanceView), { ssr: false });
 const TradeGlobeView = dynamic(() => import("@/components/views/trade-globe-view").then((m) => m.TradeGlobeView), { ssr: false });
 const MarketplaceAdminView = dynamic(() => import("@/components/views/admin/marketplace-admin-view").then((m) => m.MarketplaceAdminView), { ssr: false });
+// FEAT-1 (Trial approval) — super-admin queue of pending_approval
+// tenants. Dynamic + ssr:false so the heavy admin surface stays out of
+// the initial bundle.
+const SignupRequestsView = dynamic(() => import("@/components/views/signup-requests-view").then((m) => m.SignupRequestsView), { ssr: false });
 
 /* -------------------------------------------------------------------------- */
 /*  View renderer                                                             */
@@ -135,6 +139,7 @@ function ViewContent({ view }: { view: string }) {
     case "performance":         return <PerformanceView />;
     case "trade-globe":         return <TradeGlobeView />;
     case "marketplace-admin":   return <MarketplaceAdminView />;
+    case "signup-requests":     return <SignupRequestsView />;
     default:                     return <DashboardView />;
   }
 }

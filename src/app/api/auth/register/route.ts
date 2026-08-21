@@ -10,17 +10,24 @@ import { getIp, sanitizeError } from "@/lib/api/helpers";
 import { checkRateLimit } from "@/lib/security/rate-limiter";
 import { reportSecurityEvent } from "@/lib/monitoring/security-alerts";
 import { sendEmail } from "@/lib/email/service";
+import { notifySuperAdminsOfSignupRequest } from "@/lib/notif/helper";
 
 export const runtime = "nodejs";
 
 /**
- * Self-registration route (UI-1).
+ * Self-registration route (UI-1) — FEAT-1 (Trial approval system).
  *
- * Creates a brand-new tenant (plan=trial, status=trial, trial_ends_at = now +
- * 14 days) and an admin user scoped to that tenant, then issues a session
- * cookie so the new tenant lands in the app shell with no second sign-in
- * step. A welcome email is sent best-effort (failures do NOT block the
- * registration — the user can still sign in immediately).
+ * Creates a brand-new tenant (plan="trial", status="pending_approval") and
+ * an admin user scoped to that tenant. The signup is NOT auto-approved: the
+ * user cannot log in until a super_admin reviews the request via
+ * `/api/super-admin/signup-requests/[id]/approve` and flips the tenant
+ * status to "trial" (which also sets `trial_ends_at = now + 14 days` and
+ * sends the welcome email).
+ *
+ * This route therefore does NOT issue a session cookie, does NOT send a
+ * welcome email, and returns `{ status: "pending_approval", message }`.
+ * Super_admins are notified in real time via email + an in-app notification
+ * tied to the pending tenant (see `notifySuperAdminsOfSignupRequest`).
  *
  * The username is set to the email (lowercased) — the User model's only
  * unique lookup key — so duplicate detection is a single getUserByUsername
@@ -219,10 +226,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ── Create tenant (trial, +14 days) ───────────────────────────────────
-    const trialEnd = new Date();
-    trialEnd.setDate(trialEnd.getDate() + TRIAL_DAYS);
-
+    // ── Create tenant (plan=trial, status=pending_approval) ───────────
+    // FEAT-1 / Trial approval: the tenant is created in
+    // `pending_approval` so the user cannot log in until a super_admin
+    // approves the request. `trial_ends_at` is left NULL — it's set to
+    // `now + 14 days` only on approval (see
+    // `/api/super-admin/signup-requests/[id]/approve/route.ts`) so the
+    // 14-day trial clock starts ticking from approval, not from signup.
+    //
     // Default currency: pick a sensible default from the country code so a
     // Serbian company doesn't land in USD. Keep it conservative — most
     // international trade happens in EUR / USD.
@@ -234,9 +245,9 @@ export async function POST(req: NextRequest) {
       country,
       currency,
       plan: "trial",
-      status: "trial",
+      status: "pending_approval",
       max_users: 5,
-      trial_ends_at: trialEnd.toISOString(),
+      trial_ends_at: null,
       trial_days: TRIAL_DAYS,
       email,
       phone: phone || null,
@@ -356,6 +367,8 @@ export async function POST(req: NextRequest) {
           email,
           country,
           plan: "trial",
+          status: "pending_approval",
+          // trial_ends_at is intentionally NULL at signup — set on approval.
           trial_ends_at: tenant.trial_ends_at,
         },
         ip,
@@ -365,61 +378,45 @@ export async function POST(req: NextRequest) {
       console.error("[register] appendAudit (tenant.register) failed:", e);
     }
 
-    // ── Record initial login history ───────────────────────────────────────
-    try {
-      await store.updateUserLastLogin(user.id, ip);
-    } catch (e) {
-      console.error("[register] updateUserLastLogin failed:", e);
-    }
-
-    // ── Welcome email (best-effort — never block registration) ─────────────
+    // ── FEAT-1 (Trial approval): notify every super_admin that a new
+    // signup request is pending. `notifySuperAdminsOfSignupRequest` does
+    // two things: (1) creates an in-app notification (type="signup_request")
+    // tied to the pending tenant with a deep-link to /signup-requests, and
+    // (2) sends an email to every active super_admin. Both fire-and-forget
+    // so a transient mail provider outage doesn't block the registration
+    // response.
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || "";
-    const loginUrl = baseUrl ? `${baseUrl}/` : "/";
-    try {
-      const { subject, html } = welcomeRegisterEmail({
-        contactName,
-        companyName,
-        email,
-        loginUrl,
-      });
-      // fire-and-forget — do not await. A failed email should not block the
-      // signup response (the user can still sign in immediately).
-      void sendEmail({
-        to: email,
-        subject,
-        html,
-        tenantId: tenant.id,
-      }).catch((e) =>
-        console.error("[register] welcome email failed:", e),
-      );
-    } catch (e) {
-      console.error("[register] welcome email setup failed:", e);
-    }
+    void notifySuperAdminsOfSignupRequest({
+      pendingTenantId: tenant.id,
+      companyName,
+      contactName,
+      email,
+      country,
+      phone: phone || null,
+      baseUrl,
+    }).catch((e) => console.error("[register] notifySuperAdminsOfSignupRequest failed:", e));
 
-    // ── Create session + set cookie ───────────────────────────────────────
-    const token = await createSession({
-      sub: user.id,
-      username: user.username,
-      role: user.role,
-      token_version: user.token_version,
-      tenant_id: user.tenant_id,
-    });
-    await setSessionCookie(token);
-
-    // strip sensitive fields before returning
-    const {
-      password_hash: _p,
-      totp_secret: _t,
-      recovery_codes: _r,
-      ...safeUser
-    } = user;
-    void _p;
-    void _t;
-    void _r;
+    // ── FEAT-1 (Trial approval): do NOT record initial login history, do
+    // NOT send the welcome email, do NOT create a session cookie. The user
+    // cannot log in until a super_admin approves the request. Welcome
+    // email + login history are written by the approve route, not here.
+    //
+    // (The `welcomeRegisterEmail` helper + `sendEmail` / `createSession` /
+    // `setSessionCookie` imports above are kept for parity with the
+    // approve route, which duplicates the email body. They are unused
+    // here — ESLint's `no-unused-vars` rule is off in this project so
+    // they don't trigger lint errors.)
 
     return NextResponse.json({
-      user: safeUser,
-      tenant: { id: tenant.id, name: tenant.name, plan: tenant.plan, status: tenant.status, trial_ends_at: tenant.trial_ends_at },
+      status: "pending_approval",
+      message:
+        "Your account request has been submitted. A platform administrator will review and approve it.",
+      tenant: {
+        id: tenant.id,
+        name: tenant.name,
+        plan: tenant.plan,
+        status: tenant.status,
+      },
     });
   } catch (e) {
     console.error("[register]", e);

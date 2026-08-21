@@ -451,7 +451,14 @@ export function Topbar() {
                 variant="ghost"
                 size="sm"
                 className="w-full justify-center text-xs text-muted-foreground hover:text-foreground"
-                onClick={() => { setView("security"); setNotifOpen(false); }}
+                // FEAT-2 / Issue 1: "View all" used to route to the
+                // SECURITY center — there's nothing there that shows a
+                // notifications history. Route to the audit log instead,
+                // which IS the historical view of everything that ever
+                // fired a notification (and more). Super_admins get the
+                // cross-tenant platform audit; tenant admins get their
+                // own tenant's audit log.
+                onClick={() => { setView(superAdmin ? "platform-audit" : "audit"); setNotifOpen(false); }}
               >
                 {t(locale, "view-all")}
               </Button>

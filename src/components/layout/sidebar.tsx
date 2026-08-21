@@ -14,7 +14,7 @@ import {
   ChevronLeft, ChevronRight, Building2, Calculator,
   ToggleRight, LayoutGrid, Plug, DollarSign, BookMarked, Calendar,
   StickyNote, Briefcase, Settings2, TrendingUp, Truck, MapPin,
-  Shield, Globe, Gauge, Store,
+  Shield, Globe, Gauge, Store, UserPlus,
 } from "lucide-react";
 import {
   Tooltip,
@@ -186,6 +186,14 @@ const SECTIONS: NavSection[] = [
       // system health). Visible to super-admins only; the view itself
       // also re-checks isSuperAdmin before rendering.
       { key: "super-admin-settings", i18nKey: "super-admin-settings", i18nSection: "platform", icon: Settings2, superAdminOnly: true },
+      // FEAT-1 (Trial approval) — queue of pending_approval tenants
+      // awaiting super-admin review. Mirrors the plan-upgrade-queue
+      // pattern: superAdminOnly + the view itself re-checks
+      // isSuperAdmin before firing fetches. The icon (UserPlus) and
+      // the "platform.users.read" permission keep it grouped with the
+      // other platform-level user-management surfaces
+      // (platform-users, super-admin-settings).
+      { key: "signup-requests", i18nKey: "signup-requests", i18nSection: "platform", icon: UserPlus, superAdminOnly: true },
     ],
   },
 ];

@@ -93,7 +93,12 @@ export type ViewKey =
   | "portal-marketplace-community"
   // Marketplace (UI-2 — super-admin cross-tenant management panel:
   //   posts, verification, reviews, categories, blacklist, stats)
-  | "marketplace-admin";
+  | "marketplace-admin"
+  // FEAT-1 (Trial approval) — super-admin queue of pending_approval
+  // tenants awaiting review. Visible in the sidebar's "platform"
+  // section (superAdminOnly: true). The view itself re-checks
+  // isSuperAdmin before rendering.
+  | "signup-requests";
 
 export interface SafeUser {
   id: string;

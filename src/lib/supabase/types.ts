@@ -779,7 +779,19 @@ export interface Tenant {
   primary_color: string | null;
   // Subscription
   plan: "trial" | "starter" | "business" | "enterprise" | "custom";
-  status: "active" | "suspended" | "cancelled";
+  /**
+   * Tenant lifecycle status.
+   *
+   * `pending_approval` is the gating state for self-registered trial
+   * tenants (FEAT-1 / Trial approval system): `POST /api/auth/register`
+   * creates a tenant with `status = "pending_approval"` so the signup
+   * is invisible to the user until a super_admin approves it via
+   * `/api/super-admin/signup-requests/[id]/approve`. The approve flow
+   * flips the status to `trial` and sets `trial_ends_at = now + 14d`.
+   * The login route refuses to issue a session for any user whose
+   * tenant is still in `pending_approval`.
+   */
+  status: "pending_approval" | "active" | "trial" | "suspended" | "cancelled";
   max_users: number;
   // Subscription details (live DB columns — CRIT-1)
   subscription_start?: string | null; // timestamptz
@@ -1489,6 +1501,15 @@ export type NotificationType =
   | "marketplace_response_accepted" // responder's offer was accepted by the post owner
   | "marketplace_response_rejected" // responder's offer was rejected by the post owner
   | "marketplace_message_received" // other party sent a message in a negotiation room
+  // FEAT-1 / Trial approval system — fires when a new tenant self-registers
+  // with status="pending_approval". Tied to the pending tenant's tenant_id
+  // (the only tenant_id available at signup time — super_admins have
+  // tenant_id = NULL in the users table so they cannot receive in-app
+  // notifications via the regular /api/notifications route; the
+  // signup-requests queue is the polling surface for super_admins).
+  // An email is also sent to every super_admin via `notifySuperAdmins`
+  // (best-effort).
+  | "signup_request"
 
 export interface Notification {
   id: string;
