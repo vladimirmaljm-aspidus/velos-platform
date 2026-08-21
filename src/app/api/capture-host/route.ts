@@ -18,8 +18,14 @@ export async function GET(req: NextRequest) {
   const proto = req.nextUrl.searchParams.get("p") || "https";
   if (host && !host.startsWith("localhost") && !host.startsWith("127.")) {
     const fullUrl = `${proto}://${host}`;
-    writeFileSync("/tmp/discovered-host.txt", fullUrl + "\n");
-    appendFileSync("/tmp/discovered-all.txt", `${new Date().toISOString()} | ${fullUrl}\n`);
+    try {
+      writeFileSync("/tmp/discovered-host.txt", fullUrl + "\n");
+      appendFileSync("/tmp/discovered-all.txt", `${new Date().toISOString()} | ${fullUrl}\n`);
+    } catch (e) {
+      // Filesystem may be read-only (e.g. on Vercel) — silently no-op so
+      // the middleware that calls this on every request never sees a 500.
+      console.warn("[capture-host] filesystem write failed:", e);
+    }
   }
   return new NextResponse("ok", { status: 200, headers: { "Cache-Control": "no-store" } });
 }

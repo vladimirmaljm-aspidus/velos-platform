@@ -12,12 +12,8 @@ const nextConfig: NextConfig = {
   // patterns that Turbopack mishandles when server-bundled. Treating it
   // as an external node module (required from node_modules at runtime)
   // avoids "Cannot find module" / "fetch failed" errors on Vercel.
-  serverExternalPackages: ["unpdf"],
-  // Also keep z-ai-web-dev-sdk external — it reads .z-ai-config from
-  // disk at runtime, which bundling would break.
-  experimental: {
-    serverComponentsExternalPackages: ["unpdf", "z-ai-web-dev-sdk"],
-  },
+  // z-ai-web-dev-sdk reads .z-ai-config from disk at runtime — keep external.
+  serverExternalPackages: ["unpdf", "z-ai-web-dev-sdk"],
   async headers() {
     return [
       {

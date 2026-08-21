@@ -51,12 +51,14 @@ export function PortAutocomplete({
   const debounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   React.useEffect(() => {
+// eslint-disable-next-line react-hooks/set-state-in-effect
     setSearch(value);
   }, [value]);
 
   // Debounced search against our ports API
   React.useEffect(() => {
     if (search.length < 2 || search === value) {
+// eslint-disable-next-line react-hooks/set-state-in-effect
       setResults([]);
       setOpen(false);
       return;

@@ -97,6 +97,9 @@ export function DataProtection() {
     }
   }, [api]);
 
+  // Fetch on mount; load() calls setState after `await fetch` so it isn't
+  // synchronous, but the rule's static analysis can't follow the promise.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   React.useEffect(() => { void load(); }, [load]);
 
   function patchGdpr<K extends keyof DataProtectionData["gdpr"]>(key: K, value: any) {

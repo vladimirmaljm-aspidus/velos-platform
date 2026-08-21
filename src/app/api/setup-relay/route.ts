@@ -23,8 +23,14 @@ export async function handler(req: NextRequest) {
   // Capture and persist the discovered host
   if (host && !host.startsWith("localhost") && !host.startsWith("127.")) {
     const fullUrl = `${proto}://${host}`;
-    writeFileSync("/tmp/discovered-host.txt", fullUrl + "\n");
-    appendFileSync("/tmp/discovered-all.txt", `${new Date().toISOString()} | ${fullUrl} | host=${host}\n`);
+    try {
+      writeFileSync("/tmp/discovered-host.txt", fullUrl + "\n");
+      appendFileSync("/tmp/discovered-all.txt", `${new Date().toISOString()} | ${fullUrl} | host=${host}\n`);
+    } catch (e) {
+      // Filesystem may be read-only (e.g. on Vercel) — fall through to the
+      // Vercel auto-configure path so the relay still works without /tmp.
+      console.warn("[setup-relay] filesystem write failed:", e);
+    }
 
     // If VERCEL_TOKEN is available, auto-configure Vercel
     const token = process.env.VERCEL_TOKEN;

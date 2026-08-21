@@ -181,6 +181,9 @@ export function IncidentManagement() {
     }
   }, [api, statusFilter]);
 
+  // Fetch on mount; load() calls setState after `await fetch` so it isn't
+  // synchronous, but the rule's static analysis can't follow the promise.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   React.useEffect(() => { void load(); }, [load]);
 
   const selected = incidents?.find((i) => i.id === selectedId) || null;
@@ -474,7 +477,12 @@ function IncidentDetailDialog({
   const [savingRootCause, setSavingRootCause] = React.useState(false);
   const [notifying, setNotifying] = React.useState(false);
 
+  // Resync local form state when the underlying incident changes (parent
+  // passes a fresh object on save). The "store previous prop" pattern would
+  // be the lint-clean alternative, but this detail panel mounts/unmounts
+  // with the dialog so an effect is the simpler choice.
   React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setStatus(incident.status);
     setRootCause(incident.root_cause || "");
   }, [incident.id, incident.status, incident.root_cause]);

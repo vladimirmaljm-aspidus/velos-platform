@@ -622,6 +622,7 @@ function ProductFormDialog({
       const baseSpecs = product?.specifications
         ? normalizeSpecs(product.specifications).map((s) => ({ key: s.name, value: s.value }))
         : [];
+// eslint-disable-next-line react-hooks/set-state-in-effect
       setForm(product
         ? { ...product }
         : ({

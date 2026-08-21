@@ -268,6 +268,7 @@ function useSettingLoader<T>(key: string, fallback: T) {
 
   useEffect(() => {
     let active = true;
+// eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     fetchSetting<T>(key, fallback, api)
       .then((v) => { if (active) setValue(v); })
@@ -1492,6 +1493,7 @@ function PreferencesTab() {
 
   useEffect(() => {
     let active = true;
+// eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     fetch(api("/api/user-preferences"))
       .then((r) => r.json())
@@ -1752,6 +1754,7 @@ function MemorandumTab() {
 
   useEffect(() => {
     let active = true;
+// eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     Promise.all([
       fetch(api("/api/memorandum-settings"))

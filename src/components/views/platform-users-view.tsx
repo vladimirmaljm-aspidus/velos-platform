@@ -75,27 +75,9 @@ export function PlatformUsersView() {
     enabled: isSuper,
   });
 
-  if (!isSuper) {
-    return (
-      <div>
-        <PageHeader title={t("pf-all-users")} description={t("pf-users-desc")} />
-        <Card className="border-amber-500/30 bg-amber-50/40 dark:bg-amber-500/5">
-          <CardContent className="p-6 flex items-start gap-3">
-            <div className="size-10 rounded-xl bg-amber-500/15 text-amber-600 flex items-center justify-center shrink-0">
-              <ShieldAlert className="size-5" />
-            </div>
-            <div>
-              <p className="font-medium">Platform admin access required.</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                This area is restricted to platform super-administrators. Contact your platform operator if you believe this is an error.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
+  // useMemo and useMutation must run unconditionally to comply with
+  // react-hooks/rules-of-hooks. The access-denied early return is placed
+  // AFTER all hook calls below.
   const items = usersQ.data?.items || [];
   const tenants = tenantsQ.data?.items || [];
   const tenantName = React.useMemo(() => new Map(tenants.map((t) => [t.id, t.name])), [tenants]);
@@ -122,6 +104,30 @@ export function PlatformUsersView() {
     onSuccess: () => { toast.success(t("pf-impersonation-started")); setTimeout(() => window.location.reload(), 400); },
     onError: (e: Error) => toast.error(e.message),
   });
+
+  // Defense-in-depth: deny non-super-admins BEFORE rendering the user list.
+  // Placed AFTER all hook calls (useQuery/useMemo/useMutation) to comply
+  // with react-hooks/rules-of-hooks.
+  if (!isSuper) {
+    return (
+      <div>
+        <PageHeader title={t("pf-all-users")} description={t("pf-users-desc")} />
+        <Card className="border-amber-500/30 bg-amber-50/40 dark:bg-amber-500/5">
+          <CardContent className="p-6 flex items-start gap-3">
+            <div className="size-10 rounded-xl bg-amber-500/15 text-amber-600 flex items-center justify-center shrink-0">
+              <ShieldAlert className="size-5" />
+            </div>
+            <div>
+              <p className="font-medium">Platform admin access required.</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                This area is restricted to platform super-administrators. Contact your platform operator if you believe this is an error.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">

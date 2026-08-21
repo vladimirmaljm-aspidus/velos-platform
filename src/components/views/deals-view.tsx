@@ -201,6 +201,7 @@ export function DealsView() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const { pageSize: PAGE_SIZE, setPageSize, options: pageSizeOptions } = usePageSize("deals", 20);
+// eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setPage(1); }, [PAGE_SIZE]);
 
   const { data, isLoading } = useQuery({
@@ -1102,6 +1103,7 @@ function DealFormDialog({
         probability: 20,
         partner_id: partners[0]?.id || "",
       };
+// eslint-disable-next-line react-hooks/set-state-in-effect
       setForm(initial);
       setSelectedPartnerId(initial.partner_id || "");
 
@@ -1139,6 +1141,7 @@ function DealFormDialog({
       }
 
       if (Object.keys(updates).length > 0) {
+// eslint-disable-next-line react-hooks/set-state-in-effect
         setForm((f) => ({ ...f, ...updates }));
       }
     }

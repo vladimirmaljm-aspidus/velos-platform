@@ -89,6 +89,9 @@ export function PlatformConfig() {
     }
   }, [api]);
 
+  // Fetch on mount; load() calls setState after `await fetch` so it isn't
+  // synchronous, but the rule's static analysis can't follow the promise.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   React.useEffect(() => { void load(); }, [load]);
 
   async function toggleFlag(tenantId: string, flag: string, value: boolean) {

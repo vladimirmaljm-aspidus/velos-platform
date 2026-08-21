@@ -213,6 +213,7 @@ function LogisticsRequestForm({ open, onClose, onCreated, prefill, profile }: { 
     return base;
   }, [prefill, profile]);
   const [f, setF] = React.useState<any>(initialForm);
+// eslint-disable-next-line react-hooks/set-state-in-effect
   React.useEffect(() => { if (open) setF(initialForm()); }, [open, initialForm]);
   const [submitting, setSubmitting] = React.useState(false);
   const [openSec, setOpenSec] = React.useState({ transport: true, origin: true, destination: true, cargo: true, packing: false, extras: false });
@@ -231,6 +232,7 @@ function LogisticsRequestForm({ open, onClose, onCreated, prefill, profile }: { 
     const w = list.reduce((a, l) => a + (Number(l.unit_weight_kg) * Number(l.packages || 0) || 0), 0);
     const v = list.reduce((a, l) => a + ((Number(l.length_cm) * Number(l.width_cm) * Number(l.height_cm) * Number(l.packages || 0)) / 1_000_000 || 0), 0);
     const p = list.reduce((a, l) => a + Number(l.packages || 0), 0);
+// eslint-disable-next-line react-hooks/set-state-in-effect
     setF((s: any) => ({ ...s, total_weight_kg: w > 0 ? Number(w.toFixed(2)) : s.total_weight_kg, total_volume_cbm: v > 0 ? Number(v.toFixed(3)) : s.total_volume_cbm, total_packages: p > 0 ? p : s.total_packages }));
   }, [JSON.stringify(f.packing_list)]);
 

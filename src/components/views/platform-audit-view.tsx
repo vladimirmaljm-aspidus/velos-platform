@@ -75,6 +75,13 @@ export function PlatformAuditView() {
     enabled: isSuper,
   });
 
+  const items = auditQ.data?.items || [];
+  const total = auditQ.data?.total || 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // useMemo must run unconditionally to comply with react-hooks/rules-of-hooks.
+  // The access-denied early return is placed AFTER this hook call.
+  const tenantName = React.useMemo(() => new Map(tenants.map((t) => [t.id, t.name])), [tenants]);
+
   if (!isSuper) {
     return (
       <div>
@@ -95,11 +102,6 @@ export function PlatformAuditView() {
       </div>
     );
   }
-
-  const items = auditQ.data?.items || [];
-  const total = auditQ.data?.total || 0;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const tenantName = React.useMemo(() => new Map(tenants.map((t) => [t.id, t.name])), [tenants]);
 
   return (
     <Card>

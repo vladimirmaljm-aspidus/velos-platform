@@ -158,26 +158,8 @@ export function PerformanceView() {
   // the canUser fix), and /api/admin/performance uses requireSuperAdmin,
   // but a non-super-admin who reaches this view via state manipulation
   // should see a clear denial instead of firing 403 fetches every 15s.
-  if (!isSuper) {
-    return (
-      <div>
-        <PageHeader title={t("pf-apm-title")} description={t("pf-apm-desc")} />
-        <Card className="border-amber-500/30 bg-amber-50/40 dark:bg-amber-500/5">
-          <CardContent className="p-6 flex items-start gap-3">
-            <div className="size-10 rounded-xl bg-amber-500/15 text-amber-600 flex items-center justify-center shrink-0">
-              <ShieldAlert className="size-5" />
-            </div>
-            <div>
-              <p className="font-medium">Platform admin access required.</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                This area is restricted to platform super-administrators. Contact your platform operator if you believe this is an error.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  // NOTE: the access-denied card is rendered AFTER the useMemo hooks below
+  // to comply with the rules-of-hooks rule (no conditional hook calls).
 
   const data = perfQ.data;
   const s = data?.summary;
@@ -251,6 +233,29 @@ export function PerformanceView() {
 
   const slowThreshold = data?.slowThresholdMs ?? 2000;
   const hasData = !!s && s.totalRequests > 0;
+
+  // Defense-in-depth: deny non-super-admins before rendering the dashboard.
+  // Placed AFTER all hook calls to comply with react-hooks/rules-of-hooks.
+  if (!isSuper) {
+    return (
+      <div>
+        <PageHeader title={t("pf-apm-title")} description={t("pf-apm-desc")} />
+        <Card className="border-amber-500/30 bg-amber-50/40 dark:bg-amber-500/5">
+          <CardContent className="p-6 flex items-start gap-3">
+            <div className="size-10 rounded-xl bg-amber-500/15 text-amber-600 flex items-center justify-center shrink-0">
+              <ShieldAlert className="size-5" />
+            </div>
+            <div>
+              <p className="font-medium">Platform admin access required.</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                This area is restricted to platform super-administrators. Contact your platform operator if you believe this is an error.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   function fmtUptime(seconds: number): string {
     if (!seconds) return "—";

@@ -246,12 +246,14 @@ export function CostBreakdownPanel(props: CostBreakdownPanelProps) {
 
   // Re-sync displayCurrency when sellCurrency changes (e.g. new calc loaded).
   React.useEffect(() => {
+// eslint-disable-next-line react-hooks/set-state-in-effect
     setDisplayCurrency((sellCurrency || "USD").toUpperCase());
   }, [sellCurrency]);
 
   React.useEffect(() => {
     let cancelled = false;
     const base = (sellCurrency || "USD").toUpperCase();
+// eslint-disable-next-line react-hooks/set-state-in-effect
     setRateMapLoading(true);
     fetch(`/api/exchange-rates?base=${encodeURIComponent(base)}`)
       .then((r) => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))

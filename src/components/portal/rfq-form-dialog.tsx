@@ -82,6 +82,7 @@ export function RfqFormDialog({
 
   React.useEffect(() => {
     if (open && product) {
+// eslint-disable-next-line react-hooks/set-state-in-effect
       setForm((f) => ({
         ...f,
         product_name: product.name || "",

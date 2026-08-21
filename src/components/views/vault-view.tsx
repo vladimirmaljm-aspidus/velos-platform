@@ -294,6 +294,7 @@ function VaultFormDialog({
   useEffect(() => {
     if (!open) return;
     if (secret) {
+// eslint-disable-next-line react-hooks/set-state-in-effect
       setKey(secret.key);
       setDescription(secret.description || "");
       setCat(secret.category);

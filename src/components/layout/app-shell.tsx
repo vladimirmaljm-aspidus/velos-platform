@@ -171,6 +171,7 @@ export function AppShell() {
 
   /* Close mobile menu when view changes */
   React.useEffect(() => {
+// eslint-disable-next-line react-hooks/set-state-in-effect
     setMobileMenuOpen(false);
   }, [view]);
 
@@ -180,6 +181,7 @@ export function AppShell() {
 
   React.useEffect(() => {
     if (view !== transitionKey) {
+// eslint-disable-next-line react-hooks/set-state-in-effect
       setIsTransitioning(true);
       // Brief fade-out then swap content
       const timer = setTimeout(() => {

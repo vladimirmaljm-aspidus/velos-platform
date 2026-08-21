@@ -37,37 +37,45 @@ export async function GET(req: NextRequest) {
   const auth = await requireSuperAdmin(req);
   if (auth instanceof NextResponse) return auth;
 
-  const summary = getMetricsSummary();
-  const alerts = checkAlerts();
-  const metrics = getMetrics();
+  try {
+    const summary = getMetricsSummary();
+    const alerts = checkAlerts();
+    const metrics = getMetrics();
 
-  // Memory snapshot — `process.memoryUsage()` returns bytes. We convert
-  // the four most useful fields to MB (rounded) so the dashboard can
-  // render them without a unit-conversion helper. `rss` is the total
-  // resident set size (what the OS sees); `heapUsed` is the V8 JS heap;
-  // `heapTotal` is the allocated heap (includes free slots); `external`
-  // is C++ objects bound to JS (Buffer, MapLibre tiles, etc.).
-  const mem = process.memoryUsage();
-  const memory = {
-    rssMb: Math.round(mem.rss / 1024 / 1024),
-    heapUsedMb: Math.round(mem.heapUsed / 1024 / 1024),
-    heapTotalMb: Math.round(mem.heapTotal / 1024 / 1024),
-    externalMb: Math.round(mem.external / 1024 / 1024),
-  };
+    // Memory snapshot — `process.memoryUsage()` returns bytes. We convert
+    // the four most useful fields to MB (rounded) so the dashboard can
+    // render them without a unit-conversion helper. `rss` is the total
+    // resident set size (what the OS sees); `heapUsed` is the V8 JS heap;
+    // `heapTotal` is the allocated heap (includes free slots); `external`
+    // is C++ objects bound to JS (Buffer, MapLibre tiles, etc).
+    const mem = process.memoryUsage();
+    const memory = {
+      rssMb: Math.round(mem.rss / 1024 / 1024),
+      heapUsedMb: Math.round(mem.heapUsed / 1024 / 1024),
+      heapTotalMb: Math.round(mem.heapTotal / 1024 / 1024),
+      externalMb: Math.round(mem.external / 1024 / 1024),
+    };
 
-  return NextResponse.json({
-    summary,
-    alerts,
-    metrics,
-    memory,
-    uptimeSeconds: Math.round(process.uptime()),
-    timestamp: new Date().toISOString(),
-    slowThresholdMs: SLOW_THRESHOLD_MS,
-    // Buffer capacity — surfaced so the dashboard can show "showing N of
-    // MAX_BUFFER_SIZE" when the buffer is full (indicating the dashboard
-    // hasn't been polled in a while and older entries are being dropped).
-    bufferCapacity: 1000,
-  });
+    return NextResponse.json({
+      summary,
+      alerts,
+      metrics,
+      memory,
+      uptimeSeconds: Math.round(process.uptime()),
+      timestamp: new Date().toISOString(),
+      slowThresholdMs: SLOW_THRESHOLD_MS,
+      // Buffer capacity — surfaced so the dashboard can show "showing N of
+      // MAX_BUFFER_SIZE" when the buffer is full (indicating the dashboard
+      // hasn't been polled in a while and older entries are being dropped).
+      bufferCapacity: 1000,
+    });
+  } catch (e: any) {
+    console.error("[admin/performance GET]", e);
+    return NextResponse.json(
+      { error: "Failed to load performance metrics." },
+      { status: 500 },
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -83,12 +91,20 @@ export async function DELETE(req: NextRequest) {
   const auth = await requireSuperAdmin(req);
   if (auth instanceof NextResponse) return auth;
 
-  clearMetrics();
-  return NextResponse.json({
-    summary: getMetricsSummary(),
-    alerts: checkAlerts(),
-    metrics: [],
-    timestamp: new Date().toISOString(),
-    cleared: true,
-  });
+  try {
+    clearMetrics();
+    return NextResponse.json({
+      summary: getMetricsSummary(),
+      alerts: checkAlerts(),
+      metrics: [],
+      timestamp: new Date().toISOString(),
+      cleared: true,
+    });
+  } catch (e: any) {
+    console.error("[admin/performance DELETE]", e);
+    return NextResponse.json(
+      { error: "Failed to clear performance metrics." },
+      { status: 500 },
+    );
+  }
 }

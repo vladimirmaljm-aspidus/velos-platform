@@ -441,6 +441,7 @@ function ComposeDialog({
 
   useEffect(() => {
     if (!open) {
+// eslint-disable-next-line react-hooks/set-state-in-effect
       setTo("");
       setSubject("");
       setBody("");

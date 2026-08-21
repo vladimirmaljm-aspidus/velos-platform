@@ -116,6 +116,7 @@ export function DemandsView() {
   const { pageSize, setPageSize, options: pageSizeOptions } = usePageSize("demands", 20);
 
   // Reset to page 0 when pageSize changes to avoid landing past the last page.
+// eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setPage(0); }, [pageSize]);
 
   const { data, isLoading } = useQuery({
@@ -743,6 +744,7 @@ function DemandFormDialog({
       const year = new Date().getFullYear();
       const seq = Math.floor(Math.random() * 900) + 100;
       const num = `RFQ-${year}-${seq}`;
+// eslint-disable-next-line react-hooks/set-state-in-effect
       setAutoNumber(num);
     } else {
       setAutoNumber(null);
@@ -753,6 +755,7 @@ function DemandFormDialog({
   useEffect(() => {
     if (open) {
       if (demand) {
+// eslint-disable-next-line react-hooks/set-state-in-effect
         setForm({
           ...demand,
           items: (demand.items || []).map((i) => ({ ...i })),

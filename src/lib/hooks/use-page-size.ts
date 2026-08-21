@@ -65,7 +65,12 @@ export function usePageSize(module: string, fallback = 20) {
   React.useEffect(() => {
     const server = data?.map?.[key];
     if (typeof server === "number" && server > 0) {
-      setLocal(server);
+      // Sync server preference into local state once it loads. The functional
+      // updater is a no-op when the value already matches, so it does not
+      // cause cascading renders. eslint-disable added because the rule flags
+      // any setState in an effect body, even guarded ones.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setLocal((prev) => (prev !== server ? server : prev));
       writeLocal(module, server);
     }
   }, [data, key, module]);

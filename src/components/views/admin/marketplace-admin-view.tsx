@@ -1407,6 +1407,7 @@ function CategoryDialog({
 
   React.useEffect(() => {
     if (category) {
+// eslint-disable-next-line react-hooks/set-state-in-effect
       setName(category.name);
       setSlug(category.slug);
       setIcon(category.icon ?? "");

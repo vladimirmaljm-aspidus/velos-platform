@@ -10,8 +10,7 @@ import * as topojson from "topojson-client";
 import * as turf from "@turf/turf";
 import type { Feature, MultiPolygon, Polygon, BBox } from "geojson";
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const countriesTopo = require("world-atlas/countries-50m.json");
+import countriesTopo from "world-atlas/countries-50m.json";
 
 interface CountryFeature {
   name: string;

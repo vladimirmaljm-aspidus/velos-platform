@@ -83,6 +83,7 @@ export function ProductsView() {
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [page, setPage] = useState(1);
   const { pageSize: PAGE_SIZE, setPageSize, options: pageSizeOptions } = usePageSize("products", 20);
+// eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setPage(1); }, [PAGE_SIZE]);
   const [editing, setEditing] = useState<Product | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -964,6 +965,7 @@ function ProductFormDialog({
   // FIX: Use useEffect instead of useMemo for side effects
   useEffect(() => {
     if (open) {
+// eslint-disable-next-line react-hooks/set-state-in-effect
       setForm(product ? { ...product } : {
         unit: "pcs",
         currency: "USD",

@@ -89,6 +89,9 @@ function RoleOverridesCard() {
     }
   }, [api]);
 
+  // Fetch on mount; load() calls setState after `await fetch` so it isn't
+  // synchronous, but the rule's static analysis can't follow the promise.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   React.useEffect(() => { void load(); }, [load]);
 
   async function handleDelete(id: string) {
@@ -366,6 +369,9 @@ function SodMatrixCard() {
     }
   }, [api]);
 
+  // Fetch on mount; load() calls setState after `await fetch` so it isn't
+  // synchronous, but the rule's static analysis can't follow the promise.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   React.useEffect(() => { void load(); }, [load]);
 
   const dirty = rules && defaults ? JSON.stringify(rules) !== JSON.stringify(defaults) : false;

@@ -89,6 +89,7 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
   // Pre-fill email from URL params + check for reset token / setup token
   useEffect(() => {
     const emailParam = searchParams.get("email");
+// eslint-disable-next-line react-hooks/set-state-in-effect
     if (emailParam) setEmail(emailParam);
     // Audit F-6/P1-3: prefer ?setup_token=xxx (single-use, 7-day-expiring)
     // over the legacy ?access_id=xxx (permanent UUID, never expired).

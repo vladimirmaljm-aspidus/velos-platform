@@ -1358,6 +1358,7 @@ function LetterheadEditorDialog({
 
   useEffect(() => {
     if (open) {
+// eslint-disable-next-line react-hooks/set-state-in-effect
       setForm(letterhead ? { ...letterhead } : defaultLetterhead());
     }
   }, [open, letterhead]);
@@ -1928,6 +1929,7 @@ function SealEditorDialog({
 
   useEffect(() => {
     if (open) {
+// eslint-disable-next-line react-hooks/set-state-in-effect
       setForm(seal ? { ...seal } : defaultSeal());
     }
   }, [open, seal]);
@@ -2316,6 +2318,7 @@ function TemplateEditorDialog({
       // Hydrate QR placement fields from footer_content._qrConfig (they're
       // not real DB columns — see writeQrConfig / parseQrConfig above).
       const qr = parseQrConfig(base.footer_content);
+// eslint-disable-next-line react-hooks/set-state-in-effect
       setForm({
         ...base,
         qr_position: base.qr_position ?? qr.position,

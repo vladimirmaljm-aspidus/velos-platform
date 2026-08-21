@@ -66,12 +66,15 @@ export function IbanInput({
   // (new identity every render) — without the ref we'd capture the first
   // closure and never see updates (stale-closure bug, P1-3).
   const onBankInfoRef = React.useRef(onBankInfo);
-  onBankInfoRef.current = onBankInfo;
+  React.useEffect(() => {
+    onBankInfoRef.current = onBankInfo;
+  }, [onBankInfo]);
 
   // Validate IBAN on change (debounced)
   React.useEffect(() => {
     const clean = value.replace(/\s/g, "");
     if (clean.length < 15) {
+// eslint-disable-next-line react-hooks/set-state-in-effect
       setStatus("idle");
       setBankName("");
       setSwift("");

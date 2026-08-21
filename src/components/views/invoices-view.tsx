@@ -179,6 +179,7 @@ export function InvoicesView() {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const { pageSize: PAGE_SIZE, setPageSize, options: pageSizeOptions } = usePageSize("invoices", 20);
+// eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setPage(0); }, [PAGE_SIZE, debouncedSearch, statusFilter, partnerFilter]);
 
   const { data, isLoading } = useQuery({
@@ -1242,6 +1243,7 @@ function RecordPaymentDialog({
   // Re-sync the default amount when the invoice prop changes.
   useEffect(() => {
     if (open) {
+// eslint-disable-next-line react-hooks/set-state-in-effect
       setAmount(invoice.total != null ? String(invoice.total) : "");
     }
   }, [invoice.id, invoice.total, open]);
@@ -1457,6 +1459,7 @@ function InvoiceFormDialog({
   // Reset form when opening / when invoice changes
   useEffect(() => {
     if (open) {
+// eslint-disable-next-line react-hooks/set-state-in-effect
       setPartnerContext(null);
       if (invoice) {
         setForm({

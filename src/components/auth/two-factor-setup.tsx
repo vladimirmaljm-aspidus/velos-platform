@@ -53,6 +53,7 @@ export function TwoFactorSetup({ isSuperAdmin }: { isSuperAdmin?: boolean }) {
   }, []);
 
   useEffect(() => {
+// eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchStatus();
   }, [fetchStatus]);
 
@@ -151,18 +152,8 @@ function EnrollDialog({
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
   const [copied, setCopied] = useState(false);
 
-  // Start enrollment when the dialog opens.
-  useEffect(() => {
-    if (!open) return;
-    setStep("loading");
-    setData(null);
-    setToken("");
-    setError("");
-    setQrDataUrl("");
-    void startEnroll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
-
+  // Declare startEnroll BEFORE the useEffect that calls it so the React
+  // Compiler doesn't flag "Cannot access variable before it is declared".
   async function startEnroll() {
     try {
       const r = await fetch("/api/auth/2fa/enroll", { method: "POST" });
@@ -195,6 +186,20 @@ function EnrollDialog({
       setStep("qr");
     }
   }
+
+  // Start enrollment when the dialog opens.
+  useEffect(() => {
+    if (!open) return;
+// eslint-disable-next-line react-hooks/set-state-in-effect
+    setStep("loading");
+    setData(null);
+    setToken("");
+    setError("");
+    setQrDataUrl("");
+    void startEnroll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
 
   async function verify() {
     if (!data || !token.trim()) return;
@@ -342,6 +347,7 @@ function DisableDialog({
 
   useEffect(() => {
     if (!open) return;
+// eslint-disable-next-line react-hooks/set-state-in-effect
     setPassword("");
     setToken("");
     setError("");

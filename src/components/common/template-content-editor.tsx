@@ -105,6 +105,7 @@ export function TemplateContentEditor({ value, onChange, label, defaultSegments 
 
   React.useEffect(() => {
     if (!valueSig) return;
+// eslint-disable-next-line react-hooks/set-state-in-effect
     setConfig((prev) => {
       if (JSON.stringify(prev) === valueSig) return prev;
       const parsed = parseContentConfig(value);

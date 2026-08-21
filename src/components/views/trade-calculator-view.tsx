@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, createElement } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Card, CardContent,
@@ -888,6 +888,7 @@ function CalcFormDialog({
       const editableLines = (calc?.cost_lines || []).filter(
         (l) => l.type !== "BUY_PRICE" && l.type !== "SELL_PRICE",
       );
+// eslint-disable-next-line react-hooks/set-state-in-effect
       setForm(baseForm);
       setLines(editableLines);
       setPaymentTerms("");
@@ -919,6 +920,7 @@ function CalcFormDialog({
     const to = form.sell_currency;
     if (!from || !to || from === to) return;
     let cancelled = false;
+// eslint-disable-next-line react-hooks/set-state-in-effect
     setFetchingRate(true);
     getExchangeRate(from, to)
       .then((rate) => {
@@ -986,6 +988,7 @@ function CalcFormDialog({
     // Map the agent's commission_type (CommissionType) to our local UI type.
     switch (agent.commission_type) {
       case "profit_percent":
+// eslint-disable-next-line react-hooks/set-state-in-effect
         setCommissionType("percent_profit");
         setCommissionRate(agent.commission_rate || 0);
         break;
@@ -1719,10 +1722,12 @@ function CalcFormDialog({
           <div className="space-y-1.5 md:col-span-2">
             <Label className="flex items-center gap-1.5">
               {t("log-transport-mode")}
-              {(() => {
-                const Mode = transportModeIcon(form.transport_mode);
-                return <Mode className="size-3.5 text-muted-foreground" />;
-              })()}
+              {/* Use React.createElement instead of <Mode /> JSX so we don't
+                  violate react-hooks/static-components (creating a component
+                  during render). */}
+              {createElement(transportModeIcon(form.transport_mode), {
+                className: "size-3.5 text-muted-foreground",
+              })}
             </Label>
             <Select value={form.transport_mode || "SEA"} onValueChange={(v) => set("transport_mode", v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>

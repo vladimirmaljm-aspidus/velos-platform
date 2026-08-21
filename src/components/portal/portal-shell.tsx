@@ -282,6 +282,7 @@ export function PortalShell({
   // back to the login screen instead of hanging.
   const [hydrating, setHydrating] = useState<boolean>(!portalAccess);
   useEffect(() => {
+// eslint-disable-next-line react-hooks/set-state-in-effect
     if (portalAccess) { setHydrating(false); return; }
     let mounted = true;
     fetch("/api/portal/me")

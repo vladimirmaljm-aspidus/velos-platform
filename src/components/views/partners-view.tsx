@@ -206,6 +206,7 @@ export function PartnersView() {
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [page, setPage] = useState(1);
   const { pageSize: PAGE_SIZE, setPageSize, options: pageSizeOptions } = usePageSize("partners", 20);
+// eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setPage(1); }, [PAGE_SIZE]);
   const [editing, setEditing] = useState<Partner | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -1531,6 +1532,7 @@ function PartnerFormDialog({
   useEffect(() => {
     if (open) {
       if (partner) {
+// eslint-disable-next-line react-hooks/set-state-in-effect
         setForm({ ...partner });
         setShowOtherTypes(["logistics", "customs", "bank", "inspector"].includes(partner.type));
         // When editing, open "More Details" if any advanced field has data

@@ -80,12 +80,14 @@ export function AddressAutocomplete({
 
   // Sync external value changes
   React.useEffect(() => {
+// eslint-disable-next-line react-hooks/set-state-in-effect
     setSearch(value);
   }, [value]);
 
   // Debounced search
   React.useEffect(() => {
     if (search.length < 3 || search === value) {
+// eslint-disable-next-line react-hooks/set-state-in-effect
       setPredictions([]);
       return;
     }

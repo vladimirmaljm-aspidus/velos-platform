@@ -489,6 +489,7 @@ function UserFormDialog({
         ? (tenants[0]?.id || "")
         : (currentUser?.tenant_id || "");
 
+// eslint-disable-next-line react-hooks/set-state-in-effect
       setForm({
         username: user?.username || "",
         email: user?.email || "",

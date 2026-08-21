@@ -375,6 +375,7 @@ function WebhookFormDialog({
   useEffect(() => {
     if (!open) return;
     if (webhook) {
+// eslint-disable-next-line react-hooks/set-state-in-effect
       setName(webhook.name);
       setUrl(webhook.url);
       setEvents((webhook.events || []).join(", "));

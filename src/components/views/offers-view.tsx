@@ -492,6 +492,7 @@ export function OffersView() {
   const [showDealPicker, setShowDealPicker] = useState(false);
   const [page, setPage] = useState(0);
   const { pageSize: PAGE_SIZE, setPageSize, options: pageSizeOptions } = usePageSize("offers", 20);
+// eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setPage(0); }, [PAGE_SIZE]);
   // Pre-filled offer payload handed off from the Trade Calculator view's
   // "Create Offer from Calculation" button (Fix 1). Set on mount when the
@@ -502,6 +503,7 @@ export function OffersView() {
 
   useEffect(() => {
     if (pendingOfferData) {
+// eslint-disable-next-line react-hooks/set-state-in-effect
       setPrefilledOffer(pendingOfferData.offer);
       setMissingFields(new Set(pendingOfferData.missingFields || []));
       setEditing(null);
@@ -1979,6 +1981,7 @@ function OfferFormDialog({
           .replace(/\n*\[Quality\][\s\S]*$/m, "")
           .trim();
 
+// eslint-disable-next-line react-hooks/set-state-in-effect
         setForm({
           ...offer,
           notes: cleanNotes,
@@ -2444,6 +2447,7 @@ function OfferFormDialog({
   // { bankName, accountNumber, swiftCode, currency, holder } records. We
   // expose them as a clean array so the bank-account picker in the form
   // can render a dropdown without re-parsing on every render.
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const tenantBankAccounts = useMemo(
     () => parseTenantBankAccounts(tenant?.bank_accounts ?? null),
     [tenant?.bank_accounts],

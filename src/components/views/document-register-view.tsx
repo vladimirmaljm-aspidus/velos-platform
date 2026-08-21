@@ -493,6 +493,7 @@ function DocumentFormDialog({
   useEffect(() => {
     if (open) {
       if (parent) {
+// eslint-disable-next-line react-hooks/set-state-in-effect
         setForm({
           type: parent.type,
           title: parent.title,

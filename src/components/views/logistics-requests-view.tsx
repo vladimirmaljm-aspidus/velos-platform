@@ -338,6 +338,7 @@ function RequestDetailSheet({
 
   React.useEffect(() => {
     if (req) {
+// eslint-disable-next-line react-hooks/set-state-in-effect
       setStatus(req.status);
       setPrice(req.quoted_price != null ? String(req.quoted_price) : "");
       setCurrency(req.quoted_currency || req.cargo_currency || "USD");

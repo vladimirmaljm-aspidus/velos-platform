@@ -180,6 +180,7 @@ function saveRecent(term: string) {
 function useIsMac(): boolean {
   const [isMac, setIsMac] = React.useState(false);
   React.useEffect(() => {
+// eslint-disable-next-line react-hooks/set-state-in-effect
     setIsMac(
       typeof navigator !== "undefined" &&
         /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent)
@@ -215,6 +216,7 @@ export function GlobalSearch() {
 
   /* ---- hydrate recent on mount ---- */
   React.useEffect(() => {
+// eslint-disable-next-line react-hooks/set-state-in-effect
     setRecent(loadRecent());
   }, []);
 

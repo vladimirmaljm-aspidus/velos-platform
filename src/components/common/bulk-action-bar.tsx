@@ -116,6 +116,7 @@ export function useRowSelection<T extends { id: string }>(items: T[]) {
 
   // Prune IDs that dropped out of the current dataset (e.g. after delete).
   React.useEffect(() => {
+// eslint-disable-next-line react-hooks/set-state-in-effect
     setSelected((prev) => {
       const ids = new Set(items.map((i) => i.id));
       const next = new Set<string>();

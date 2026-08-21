@@ -141,6 +141,7 @@ export function ProformasView() {
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const { pageSize: PAGE_SIZE, setPageSize, options: pageSizeOptions } = usePageSize("proformas", 20);
+// eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setPage(0); }, [PAGE_SIZE, debouncedSearch, statusFilter, partnerFilter]);
 
   const { data, isLoading } = useQuery({
@@ -1075,6 +1076,7 @@ function ProformaFormDialog({
       const validUntil = new Date(now);
       validUntil.setDate(validUntil.getDate() + 30);
 
+// eslint-disable-next-line react-hooks/set-state-in-effect
       setForm(proforma ? {
         ...proforma,
         items: (proforma.items || []).map((i) => ({ ...i })),

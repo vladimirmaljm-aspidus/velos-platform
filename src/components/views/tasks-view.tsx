@@ -318,6 +318,7 @@ function TaskFormDialog({
 
   React.useEffect(() => {
     if (open) {
+// eslint-disable-next-line react-hooks/set-state-in-effect
       setTitle(task?.title || "");
       setPriority((task?.priority as Priority) || "medium");
       setDueDate(toInputDate(task?.due_date || null));

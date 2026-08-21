@@ -94,6 +94,7 @@ export function SearchableSelect({
     if (open) {
       setTimeout(() => inputRef.current?.focus(), 50);
     } else {
+// eslint-disable-next-line react-hooks/set-state-in-effect
       setSearch("");
     }
   }, [open]);

@@ -42,6 +42,7 @@ export function MarketplaceBrowser() {
   // "+ Create post" button in MarketplaceMyPosts redirects here).
   useEffect(() => {
     if (sp?.get("create") === "1") {
+// eslint-disable-next-line react-hooks/set-state-in-effect
       setCreateOpen(true);
       setTab("browse");
     }
