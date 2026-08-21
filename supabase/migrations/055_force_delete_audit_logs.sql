@@ -23,7 +23,7 @@
 -- Force-delete all audit_logs for a tenant (used by deleteTenantCascade).
 -- Temporarily disables the append-only trigger, deletes the rows,
 -- re-enables the trigger.
-CREATE OR REPLACE FUNCTION force_delete_tenant_audit_logs(t_uuid UUID)
+CREATE OR REPLACE FUNCTION force_delete_tenant_audit_logs(t_uuid TEXT)
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -57,10 +57,10 @@ $$;
 
 -- Grant execute to authenticated users (the application uses the service
 -- role key which bypasses RLS, but be explicit).
-GRANT EXECUTE ON FUNCTION force_delete_tenant_audit_logs(UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION force_delete_tenant_audit_logs(TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION force_anonymize_user_audit_logs(TEXT) TO authenticated;
 
-COMMENT ON FUNCTION force_delete_tenant_audit_logs(UUID) IS
+COMMENT ON FUNCTION force_delete_tenant_audit_logs(TEXT) IS
   'Bypasses the audit_logs_append_only trigger to delete audit_logs for a tenant. '
   'Used by deleteTenantCascade when a super_admin hard-deletes a tenant. '
   'The trigger is disabled for the duration of the DELETE and re-enabled after.';
