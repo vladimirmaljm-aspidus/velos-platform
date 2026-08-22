@@ -1,3 +1,4 @@
+import { cn } from "@/lib/utils";
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -127,6 +128,8 @@ export function SettingsView() {
   const currentUser = useAppStore((s) => s.user);
   const admin = isAdmin(currentUser);
   const isSuperAdmin = !!currentUser && currentUser.role === "super_admin";
+  const activeTenantId = useAppStore((s) => s.activeTenantId);
+  const activeTenantName = useAppStore((s) => s.activeTenantName);
   const t = useT();
 
   // ── Plan-gate for dangerous tabs (security / comms) ─────────────────────
@@ -174,9 +177,38 @@ export function SettingsView() {
     );
   }
 
+  const isPlatformScope = isSuperAdmin && !activeTenantId;
+
   return (
     <div>
       <PageHeader title={t("admin-settings-title")} description={t("admin-settings-desc")} />
+
+      {/* Scope indicator — shows whether you're editing PLATFORM or TENANT settings */}
+      {isSuperAdmin && (
+        <div className={cn(
+          "mb-4 rounded-lg border p-3 flex items-center gap-2 text-sm",
+          isPlatformScope
+            ? "border-amber-500/40 bg-amber-50/50 dark:bg-amber-950/20"
+            : "border-blue-500/40 bg-blue-50/50 dark:bg-blue-950/20"
+        )}>
+          {isPlatformScope ? (
+            <>
+              <Globe className="size-4 text-amber-600 shrink-0" />
+              <span className="text-amber-800 dark:text-amber-300">
+                <strong>Platform-level settings</strong> — these are the defaults for ALL tenants. Configure email, security, and integrations that apply platform-wide.
+              </span>
+            </>
+          ) : (
+            <>
+              <Building2 className="size-4 text-blue-600 shrink-0" />
+              <span className="text-blue-800 dark:text-blue-300">
+                <strong>Tenant settings: {activeTenantName || "Selected tenant"}</strong> — these override the platform defaults for this tenant only.
+              </span>
+            </>
+          )}
+        </div>
+      )}
+
       <Tabs defaultValue="company">
         <TabsList className="flex w-full max-w-2xl overflow-x-auto justify-start sm:grid sm:grid-cols-7">
           <TabsTrigger value="company">{t("admin-settings-tab-company")}</TabsTrigger>
