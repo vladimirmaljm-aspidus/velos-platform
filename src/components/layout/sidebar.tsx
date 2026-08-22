@@ -193,7 +193,7 @@ const SECTIONS: NavSection[] = [
       // the "platform.users.read" permission keep it grouped with the
       // other platform-level user-management surfaces
       // (platform-users, super-admin-settings).
-      { key: "signup-requests", i18nKey: "signup-requests", i18nSection: "platform", icon: UserPlus, superAdminOnly: true },
+      { key: "signup-requests", i18nKey: "signup-requests", i18nSection: "platform", icon: UserPlus, superAdminOnly: true, badgeKey: "signup_requests" },
     ],
   },
 ];

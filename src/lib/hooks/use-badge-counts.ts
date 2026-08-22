@@ -9,6 +9,7 @@ export interface BadgeCounts {
   notifications: number;
   tasks: number;
   portal_messages: number;
+  signup_requests: number;
 }
 
 const EMPTY: BadgeCounts = {
@@ -18,6 +19,7 @@ const EMPTY: BadgeCounts = {
   notifications: 0,
   tasks: 0,
   portal_messages: 0,
+  signup_requests: 0,
 };
 
 /**
