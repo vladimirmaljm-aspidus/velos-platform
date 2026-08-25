@@ -51,9 +51,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (_f) return _f;
     }
 
-    const tid = auth.tenantId;
+    const { resolveTenantId } = await import("@/lib/api/helpers");
+    const tid = resolveTenantId(auth, req);
     if (!tid) {
-      return NextResponse.json({ error: "tenant_id is required." }, { status: 400 });
+      return NextResponse.json({ error: "No tenant context. Select a tenant or provide ?tenant_id=." }, { status: 400 });
     }
 
     const { id } = await params;
