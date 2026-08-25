@@ -57,19 +57,19 @@ export async function POST(req: NextRequest) {
       category: "message",
     });
 
-    // Audit (best-effort)
+    // Audit (best-effort — don't block the upload response on audit failure)
     try {
+      // Use the audit helper if available; otherwise skip silently.
+      const { audit } = await import("@/lib/api/helpers");
       const store = await getStore();
-      if (store.audit) {
-        await store.audit({
-          action: "portal.upload",
-          entity_type: "portal_upload",
-          entity_id: result.path,
-          tenant_id: access.tenant_id,
-          user_id: access.id,
-          details: { filename: fileName, size: buffer.length, content_type: contentType },
-        });
-      }
+      await audit(store, {
+        action: "portal.upload",
+        entity_type: "portal_upload",
+        entity_id: result.path,
+        tenant_id: access.tenant_id,
+        user_id: access.id,
+        details: { filename: fileName, size: buffer.length, content_type: contentType },
+      });
     } catch {
       // audit failure should not block the upload response
     }
