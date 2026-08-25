@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, audit, sanitizeError } from "@/lib/api/helpers";
+import { requireAuth, audit, sanitizeError, resolveTenantId } from "@/lib/api/helpers";
 import { uploadFile } from "@/lib/upload/service";
 import { verifyFileContent } from "@/lib/upload/verify-file";
 import { ALLOWED_MIME_TYPES, MAX_UPLOAD_SIZE, MAX_UPLOAD_SIZE_LABEL } from "@/lib/upload/constants";
@@ -52,7 +52,8 @@ export async function GET(req: NextRequest) {
     // Permission gate (document-register.read)
     { const { requirePermission } = await import("@/lib/permissions/can");
       const _d = requirePermission(auth, "document-register.read"); if (_d) return _d; } /* requirePermission wired */
-  const tid = auth.tenantId!;
+  const tid = resolveTenantId(auth, req);
+    if (!tid) return NextResponse.json({ error: "No tenant context. Select a tenant or provide ?tenant_id=." }, { status: 400 });
   const url = new URL(req.url);
   const search = url.searchParams.get("search") || undefined;
   const type = url.searchParams.get("type") || undefined;
@@ -86,7 +87,8 @@ export async function POST(req: NextRequest) {
     { const { requirePermission } = await import("@/lib/permissions/can");
       const _d = requirePermission(auth, "document-register.create"); if (_d) return _d; } /* requirePermission wired */
 
-    const tid = auth.tenantId!;
+    const tid = resolveTenantId(auth, req);
+    if (!tid) return NextResponse.json({ error: "No tenant context. Select a tenant or provide ?tenant_id=." }, { status: 400 });
     const contentType = req.headers.get("content-type") || "";
 
     // ── FIX-TENANT-DOC: multipart upload path ──
