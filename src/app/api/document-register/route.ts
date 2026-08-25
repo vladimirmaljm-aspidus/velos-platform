@@ -4,6 +4,7 @@ import { uploadFile } from "@/lib/upload/service";
 import { verifyFileContent } from "@/lib/upload/verify-file";
 import { ALLOWED_MIME_TYPES, MAX_UPLOAD_SIZE, MAX_UPLOAD_SIZE_LABEL } from "@/lib/upload/constants";
 import type { DocumentRegisterEntry } from "@/lib/supabase/types";
+import { getSupabase } from "@/lib/supabase/client";
 
 export const runtime = "nodejs";
 
