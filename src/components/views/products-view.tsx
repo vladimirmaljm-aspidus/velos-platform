@@ -40,6 +40,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { EmptyState } from "@/components/common/empty-state";
 import { fmtMoney, fmtNumber, fmtDate, fmtRelative } from "@/lib/utils/format";
 import { Product } from "@/lib/supabase/types";
@@ -377,6 +379,11 @@ export function ProductsView() {
             </Button>
           </div>
         }
+      />
+      <ModuleInfoTooltip
+        title="Products"
+        description="Manage your product catalog — items you buy, sell, or trade. Track stock levels, prices, categories, and HS codes."
+        howToUse={["Click 'Add Product' to create a new product", "Set SKU, category, price, and HS code", "Track stock levels and reorder points", "Use bulk import/export for CSV", "Products appear in the portal catalog for clients to browse"]}
       />
 
       {/* Hidden file input for CSV import. The button triggers .click() on

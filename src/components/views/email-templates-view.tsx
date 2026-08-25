@@ -50,6 +50,8 @@ import {
 import { toast } from "sonner";
 import { useI18nStore } from "@/lib/i18n/store";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { EmptyState } from "@/components/common/empty-state";
 import { useApiUrl, useTenantKey } from "@/lib/hooks/use-api-url";
 // Locale type no longer needed
@@ -222,6 +224,11 @@ export function EmailTemplatesView() {
             <Plus className="size-4 mr-1" /> {t("newTemplate")}
           </Button>
         }
+      />
+      <ModuleInfoTooltip
+        title="Email Templates"
+        description="Customize the email templates sent for notifications (welcome, invoice, KYC, trial expiring, etc.)."
+        howToUse={["Edit the HTML template for each notification type", "Use variables ({name}, {company}, {link})", "Preview the template with sample data", "Templates apply to all tenants (platform-level)"]}
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

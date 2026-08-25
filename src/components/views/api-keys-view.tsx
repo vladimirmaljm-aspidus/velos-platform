@@ -26,6 +26,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { EmptyState } from "@/components/common/empty-state";
 import { fmtRelative, fmtDate } from "@/lib/utils/format";
 import { useAppStore, isAdmin } from "@/lib/store/app-store";
@@ -209,6 +211,11 @@ export function ApiKeysView() {
             <Plus className="size-4 mr-1" /> {t("admin-api-keys-new")}
           </Button>
         }
+      />
+      <ModuleInfoTooltip
+        title="API Keys"
+        description="Create API keys for programmatic access to the platform. Scope permissions, set expiry, and monitor usage."
+        howToUse={["Create an API key with a name and scope", "Copy the key immediately (shown only once)", "Set an expiry date", "Revoke keys when no longer needed", "Use the key in the Authorization: Bearer header"]}
       />
 
       <Card className="mb-4 border-amber-200 bg-amber-50/50 dark:bg-amber-950/10">

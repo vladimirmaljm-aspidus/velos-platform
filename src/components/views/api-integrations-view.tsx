@@ -68,6 +68,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { useI18nStore, useT } from "@/lib/i18n/store";
 import { fmtRelative, fmtDateTime } from "@/lib/utils/format";
 import { useApiUrl, useTenantKey } from "@/lib/hooks/use-api-url";
@@ -381,6 +383,11 @@ export function ApiIntegrationsView() {
         title={t("api-integrations")}
         description="Manage external API connections for customs, logistics, and market data"
       />
+      <ModuleInfoTooltip
+        title="API Integrations"
+        description="Connect external data services to enrich your trade platform (exchange rates, shipping, customs, etc.)."
+        howToUse={["Browse available integrations", "Configure credentials for each integration", "Test the connection", "Integrations run in the background to update data"]}
+      />
 
       {/* ── Integration Status Cards ──────────────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -500,6 +507,7 @@ function CustomsTab({
 }) {
   const api = useApiUrl();
   const tenantKey = useTenantKey();
+  const t = useT();
 
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounced(search, 300);
@@ -578,7 +586,7 @@ function CustomsTab({
                   <SelectValue placeholder="Region" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Regions</SelectItem>
+                  <SelectItem value="all">{t("common-label-all-regions")}</SelectItem>
                   {regions.map((r) => (
                     <SelectItem key={r} value={r}>
                       {r}
@@ -702,7 +710,7 @@ function CustomsTab({
                     </div>
                     <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
                       <span>{reg.country}</span>
-                      <span>Effective: {fmtDateTime(reg.effectiveDate)}</span>
+                      <span>{t("common-label-effective")}: {fmtDateTime(reg.effectiveDate)}</span>
                     </div>
                   </div>
                 ))}
@@ -724,6 +732,7 @@ function LogisticsTab({
 }) {
   const api = useApiUrl();
   const tenantKey = useTenantKey();
+  const t = useT();
 
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
@@ -770,12 +779,12 @@ function LogisticsTab({
             <SelectValue placeholder="Filter by status" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Statuses</SelectItem>
-            <SelectItem value="in_transit">In Transit</SelectItem>
-            <SelectItem value="customs">Customs</SelectItem>
-            <SelectItem value="delivered">Delivered</SelectItem>
-            <SelectItem value="loading">Loading</SelectItem>
-            <SelectItem value="delayed">Delayed</SelectItem>
+            <SelectItem value="all">{t("common-label-all-statuses")}</SelectItem>
+            <SelectItem value="in_transit">{t("common-label-in-transit")}</SelectItem>
+            <SelectItem value="customs">{t("common-label-customs")}</SelectItem>
+            <SelectItem value="delivered">{t("common-label-delivered")}</SelectItem>
+            <SelectItem value="loading">{t("common-label-loading")}</SelectItem>
+            <SelectItem value="delayed">{t("common-label-delayed")}</SelectItem>
           </SelectContent>
         </Select>
         <Button
@@ -816,6 +825,7 @@ function LogisticsTab({
 /* ─── Shipment Card ────────────────────────────────────────────────────────── */
 
 function ShipmentCard({ shipment }: { shipment: Shipment }) {
+  const t = useT();
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -858,7 +868,7 @@ function ShipmentCard({ shipment }: { shipment: Shipment }) {
         {/* Progress */}
         <div className="mb-3">
           <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-            <span>Progress</span>
+            <span>{t("common-label-progress")}</span>
             <span className="tabular">{shipment.progress}%</span>
           </div>
           <Progress value={shipment.progress} className="h-2" />

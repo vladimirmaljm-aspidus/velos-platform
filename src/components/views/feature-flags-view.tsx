@@ -44,6 +44,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { useAppStore, isSuperAdmin } from "@/lib/store/app-store";
 import type { Tenant, TenantFeatureFlags } from "@/lib/supabase/types";
 import { cn } from "@/lib/utils";
@@ -378,6 +380,11 @@ export function FeatureFlagsView({ embedded = false }: { embedded?: boolean } = 
       <PageHeader
         title={t("admin-flags-title")}
         description={t("admin-flags-desc")}
+      />
+      <ModuleInfoTooltip
+        title="Feature Flags"
+        description="Enable or disable features per tenant. Control which modules each tenant can access."
+        howToUse={["Toggle features on/off per tenant", "Set defaults for new tenants", "Changes take effect immediately (cache invalidated)", "Use to A/B test or gradually roll out features"]}
       />
 
       {/* Tenant selector */}

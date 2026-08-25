@@ -35,6 +35,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { EmptyState } from "@/components/common/empty-state";
 import { KpiCard } from "@/components/common/kpi-card";
 import { fmtMoney, fmtDate, fmtDateTime, fmtNumber } from "@/lib/utils/format";
@@ -332,6 +334,11 @@ export function ProformasView() {
             </Button>
           </div>
         }
+      />
+      <ModuleInfoTooltip
+        title="Proformas"
+        description="Create proforma invoices (preliminary documents sent before the final invoice). Convert to invoice when the deal closes."
+        howToUse={["Create a proforma for a client", "Set validity period", "Send via email", "Convert to invoice when the deal is confirmed", "Auto-marks as paid when the linked invoice is paid"]}
       />
 
       {/* KPI summary */}

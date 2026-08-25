@@ -18,6 +18,8 @@ import {
   Search, ScrollText, ChevronLeft, ChevronRight, RefreshCw, Download, X,
 } from "lucide-react";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { EmptyState } from "@/components/common/empty-state";
 import { fmtDateTime } from "@/lib/utils/format";
 import { AuditLog } from "@/lib/supabase/types";
@@ -165,6 +167,11 @@ export function AuditView() {
       <PageHeader
         title={t("audit")}
         description={`${data?.total ?? 0} ${t("admin-audit-events")}`}
+      />
+      <ModuleInfoTooltip
+        title="Audit Logs"
+        description="View all actions taken in your tenant — who did what, when, and from where. Export for compliance."
+        howToUse={["Filter by action type, user, entity, or date range", "Search by keyword", "Export to CSV for compliance reports", "Logs are append-only (tamper-proof)"]}
       />
 
       {/* ── Filter bar ──────────────────────────────────────────────

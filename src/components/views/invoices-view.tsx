@@ -39,6 +39,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { EmptyState } from "@/components/common/empty-state";
 import { KpiCard } from "@/components/common/kpi-card";
 import { fmtMoney, fmtDate, fmtDateTime, fmtNumber } from "@/lib/utils/format";
@@ -437,6 +439,11 @@ export function InvoicesView() {
             </Button>
           </div>
         }
+      />
+      <ModuleInfoTooltip
+        title="Invoices"
+        description="Create, send, and track invoices. Record payments, generate PDFs, and monitor overdue invoices."
+        howToUse={["Create an invoice from an accepted offer or manually", "Add line items, taxes, and totals", "Send via email to the client", "Record payments (partial or full)", "Download PDF", "Monitor overdue invoices"]}
       />
 
       {/* KPI summary */}

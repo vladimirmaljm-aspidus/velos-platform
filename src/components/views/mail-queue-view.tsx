@@ -32,6 +32,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { KpiCard } from "@/components/common/kpi-card";
 import { EmptyState } from "@/components/common/empty-state";
 import { fmtRelative, fmtDateTime } from "@/lib/utils/format";
@@ -182,6 +184,11 @@ export function MailQueueView() {
             <Plus className="size-4 mr-1" /> {t("admin-mail-compose")}
           </Button>
         }
+      />
+      <ModuleInfoTooltip
+        title="Mail Queue"
+        description="Monitor outbound email delivery across all tenants. Retry failed emails, cancel pending ones, and audit delivery."
+        howToUse={["View all outbound emails (cross-tenant for super admin)", "Filter by status (sent, failed, pending)", "Retry failed deliveries", "Cancel pending emails", "Click a row to view full email content"]}
       />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">

@@ -10,6 +10,8 @@ import { Loader2, UserPlus, Check, X, ShieldAlert, Building2 } from "lucide-reac
 import { toast } from "sonner";
 import { useAppStore, isSuperAdmin } from "@/lib/store/app-store";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 
 /* ═══════════════════════════════════════════════════════════════════════════
    FEAT-1 (Trial approval system) — super-admin queue view.
@@ -162,6 +164,11 @@ export function SignupRequestsView() {
       <PageHeader
         title="Signup Requests"
         description="Self-registered trial signups waiting for approval. Approving activates the 14-day trial; rejecting cascade-deletes the tenant + user."
+      />
+      <ModuleInfoTooltip
+        title="Signup Requests"
+        description="Approve or reject new tenant signup requests. Only approved tenants can access the platform."
+        howToUse={["Review pending signup requests (company, contact, email)", "Approve to activate the tenant (14-day trial starts)", "Reject to delete the request + notify the user", "Badge count on sidebar shows pending requests"]}
       />
 
       {isLoading ? (

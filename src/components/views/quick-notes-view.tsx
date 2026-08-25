@@ -10,6 +10,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Pin, PinOff, Trash2, Plus, Search, StickyNote } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { EmptyState } from "@/components/common/empty-state";
 import { useApiUrl, useTenantKey } from "@/lib/hooks/use-api-url";
 import { fmtRelative } from "@/lib/utils/format";
@@ -44,6 +46,11 @@ export function QuickNotesView() {
   return (
     <div>
       <PageHeader title={t("quick-notes")} description={t("misc-quick-notes-desc")} />
+      <ModuleInfoTooltip
+        title="Quick Notes"
+        description="Jot down quick notes and reminders. Pin important notes for easy access."
+        howToUse={["Create a note with a title and body", "Pin notes to keep them on top", "Color-code notes by category", "Notes are private to you"]}
+      />
       <div className="flex items-center gap-2 mb-4">
         <div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" /><Input placeholder={t("misc-search-notes-placeholder")} value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
         <Button onClick={() => { setEditing(null); setShowForm(true); }}><Plus className="size-4 mr-1" /> {t("misc-new-note")}</Button>

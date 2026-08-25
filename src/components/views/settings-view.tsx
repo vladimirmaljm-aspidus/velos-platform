@@ -19,6 +19,8 @@ import { Slider } from "@/components/ui/slider";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { ShieldAlert, Building2, ShieldCheck, Mail, Upload, Loader2, UserCog, X, ImageIcon, Send, CheckCircle2, XCircle, Zap, AlertTriangle, Globe, Info, FileText, Palette, QrCode, Save } from "lucide-react";
 import { useAppStore, isAdmin } from "@/lib/store/app-store";
 import { useQuery } from "@tanstack/react-query";
@@ -182,6 +184,11 @@ export function SettingsView() {
   return (
     <div>
       <PageHeader title={t("admin-settings-title")} description={t("admin-settings-desc")} />
+      <ModuleInfoTooltip
+        title="Settings"
+        description="Configure your tenant settings — company profile, security policy, email (SMTP/Resend), integrations, and more."
+        howToUse={["Company tab: set your company name, logo, address", "Security tab: configure password policy, 2FA enforcement", "Communications tab: set up email (Resend or SMTP)", "Integrations tab: connect external services", "Super admin sees a scope banner (Platform vs Tenant)"]}
+      />
 
       {/* Scope indicator — shows whether you're editing PLATFORM or TENANT settings */}
       {isSuperAdmin && (
@@ -371,43 +378,43 @@ function CompanyTab() {
       <CardContent>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="md:col-span-2 space-y-1.5">
-            <Label>Name</Label>
+            <Label>{t("common-label-name")}</Label>
             <Input value={value.name} onChange={(e) => set("name", e.target.value)} placeholder="Acme Inc." />
           </div>
           <div className="md:col-span-2 space-y-1.5">
-            <Label>Address</Label>
+            <Label>{t("common-label-address")}</Label>
             <Input value={value.address} onChange={(e) => set("address", e.target.value)} placeholder="123 Main St, Springfield" />
           </div>
           <div className="space-y-1.5">
-            <Label>Tax ID</Label>
+            <Label>{t("common-label-tax-id")}</Label>
             <Input value={value.pib} onChange={(e) => set("pib", e.target.value)} placeholder="100000000" className="tabular" />
           </div>
           <div className="space-y-1.5">
-            <Label>Company Registration No.</Label>
+            <Label>{t("common-label-company-registration")}</Label>
             <Input value={value.mb} onChange={(e) => set("mb", e.target.value)} placeholder="00000000" className="tabular" />
           </div>
           <div className="space-y-1.5">
-            <Label>Bank</Label>
+            <Label>{t("common-label-bank")}</Label>
             <Input value={value.bank} onChange={(e) => set("bank", e.target.value)} placeholder="Acme Bank" />
           </div>
           <div className="space-y-1.5">
-            <Label>Account</Label>
+            <Label>{t("common-label-account")}</Label>
             <Input value={value.account} onChange={(e) => set("account", e.target.value)} placeholder="123-4567890123456-78" className="tabular" />
           </div>
           <div className="space-y-1.5">
-            <Label>Phone</Label>
+            <Label>{t("common-label-phone")}</Label>
             <Input value={value.phone} onChange={(e) => set("phone", e.target.value)} placeholder="+1 555 000 0000" className="tabular" />
           </div>
           <div className="space-y-1.5">
-            <Label>Email</Label>
+            <Label>{t("common-label-email")}</Label>
             <Input type="email" value={value.email} onChange={(e) => set("email", e.target.value)} placeholder="info@company.com" />
           </div>
           <div className="space-y-1.5">
-            <Label>Website</Label>
+            <Label>{t("common-label-website")}</Label>
             <Input value={value.website} onChange={(e) => set("website", e.target.value)} placeholder="www.company.com" />
           </div>
           <div className="space-y-1.5">
-            <Label>Currency</Label>
+            <Label>{t("common-label-currency")}</Label>
             <Select value={value.currency} onValueChange={(v) => set("currency", v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -416,7 +423,7 @@ function CompanyTab() {
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label>Tax rate (%)</Label>
+            <Label>{t("common-label-tax-rate")}</Label>
             <Input
               type="number"
               min={0}
@@ -643,20 +650,20 @@ function SecurityTab() {
       <CardContent>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-1.5">
-            <Label>Minimum password length</Label>
+            <Label>{t("common-label-min-password-length")}</Label>
             <Input type="number" min={4} max={128} value={value.min_password_length} onChange={(e) => set("min_password_length", Number(e.target.value))} className="tabular" />
           </div>
           <div className="space-y-1.5">
-            <Label>Password expiry (days)</Label>
+            <Label>{t("common-label-password-expiry")}</Label>
             <Input type="number" min={0} value={value.password_expiry_days} onChange={(e) => set("password_expiry_days", Number(e.target.value))} className="tabular" />
             <p className="text-xs text-muted-foreground">0 = never expires.</p>
           </div>
           <div className="space-y-1.5">
-            <Label>Max failed attempts</Label>
+            <Label>{t("common-label-max-failed-attempts")}</Label>
             <Input type="number" min={1} value={value.max_failed_attempts} onChange={(e) => set("max_failed_attempts", Number(e.target.value))} className="tabular" />
           </div>
           <div className="space-y-1.5">
-            <Label>Lockout (minutes)</Label>
+            <Label>{t("common-label-lockout-minutes")}</Label>
             <Input type="number" min={1} value={value.lockout_minutes} onChange={(e) => set("lockout_minutes", Number(e.target.value))} className="tabular" />
           </div>
 
@@ -721,7 +728,7 @@ function CommsTab() {
       <CardContent className="space-y-5">
         {/* Provider picker */}
         <div className="space-y-2">
-          <Label>Email provider</Label>
+          <Label>{t("common-label-email-provider")}</Label>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
             <ProviderCard
               active={value.email_provider === "resend"}
@@ -758,15 +765,15 @@ function CommsTab() {
         {/* Common fields */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-1.5">
-            <Label>From name</Label>
+            <Label>{t("common-label-from-name")}</Label>
             <Input value={value.from_name} onChange={(e) => set("from_name", e.target.value)} placeholder="VELOS CRM" />
           </div>
           <div className="space-y-1.5">
-            <Label>From email</Label>
+            <Label>{t("common-label-from-email")}</Label>
             <Input type="email" value={value.from_email} onChange={(e) => set("from_email", e.target.value)} placeholder="noreply@company.com" />
           </div>
           <div className="space-y-1.5 md:col-span-2">
-            <Label>Reply-to email (optional)</Label>
+            <Label>{t("common-label-reply-to-email")}</Label>
             <Input type="email" value={value.reply_to} onChange={(e) => set("reply_to", e.target.value)} placeholder="support@company.com" />
           </div>
         </div>
@@ -786,13 +793,13 @@ function CommsTab() {
             <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
               <li>Sign up at <a href="https://resend.com" target="_blank" rel="noopener noreferrer" className="text-emerald-600 hover:underline">resend.com</a> (free)</li>
               <li>Go to API Keys → Create API Key → copy it (starts with <code className="bg-muted px-1 rounded">re_</code>)</li>
-              <li>Paste the key below</li>
+              <li>{t("common-label-paste-key-below")}</li>
               <li>For production: add &amp; verify your domain in Resend dashboard</li>
               <li>For testing: use <code className="bg-muted px-1 rounded">onboarding@resend.dev</code> as the from email</li>
             </ol>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
               <div className="space-y-1.5 md:col-span-2">
-                <Label>Resend API key</Label>
+                <Label>{t("common-label-resend-api-key")}</Label>
                 <Input
                   type="password"
                   value={value.resend_api_key}
@@ -802,7 +809,7 @@ function CommsTab() {
                 />
               </div>
               <div className="space-y-1.5 md:col-span-2">
-                <Label>Resend from email</Label>
+                <Label>{t("common-label-resend-from-email")}</Label>
                 <Input
                   type="email"
                   value={value.resend_from_email}
@@ -871,7 +878,7 @@ function CommsTab() {
             </ol>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
               <div className="space-y-1.5 md:col-span-2">
-                <Label>Postmark server token</Label>
+                <Label>{t("common-label-postmark-server-token")}</Label>
                 <Input
                   type="password"
                   value={value.postmark_server_token}
@@ -881,7 +888,7 @@ function CommsTab() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>Postmark from email</Label>
+                <Label>{t("common-label-postmark-from-email")}</Label>
                 <Input
                   type="email"
                   value={value.postmark_from_email}
@@ -893,7 +900,7 @@ function CommsTab() {
                 </p>
               </div>
               <div className="space-y-1.5">
-                <Label>Message stream</Label>
+                <Label>{t("common-label-message-stream")}</Label>
                 <Input
                   value={value.postmark_message_stream}
                   onChange={(e) => set("postmark_message_stream", e.target.value)}
@@ -1618,7 +1625,7 @@ function PreferencesTab() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Language */}
           <div className="space-y-1.5">
-            <Label>Language</Label>
+            <Label>{t("common-label-language")}</Label>
             <Select value={prefs.ui_language} onValueChange={(v) => savePref("ui_language", v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -1629,7 +1636,7 @@ function PreferencesTab() {
 
           {/* Default View */}
           <div className="space-y-1.5">
-            <Label>Default View</Label>
+            <Label>{t("common-label-default-view")}</Label>
             <Select value={prefs.default_view} onValueChange={(v) => savePref("default_view", v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -1646,7 +1653,7 @@ function PreferencesTab() {
 
           {/* Date Format */}
           <div className="space-y-1.5">
-            <Label>Date Format</Label>
+            <Label>{t("common-label-date-format")}</Label>
             <Select value={prefs.date_format} onValueChange={(v) => savePref("date_format", v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -1659,7 +1666,7 @@ function PreferencesTab() {
 
           {/* Number Format */}
           <div className="space-y-1.5">
-            <Label>Number Format</Label>
+            <Label>{t("common-label-number-format")}</Label>
             <Select value={prefs.number_format} onValueChange={(v) => savePref("number_format", v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -1671,7 +1678,7 @@ function PreferencesTab() {
 
           {/* Items Per Page */}
           <div className="space-y-1.5">
-            <Label>Items Per Page</Label>
+            <Label>{t("common-label-items-per-page")}</Label>
             <Select value={prefs.items_per_page} onValueChange={(v) => savePref("items_per_page", v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -1685,7 +1692,7 @@ function PreferencesTab() {
 
           {/* Auto-refresh Interval (shown when auto-refresh is on) */}
           <div className="space-y-1.5">
-            <Label>Auto-refresh Interval</Label>
+            <Label>{t("common-label-auto-refresh-interval")}</Label>
             <Select
               value={prefs.auto_refresh_interval}
               onValueChange={(v) => savePref("auto_refresh_interval", v)}
@@ -2681,7 +2688,7 @@ function ChangePasswordTab() {
         <form onSubmit={onSubmit} className="space-y-4 max-w-md">
           {/* Current password */}
           <div className="space-y-1.5">
-            <Label htmlFor="chpw-current">Current password</Label>
+            <Label htmlFor="chpw-current">{t("common-label-current-password")}</Label>
             <div className="relative">
               <Input
                 id="chpw-current"
@@ -2706,7 +2713,7 @@ function ChangePasswordTab() {
 
           {/* New password */}
           <div className="space-y-1.5">
-            <Label htmlFor="chpw-new">New password</Label>
+            <Label htmlFor="chpw-new">{t("pf-new-password")}</Label>
             <div className="relative">
               <Input
                 id="chpw-new"
@@ -2740,7 +2747,7 @@ function ChangePasswordTab() {
 
           {/* Confirm new password */}
           <div className="space-y-1.5">
-            <Label htmlFor="chpw-confirm">Confirm new password</Label>
+            <Label htmlFor="chpw-confirm">{t("common-label-confirm-new-password")}</Label>
             <div className="relative">
               <Input
                 id="chpw-confirm"

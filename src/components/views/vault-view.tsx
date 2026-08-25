@@ -29,6 +29,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { EmptyState } from "@/components/common/empty-state";
 import { fmtRelative } from "@/lib/utils/format";
 import { useAppStore, isAdmin } from "@/lib/store/app-store";
@@ -264,6 +266,11 @@ export function VaultView() {
             <Plus className="size-4 mr-1" /> {t("admin-vault-new-secret")}
           </Button>
         }
+      />
+      <ModuleInfoTooltip
+        title="Vault"
+        description="Securely store encrypted secrets (API keys, passwords, certificates) with audit-tracked access."
+        howToUse={["Add a secret with a key, value, and description", "Secrets are AES-256-GCM encrypted at rest", "Click the eye icon to reveal a value (auto-hides after 30s)", "Every reveal is audit-logged", "Secrets are tenant-scoped"]}
       />
 
       <Card className="mb-4 border-amber-200 bg-amber-50/50 dark:bg-amber-950/10">

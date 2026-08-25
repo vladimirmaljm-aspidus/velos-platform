@@ -29,6 +29,8 @@ import {
   Pause, Play, CalendarPlus,
 } from "lucide-react";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { KpiCard } from "@/components/common/kpi-card";
 import { EmptyState } from "@/components/common/empty-state";
 import { fmtDate, fmtDateTime, fmtNumber, fmtRelative } from "@/lib/utils/format";
@@ -546,6 +548,11 @@ export function SuperAdminOverviewView({ embedded = false }: { embedded?: boolea
           </div>
         }
       /> : null}
+      <ModuleInfoTooltip
+        title="Tenants"
+        description="Manage all tenants on the platform. Create, edit, suspend, delete, and manage plans."
+        howToUse={["View all tenants with stats (users, partners, deals)", "Edit tenant details (name, plan, features)", "Suspend a tenant (blocks all users)", "Activate a suspended tenant", "Extend trial by 7 days", "Delete (type-to-confirm)", "Impersonate a tenant to see their view"]}
+      />
 
       {/* Create Company Dialog */}
       <CompanyDialog

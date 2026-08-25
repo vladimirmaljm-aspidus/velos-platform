@@ -4,6 +4,8 @@ import * as React from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ShieldCheck, Users, Lock, Activity, ShieldAlert, Gauge } from "lucide-react";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { useAppStore, isSuperAdmin } from "@/lib/store/app-store";
 import { useT } from "@/lib/i18n/store";
 import { SecuritySettings } from "@/components/super-admin/security-settings";
@@ -78,6 +80,11 @@ export function SuperAdminSettingsView() {
       <PageHeader
         title={t("pf-sa-title")}
         description={t("pf-sa-desc")}
+      />
+      <ModuleInfoTooltip
+        title="Platform Settings"
+        description="Platform-level configuration — branding (white-label), roles, security policy, data protection, and monitoring."
+        howToUse={["Configure platform branding (name, logo, colors, domain)", "Manage roles and permission overrides", "Set platform-wide security policy", "Configure data retention (GDPR)", "Set up monitoring and incident alerts"]}
       />
 
       <Tabs defaultValue="security" className="w-full">

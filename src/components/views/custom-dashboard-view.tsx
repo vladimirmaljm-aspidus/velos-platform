@@ -77,6 +77,8 @@ import { useI18nStore } from "@/lib/i18n/store";
 import { t } from "@/lib/i18n/dictionaries";
 import { useAppStore } from "@/lib/store/app-store";
 import { KpiCard } from "@/components/common/kpi-card";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { fmtMoney, fmtNumber, fmtRelative } from "@/lib/utils/format";
 import {
   AreaChart,
@@ -1097,9 +1099,9 @@ export function CustomDashboardView() {
       {/* ─── Header ────────────────────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
             {t(locale, "custom-dashboard")}
-          </h1>
+           <ModuleInfoTooltip title="Custom Dashboard" description="Customize your dashboard with widgets. Drag and arrange to fit your workflow." howToUse={["Add widgets from the widget library", "Drag to rearrange", "Remove widgets you don't need", "Your layout is saved automatically"]} /></h1>
           <p className="text-sm text-muted-foreground mt-1">
             {editMode
               ? t(locale, "drag-hint")

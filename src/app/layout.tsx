@@ -6,6 +6,7 @@ import { Providers } from "@/components/providers";
 import { ServiceWorkerRegister } from "@/components/pwa/sw-register";
 import { PushNotificationsPrompt } from "@/components/pwa/push-notifications";
 import { ThemeProvider } from "next-themes";
+import { HtmlLangSetter } from "@/components/i18n/html-lang-setter";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -107,6 +108,7 @@ export default function RootLayout({
       >
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
           <Providers>
+            <HtmlLangSetter />
             {children}
             <Toaster richColors position="top-right" />
             <ServiceWorkerRegister />

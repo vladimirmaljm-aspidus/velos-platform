@@ -27,6 +27,8 @@ import { ALL_PERMISSIONS, PLATFORM_PERMISSIONS, PORTAL_CLIENT_PERMISSIONS } from
 import { useT } from "@/lib/i18n/store";
 import { useAppStore, isSuperAdmin } from "@/lib/store/app-store";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 
 interface PlatformUser {
   id: string; tenant_id: string | null; username: string; email: string;
@@ -228,7 +230,7 @@ export function PlatformUsersView() {
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between flex-wrap gap-2">
-            <div><CardTitle className="flex items-center gap-2 text-base"><Users className="size-4 text-primary" /> {t("pf-all-users")}</CardTitle><CardDescription className="text-xs">{t("pf-users-desc")}</CardDescription></div>
+            <div><CardTitle className="flex items-center gap-2 text-base"><Users className="size-4 text-primary" /> {t("pf-all-users")} <ModuleInfoTooltip title="All Users" description="Cross-tenant user management. Create, delete, reset passwords, change roles, and manage 2FA for any user." howToUse={["View all users across all tenants", "Filter by role or tenant", "Create new users", "Reset passwords", "Change roles (user/admin/super_admin)", "Disable 2FA", "Delete (type-to-confirm for admins)"]} /></CardTitle><CardDescription className="text-xs">{t("pf-users-desc")}</CardDescription></div>
             <div className="flex items-center gap-2">
               <Badge variant="outline">{filtered.length} {t("pf-of")} {items.length}</Badge>
               <Button onClick={() => setShowCreate(true)}>

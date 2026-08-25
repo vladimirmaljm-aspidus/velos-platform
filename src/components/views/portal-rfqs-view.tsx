@@ -32,6 +32,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { EmptyState } from "@/components/common/empty-state";
 import { KpiCard } from "@/components/common/kpi-card";
 import { fmtMoney, fmtDate, fmtRelative, fmtDateTime, fmtNumber } from "@/lib/utils/format";
@@ -155,6 +157,11 @@ export function PortalRfqsView() {
       <PageHeader
         title={t("portal-rfqs-title")}
         description={t("portal-rfqs-desc")}
+      />
+      <ModuleInfoTooltip
+        title="Portal RFQs"
+        description="Review Request for Quote (RFQ) submissions from portal clients. Convert to demands or respond directly."
+        howToUse={["View RFQs submitted by portal clients", "Review product, quantity, target price, and deadline", "Convert to a demand or create an offer", "Respond to the client via the portal"]}
       />
 
       {/* KPIs */}

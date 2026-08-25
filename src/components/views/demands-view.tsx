@@ -39,6 +39,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { EmptyState } from "@/components/common/empty-state";
 import { fmtMoney, fmtDate, fmtDateTime } from "@/lib/utils/format";
 import { Demand, DemandItem, DemandStatus, Partner, Product, PortalRfq } from "@/lib/supabase/types";
@@ -222,6 +224,11 @@ export function DemandsView() {
             </Button>
           </div>
         }
+      />
+      <ModuleInfoTooltip
+        title="Demands"
+        description="Track incoming demand requests (RFQs) from clients. Convert demands to deals when you can fulfill them."
+        howToUse={["View demands submitted by portal clients", "Click 'Create Deal' to convert a demand into a trade deal", "Filter by status (open, quoted, closed)", "Import demands from portal RFQs"]}
       />
 
       <Card className="mb-4 border-border/60 shadow-soft rounded-xl">

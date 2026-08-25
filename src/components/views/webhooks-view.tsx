@@ -24,6 +24,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { EmptyState } from "@/components/common/empty-state";
 import { fmtRelative } from "@/lib/utils/format";
 import { useAppStore, isAdmin } from "@/lib/store/app-store";
@@ -198,6 +200,11 @@ export function WebhooksView() {
             <Plus className="size-4 mr-1" /> {t("admin-webhooks-new")}
           </Button>
         }
+      />
+      <ModuleInfoTooltip
+        title="Webhooks"
+        description="Configure outbound webhooks to notify external systems of platform events (offer accepted, invoice paid, etc.)."
+        howToUse={["Create a webhook with a target URL", "Select events to subscribe to", "Webhooks are signed with HMAC-SHA256", "View delivery history and retry failed deliveries", "5 retry attempts with exponential backoff"]}
       />
 
       <Card className="mb-4 border-amber-200 bg-amber-50/50 dark:bg-amber-950/10">

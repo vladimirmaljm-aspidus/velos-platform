@@ -479,6 +479,7 @@ function TenantFormDialog({
 }) {
   const api = useApiUrl();
   const tenantKey = useTenantKey();
+  const locale = useI18nStore((s) => s.locale);
 
   const [form, setForm] = useState<Partial<Tenant>>({});
   const [saving, setSaving] = useState(false);
@@ -641,11 +642,11 @@ function TenantFormDialog({
             {/* ── Essential fields (always visible) ── */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className="md:col-span-2 space-y-1.5">
-                <Label>Company Name *</Label>
+                <Label>{t(locale, "common-label-company-name")} *</Label>
                 <Input value={form.name || ""} onChange={(e) => set("name", e.target.value)} placeholder="e.g. Acme Trading" autoFocus />
               </div>
               <div className="space-y-1.5">
-                <Label>Country</Label>
+                <Label>{t(locale, "common-label-country")}</Label>
                 <Select value={form.country || ""} onValueChange={(v) => set("country", v)}>
                   <SelectTrigger><SelectValue placeholder="Select country" /></SelectTrigger>
                   <SelectContent className="max-h-72">
@@ -658,7 +659,7 @@ function TenantFormDialog({
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label>Currency</Label>
+                <Label>{t(locale, "common-label-currency")}</Label>
                 <Select value={form.currency || "EUR"} onValueChange={(v) => set("currency", v)}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent className="max-h-72">

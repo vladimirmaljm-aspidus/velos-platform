@@ -10,6 +10,8 @@ import { PlatformUsersView } from "@/components/views/platform-users-view";
 import { PlatformAuditView } from "@/components/views/platform-audit-view";
 import { PlatformHealthView } from "@/components/views/platform-health-view";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { LayoutDashboard, Building2, ToggleRight, CreditCard, Users, ScrollText, Heart, ShieldAlert } from "lucide-react";
 import { useT } from "@/lib/i18n/store";
 import { useAppStore, isSuperAdmin } from "@/lib/store/app-store";
@@ -54,6 +56,11 @@ export function PlatformDashboardView() {
       <PageHeader
         title={t("pf-dashboard-title")}
         description={t("pf-dashboard-desc")}
+      />
+      <ModuleInfoTooltip
+        title="Platform Dashboard"
+        description="Platform-wide overview — total tenants, users, posts, revenue, AI calls, and growth trends."
+        howToUse={["View KPIs across all tenants", "Monitor growth trends", "Quick-link to key admin actions"]}
       />
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="w-full sm:w-auto overflow-x-auto">

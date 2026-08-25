@@ -39,6 +39,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { EmptyState } from "@/components/common/empty-state";
 import { fmtMoney, fmtDate } from "@/lib/utils/format";
 import { ProductCatalogEntry, SupplierOffer, Partner } from "@/lib/supabase/types";
@@ -211,6 +213,11 @@ export function ProductCatalogView() {
             <Plus className="size-4 mr-1" /> {t(locale, "crm-new-product")}
           </Button>
         }
+      />
+      <ModuleInfoTooltip
+        title="Product Catalog"
+        description="Detailed product specifications, COA parameters, logistics capacities, and certifications. Used by the portal catalog and supplier offers."
+        howToUse={["Add products with full specifications (HS code, COA params, logistics)", "Products with specs appear in the client portal", "Link supplier offers to catalog entries"]}
       />
 
       <Card className="mb-4 border-border/60 shadow-soft rounded-xl">

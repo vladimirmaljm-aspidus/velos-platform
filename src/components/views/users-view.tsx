@@ -35,6 +35,8 @@ import {
 import { Plus, Pencil, Trash2, Users as UsersIcon, ShieldAlert, ChevronDown, Wand2, Eye, EyeOff, Copy, Check, Building2, UserCheck } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { EmptyState } from "@/components/common/empty-state";
 import { PermissionTree } from "@/components/common/permission-tree";
 import { fmtRelative } from "@/lib/utils/format";
@@ -189,6 +191,11 @@ export function UsersView() {
             <Plus className="size-4 mr-1" /> {t("admin-users-new")}
           </Button>
         }
+      />
+      <ModuleInfoTooltip
+        title="Users"
+        description="Manage users in your tenant. Create accounts, assign roles, reset passwords, and manage 2FA."
+        howToUse={["Click 'Add User' to create a new account", "Assign role (user, admin)", "Reset password if a user forgets theirs", "Disable 2FA if a user is locked out", "Delete users (type-to-confirm for admins)"]}
       />
 
       {!admin && (

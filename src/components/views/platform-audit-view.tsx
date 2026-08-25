@@ -15,6 +15,8 @@ import { useDebounced } from "@/lib/hooks/use-debounced";
 import { useT } from "@/lib/i18n/store";
 import { useAppStore, isSuperAdmin } from "@/lib/store/app-store";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { toast } from "sonner";
 
 interface AuditRow {
@@ -189,7 +191,7 @@ export function PlatformAuditView() {
     <Card>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between flex-wrap gap-2">
-          <div><CardTitle className="flex items-center gap-2 text-base"><ScrollText className="size-4 text-primary" /> {t("pf-audit-title")}</CardTitle><CardDescription className="text-xs">{t("pf-audit-desc")}</CardDescription></div>
+          <div><CardTitle className="flex items-center gap-2 text-base"><ScrollText className="size-4 text-primary" /> {t("pf-audit-title")} <ModuleInfoTooltip title="Platform Audit" description="All audit logs across all tenants. Filter by tenant, action, user, entity, or date. Export to CSV." howToUse={["Filter by tenant, action, user, entity, date range", "Search by keyword", "Export to CSV", "Logs are append-only (tamper-proof)"]} /></CardTitle><CardDescription className="text-xs">{t("pf-audit-desc")}</CardDescription></div>
           <div className="flex items-center gap-2">
             <Button size="sm" variant="outline" onClick={exportCsv} disabled={!items.length} title={t("pf-audit-export-csv")}>
               <Download className="size-3.5 mr-1" /> {t("pf-audit-export-csv")}

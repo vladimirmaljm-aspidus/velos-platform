@@ -507,7 +507,7 @@ export function TradeGlobeView() {
                 <span className="font-mono">{fmtHours(plan.totals.dwellHours)}</span>
               </div>
               <div className="flex justify-between font-medium">
-                <span>Total time</span>
+                <span>{t(locale, "common-label-total-time")}</span>
                 <span className="font-mono">{plan.totals.totalDays}d</span>
               </div>
             </CardContent>
@@ -571,7 +571,7 @@ export function TradeGlobeView() {
               </div>
               <Separator />
               <div className="flex justify-between font-medium">
-                <span>Total (indicative)</span>
+                <span>{t(locale, "common-label-total-indicative")}</span>
                 <span className="font-mono">${plan.estimatedCost.totalUsd.toLocaleString()}</span>
               </div>
               <p className="text-xs text-muted-foreground pt-1 flex items-start gap-1">

@@ -46,6 +46,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { EmptyState } from "@/components/common/empty-state";
 import { fmtMoney, fmtDate, fmtRelative } from "@/lib/utils/format";
 import { Deal, DealStage, Partner, Offer, CommissionAgent } from "@/lib/supabase/types";
@@ -295,6 +297,11 @@ export function DealsView() {
             <Plus className="size-4 mr-1" /> {t("crm-new-deal")}
           </Button>
         }
+      />
+      <ModuleInfoTooltip
+        title="Deals"
+        description="Track trade deals from draft to completion. Manage buyers, suppliers, products, quantities, prices, and commissions."
+        howToUse={["Create a deal from an accepted offer or manually", "Add line items (product, quantity, price)", "Track status: draft → quoted → won/lost", "Commissions are calculated automatically", "Convert deals to invoices when won"]}
       />
 
       <Card className="mb-4 border-border/60 shadow-soft rounded-xl">

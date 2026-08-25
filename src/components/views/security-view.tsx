@@ -30,6 +30,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { KpiCard } from "@/components/common/kpi-card";
 import { EmptyState } from "@/components/common/empty-state";
 import { fmtDateTime, fmtRelative } from "@/lib/utils/format";
@@ -204,6 +206,11 @@ export function SecurityView() {
       <PageHeader
         title={t("admin-security-title")}
         description={t("admin-security-desc")}
+      />
+      <ModuleInfoTooltip
+        title="Security"
+        description="View login history, active sessions, trusted devices, and known IPs. Revoke sessions and manage account security."
+        howToUse={["Review recent login attempts", "Revoke suspicious sessions", "Remove trusted devices", "View known IPs", "Configure 2FA from Settings"]}
       />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">

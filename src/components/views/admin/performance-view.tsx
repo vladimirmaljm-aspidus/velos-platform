@@ -43,6 +43,8 @@ import { fmtDateTime } from "@/lib/utils/format";
 import { toast } from "sonner";
 import { useAppStore, isSuperAdmin } from "@/lib/store/app-store";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 
 // ── Types (mirror the API response shape) ───────────────────────────────────
 
@@ -277,7 +279,7 @@ export function PerformanceView() {
               <CardTitle className="flex items-center gap-2 text-base">
                 <Gauge className="size-4 text-primary" />
                 {t("pf-apm-title")}
-              </CardTitle>
+               <ModuleInfoTooltip title="Performance" description="Application performance metrics — memory usage, response times, slow queries, and APM traces." howToUse={["View memory and CPU usage", "Monitor response times", "Identify slow queries", "View APM traces for slow requests"]} /></CardTitle>
               <CardDescription className="text-xs">{t("pf-apm-desc")}</CardDescription>
             </div>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">

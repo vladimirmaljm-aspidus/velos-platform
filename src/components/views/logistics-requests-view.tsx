@@ -15,6 +15,8 @@ import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, A
 import { Ship, Truck, Plane, Train, Package, RefreshCw, Search, Trash2, ShieldAlert, MapPin, ClipboardList, FileText, ArrowRightCircle, History, CheckCircle2, MessageSquare, XCircle, Play, Send, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { useApiUrl, useTenantKey } from "@/lib/hooks/use-api-url";
 import { useDebounced } from "@/lib/hooks/use-debounced";
 import { useCan } from "@/lib/store/app-store";
@@ -185,6 +187,11 @@ export function LogisticsRequestsView() {
       <PageHeader
         title={t(locale, "log-page-title")}
         description={t(locale, "log-page-description")}
+      />
+      <ModuleInfoTooltip
+        title="Logistics Requests"
+        description="Manage logistics requests — freight booking, customs clearance, container booking, and shipment tracking."
+        howToUse={["Create a logistics request (freight, customs, container)", "Track shipment status", "View shipment history", "Link to deals and invoices"]}
       />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

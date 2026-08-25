@@ -30,6 +30,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { useApiUrl, useTenantKey } from "@/lib/hooks/use-api-url";
 import { fmtDate, fmtRelative } from "@/lib/utils/format";
 import { cn } from "@/lib/utils";
@@ -161,6 +163,11 @@ export function PortalLocationsView() {
             {t("refresh")}
           </Button>
         }
+      />
+      <ModuleInfoTooltip
+        title="Portal Locations"
+        description="View client GPS locations captured during portal logins (security audit)."
+        howToUse={["View login locations on a map", "Filter by partner or date", "Flag suspicious locations", "Used for fraud prevention"]}
       />
 
       {/* ── Stat tiles ─────────────────────────────────────────────────── */}

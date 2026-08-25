@@ -33,6 +33,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { EmptyState } from "@/components/common/empty-state";
 import { fmtDate, fmtDateTime } from "@/lib/utils/format";
 import {
@@ -310,6 +312,11 @@ export function DocumentRegisterView() {
             </Button>
           </div>
         }
+      />
+      <ModuleInfoTooltip
+        title="Document Register"
+        description="Upload, organize, and verify trade documents (contracts, certificates, bills of lading). Link to deals, invoices, and partners."
+        howToUse={["Upload documents (PDF, images, docs)", "Link to deals, invoices, or offers", "Verify documents (pending → verified → rejected)", "Version control — superseded documents are archived", "Search and filter by type or status"]}
       />
 
       <Card className="mb-4 border-border/60 shadow-soft">

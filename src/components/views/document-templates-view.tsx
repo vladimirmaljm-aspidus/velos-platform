@@ -38,6 +38,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { EmptyState } from "@/components/common/empty-state";
 import { TemplateVisualEditor } from "@/components/common/template-visual-editor";
 import { BankAccountSelector } from "@/components/common/bank-account-selector";
@@ -505,6 +507,11 @@ export function DocumentTemplatesView() {
       <PageHeader
         title={t("doc-templates-title")}
         description={t("doc-templates-desc")}
+      />
+      <ModuleInfoTooltip
+        title="Document Templates"
+        description="Create reusable templates for invoices, proformas, letters, and contracts with variables and conditional sections."
+        howToUse={["Create a template with variables ({company_name}, {total})", "Add conditional sections (show/hide based on data)", "Multi-language support (en, sr, tr, de, ru)", "Preview with sample data", "Use templates when generating documents"]}
       />
 
       {superAdmin && (

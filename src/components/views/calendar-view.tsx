@@ -11,6 +11,8 @@ import {
   CheckCircle2, FileText, Handshake, Receipt, ListChecks,
 } from "lucide-react";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { cn } from "@/lib/utils";
 import { useApiUrl, useTenantKey } from "@/lib/hooks/use-api-url";
 import { fmtNumber, fmtMoney } from "@/lib/utils/format";
@@ -120,6 +122,11 @@ export function CalendarView() {
       <PageHeader
         title={t("calendar")}
         description={t("misc-calendar-desc")}
+      />
+      <ModuleInfoTooltip
+        title="Calendar"
+        description="View and manage your trade events — deal deadlines, invoice due dates, meetings, and reminders."
+        howToUse={["View events by month/week/day", "Click a date to add an event", "Color-coded by event type", "Syncs with deals and invoices"]}
       />
 
       {/* Stats */}

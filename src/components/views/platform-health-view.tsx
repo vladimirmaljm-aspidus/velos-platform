@@ -10,6 +10,8 @@ import { fmtDateTime } from "@/lib/utils/format";
 import { useT } from "@/lib/i18n/store";
 import { useAppStore, isSuperAdmin } from "@/lib/store/app-store";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 
 interface Health {
   db_status: "ok" | "error";
@@ -73,7 +75,7 @@ export function PlatformHealthView() {
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div>
-              <CardTitle className="flex items-center gap-2 text-base"><Heart className="size-4 text-primary" /> {t("pf-health-title")}</CardTitle>
+              <CardTitle className="flex items-center gap-2 text-base"><Heart className="size-4 text-primary" /> {t("pf-health-title")} <ModuleInfoTooltip title="System Health" description="Monitor platform health — database, API latency, error rates, cron job status, and queue depths." howToUse={["View DB health metrics", "Monitor API latency and error rates", "Check cron job status", "View queue depths (mail, webhooks)"]} /></CardTitle>
               <CardDescription className="text-xs">{t("pf-health-desc")}</CardDescription>
             </div>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">

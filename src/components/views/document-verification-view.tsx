@@ -24,6 +24,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { EmptyState } from "@/components/common/empty-state";
 import { fmtDate, fmtDateTime, fmtBytes, fmtRelative } from "@/lib/utils/format";
 import { DocumentVerification, Offer, Invoice, Proforma } from "@/lib/supabase/types";
@@ -58,6 +60,11 @@ export function DocumentVerificationView() {
       <PageHeader
         title={t("admin-verify-title")}
         description={t("admin-verify-desc")}
+      />
+      <ModuleInfoTooltip
+        title="Document Verification"
+        description="Verify the authenticity of uploaded documents. AI-powered analysis of certificates and trade documents."
+        howToUse={["Upload a document for verification", "AI analyzes the document content", "Review the verification result", "Mark as verified or flagged"]}
       />
 
       <Tabs value={tab} onValueChange={setTab} className="space-y-4">

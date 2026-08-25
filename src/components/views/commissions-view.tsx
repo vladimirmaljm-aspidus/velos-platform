@@ -37,6 +37,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { EmptyState } from "@/components/common/empty-state";
 import { fmtMoney, fmtDate } from "@/lib/utils/format";
 import { CURRENCIES as REF_CURRENCIES } from "@/lib/data/reference";
@@ -192,6 +194,11 @@ export function CommissionsView() {
       <PageHeader
         title={t("commissions")}
         description={t("fin-commissions-desc")}
+      />
+      <ModuleInfoTooltip
+        title="Commissions"
+        description="Manage commission agents and their payouts. Track commission per deal, approve payouts, and view summaries."
+        howToUse={["Add agents and set their commission rates", "Commissions are auto-calculated per deal", "Approve pending commissions before payout", "Record payouts (atomic — prevents double-payment)", "View summaries by agent or date range"]}
       />
 
       {/* ── Summary Cards ─────────────────────────────────────────────── */}

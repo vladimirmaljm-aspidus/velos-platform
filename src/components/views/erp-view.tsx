@@ -37,6 +37,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { EmptyState } from "@/components/common/empty-state";
 import { KpiCard } from "@/components/common/kpi-card";
 import { fmtMoney, fmtDate } from "@/lib/utils/format";
@@ -400,6 +402,11 @@ export function ErpView() {
       <PageHeader
         title={lbl("title")}
         description={lbl("description")}
+      />
+      <ModuleInfoTooltip
+        title="ERP / Accounting"
+        description="Full double-entry accounting system — chart of accounts, journal entries, bank transactions, and financial reports."
+        howToUse={["Set up your chart of accounts", "Create journal entries (debits = credits)", "Record bank transactions", "Generate reports: trial balance, P&L, balance sheet", "Run FX revaluation for multi-currency"]}
       />
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>

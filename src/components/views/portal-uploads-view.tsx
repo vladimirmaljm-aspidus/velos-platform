@@ -12,6 +12,8 @@ import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, A
 import { FolderOpen, Download, Trash2, Search, RefreshCw, ChevronLeft, Building2, FileText, Image, FileArchive, File, ShieldAlert, User } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { useApiUrl, useTenantKey } from "@/lib/hooks/use-api-url";
 import { useDebounced } from "@/lib/hooks/use-debounced";
 import type { Partner } from "@/lib/supabase/types";
@@ -219,6 +221,11 @@ export function PortalUploadsView() {
         title={partner?.name || t("misc-client-uploads-fallback")}
         description={partner ? `${partner.country || ""} · ${partner.email || ""}` : ""}
       />
+      <ModuleInfoTooltip
+        title="Portal Uploads"
+        description="View documents uploaded by portal clients (KYC docs, contracts, certificates). Organize by partner and category."
+        howToUse={["Browse uploads by partner or category", "View/download uploaded files", "Filter by category (KYC, RFQ, message, general)"]}
+      />
 
       <Card>
         <CardContent className="p-3 space-y-3">
@@ -329,7 +336,7 @@ export function PortalUploadsView() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t("common-label-cancel")}</AlertDialogCancel>
             <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => toDelete && delMut.mutate({ id: toDelete.id, hard: hardDelete })}>
               {hardDelete ? "Delete permanently" : "Delete"}
             </AlertDialogAction>

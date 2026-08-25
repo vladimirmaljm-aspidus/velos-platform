@@ -37,6 +37,8 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { EmptyState } from "@/components/common/empty-state";
 import { KpiCard } from "@/components/common/kpi-card";
 import { fmtDate, fmtRelative, fmtBytes, fmtDateTime } from "@/lib/utils/format";
@@ -218,6 +220,11 @@ export function KycReviewView() {
       <PageHeader
         title={t("admin-kyc-title")}
         description={t("admin-kyc-desc")}
+      />
+      <ModuleInfoTooltip
+        title="KYC Review"
+        description="Review and approve/reject client KYC (Know Your Customer) submissions. Verify identity documents and business registrations."
+        howToUse={["Review submitted documents (ID, business registration)", "Approve if documents are valid", "Reject with a reason if documents are insufficient", "Clients are notified by email of the decision"]}
       />
 
       {/* KPI grid */}

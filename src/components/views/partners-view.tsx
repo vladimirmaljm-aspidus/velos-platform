@@ -44,6 +44,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { EmptyState } from "@/components/common/empty-state";
 import { fmtMoney, fmtDate, fmtRelative, fmtNumber } from "@/lib/utils/format";
 import { Partner, PartnerType, PartnerEntityType, PortalAccess, PortalTier } from "@/lib/supabase/types";
@@ -396,6 +398,11 @@ export function PartnersView() {
             </Button>
           </div>
         }
+      />
+      <ModuleInfoTooltip
+        title="Partners"
+        description="Manage your business partners — buyers, suppliers, agents, and logistics providers. Track deals, invoices, and communication history for each partner."
+        howToUse={["Click 'Add Partner' to create a new partner", "Use the search bar to find partners by name, tax ID, or email", "Click a partner row to view their 360° profile (deals, invoices, documents)", "Use bulk actions to export or delete multiple partners"]}
       />
 
       {/* Hidden file input for CSV import — same pattern as products-view. */}

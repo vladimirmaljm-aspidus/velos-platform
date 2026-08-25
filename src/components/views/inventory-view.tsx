@@ -23,6 +23,8 @@ import {
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { EmptyState } from "@/components/common/empty-state";
 import { KpiCard } from "@/components/common/kpi-card";
 import { fmtDateTime, fmtNumber } from "@/lib/utils/format";
@@ -165,6 +167,11 @@ export function InventoryView() {
         title={t(locale, "inventory")}
         description={lowStock ? tFn("crm-low-stock-desc") : t(locale, "crm-inventory-desc")}
       />
+      <ModuleInfoTooltip
+        title="Inventory"
+        description="Track stock movements (in/out), current stock levels, and low-stock alerts for your products."
+        howToUse={["View stock movements with color-coded deltas", "Filter by product or partner", "Stock auto-updates when offers are accepted", "Low-stock products are highlighted", "Stock cannot go negative (clamped at 0)"]}
+      />
 
       {/* KPI summary */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
@@ -263,7 +270,7 @@ export function InventoryView() {
                       <TableRow>
                         <TableHead>{t(locale, "crm-product")}</TableHead>
                         <TableHead className="hidden md:table-cell">SKU</TableHead>
-                        <TableHead>Stock</TableHead>
+                        <TableHead>{t(locale, "common-label-stock")}</TableHead>
                         <TableHead className="hidden md:table-cell">Reorder level</TableHead>
                         <TableHead className="hidden lg:table-cell">Category</TableHead>
                       </TableRow>

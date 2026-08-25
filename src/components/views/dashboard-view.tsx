@@ -10,6 +10,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { KpiCard } from "@/components/common/kpi-card";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import {
   SalesTrendChart,
   TopProductsChart,
@@ -287,9 +289,9 @@ export function DashboardView() {
         <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
           <div className="min-w-0">
             <p className="text-xs text-muted-foreground mb-1.5 tabular">{todayLabel()}</p>
-            <h1 className="text-xl md:text-2xl font-semibold tracking-tight text-foreground">
+            <h1 className="text-xl md:text-2xl font-semibold tracking-tight text-foreground flex items-center gap-2">
               {t(greetingKey())}, <span className="text-foreground">{userName}</span>
-            </h1>
+             <ModuleInfoTooltip title="Dashboard" description="Your tenant overview — KPIs, recent activity, quick actions, and charts." howToUse={["View KPIs (partners, deals, invoices, revenue)", "See recent activity feed", "Quick actions (add partner, create invoice, etc.)", "Charts show trends over time"]} /></h1>
             <p className="text-sm text-muted-foreground mt-1">
               {t("misc-trade-snapshot-for")}{" "}
               <span className="font-medium text-foreground">{tenantName}</span>.

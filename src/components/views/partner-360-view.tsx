@@ -705,7 +705,7 @@ function Partner360Content({
                     <TableHeader className="sticky top-0 bg-card z-10">
                       <TableRow>
                         <TableHead>{t("crm-number")}</TableHead>
-                        <TableHead>Subject</TableHead>
+                        <TableHead>{t("common-label-subject")}</TableHead>
                         <TableHead>{t("status")}</TableHead>
                         <TableHead className="hidden md:table-cell">{t("crm-due")}</TableHead>
                         <TableHead className="text-right">Total</TableHead>
@@ -1804,11 +1804,11 @@ function PortalTab({
               <Table>
                 <TableHeader className="sticky top-0 bg-card z-10">
                   <TableRow>
-                    <TableHead>Number</TableHead>
+                    <TableHead>{t("common-label-number")}</TableHead>
                     <TableHead>{t("crm-product")}</TableHead>
                     <TableHead className="text-right">{t("crm-qty")}</TableHead>
                     <TableHead className="text-right">{t("crm-target")}</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>{t("common-label-status")}</TableHead>
                     <TableHead className="hidden md:table-cell">{t("crm-created-label")}</TableHead>
                   </TableRow>
                 </TableHeader>

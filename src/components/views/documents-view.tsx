@@ -29,6 +29,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { EmptyState } from "@/components/common/empty-state";
 import { fmtDate, fmtDateTime } from "@/lib/utils/format";
 import { SharedDocument, Partner } from "@/lib/supabase/types";
@@ -138,6 +140,11 @@ export function DocumentsView() {
             <Plus className="size-4 mr-1" /> {t("doc-add-document")}
           </Button>
         }
+      />
+      <ModuleInfoTooltip
+        title="Documents"
+        description="Central document storage — upload, organize, and share documents with your team and clients."
+        howToUse={["Upload documents and organize by folder", "Share with team members or clients", "Set access permissions", "Search by name or content"]}
       />
 
       <Card className="mb-4 border-border/60 shadow-soft rounded-xl">

@@ -44,6 +44,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
+import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+
 import { EmptyState } from "@/components/common/empty-state";
 import { fmtMoney, fmtDate, fmtDateTime, fmtNumber } from "@/lib/utils/format";
 import { Offer, OfferLineItem, OfferStatus, Partner, Product, Deal, DocumentRevision, SupplierOffer, Tenant } from "@/lib/supabase/types";
@@ -344,6 +346,7 @@ function ProductContextPreview({
   partners: Partner[];
   currency: string;
 }) {
+  const t = useT();
   const product = ctx.product;
   const inv = ctx.inventoryStatus;
 
@@ -456,7 +459,7 @@ function ProductContextPreview({
       {priceHistory.length > 0 && (
         <div className="flex items-center gap-1.5 flex-wrap text-muted-foreground">
           <History className="size-2.5 shrink-0" />
-          <span>Last prices:</span>
+          <span>{t("common-label-last-prices")}</span>
           {priceHistory.map((h, i) => (
             <span key={i} className="font-mono">
               {fmtMoney(h.unit_price, h.currency)}
@@ -808,6 +811,11 @@ export function OffersView() {
             </Button>
           </div>
         }
+      />
+      <ModuleInfoTooltip
+        title="Offers"
+        description="Manage offers sent to or received from partners. Track validity, accept/reject, and convert accepted offers to invoices."
+        howToUse={["Create an offer for a partner with line items", "Set validity period (valid_until date)", "Send offer via email to the partner", "Accept/reject received offers", "Accepted offers can be converted to invoices"]}
       />
 
       <Card className="mb-4 border-border/60 shadow-soft rounded-xl">
