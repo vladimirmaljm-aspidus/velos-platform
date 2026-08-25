@@ -63,7 +63,9 @@ export async function POST(req: NextRequest) {
       );
     }
     // Coerce + validate the recovery codes shape before persisting.
-    const cleanCodes = recoveryCodes
+    // recoveryCodes is `unknown` from the body; narrow to string[] first.
+    const codesArray = Array.isArray(recoveryCodes) ? (recoveryCodes as unknown[]) : [];
+    const cleanCodes = codesArray
       .filter((c): c is string => typeof c === "string" && c.length >= 8)
       .map((c) => c.trim().toUpperCase())
       .filter((c) => c.length > 0);

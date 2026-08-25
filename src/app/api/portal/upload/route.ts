@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { uploadPortalFile } from "@/lib/upload/service";
 import { verifyPortalUpload } from "@/lib/upload/verify-file";
-import { audit } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 
 export const runtime = "nodejs";
@@ -17,7 +16,7 @@ export const maxDuration = 60;
  * Auth: requires an active portal session (getPortalSessionAccess).
  * The file is validated (MIME + size) and stored via uploadPortalFile.
  *
- * Returns: { id, url, filename, size, contentType }
+ * Returns: { url, path, filename, size, contentType }
  */
 export async function POST(req: NextRequest) {
   try {
@@ -40,7 +39,7 @@ export async function POST(req: NextRequest) {
 
     // Verify (MIME + size)
     const verification = verifyPortalUpload(buffer, contentType);
-    if (!verification.ok) {
+    if (!verification.isValid) {
       return NextResponse.json(
         { error: verification.error || "File verification failed." },
         { status: 400 },
@@ -51,7 +50,6 @@ export async function POST(req: NextRequest) {
     const result = await uploadPortalFile({
       tenantId: access.tenant_id,
       partnerId: access.partner_id,
-      portalAccessId: access.id,
       fileName,
       buffer,
       contentType,
@@ -59,23 +57,27 @@ export async function POST(req: NextRequest) {
       category: "message",
     });
 
-    // Audit
+    // Audit (best-effort)
     try {
       const store = await getStore();
-      await audit(store, {
-        action: "portal.upload",
-        entity_type: "portal_upload",
-        entity_id: result.id || result.path,
-        tenant_id: access.tenant_id,
-        user_id: access.id,
-        details: { filename: fileName, size: buffer.length, content_type: contentType },
-      });
-    } catch {}
+      if (store.audit) {
+        await store.audit({
+          action: "portal.upload",
+          entity_type: "portal_upload",
+          entity_id: result.path,
+          tenant_id: access.tenant_id,
+          user_id: access.id,
+          details: { filename: fileName, size: buffer.length, content_type: contentType },
+        });
+      }
+    } catch {
+      // audit failure should not block the upload response
+    }
 
     return NextResponse.json({
-      id: result.id || result.path,
       url: result.url,
-      attachment_url: `/api/portal/upload/${result.id || result.path}/download?mode=inline`,
+      path: result.path,
+      attachment_url: `/api/portal/upload/${encodeURIComponent(result.path)}/download?mode=inline`,
       filename: fileName,
       size: buffer.length,
       contentType,
