@@ -46,6 +46,10 @@ export async function POST(req: NextRequest) {
   const tid = resolveTenantId(auth, req);
   if (!tid) return NextResponse.json({ error: "Tenant context required." }, { status: 400 });
   body.tenant_id = tid;
+  // Auto-generate webhook secret if not provided (DB column is NOT NULL).
+  if (!body.secret) {
+    body.secret = crypto.randomUUID().replace(/-/g, "").slice(0, 32);
+  }
   const created = await auth.store.upsertWebhook(body);
   await audit(auth.store, auth.user, req, body.id ? "webhook.update" : "webhook.create", "webhook", created.id, { name: created.name });
   return NextResponse.json(created);
