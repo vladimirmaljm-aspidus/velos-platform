@@ -26,6 +26,7 @@ import {
   Building2, Users, Handshake, FileText, ShieldAlert, Globe, ArrowRight,
   Activity, Server, Heart, CircleDot, Clock, Plus, Pencil, Trash2,
   ShieldCheck, Eye, Repeat, Loader2, HardDrive, PieChart,
+  Pause, Play, CalendarPlus,
 } from "lucide-react";
 import { PageHeader } from "@/components/common/page-header";
 import { KpiCard } from "@/components/common/kpi-card";
@@ -774,6 +775,66 @@ export function SuperAdminOverviewView({ embedded = false }: { embedded?: boolea
                         <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => handleSwitchTenant(ts.tenant)} title={t("pf-switch-tenant")}>
                           <Repeat className="size-3.5" />
                         </Button>
+                        {/* Quick actions: Suspend / Activate / Extend Trial */}
+                        {ts.tenant.status !== "suspended" && ts.tenant.status !== "cancelled" && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0 text-amber-600 hover:text-amber-700"
+                            onClick={async () => {
+                              if (!confirm(`Suspend tenant "${ts.tenant.name}"? All users in this tenant will be blocked from logging in.`)) return;
+                              const r = await fetch(api(`/api/tenants/${ts.tenant.id}`), {
+                                method: "PATCH",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ id: ts.tenant.id, status: "suspended" }),
+                              });
+                              if (r.ok) { toast.success("Tenant suspended"); queryClient.invalidateQueries({ queryKey: ["super-admin-overview", tenantKey] }); }
+                              else { toast.error("Failed to suspend"); }
+                            }}
+                            title="Suspend"
+                          >
+                            <Pause className="size-3.5" />
+                          </Button>
+                        )}
+                        {ts.tenant.status === "suspended" && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0 text-emerald-600 hover:text-emerald-700"
+                            onClick={async () => {
+                              const r = await fetch(api(`/api/tenants/${ts.tenant.id}`), {
+                                method: "PATCH",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ id: ts.tenant.id, status: "active" }),
+                              });
+                              if (r.ok) { toast.success("Tenant activated"); queryClient.invalidateQueries({ queryKey: ["super-admin-overview", tenantKey] }); }
+                              else { toast.error("Failed to activate"); }
+                            }}
+                            title="Activate"
+                          >
+                            <Play className="size-3.5" />
+                          </Button>
+                        )}
+                        {ts.tenant.status === "trial" && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0 text-blue-600 hover:text-blue-700"
+                            onClick={async () => {
+                              const newEnd = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+                              const r = await fetch(api(`/api/tenants/${ts.tenant.id}`), {
+                                method: "PATCH",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ id: ts.tenant.id, trial_ends_at: newEnd }),
+                              });
+                              if (r.ok) { toast.success("Trial extended +7 days"); queryClient.invalidateQueries({ queryKey: ["super-admin-overview", tenantKey] }); }
+                              else { toast.error("Failed to extend trial"); }
+                            }}
+                            title="Extend Trial +7 days"
+                          >
+                            <CalendarPlus className="size-3.5" />
+                          </Button>
+                        )}
                         <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => setDeleteTenant(ts)} title={t("delete")}>
                           <Trash2 className="size-3.5" />
                         </Button>
