@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth } from "@/lib/api/helpers";
+import { requireAuth, resolveTenantId } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
 
@@ -34,7 +34,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       if (_f) return _f;
     }
 
-    if (!auth.tenantId) {
+    // FIX-FUNC-5: resolve tenant via resolveTenantId so super-admins
+    // acting under ?tenant_id=xxx can inspect a tenant's webhook
+    // deliveries. The previous `if (!auth.tenantId)` returned 400 for
+    // super-admins (whose own tenantId is null).
+    const tid = resolveTenantId(auth, req);
+    if (!tid) {
       return NextResponse.json({ error: "Tenant context required." }, { status: 400 });
     }
 
@@ -43,9 +48,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     // Tenant ownership check — fetch the webhook by ID + tenant_id so a
     // caller can't query another tenant's deliveries by guessing the UUID.
     // Super-admins can query any tenant (passing no tenant filter), but the
-    // store's listWebhookDeliveries call below is still scoped to
-    // auth.tenantId so we never leak cross-tenant data accidentally.
-    const webhook = await auth.store.getWebhookById(id, auth.tenantId ?? undefined);
+    // store's listWebhookDeliveries call below is still scoped to the
+    // resolved tid so we never leak cross-tenant data accidentally.
+    const webhook = await auth.store.getWebhookById(id, tid);
     if (!webhook) {
       return NextResponse.json({ error: "Not found." }, { status: 404 });
     }
@@ -60,7 +65,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       }
     }
 
-    const items = await auth.store.listWebhookDeliveries(auth.tenantId, id, limit);
+    const items = await auth.store.listWebhookDeliveries(tid, id, limit);
     return NextResponse.json({ items });
   } catch (error: any) {
     console.error("[webhooks.deliveries GET]", error);

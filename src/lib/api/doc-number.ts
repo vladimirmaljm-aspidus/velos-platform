@@ -191,3 +191,97 @@ export function bumpDocRegisterNumber(
   const seq = parseSeq(current) + offset;
   return `${base}-${String(seq).padStart(3, "0")}`;
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// Demand auto-numbering (FIX-FUNC-1 / FIX 4)
+//
+// `demands.number` is NOT NULL with no DB-level default. The POST
+// /api/demands route used to require the caller to supply a `number`,
+// otherwise the INSERT failed with a NOT NULL constraint violation
+// (the demand creation UI generates a placeholder client-side, but any
+// direct API caller omitting it would 500).
+//
+// `generateDemandNumber` mints a per-tenant sequence in the visible
+// format `DEM-<YEAR>-<NNN>` (3-digit zero-padded). The strategy mirrors
+// `nextDocRegisterNumber`: query the highest existing `number` matching
+// `DEM-<year>-%` for the tenant, increment, and zero-pad. This is MAX+1
+// (not a true Postgres SEQUENCE), so concurrent POSTs can collide — the
+// demands route's existing unique-constraint retry loop handles that
+// race. If Supabase isn't configured (local dev/CI using MockStore),
+// fall back to `store.listDemands(tid).total + 1` so the helper always
+// returns a non-null string and the INSERT proceeds.
+// ────────────────────────────────────────────────────────────────────────────
+
+const DEMAND_PREFIX = "DEM";
+
+/**
+ * Generate the next demand number for a tenant.
+ *
+ * Format: `DEM-<YEAR>-<NNN>` (3-digit zero-padded sequence per tenant per
+ * year, e.g. `DEM-2026-001`, `DEM-2026-002`, …).
+ *
+ * Strategy:
+ *   1. If Supabase is configured, query `demands` for the MAX(`number`)
+ *      matching `DEM-<year>-%` for the tenant, parse the trailing
+ *      sequence, and return `DEM-<year>-<seq+1>` zero-padded to 3.
+ *   2. Otherwise (MockStore / Prisma / no Supabase), fall back to
+ *      `store.listDemands(tid).total + 1` so the caller still gets a
+ *      non-null string.
+ *
+ * Returns null only if both paths fail (e.g. tenantId is empty AND
+ * Supabase isn't configured); callers should treat null as "give up
+ * and let the INSERT surface the NOT NULL error".
+ */
+export async function generateDemandNumber(
+  store: { listDemands: (tenantId: string, params?: any) => Promise<{ total: number }> },
+  tenantId: string,
+): Promise<string | null> {
+  const year = new Date().getFullYear();
+  // Fast path: Supabase configured — MAX(number) per tenant per year.
+  if (isSupabaseConfigured() && tenantId) {
+    try {
+      const sb = getSupabase();
+      const likePattern = `${DEMAND_PREFIX}-${year}-%`;
+      const { data, error } = await sb
+        .from("demands")
+        .select("number")
+        .eq("tenant_id", tenantId)
+        .like("number", likePattern)
+        .order("number", { ascending: false })
+        .limit(1);
+      if (error) {
+        console.warn(
+          "[doc-number] generateDemandNumber MAX query failed:",
+          error.message,
+        );
+      } else {
+        const maxSeq =
+          Array.isArray(data) && data.length > 0
+            ? parseSeq((data[0] as { number?: string }).number || "")
+            : 0;
+        const nextSeq = maxSeq + 1;
+        return `${DEMAND_PREFIX}-${year}-${String(nextSeq).padStart(3, "0")}`;
+      }
+    } catch (e: any) {
+      console.warn(
+        "[doc-number] generateDemandNumber threw:",
+        e?.message || e,
+      );
+    }
+  }
+  // Fallback path: no Supabase (MockStore in dev/CI) or query failed —
+  // synthesise from listDemands().total + 1 so the INSERT still gets a
+  // number and doesn't trip the NOT NULL constraint.
+  if (!tenantId) return null;
+  try {
+    const result = await store.listDemands(tenantId);
+    const seq = (result?.total ?? 0) + 1;
+    return `${DEMAND_PREFIX}-${year}-${String(seq).padStart(3, "0")}`;
+  } catch (e: any) {
+    console.warn(
+      "[doc-number] generateDemandNumber listDemands fallback failed:",
+      e?.message || e,
+    );
+    return null;
+  }
+}

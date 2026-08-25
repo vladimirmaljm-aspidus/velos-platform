@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, audit } from "@/lib/api/helpers";
+import { requireAuth, audit, resolveTenantId } from "@/lib/api/helpers";
 import { signPayload, MAX_WEBHOOK_ATTEMPTS } from "@/lib/webhooks/deliver";
 
 export const runtime = "nodejs";
@@ -45,7 +45,12 @@ export async function POST(
       if (_f) return _f;
     }
 
-    if (!auth.tenantId) {
+    // FIX-FUNC-5: resolve tenant via resolveTenantId so super-admins acting
+    // under ?tenant_id=xxx can retry a tenant's webhook delivery. The
+    // previous `if (!auth.tenantId)` returned 400 for super-admins (whose
+    // own tenantId is null).
+    const tid = resolveTenantId(auth, req);
+    if (!tid) {
       return NextResponse.json({ error: "Tenant context required." }, { status: 400 });
     }
 
@@ -53,7 +58,7 @@ export async function POST(
 
     // Tenant ownership: confirm the webhook belongs to this tenant before
     // touching any of its deliveries.
-    const webhook = await auth.store.getWebhookById(webhookId, auth.tenantId);
+    const webhook = await auth.store.getWebhookById(webhookId, tid);
     if (!webhook) {
       return NextResponse.json({ error: "Not found." }, { status: 404 });
     }
@@ -62,7 +67,7 @@ export async function POST(
     if (!delivery || delivery.webhook_id !== webhookId) {
       return NextResponse.json({ error: "Delivery not found." }, { status: 404 });
     }
-    if (delivery.tenant_id !== auth.tenantId) {
+    if (delivery.tenant_id !== tid) {
       // Defense-in-depth — should be unreachable because getWebhookById
       // already enforced tenant scope, but we double-check.
       return NextResponse.json({ error: "Not found." }, { status: 404 });

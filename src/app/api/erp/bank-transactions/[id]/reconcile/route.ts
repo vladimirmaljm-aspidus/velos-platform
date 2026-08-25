@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin, audit } from "@/lib/api/helpers";
+import { requireAdmin, audit, resolveTenantId } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
 
@@ -20,7 +20,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // Tenant ownership check — fetch the single row by id (tenant-scoped)
     // instead of listing up to 100k transactions and searching client-side
     // (API P1 #14). Also guards against missing tenant_id.
-    if (!auth.tenantId) {
+    // FIX-FUNC-5: resolve tenant via resolveTenantId so super-admins acting
+    // under ?tenant_id=xxx can reconcile a tenant's bank transaction. The
+    // previous `if (!auth.tenantId)` returned 400 for super-admins (whose
+    // own tenantId is null).
+    const tid = resolveTenantId(auth, req);
+    if (!tid) {
       return NextResponse.json({ error: "tenant_id is required." }, { status: 400 });
     }
     const { getSupabase } = await import("@/lib/supabase/client");
@@ -29,7 +34,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       .from("erp_bank_transactions")
       .select("*")
       .eq("id", id)
-      .eq("tenant_id", auth.tenantId)
+      .eq("tenant_id", tid)
       .maybeSingle();
     if (fetchErr) {
       return NextResponse.json({ error: fetchErr.message }, { status: 500 });

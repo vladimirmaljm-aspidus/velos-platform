@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, audit } from "@/lib/api/helpers";
+import { requireAuth, audit, resolveTenantId } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
 
@@ -15,9 +15,16 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       const _f = await requireFeature(auth.tenantId, "module_webhooks", auth.isSuperAdmin); if (_f) return _f; } /* requireFeature wired */
 
     const { id } = await params;
+    // FIX-FUNC-5: resolve tenant via resolveTenantId so super-admins acting
+    // under ?tenant_id=xxx can delete a tenant's webhook. The previous
+    // `auth.tenantId ?? ""` call passed an empty string for super-admins
+    // (whose own tenantId is null), so listWebhooks("") returned zero
+    // rows and the route always 404'd for super-admins.
+    const tid = resolveTenantId(auth, req);
+    if (!tid) return NextResponse.json({ error: "Tenant context required." }, { status: 400 });
     // Tenant ownership check: listWebhooks ignores tenantId in the store,
     // so we fetch all and filter for non-super_admin.
-    const all = await auth.store.listWebhooks(auth.tenantId ?? "");
+    const all = await auth.store.listWebhooks(tid);
     const existing = all.find((w) => w.id === id);
     if (!existing) return NextResponse.json({ error: "Not found." }, { status: 404 });
     if (!auth.isSuperAdmin && existing.tenant_id !== auth.tenantId) {

@@ -35,7 +35,12 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const auth = await requireAuth(req);
   if (auth instanceof NextResponse) return auth;
-  if (!auth.tenantId) return NextResponse.json({ error: "Tenant context required." }, { status: 400 });
+  // FIX-FUNC-5: resolve tenant via resolveTenantId so super-admins acting
+  // under ?tenant_id=xxx can submit an upgrade request on behalf of a
+  // tenant. The previous `if (!auth.tenantId)` returned 400 for
+  // super-admins (whose own tenantId is null).
+  const tid = resolveTenantId(auth, req);
+  if (!tid) return NextResponse.json({ error: "Tenant context required." }, { status: 400 });
 
   let body;
   try {
@@ -47,10 +52,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "requested_plan is required." }, { status: 400 });
   }
 
-  const tenant = await auth.store.getTenant(auth.tenantId) as any;
+  const tenant = await auth.store.getTenant(tid) as any;
   const sb = getSupabase();
   const { data, error } = await sb.from("plan_upgrade_requests").insert({
-    tenant_id: auth.tenantId,
+    tenant_id: tid,
     requested_by: auth.user.id,
     requested_plan: body.requested_plan,
     current_plan: tenant?.plan || null,

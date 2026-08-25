@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, audit, resolveTenantId, sanitizeError } from "@/lib/api/helpers";
+import { generateDemandNumber } from "@/lib/api/doc-number";
 
 export const runtime = "nodejs";
 
@@ -49,6 +50,30 @@ export async function POST(req: NextRequest) {
     if (!tid) return NextResponse.json({ error: "No tenant context." }, { status: 400 });
     const body = await req.json();
     body.tenant_id = tid;
+    // FIX-FUNC-4: `demands.partner_id` is NOT NULL (FK to partners, no
+    // SET NULL option). Without it the INSERT fails with a NOT NULL
+    // violation that surfaces as a 500 to the caller; reject early with
+    // a helpful message so the client can correct the request.
+    if (!body.partner_id) {
+      return NextResponse.json(
+        { error: "Partner is required." },
+        { status: 400 },
+      );
+    }
+    // FIX-FUNC-4: `demands.number` is NOT NULL with no DB-level default.
+    // If the caller didn't supply one, mint a per-tenant sequence in
+    // the format `DEM-<YEAR>-<NNN>` (e.g. `DEM-2026-001`). See
+    // `generateDemandNumber` in src/lib/api/doc-number.ts for details.
+    if (!body.number) {
+      const autoNum = await generateDemandNumber(auth.store, tid);
+      if (!autoNum) {
+        return NextResponse.json(
+          { error: "Could not generate demand number." },
+          { status: 500 },
+        );
+      }
+      body.number = autoNum;
+    }
     const created = await auth.store.upsertDemand(body);
     await audit(auth.store, auth.user, req, body.id ? "demand.update" : "demand.create", "demand", created.id, { number: created.number });
     return NextResponse.json(created);

@@ -105,10 +105,16 @@ export async function POST(req: NextRequest) {
     } catch {
       return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
     }
-    if (!auth.tenantId) {
+    // FIX-FUNC-1: resolve tenant via resolveTenantId so super-admins acting
+    // under ?tenant_id=xxx (or impersonation) are scoped correctly. The
+    // previous `auth.tenantId ?? undefined` produced a 400 "tenant_id is
+    // required" for super-admins without an impersonation context because
+    // super-admin's own tenantId is null at the platform level.
+    const tid = resolveTenantId(auth, req);
+    if (!tid) {
       return NextResponse.json({ error: "tenant_id is required." }, { status: 400 });
     }
-    body.tenant_id = auth.tenantId;
+    body.tenant_id = tid;
 
     // Encrypt the secret value before it hits the store. Accept either
     // `encrypted_value` (legacy field name) or `value` (newer name) from the

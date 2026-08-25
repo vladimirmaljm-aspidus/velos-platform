@@ -64,6 +64,15 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
+    // FIX-FUNC-3: the `erp_accounts` table's column is `account_type`, but
+    // some API callers (and the admin UI) send `type`. Map the legacy field
+    // name to the actual column before delegating to the store — without
+    // this, smartUpsert tries to write to a non-existent `type` column and
+    // the DB raises "Could not find the 'type' column" → 500.
+    if (body.type != null) {
+      if (body.account_type == null) body.account_type = body.type;
+      delete body.type;
+    }
     const created = await auth.store.upsertErpAccount({ ...body, tenant_id: tenantId });
     await audit(auth.store, auth.user, req, body.id ? "erp_account.update" : "erp_account.create", "erp_account", created.id, {
       code: created.code,
