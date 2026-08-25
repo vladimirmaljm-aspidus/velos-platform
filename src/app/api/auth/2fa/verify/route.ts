@@ -50,7 +50,13 @@ export async function POST(req: NextRequest) {
     if (!token) {
       return NextResponse.json({ error: "Token is required." }, { status: 400 });
     }
-    if (!Array.isArray(recoveryCodes) || recoveryCodes.length === 0) {
+    // Recovery codes are required ONLY for fresh enrollment (when totp_secret
+    // is null — first-time setup). After a recovery-code login, totp_secret is
+    // kept but recovery_codes are cleared + totp_enabled=false. In that state,
+    // the user re-verifies with just a TOTP token (no new recovery codes yet);
+    // the verify route generates fresh recovery codes for them.
+    const isReEnrollAfterRecovery = !!user.totp_secret && !user.totp_enabled;
+    if (!isReEnrollAfterRecovery && (!Array.isArray(recoveryCodes) || recoveryCodes.length === 0)) {
       return NextResponse.json(
         { error: "Recovery codes are required. Re-run enrollment if you didn't save them." },
         { status: 400 },

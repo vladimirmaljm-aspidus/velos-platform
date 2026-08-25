@@ -39,7 +39,7 @@ export interface SessionConfig {
 export const DEFAULT_SESSION_CONFIG: SessionConfig = {
   superAdminTtlMs: Infinity,
   adminTtlMs: 8 * 60 * 60 * 1000, // 8h
-  userTtlMs: 8 * 60 * 60 * 1000, // 8h
+  userTtlMs: 7 * 24 * 60 * 60 * 1000, // 7d (matches the login cookie maxAge)
   idleTimeoutMs: 30 * 60 * 1000, // 30min
 };
 
