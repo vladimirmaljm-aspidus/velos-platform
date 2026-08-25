@@ -41,6 +41,7 @@ import {
   ExternalLink,
   Search,
   Bell,
+  BellOff,
   PanelRight,
   Globe,
   Palette,
@@ -48,14 +49,9 @@ import {
   Moon,
   Check,
   CheckCheck,
-  Clock,
-  Package,
-  FileText,
-  AlertTriangle,
-  Info,
   Building2,
-  Repeat,
   BookOpen,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { initials } from "@/lib/utils/format";
@@ -65,11 +61,103 @@ import { useSearchStore } from "@/components/layout/global-search";
 import { useTheme } from "next-themes";
 import { fmtRelative } from "@/lib/utils/format";
 import { cn } from "@/lib/utils";
+// NOTIF-UX — reuse the icon + colour helpers from the full-page view so the
+// bell dropdown and the Notifications page render the same icon for a given
+// type (one source of truth for the icon + colour map).
+import { getNotifIcon, getNotifColor } from "@/components/views/notifications-view";
 
 // View-id → NAV dict key is 1:1 for every entry below; "security-center" is
 // the one exception (view id is "security", NAV key is also "security" —
 // kept here only for the cases where the view id itself isn't a NAV key).
 const VIEW_TITLE_FALLBACK = "CRM";
+
+// ── REALTIME-WS: subtle "ding" on new notifications ─────────────────────────
+// Generates a 150ms 880Hz sine-wave "ding" as a WAV file at module load and
+// reuses the Audio element for each subsequent notification. The sound is
+// only played when the tab is visible (`document.hidden` is false) and when
+// browser autoplay policy allows it — failures are silently swallowed so
+// the bell UX never breaks because of audio.
+//
+// Why a generated WAV data URL instead of a static asset?
+//   • No additional file in /public (zero bundle impact for users who
+//     never receive a notification).
+//   • No network request on first play (the data URL is inline).
+//   • Volume + envelope are tuned for "subtle office-friendly ping" rather
+//     than a loud alert — 8-bit PCM at 8kHz mono, ~1.2KB total.
+const NOTIF_LIST_LIMIT = 20; // REALTIME-WS: 10 → 20 — the dropdown scrolls now
+
+let _dingAudio: HTMLAudioElement | null = null;
+function makeDingWavDataUrl(): string {
+  // 8-bit unsigned PCM, 8kHz mono, 150ms 880Hz sine with exp decay envelope.
+  const sampleRate = 8000;
+  const duration = 0.15;
+  const freq = 880;
+  const n = Math.floor(sampleRate * duration);
+  const bytes = new Uint8Array(44 + n);
+  const writeU32 = (off: number, val: number) => {
+    bytes[off] = val & 0xff;
+    bytes[off + 1] = (val >> 8) & 0xff;
+    bytes[off + 2] = (val >> 16) & 0xff;
+    bytes[off + 3] = (val >> 24) & 0xff;
+  };
+  const writeU16 = (off: number, val: number) => {
+    bytes[off] = val & 0xff;
+    bytes[off + 1] = (val >> 8) & 0xff;
+  };
+  // RIFF chunk
+  bytes.set([0x52, 0x49, 0x46, 0x46], 0); // "RIFF"
+  writeU32(4, 36 + n);
+  bytes.set([0x57, 0x41, 0x56, 0x45], 8); // "WAVE"
+  // fmt sub-chunk
+  bytes.set([0x66, 0x6d, 0x74, 0x20], 12); // "fmt "
+  writeU32(16, 16);
+  writeU16(20, 1); // PCM
+  writeU16(22, 1); // mono
+  writeU32(24, sampleRate);
+  writeU32(28, sampleRate); // byte rate = sample rate * channels * bits/8
+  writeU16(32, 1); // block align
+  writeU16(34, 8); // bits per sample
+  // data sub-chunk
+  bytes.set([0x64, 0x61, 0x74, 0x61], 36); // "data"
+  writeU32(40, n);
+  for (let i = 0; i < n; i++) {
+    const t = i / sampleRate;
+    const env = Math.exp(-t * 15); // ~150ms decay
+    const s = Math.sin(2 * Math.PI * freq * t);
+    bytes[44 + i] = 128 + Math.round(s * env * 60);
+  }
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return `data:audio/wav;base64,${typeof btoa !== "undefined" ? btoa(bin) : ""}`;
+}
+function getDingAudio(): HTMLAudioElement | null {
+  if (typeof window === "undefined") return null;
+  if (_dingAudio) return _dingAudio;
+  try {
+    const audio = new Audio(makeDingWavDataUrl());
+    audio.preload = "auto";
+    audio.volume = 0.5; // quiet — subtle ping, not a klaxon
+    _dingAudio = audio;
+    return audio;
+  } catch {
+    return null;
+  }
+}
+function playDing(): void {
+  // Skip if the tab is hidden — no point pinging a backgrounded tab.
+  if (typeof document !== "undefined" && document.hidden) return;
+  const audio = getDingAudio();
+  if (!audio) return;
+  try {
+    audio.currentTime = 0;
+    // The Promise from play() rejects when the browser blocks autoplay
+    // (e.g. the user hasn't interacted with the page yet). We swallow the
+    // rejection — the bell still flashes and the toast still shows.
+    void audio.play().catch(() => {});
+  } catch {
+    // AudioContext not available / failed — non-critical.
+  }
+}
 
 // Mock notifications for real-time demo
 interface NotifItem {
@@ -80,6 +168,11 @@ interface NotifItem {
   read: boolean;
   created_at: string;
   entity_type?: string | null;
+  // NOTIF-UX — `entity_id` carries the related row's PK so a click can deep
+  // link to the specific offer / invoice / etc. The full-page view uses the
+  // same shape. WS-driven preview rows set it from the payload (`offerId`,
+  // `invoiceId`, `rfqId`).
+  entity_id?: string | null;
 }
 
 export function Topbar() {
@@ -107,9 +200,11 @@ export function Topbar() {
     fetch("/api/notifications?unreadOnly=true")
       .then((r) => r.json())
       .then((data) => {
-        // API returns { items, unread_count } — handle both shapes defensively
+        // API returns { items, unread_count } — handle both shapes defensively.
+        // REALTIME-WS: 10 → 20 — the dropdown panel now scrolls so we can
+        // surface more history without forcing the user to the full page.
         const items = Array.isArray(data) ? data : (data?.items ?? []);
-        setNotifications(items.slice(0, 10));
+        setNotifications(items.slice(0, NOTIF_LIST_LIMIT));
         setUnreadTotal(typeof data?.unread_count === "number" ? data.unread_count : items.length);
       })
       .catch(() => {});
@@ -127,10 +222,13 @@ export function Topbar() {
   // Replaces the 30s polling. Handlers are recreated on every render (cheap)
   // but the hook internally keeps the socket subscription stable across
   // renders via a ref (see `src/hooks/use-realtime.ts`).
+  // REALTIME-WS: flashBell ALSO plays a subtle "ding" — but only when the
+  // tab is visible and the browser allows it (see playDing above).
   const flashBell = React.useCallback(() => {
     setBellPulse(true);
     if (pulseTimer.current) clearTimeout(pulseTimer.current);
     pulseTimer.current = setTimeout(() => setBellPulse(false), 1_200);
+    playDing();
   }, []);
 
   useRealtime({
@@ -157,7 +255,8 @@ export function Topbar() {
         read: false,
         created_at: new Date().toISOString(),
         entity_type: "offer",
-      }, ...prev].slice(0, 10));
+        entity_id: data?.offerId ?? null,
+      }, ...prev].slice(0, NOTIF_LIST_LIMIT));
       flashBell();
       const isNewAccepted = String(data?.newStatus || "").toLowerCase() === "accepted";
       const isNewRejected = String(data?.newStatus || "").toLowerCase() === "rejected";
@@ -185,7 +284,8 @@ export function Topbar() {
         read: false,
         created_at: new Date().toISOString(),
         entity_type: "invoice",
-      }, ...prev].slice(0, 10));
+        entity_id: data?.invoiceId ?? null,
+      }, ...prev].slice(0, NOTIF_LIST_LIMIT));
       flashBell();
       toast.success(
         data?.isFullPayment
@@ -210,7 +310,8 @@ export function Topbar() {
         read: false,
         created_at: new Date().toISOString(),
         entity_type: data?.type === "rfq" ? "portal_rfq" : "portal_access",
-      }, ...prev].slice(0, 10));
+        entity_id: data?.rfqId ?? null,
+      }, ...prev].slice(0, NOTIF_LIST_LIMIT));
       flashBell();
       toast.message(label, {
         description: data?.partnerName ? `From ${data.partnerName}` : undefined,
@@ -235,6 +336,8 @@ export function Topbar() {
 
   const markAllRead = async () => {
     try {
+      // NOTIF-UX — no body + ?markAllRead=true keeps the original contract
+      // (the server route now treats "no body OR no body.id" as mark-all).
       const res = await fetch("/api/notifications?markAllRead=true", { method: "PUT" });
       if (res.ok) {
         setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
@@ -245,6 +348,43 @@ export function Topbar() {
       // silently fail
     }
   };
+
+  // NOTIF-UX — per-item "Mark as read" — marks a single notification as
+  // read WITHOUT navigating away (the row click still navigates; this is
+  // for the user who wants to clear the unread badge without losing the
+  // dropdown). The button is `e.stopPropagation`-guarded so it doesn't
+  // double-fire the row's click handler.
+  function markOneRead(e: React.MouseEvent, n: NotifItem) {
+    e.stopPropagation();
+    if (n.read) return;
+    setNotifications((prev) => prev.map((item) => item.id === n.id ? { ...item, read: true } : item));
+    setUnreadTotal((c) => Math.max(0, c - 1));
+    fetch(`/api/notifications/${n.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ read: true }),
+    }).catch(() => {});
+  }
+
+  // NOTIF-UX — per-item "Delete". Optimistically removes the row from the
+  // dropdown state, then fires the DELETE. On failure we re-fetch to
+  // restore the truth (the bell is a glance surface, not a deep edit
+  // surface, so the optimistic update is the right tradeoff).
+  function deleteOne(e: React.MouseEvent, n: NotifItem) {
+    e.stopPropagation();
+    const wasUnread = !n.read;
+    setNotifications((prev) => prev.filter((item) => item.id !== n.id));
+    if (wasUnread) setUnreadTotal((c) => Math.max(0, c - 1));
+    fetch(`/api/notifications/${n.id}`, { method: "DELETE" })
+      .then((r) => {
+        if (!r.ok) throw new Error("delete failed");
+      })
+      .catch(() => {
+        // Restore on failure — re-fetch from the source of truth.
+        loadNotifications();
+        toast.error("Failed to delete notification.");
+      });
+  }
 
   function handleNotifClick(n: NotifItem) {
     setNotifications((prev) => prev.map((item) => item.id === n.id ? { ...item, read: true } : item));
@@ -260,6 +400,8 @@ export function Topbar() {
         kyc_submission: "kyc-review", deal: "deals", task: "tasks",
         portal_rfq: "portal-rfqs", document: "documents",
         portal_access: "portal-rfqs", partner: "partners", product: "products",
+        marketplace_post: "portal-marketplace",
+        marketplace_response: "portal-marketplace",
       };
       const targetView = viewMap[n.entity_type];
       if (targetView) setView(targetView as any);
@@ -285,6 +427,34 @@ export function Topbar() {
 
   const translatedViewTitle = t(locale, view);
   const viewTitle = translatedViewTitle === view ? VIEW_TITLE_FALLBACK : translatedViewTitle;
+
+  // NOTIF-UX — group the dropdown list by date (Today / Yesterday / Earlier).
+  // Mirrors the full-page Notifications view's grouping so the bell dropdown
+  // and the page read as the same surface at different granularities. The
+  // grouping is computed with useMemo keyed on `notifications` so the WS
+  // preview rows (which arrive as `prev → new array`) re-group without a
+  // full re-render of unrelated rows.
+  const notifGroups = React.useMemo(() => {
+    type G = { label: string; items: NotifItem[] };
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const yesterdayStart = new Date(todayStart);
+    yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+    const today: NotifItem[] = [];
+    const yesterday: NotifItem[] = [];
+    const earlier: NotifItem[] = [];
+    for (const n of notifications) {
+      const d = new Date(n.created_at);
+      if (d >= todayStart) today.push(n);
+      else if (d >= yesterdayStart) yesterday.push(n);
+      else earlier.push(n);
+    }
+    const groups: G[] = [];
+    if (today.length) groups.push({ label: t(locale, "misc-today"), items: today });
+    if (yesterday.length) groups.push({ label: t(locale, "notif-yesterday"), items: yesterday });
+    if (earlier.length) groups.push({ label: t(locale, "notif-earlier"), items: earlier });
+    return groups;
+  }, [notifications, locale]);
 
   return (
     <>
@@ -351,8 +521,14 @@ export function Topbar() {
                 <span className="absolute inset-0 rounded-lg ring-2 ring-emerald-500/70 animate-ping" aria-hidden />
               )}
               {unreadCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-emerald-500 text-white text-[9px] font-semibold leading-none ring-2 ring-background" aria-hidden="true">
-                  {unreadCount}
+                /* NOTIF-UX — red circle with count, pulses when new arrives.
+                   The previous emerald badge blended into the platform's
+                   green accent; switching to destructive (red) matches the
+                   standard "unread notifications" convention (Gmail, Slack,
+                   Linear) and makes the badge visible at a glance even when
+                   the bell icon is monochrome. */
+                <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-destructive text-destructive-foreground text-[9px] font-semibold leading-none ring-2 ring-background tabular-nums animate-pulse" aria-hidden="true">
+                  {unreadCount > 99 ? "99+" : unreadCount}
                 </span>
               )}
             </Button>
@@ -360,16 +536,16 @@ export function Topbar() {
           <PopoverContent
             align="end"
             sideOffset={8}
-            style={{ maxHeight: "min(80vh, var(--radix-popover-content-available-height, 80vh))" }}
-            className="w-[min(92vw,380px)] p-0 rounded-xl border border-border/60 shadow-soft-lg flex flex-col overflow-hidden"
+            style={{ maxHeight: "min(70vh, var(--radix-popover-content-available-height, 70vh))" }}
+            className="w-[min(92vw,380px)] p-0 rounded-xl border border-border/60 shadow-soft-lg flex flex-col overflow-hidden max-h-[70vh]"
           >
             {/* Header */}
             <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-border/60 shrink-0">
               <div className="flex items-center gap-2 min-w-0">
                 <h3 className="text-sm font-semibold truncate">{t(locale, "notifications")}</h3>
                 {unreadCount > 0 && (
-                  <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 text-xs font-semibold tabular">
-                    {unreadCount}
+                  <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-destructive/15 text-destructive text-xs font-semibold tabular">
+                    {unreadCount > 99 ? "99+" : unreadCount}
                   </span>
                 )}
               </div>
@@ -386,87 +562,155 @@ export function Topbar() {
             </div>
 
             {/* Body — flexes to fill whatever space remains between the
-                header and footer, so the footer ("View all") always stays
-                visible and clickable instead of being pushed off-screen.
-                Plain overflow-y-auto instead of the Radix ScrollArea — its
+                header and footer, so the footer always stays visible and
+                clickable instead of being pushed off-screen. Plain
+                overflow-y-auto instead of the Radix ScrollArea — its
                 Viewport doesn't reliably inherit a flex-computed height
                 (measured: Viewport grew to full list content height and
-                spilled past the popover boundary instead of scrolling). */}
+                spilled past the popover boundary instead of scrolling).
+                NOTIF-UX: now showing 20 items (was 10) and grouping them
+                by date (Today / Yesterday / Earlier) so the user can scan
+                the recent batch without re-reading yesterday's noise. */}
             <div className="flex-1 min-h-0 overflow-y-auto custom-scroll">
               {notifications.length === 0 ? (
                 <div className="py-12 px-4 flex flex-col items-center text-center">
+                  {/* NOTIF-UX: empty state uses BellOff to clearly signal
+                      "no NEW notifications" — distinct from the bell icon
+                      in the header (which always shows). The wording is the
+                      more specific "No new notifications" rather than the
+                      generic "No notifications" so the user understands
+                      they may still have read history on the full page. */}
                   <div className="size-10 rounded-full bg-muted/60 flex items-center justify-center mb-2">
-                    <Bell className="size-5 text-muted-foreground" />
+                    <BellOff className="size-5 text-muted-foreground" />
                   </div>
-                  <p className="text-sm font-medium">{t(locale, "no-notifications")}</p>
+                  <p className="text-sm font-medium">{t(locale, "notif-no-new")}</p>
                   <p className="text-xs text-muted-foreground mt-0.5">{t(locale, "all-caught-up")}</p>
                 </div>
               ) : (
-                <ul className="divide-y divide-border/50">
-                  {notifications.map((n) => (
-                    <li key={n.id}>
-                      <button
-                        type="button"
-                        onClick={() => handleNotifClick(n)}
-                        className={cn(
-                          "w-full text-left px-4 py-3 flex items-start gap-3 smooth relative group",
-                          !n.read && "bg-accent/30",
-                          "hover:bg-accent/50 focus-visible:bg-accent/50",
-                        )}
-                      >
-                        {!n.read && (
-                          <span className="absolute left-1.5 top-1/2 -translate-y-1/2 size-1.5 rounded-full bg-emerald-500" />
-                        )}
-                        <div className={cn(
-                          "size-8 shrink-0 rounded-full bg-muted/60 flex items-center justify-center",
-                          n.type.includes("overdue") || n.type.includes("rejected") ? "text-destructive" :
-                          n.type.includes("accepted") || n.type.includes("won") || n.type.includes("paid") ? "text-emerald-600 dark:text-emerald-400" :
-                          "text-muted-foreground"
-                        )}>
-                          {n.type.includes("overdue") || n.type.includes("rejected") ? <AlertTriangle className="size-4" /> :
-                           n.type.includes("accepted") || n.type.includes("won") || n.type.includes("paid") ? <Check className="size-4" /> :
-                           n.type.includes("kyc") ? <ShieldCheck className="size-4" /> :
-                           n.type.includes("offer") ? <FileText className="size-4" /> :
-                           n.type.includes("task") ? <Clock className="size-4" /> :
-                           n.type.includes("stock") ? <Package className="size-4" /> :
-                           <Info className="size-4" />}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-baseline gap-2">
-                            <p className={cn("text-sm truncate", n.read ? "font-medium" : "font-semibold")}>
-                              {n.title}
-                            </p>
-                            <span className="text-xs text-muted-foreground ml-auto shrink-0 tabular">
-                              {fmtRelative(n.created_at)}
-                            </span>
-                          </div>
-                          {n.message && (
-                            <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{n.message}</p>
-                          )}
-                        </div>
-                      </button>
-                    </li>
+                <div>
+                  {notifGroups.map((g) => (
+                    <div key={g.label}>
+                      {/* Sticky date header — sits above each bucket. */}
+                      <div className="sticky top-0 z-10 bg-muted/40 backdrop-blur-sm px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        {g.label}
+                      </div>
+                      <ul className="divide-y divide-border/50">
+                        {g.items.map((n) => {
+                          const Icon = getNotifIcon(n.type);
+                          const color = getNotifColor(n.type);
+                          return (
+                          <li key={n.id}>
+                            {/* NOTIF-UX: row is a div (not a button) so the
+                                per-item "Mark as read" + "Delete" buttons
+                                can sit inside without producing
+                                nested-button HTML. The div keeps the
+                                click-through behavior via role + onClick
+                                + keyboard handlers (Enter / Space). */}
+                            <div
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => handleNotifClick(n)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  handleNotifClick(n);
+                                }
+                              }}
+                              className={cn(
+                                "w-full text-left px-4 py-3 flex items-start gap-3 smooth relative group cursor-pointer",
+                                !n.read && "bg-accent/30",
+                                "hover:bg-accent/50 focus-visible:bg-accent/50 focus-visible:outline-none",
+                              )}
+                            >
+                              {!n.read && (
+                                <span className="absolute left-1.5 top-1/2 -translate-y-1/2 size-1.5 rounded-full bg-emerald-500" />
+                              )}
+                              {/* NOTIF-UX — icon + colour come from the
+                                  shared helpers in notifications-view so
+                                  the bell dropdown and the full page
+                                  render identical visuals for a given type.
+                                  Each type has a distinct icon + Tailwind
+                                  colour pair (e.g. offer_accepted → emerald
+                                  check, invoice_overdue → red alert). */}
+                              <div className={cn(
+                                "size-8 shrink-0 rounded-full flex items-center justify-center",
+                                color,
+                              )}>
+                                <Icon className="size-4" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-baseline gap-2">
+                                  <p className={cn("text-sm truncate", n.read ? "font-medium" : "font-semibold")}>
+                                    {n.title}
+                                  </p>
+                                  <span className="text-xs text-muted-foreground ml-auto shrink-0 tabular">
+                                    {fmtRelative(n.created_at)}
+                                  </span>
+                                </div>
+                                {n.message && (
+                                  <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{n.message}</p>
+                                )}
+                              </div>
+                              {/* NOTIF-UX — per-item actions, hover-revealed.
+                                  Mark-as-read (Check) only on unread rows;
+                                  Delete (Trash2) on every row. Both
+                                  stopPropagation so they don't double-fire
+                                  the row's click handler. */}
+                              {!n.read && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => markOneRead(e, n)}
+                                  aria-label={t(locale, "notif-mark-read")}
+                                  className="size-7 shrink-0 rounded-md flex items-center justify-center text-muted-foreground/70 hover:text-emerald-600 hover:bg-emerald-500/10 smooth opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none"
+                                >
+                                  <Check className="size-3.5" />
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={(e) => deleteOne(e, n)}
+                                aria-label={t(locale, "notif-delete")}
+                                className="size-7 shrink-0 rounded-md flex items-center justify-center text-muted-foreground/70 hover:text-destructive hover:bg-destructive/10 smooth opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none"
+                              >
+                                <Trash2 className="size-3.5" />
+                              </button>
+                            </div>
+                          </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
                   ))}
-                </ul>
+                </div>
               )}
             </div>
 
             <Separator className="shrink-0" />
-            <div className="p-2 shrink-0">
+            {/* NOTIF-UX — footer with "Mark all as read" + "View all
+                notifications". The "View all" now routes to the dedicated
+                full-page Notifications view (Administration section) rather
+                than the audit log — that page is purpose-built for browsing
+                the full history with filters + search, whereas the audit log
+                shows every platform action (mostly noise for a user who just
+                wants to scan their own notifications). */}
+            <div className="p-2 shrink-0 flex items-center gap-1">
               <Button
                 variant="ghost"
                 size="sm"
-                className="w-full justify-center text-xs text-muted-foreground hover:text-foreground"
-                // FEAT-2 / Issue 1: "View all" used to route to the
-                // SECURITY center — there's nothing there that shows a
-                // notifications history. Route to the audit log instead,
-                // which IS the historical view of everything that ever
-                // fired a notification (and more). Super_admins get the
-                // cross-tenant platform audit; tenant admins get their
-                // own tenant's audit log.
-                onClick={() => { setView(superAdmin ? "platform-audit" : "audit"); setNotifOpen(false); }}
+                className="flex-1 justify-center text-xs text-muted-foreground hover:text-foreground"
+                disabled={unreadCount === 0}
+                onClick={markAllRead}
               >
-                {t(locale, "view-all")}
+                <CheckCheck className="size-3.5 mr-1" />
+                {t(locale, "mark-all-read")}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="flex-1 justify-center text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => { setView("notifications"); setNotifOpen(false); }}
+              >
+                {t(locale, "notif-view-all")}
               </Button>
             </div>
           </PopoverContent>

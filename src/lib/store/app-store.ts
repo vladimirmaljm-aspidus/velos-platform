@@ -98,7 +98,13 @@ export type ViewKey =
   // tenants awaiting review. Visible in the sidebar's "platform"
   // section (superAdminOnly: true). The view itself re-checks
   // isSuperAdmin before rendering.
-  | "signup-requests";
+  | "signup-requests"
+  // NOTIF-UX — full-page notifications surface (Administration section).
+  // Linked from the sidebar ("Notifications" with a Bell icon) and from
+  // the topbar bell's "View all notifications" footer. Paginated list of
+  // all notifications with type filter, read/unread filter, search, and
+  // per-item mark-read / delete actions. See src/components/views/notifications-view.tsx.
+  | "notifications";
 
 export interface SafeUser {
   id: string;

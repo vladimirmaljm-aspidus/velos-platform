@@ -64,6 +64,7 @@ export const NAV: Record<Locale, Record<string, string>> = {
     "super-admin-settings": "Platform Settings",
     "marketplace-admin": "Marketplace Admin",
     "signup-requests": "Signup Requests",
+    "notifications": "Notifications",
   },
   sr: {
     dashboard: "Kontrolna tabla",
@@ -121,6 +122,7 @@ export const NAV: Record<Locale, Record<string, string>> = {
     "super-admin-settings": "Podešavanja platforme",
     "marketplace-admin": "Admin berze",
     "signup-requests": "Zahtevi za registraciju",
+    "notifications": "Obaveštenja",
   },
   tr: {
     dashboard: "Gösterge Paneli",
@@ -178,6 +180,7 @@ export const NAV: Record<Locale, Record<string, string>> = {
     "super-admin-settings": "Platform Ayarları",
     "marketplace-admin": "Pazar Yöneticisi",
     "signup-requests": "Kayıt Talepleri",
+    "notifications": "Bildirimler",
   },
   de: {
     dashboard: "Übersicht",
@@ -235,6 +238,7 @@ export const NAV: Record<Locale, Record<string, string>> = {
     "super-admin-settings": "Plattform-Einstellungen",
     "marketplace-admin": "Marktplatz-Admin",
     "signup-requests": "Anmeldeanfragen",
+    "notifications": "Benachrichtigungen",
   },
   ru: {
     dashboard: "Панель управления",
@@ -292,6 +296,7 @@ export const NAV: Record<Locale, Record<string, string>> = {
     "super-admin-settings": "Настройки платформы",
     "marketplace-admin": "Админ биржи",
     "signup-requests": "Запросы на регистрацию",
+    "notifications": "Уведомления",
   },
 };
 

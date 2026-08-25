@@ -368,7 +368,10 @@ function RequestDetailSheet({
       return r.json() as Promise<{ items: LogisticsEvent[] }>;
     },
     enabled: !!req,
-    refetchInterval: 15_000,
+    // REALTIME-WS: 15s → 30s. Logistics events (status changes, ETA updates)
+    // don't fire every 15s — 30s is enough for the visible event log; the
+    // portal:activity push invalidates this query on real updates.
+    refetchInterval: 30_000,
   });
 
   const toOfferMut = useMutation({

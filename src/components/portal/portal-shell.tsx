@@ -322,7 +322,12 @@ export function PortalShell({
       if (!r.ok) return { items: [], total: 0 } as { items: Notification[]; total: number };
       return r.json() as Promise<{ items: Notification[]; total: number }>;
     },
-    refetchInterval: 30_000,
+    // REALTIME-WS: 30s → 60s. The badge bell + dropdown re-render on every
+    // poll tick; 60s halves the load while still surfacing new notifications
+    // within a reasonable window. The useRealtime hook (mounted in this
+    // shell) pushes notification:new events that invalidate this query
+    // immediately, so 60s is just the safety-net refetch, not the latency.
+    refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     enabled: !!portalAccess,
   });
@@ -359,7 +364,10 @@ export function PortalShell({
       const r = await fetch("/api/portal/messages/unread");
       return r.ok ? (r.json() as Promise<{ count: number }>) : { count: 0 };
     },
-    refetchInterval: 20_000,
+    // REALTIME-WS: 20s → 30s. The unread-messages badge doesn't need
+    // 20s freshness; portal:activity + message:new events from useRealtime
+    // invalidate this query on real updates, so 30s is just the safety net.
+    refetchInterval: 30_000,
     refetchOnWindowFocus: true,
     enabled: !!portalAccess,
   });

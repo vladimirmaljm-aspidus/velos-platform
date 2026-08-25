@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import type { Notification, NotificationType } from "@/lib/supabase/types";
 import { useAppStore, ViewKey } from "@/lib/store/app-store";
 import { useT } from "@/lib/i18n/store";
+import { useRealtime } from "@/hooks/use-realtime";
 
 /** Map a server-issued action_url (often an admin path) to a portal ViewKey. */
 function portalViewForUrl(url: string, type: NotificationType): ViewKey | null {
@@ -83,7 +84,26 @@ export function PortalNotifications() {
       if (!r.ok) throw new Error("Failed to load notifications");
       return r.json();
     },
-    refetchInterval: 30_000, // auto-refresh every 30 seconds
+    // REALTIME-WS: removed the previous 30s polling — the realtime gateway
+    // pushes notification:new events (received via useRealtime below), which
+    // invalidate this query for an instant refresh. `refetchOnWindowFocus`
+    // (React Query default) covers the case where the user returns to the
+    // tab; the page is rarely left open in the background like the bell is.
+    refetchOnWindowFocus: true,
+  });
+
+  // ── REALTIME-WS: live invalidation ──────────────────────────────────────
+  // The realtime gateway emits `notification:new` whenever a notification is
+  // persisted for this tenant (see `src/lib/realtime/notify.ts` callers).
+  // When the user is an admin (the useRealtime hook keys off `user.id` from
+  // the admin store), this subscription invalidates the portal-notifications
+  // query, causing an immediate refetch — far faster than the old 30s poll.
+  // For pure-portal users the hook is a no-op (user.id is null), and the
+  // refetchOnWindowFocus + manual refresh path remains.
+  useRealtime({
+    "notification:new": useCallback(() => {
+      queryClient.invalidateQueries({ queryKey: ["portal-notifications"] });
+    }, [queryClient]),
   });
 
   const items = notifsQ.data?.items || [];

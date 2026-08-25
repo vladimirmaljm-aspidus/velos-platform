@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type ComponentType } from "react";
 import {
   Card, CardContent, CardHeader, CardTitle, CardDescription,
 } from "@/components/ui/card";
@@ -21,7 +21,7 @@ import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
 import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
 
-import { ShieldAlert, Building2, ShieldCheck, Mail, Upload, Loader2, UserCog, X, ImageIcon, Send, CheckCircle2, XCircle, Zap, AlertTriangle, Globe, Info, FileText, Palette, QrCode, Save } from "lucide-react";
+import { ShieldAlert, Building2, ShieldCheck, Mail, Upload, Loader2, UserCog, X, ImageIcon, Send, CheckCircle2, XCircle, Zap, AlertTriangle, Globe, Info, FileText, Palette, QrCode, Save, Bell, DollarSign, MessageSquare, Store, Clock, UserPlus } from "lucide-react";
 import { useAppStore, isAdmin } from "@/lib/store/app-store";
 import { useQuery } from "@tanstack/react-query";
 import { TwoFactorSetup } from "@/components/auth/two-factor-setup";
@@ -217,7 +217,11 @@ export function SettingsView() {
       )}
 
       <Tabs defaultValue="company">
-        <TabsList className="flex w-full max-w-2xl overflow-x-auto justify-start sm:grid sm:grid-cols-7">
+        {/* NOTIF-UX — bumped from sm:grid-cols-7 → 8 to accommodate the new
+            Notifications tab. The list still scrolls horizontally on mobile
+            (overflow-x-auto) so the 8-tab layout doesn't break small
+            viewports. */}
+        <TabsList className="flex w-full max-w-2xl overflow-x-auto justify-start sm:grid sm:grid-cols-8">
           <TabsTrigger value="company">{t("admin-settings-tab-company")}</TabsTrigger>
           {canManageDangerousSettings && (
             <TabsTrigger value="security">{t("admin-settings-tab-security")}</TabsTrigger>
@@ -236,6 +240,13 @@ export function SettingsView() {
               but the API itself is open to all logged-in users so they
               could call it directly. */}
           <TabsTrigger value="password">{t("admin-settings-tab-password")}</TabsTrigger>
+          {/* NOTIF-UX — per-type notification preferences. Visible to
+              every admin (not gated by canManageDangerousSettings)
+              because it only edits the user's own notif_prefs column —
+              no tenant-wide posture. The tab posts to
+              /api/notifications/prefs which writes the user's
+              notif_prefs JSONB column on the users table. */}
+          <TabsTrigger value="notifications">{t("admin-settings-tab-notifications")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="company" className="mt-4 space-y-4">
@@ -266,6 +277,9 @@ export function SettingsView() {
         </TabsContent>
         <TabsContent value="password" className="mt-4">
           <ChangePasswordTab />
+        </TabsContent>
+        <TabsContent value="notifications" className="mt-4">
+          <NotificationsTab />
         </TabsContent>
       </Tabs>
     </div>
@@ -1812,6 +1826,147 @@ const MM = 100 / 210; // cqw per mm
 const mm = (n: number): string => `${n * MM}cqw`;
 // 1pt = 0.353mm (PDF points)
 const pt = (n: number): string => mm(n * 0.353);
+
+/**
+ * NotificationsTab — NOTIF-UX per-type notification preferences.
+ *
+ * Renders a list of per-type toggles (offers / invoices / messages / KYC /
+ * marketplace / trial / system). Stored in the user's `notif_prefs` JSONB
+ * column on the users table (Prisma schema already declares the column —
+ * see prisma/schema.prisma line ~110).
+ *
+ * The tab talks to the new /api/notifications/prefs endpoint:
+ *   GET  → { prefs: { offers: true, invoices: true, ... } }
+ *   PUT  → { offers: false }   (partial update, server merges)
+ *
+ * Default-on for every key — a fresh user with no row set should still
+ * receive all notification types (the API normalizes missing keys to true).
+ */
+interface NotifPrefs {
+  offers: boolean;
+  invoices: boolean;
+  messages: boolean;
+  kyc: boolean;
+  marketplace: boolean;
+  trial: boolean;
+  system: boolean;
+}
+const DEFAULT_NOTIF_PREFS: NotifPrefs = {
+  offers: true, invoices: true, messages: true, kyc: true,
+  marketplace: true, trial: true, system: true,
+};
+
+const NOTIF_PREF_ROWS: { key: keyof NotifPrefs; icon: ComponentType<{ className?: string }>; titleKey: string; descKey: string }[] = [
+  { key: "offers",      icon: FileText,      titleKey: "notif-prefs-offers",      descKey: "notif-prefs-offers-desc" },
+  { key: "invoices",    icon: DollarSign,    titleKey: "notif-prefs-invoices",    descKey: "notif-prefs-invoices-desc" },
+  { key: "messages",    icon: MessageSquare, titleKey: "notif-prefs-messages",    descKey: "notif-prefs-messages-desc" },
+  { key: "kyc",         icon: ShieldCheck,   titleKey: "notif-prefs-kyc",          descKey: "notif-prefs-kyc-desc" },
+  { key: "marketplace", icon: Store,         titleKey: "notif-prefs-marketplace", descKey: "notif-prefs-marketplace-desc" },
+  { key: "trial",       icon: Clock,         titleKey: "notif-prefs-trial",       descKey: "notif-prefs-trial-desc" },
+  { key: "system",      icon: Info,          titleKey: "notif-prefs-system",      descKey: "notif-prefs-system-desc" },
+];
+
+function NotificationsTab() {
+  const t = useT();
+  const [prefs, setPrefs] = useState<NotifPrefs>(DEFAULT_NOTIF_PREFS);
+  const [loading, setLoading] = useState(true);
+  const [savingKey, setSavingKey] = useState<keyof NotifPrefs | null>(null);
+
+  useEffect(() => {
+    let active = true;
+// eslint-disable-next-line react-hooks/set-state-in-effect
+    setLoading(true);
+    fetch("/api/notifications/prefs")
+      .then((r) => r.json())
+      .then((data) => {
+        if (!active) return;
+        // Merge with defaults so missing keys stay on (server default-on
+        // semantics mirrored client-side for snappy UI before fetch resolves).
+        const next: NotifPrefs = { ...DEFAULT_NOTIF_PREFS };
+        const incoming = data?.prefs;
+        if (incoming && typeof incoming === "object") {
+          for (const k of Object.keys(DEFAULT_NOTIF_PREFS) as (keyof NotifPrefs)[]) {
+            if (incoming[k] === false) next[k] = false;
+          }
+        }
+        setPrefs(next);
+      })
+      .catch(() => toast.error("Failed to load notification preferences."))
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  async function toggle(key: keyof NotifPrefs, value: boolean) {
+    // Optimistic update so the toggle flips immediately — the API round
+    // trip is fast but the user expects Switch to be instant.
+    setPrefs((prev) => ({ ...prev, [key]: value }));
+    setSavingKey(key);
+    try {
+      const r = await fetch("/api/notifications/prefs", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [key]: value }),
+      });
+      if (!r.ok) throw new Error("Failed");
+      toast.success(t("notif-prefs-saved"));
+    } catch {
+      // Revert on failure.
+      setPrefs((prev) => ({ ...prev, [key]: !value }));
+      toast.error(t("notif-prefs-save-failed"));
+    } finally {
+      setSavingKey(null);
+    }
+  }
+
+  if (loading) {
+    return (
+      <Card className="border-border/60 shadow-soft rounded-xl">
+        <CardContent className="p-6 space-y-3">
+          {Array.from({ length: 7 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="border-border/60 shadow-soft rounded-xl">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2"><Bell className="size-5" /> {t("notif-prefs-title")}</CardTitle>
+        <CardDescription>{t("notif-prefs-desc")}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-1">
+        {NOTIF_PREF_ROWS.map((row) => {
+          const Icon = row.icon;
+          const isSaving = savingKey === row.key;
+          return (
+            <div
+              key={row.key}
+              className="flex items-start justify-between gap-3 py-3 border-b border-border/40 last:border-0"
+            >
+              <div className="flex items-start gap-3 min-w-0">
+                <div className="size-8 rounded-lg bg-muted/50 flex items-center justify-center shrink-0 text-muted-foreground">
+                  <Icon className="size-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">{t(row.titleKey)}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{t(row.descKey)}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {isSaving && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
+                <Switch
+                  checked={prefs[row.key]}
+                  onCheckedChange={(v) => toggle(row.key, v)}
+                  aria-label={t(row.titleKey)}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
+  );
+}
 
 function MemorandumTab() {
   const api = useApiUrl();

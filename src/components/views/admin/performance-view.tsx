@@ -137,7 +137,11 @@ export function PerformanceView() {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       return r.json() as Promise<PerformanceResponse>;
     },
-    refetchInterval: 15_000,
+    // REALTIME-WS: 15s → 30s. Performance metrics are aggregated server-side
+    // from many sources; 15s polling thrashed the DB without yielding
+    // meaningfully fresher numbers. 30s still feels live for a metrics
+    // dashboard, and the data is only consumed by super_admins (small N).
+    refetchInterval: 30_000,
     refetchOnWindowFocus: true,
     enabled: isSuper,
   });

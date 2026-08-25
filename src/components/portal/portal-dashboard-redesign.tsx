@@ -216,7 +216,10 @@ export function PortalDashboardRedesign() {
       if (!r.ok) return { items: [], total: 0 };
       return r.json();
     },
-    refetchInterval: 30_000,
+    // REALTIME-WS: 30s → 60s. Dashboard widgets don't need 30s freshness;
+    // live events (offer/invoice/portal) are pushed by the realtime gateway
+    // and surface via useRealtime in the parent PortalShell.
+    refetchInterval: 60_000,
   });
 
   // Latest marketplace posts — the "what's happening" feed.

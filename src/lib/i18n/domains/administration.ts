@@ -332,6 +332,10 @@ export const ADMINISTRATION: Record<Locale, Record<string, string>> = {
     "admin-settings-tab-preferences": "Preferences",
     "admin-settings-tab-password": "Password",
     "admin-settings-tab-memorandum": "Memorandum",
+    // NOTIF-UX — per-type notification preferences tab. Visible to all
+    // admins (not gated by canManageDangerousSettings) because it only
+    // edits the user's own `notif_prefs` column — no tenant-wide posture.
+    "admin-settings-tab-notifications": "Notifications",
     "admin-settings-admin-required": "Admin access required",
     "admin-settings-failed-load": "Failed to load settings.",
     "admin-settings-saved": "Settings saved.",
@@ -1044,6 +1048,7 @@ export const ADMINISTRATION: Record<Locale, Record<string, string>> = {
     "admin-settings-tab-preferences": "Preferencije",
     "admin-settings-tab-password": "Lozinka",
     "admin-settings-tab-memorandum": "Memorandum",
+    "admin-settings-tab-notifications": "Obaveštenja",
     "admin-settings-admin-required": "Neophodan administratorski pristup",
     "admin-settings-failed-load": "Neuspešno učitavanje podešavanja.",
     "admin-settings-saved": "Podešavanja sačuvana.",
@@ -1765,6 +1770,7 @@ export const ADMINISTRATION: Record<Locale, Record<string, string>> = {
     "admin-settings-tab-preferences": "Tercihler",
     "admin-settings-tab-password": "Parola",
     "admin-settings-tab-memorandum": "Mutabakat",
+    "admin-settings-tab-notifications": "Bildirimler",
     "admin-settings-admin-required": "Yönetici erişimi gerekli",
     "admin-settings-failed-load": "Ayarlar yüklenemedi.",
     "admin-settings-saved": "Ayarlar kaydedildi.",
@@ -2485,6 +2491,7 @@ export const ADMINISTRATION: Record<Locale, Record<string, string>> = {
     "admin-settings-tab-preferences": "Einstellungen",
     "admin-settings-tab-password": "Passwort",
     "admin-settings-tab-memorandum": "Memorandum",
+    "admin-settings-tab-notifications": "Benachrichtigungen",
     "admin-settings-admin-required": "Administratorzugriff erforderlich",
     "admin-settings-failed-load": "Einstellungen konnten nicht geladen werden.",
     "admin-settings-saved": "Einstellungen gespeichert.",
@@ -3205,6 +3212,7 @@ export const ADMINISTRATION: Record<Locale, Record<string, string>> = {
     "admin-settings-tab-preferences": "Предпочтения",
     "admin-settings-tab-password": "Пароль",
     "admin-settings-tab-memorandum": "Меморандум",
+    "admin-settings-tab-notifications": "Уведомления",
     "admin-settings-admin-required": "Требуется доступ администратора",
     "admin-settings-failed-load": "Не удалось загрузить настройки.",
     "admin-settings-saved": "Настройки сохранены.",

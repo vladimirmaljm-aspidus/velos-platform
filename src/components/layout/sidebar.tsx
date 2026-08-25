@@ -14,7 +14,7 @@ import {
   ChevronLeft, ChevronRight, Building2, Calculator,
   ToggleRight, LayoutGrid, Plug, DollarSign, BookMarked, Calendar,
   StickyNote, Briefcase, Settings2, TrendingUp, Truck, MapPin,
-  Shield, Globe, Gauge, Store, UserPlus,
+  Shield, Globe, Gauge, Store, UserPlus, Bell,
 } from "lucide-react";
 import {
   Tooltip,
@@ -155,6 +155,14 @@ const SECTIONS: NavSection[] = [
       { key: "audit", i18nKey: "audit", i18nSection: "administration", icon: ScrollText, permission: "audit.read" },
       { key: "portal-locations", i18nKey: "portal-locations", i18nSection: "administration", icon: MapPin, permission: "portal.read", featureFlag: "module_portal" },
       { key: "plans", i18nKey: "plans", i18nSection: "administration", icon: TrendingUp, permission: "platform.plans.read" },
+      // NOTIF-UX — full-page notifications surface. Sits at the bottom of
+      // the Administration section. `notifications.read` is in the default
+      // permission set (PERMISSION_CATALOG.READ.notifications.read) so every
+      // admin sees this entry; super_admin bypasses the gate anyway. The
+      // Bell icon mirrors the topbar dropdown so the two surfaces read as
+      // the same feature at different granularities (quick glance vs. full
+      // history).
+      { key: "notifications", i18nKey: "notifications", i18nSection: "administration", icon: Bell, permission: "notifications.read" },
     ],
   },
   {

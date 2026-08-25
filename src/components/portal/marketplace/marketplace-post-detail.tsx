@@ -174,7 +174,10 @@ export function MarketplacePostDetail({ postId }: { postId: string }) {
       if (!r.ok) throw new Error("failed");
       return r.json();
     },
-    refetchInterval: 30_000,
+    // REALTIME-WS: 30s → 60s. The post itself rarely changes; the auction
+    // widget below polls bids at 5s for live bidding, and per-message
+    // notifications invalidate this query when the post is updated.
+    refetchInterval: 60_000,
   });
 
   // UI-3 step 3 — related posts. Fetch by category, exclude the current post.

@@ -79,6 +79,10 @@ const MarketplaceAdminView = dynamic(() => import("@/components/views/admin/mark
 // tenants. Dynamic + ssr:false so the heavy admin surface stays out of
 // the initial bundle.
 const SignupRequestsView = dynamic(() => import("@/components/views/signup-requests-view").then((m) => m.SignupRequestsView), { ssr: false });
+// NOTIF-UX — full-page notifications surface (Administration section).
+// Dynamic + ssr:false to keep the heavy date-grouping / icon-map logic
+// out of the initial bundle.
+const NotificationsView = dynamic(() => import("@/components/views/notifications-view").then((m) => m.NotificationsView), { ssr: false });
 
 /* -------------------------------------------------------------------------- */
 /*  View renderer                                                             */
@@ -140,6 +144,7 @@ function ViewContent({ view }: { view: string }) {
     case "trade-globe":         return <TradeGlobeView />;
     case "marketplace-admin":   return <MarketplaceAdminView />;
     case "signup-requests":     return <SignupRequestsView />;
+    case "notifications":       return <NotificationsView />;
     default:                     return <DashboardView />;
   }
 }

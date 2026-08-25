@@ -213,7 +213,11 @@ export function PortalDashboard() {
       if (!r.ok) throw new Error("Failed to load notifications");
       return r.json();
     },
-    refetchInterval: 30_000,
+    // REALTIME-WS: 30s → 60s. Dashboard KPIs don't change every 30s; the
+    // realtime gateway pushes offer/invoice/portal events which invalidate
+    // this query via useRealtime in the parent PortalShell, so the visible
+    // data stays fresh without this aggressive polling.
+    refetchInterval: 60_000,
   });
 
   if (!portalAccess) return null;
