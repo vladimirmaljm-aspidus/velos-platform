@@ -7,7 +7,7 @@ export async function GET() {
   try {
     const session = await getSessionFromCookie();
     if (!session) {
-      return NextResponse.json({ user: null }, { status: 200 });
+      return NextResponse.json({ user: null }, { status: 401 });
     }
 
     // Dynamically import store to avoid crashes if DB is not configured
@@ -15,12 +15,12 @@ export async function GET() {
     const store = await getStore();
     const user = await store.getUserById(session.sub);
     if (!user || !user.active) {
-      return NextResponse.json({ user: null }, { status: 200 });
+      return NextResponse.json({ user: null }, { status: 401 });
     }
 
     // token version mismatch → invalid session
     if (user.token_version !== session.token_version) {
-      return NextResponse.json({ user: null }, { status: 200 });
+      return NextResponse.json({ user: null }, { status: 401 });
     }
 
     // ── Impersonation surface ─────────────────────────────────────────────
