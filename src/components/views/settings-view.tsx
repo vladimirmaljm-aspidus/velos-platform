@@ -313,15 +313,34 @@ function useSettingLoader<T>(key: string, fallback: T) {
   const tenantKey = useTenantKey();
 
   const [value, setValue] = useState<T>(fallback);
+  const [loaded, setLoaded] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  // FIX-UX #4: dirty flag = local value diverged from the last value the
+  // server returned. Drives the beforeunload guard so a tab close / refresh
+  // with unsaved settings edits prompts the user.
+  const isDirty = loaded !== null && JSON.stringify(value) !== JSON.stringify(loaded);
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isDirty]);
 
   useEffect(() => {
     let active = true;
 // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     fetchSetting<T>(key, fallback, api)
-      .then((v) => { if (active) setValue(v); })
+      .then((v) => {
+        if (!active) return;
+        setValue(v);
+        setLoaded(v);
+      })
       .catch(() => toast.error("Failed to load settings."))
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
@@ -340,6 +359,8 @@ function useSettingLoader<T>(key: string, fallback: T) {
         const e = await r.json().catch(() => ({}));
         throw new Error(e.error || "Failed to save settings");
       }
+      // Mark the saved value as "loaded" so isDirty clears.
+      setLoaded(next);
       toast.success("Settings saved.");
     } catch (e: any) {
       toast.error(e.message || "Failed to save settings.");
@@ -348,7 +369,7 @@ function useSettingLoader<T>(key: string, fallback: T) {
     }
   }
 
-  return { value, setValue, loading, saving, save };
+  return { value, setValue, loading, saving, save, isDirty };
 }
 
 function CompanyTab() {
@@ -2623,6 +2644,20 @@ function ChangePasswordTab() {
   const [showNext, setShowNext] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  // FIX-UX #4: warn before closing/refreshing the tab once the user has
+  // started typing a password. Avoids losing a half-typed password
+  // (especially painful on mobile).
+  const pwDirty = current.length > 0 || next.length > 0 || confirm.length > 0;
+  useEffect(() => {
+    if (!pwDirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [pwDirty]);
 
   // Local validation gates — the server is the source of truth
   // (it loads the platform policy from settings.security_config), so

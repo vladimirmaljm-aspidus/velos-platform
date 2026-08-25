@@ -256,6 +256,43 @@ export function PartnersView() {
     enabled: !!detailId,
   });
 
+  // FIX-UX #3: related-entity counts for the delete-confirm dialog. When a
+  // user clicks "delete" on a partner, we fire one cheap request per entity
+  // (deals / offers / invoices) using `?partner_id=X&limit=1` so the dialog
+  // can show concrete counts + gate type-to-confirm behind non-zero totals.
+  const relatedCounts = useQuery({
+    queryKey: ["partner-related-counts", tenantKey, deleteId],
+    queryFn: async () => {
+      if (!deleteId) return null;
+      const [dealsR, offersR, invoicesR] = await Promise.all([
+        fetch(api(`/api/deals?partner_id=${deleteId}&limit=1`)),
+        fetch(api(`/api/offers?partner_id=${deleteId}&limit=1`)),
+        fetch(api(`/api/invoices?partner_id=${deleteId}&limit=1`)),
+      ]);
+      const safeTotal = async (r: Response) => {
+        try {
+          const j = await r.json();
+          return Number(j?.total ?? j?.items?.length ?? 0) || 0;
+        } catch { return 0; }
+      };
+      const [deals, offers, invoices] = await Promise.all([
+        safeTotal(dealsR), safeTotal(offersR), safeTotal(invoicesR),
+      ]);
+      return { deals, offers, invoices };
+    },
+    enabled: !!deleteId,
+  });
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  // When the delete dialog closes, clear the type-to-confirm input. We
+  // wire this into the AlertDialog's onOpenChange below (not via useEffect)
+  // to avoid the react-hooks/set-state-in-effect lint warning.
+  const closeDeleteDialog = (o: boolean) => {
+    if (!o) {
+      setDeleteId(null);
+      setDeleteConfirmText("");
+    }
+  };
+
   const deleteMut = useMutation({
     mutationFn: async (id: string) => {
       const r = await fetch(api(`/api/partners/${id}`), { method: "DELETE" });
@@ -274,6 +311,15 @@ export function PartnersView() {
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const rowSel = useRowSelection(items);
+
+  // Derive delete-confirm helpers AFTER `items` is declared (the dialog
+  // needs the partner name from the local cache).
+  const deletePartnerName = items.find((p) => p.id === deleteId)?.name || "";
+  const relatedTotal =
+    (relatedCounts.data?.deals || 0) +
+    (relatedCounts.data?.offers || 0) +
+    (relatedCounts.data?.invoices || 0);
+  const canDeletePartner = relatedTotal === 0 || deleteConfirmText === deletePartnerName;
 
   // Bulk delete — loop through DELETE /api/partners/[id] for each selected
   // partner. (No server-side bulk endpoint for partners exists yet — they
@@ -665,7 +711,7 @@ export function PartnersView() {
       </Sheet>
 
       {/* Delete confirm */}
-      <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
+      <AlertDialog open={!!deleteId} onOpenChange={closeDeleteDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t("crm-delete-partner-title")}</AlertDialogTitle>
@@ -673,11 +719,33 @@ export function PartnersView() {
               {t("crm-delete-partner-desc")}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {/* FIX-UX #3: cascade warning + type-to-confirm for partners with
+              deals / offers / invoices. Hides itself when no related rows. */}
+          {relatedCounts.data && relatedTotal > 0 && (
+            <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 space-y-2 text-sm">
+              <p className="font-medium text-destructive">
+                This will also orphan {relatedCounts.data.deals} deal(s), {relatedCounts.data.offers} offer(s), and {relatedCounts.data.invoices} invoice(s) linked to {deletePartnerName || "this partner"}.
+              </p>
+              <p className="text-muted-foreground">
+                Those records will remain in the system but lose their partner reference. To proceed, type the partner name <span className="font-mono font-semibold">{deletePartnerName}</span> below.
+              </p>
+              <Input
+                placeholder="Type the partner name to confirm"
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                aria-label="Type partner name to confirm delete"
+              />
+            </div>
+          )}
+          {relatedCounts.isLoading && (
+            <p className="text-xs text-muted-foreground">Checking related records…</p>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => deleteId && deleteMut.mutate(deleteId)}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteId && canDeletePartner && deleteMut.mutate(deleteId)}
+              disabled={!canDeletePartner || deleteMut.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
             >
               {t("delete")}
             </AlertDialogAction>
@@ -1532,14 +1600,18 @@ function PartnerFormDialog({
   const [showOtherTypes, setShowOtherTypes] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [quickCreate, setQuickCreate] = useState(true);
+  // FIX-UX #4: dirty tracking so a beforeunload guard can warn before the
+  // user loses their typed-in data on tab close / refresh / route change.
+  const [isDirty, setIsDirty] = useState(false);
 
   const isEditing = !!partner;
 
   // Fix: use useEffect instead of useMemo for side effects
   useEffect(() => {
     if (open) {
-      if (partner) {
 // eslint-disable-next-line react-hooks/set-state-in-effect
+      setIsDirty(false);
+      if (partner) {
         setForm({ ...partner });
         setShowOtherTypes(["logistics", "customs", "bank", "inspector"].includes(partner.type));
         // When editing, open "More Details" if any advanced field has data
@@ -1562,9 +1634,48 @@ function PartnerFormDialog({
     }
   }, [open, partner]);
 
+  // beforeunload guard — fires the browser's "Leave site?" prompt when the
+  // form has unsaved edits. Cleared automatically on unmount by the cleanup
+  // function returned from useEffect.
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isDirty]);
+
   function set<K extends keyof Partner>(k: K, v: Partner[K]) {
     setForm((f) => ({ ...f, [k]: v }));
+    setIsDirty(true);
   }
+
+  // FIX-UX #2: inline validation. Email format check is enforced (block
+  // save), phone + tax_id format warnings are surfaced inline but don't
+  // block save (since they're optional + country-dependent).
+  const trimmedName = (form.name || "").trim();
+  const nameErr = !trimmedName ? t("crm-name-required-toast") : "";
+  const emailVal = (form.email || "").trim();
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const emailErr = emailVal && !emailRegex.test(emailVal)
+    ? "Enter a valid email address (e.g. name@company.com)."
+    : "";
+  // Quick-create requires a non-empty email (existing rule). Full form
+  // treats email as optional — but if provided, must be valid.
+  const emailMissingErr = !isEditing && quickCreate && !emailVal
+    ? t("crm-email-required-quick")
+    : "";
+  const phoneVal = (form.phone || "").trim();
+  const phoneWarn = phoneVal && !/^[+\d][\d\s()-]{4,}$/.test(phoneVal)
+    ? "Phone number looks unusual — verify the country code."
+    : "";
+  const taxIdVal = (form.tax_id || "").trim();
+  const taxIdWarn = taxIdVal && /\s/.test(taxIdVal)
+    ? "Tax IDs usually don't contain spaces — double-check."
+    : "";
+  const isValid = !nameErr && !emailErr && !emailMissingErr;
 
   // Auto-generate partner code from name
   const handleNameChange = useCallback((name: string) => {
@@ -1579,13 +1690,15 @@ function PartnerFormDialog({
   }, [isEditing]);
 
   async function save() {
-    if (!form.name?.trim()) { toast.error(t("crm-name-required-toast")); return; }
-    if (quickCreate && !form.email?.trim()) { toast.error(t("crm-email-required-quick")); return; }
+    if (!isValid) {
+      toast.error(nameErr || emailErr || emailMissingErr);
+      return;
+    }
     setSaving(true);
     try {
       const method = partner ? "PUT" : "POST";
       const url = partner ? api(`/api/partners/${partner.id}`) : api("/api/partners");
-      const payload = { ...form, risk_score: form.risk_score ?? 0, name: form.name.trim() };
+      const payload = { ...form, risk_score: form.risk_score ?? 0, name: (form.name || "").trim() };
       const r = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
@@ -1654,7 +1767,9 @@ function PartnerFormDialog({
                     placeholder={t("crm-partner-name-ph")}
                     className="text-lg"
                     autoFocus
+                    aria-invalid={!!nameErr}
                   />
+                  {nameErr && <p className="text-xs text-destructive">{nameErr}</p>}
                 </div>
 
                 {/* Type - Visual Buttons */}
@@ -1723,7 +1838,11 @@ function PartnerFormDialog({
                     value={form.email || ""}
                     onChange={(e) => set("email", e.target.value)}
                     placeholder={t("crm-email-ph")}
+                    aria-invalid={!!emailErr || !!emailMissingErr}
                   />
+                  {(emailMissingErr || emailErr) && (
+                    <p className="text-xs text-destructive">{emailMissingErr || emailErr}</p>
+                  )}
                 </div>
 
                 {/* Phone (optional) */}
@@ -1734,7 +1853,9 @@ function PartnerFormDialog({
                     value={form.phone || ""}
                     onChange={(e) => set("phone", e.target.value)}
                     placeholder={t("crm-phone-ph")}
+                    aria-invalid={!!phoneWarn}
                   />
+                  {phoneWarn && <p className="text-xs text-amber-600 dark:text-amber-400">{phoneWarn}</p>}
                 </div>
               </div>
             ) : (
@@ -1743,7 +1864,8 @@ function PartnerFormDialog({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div className="md:col-span-2 space-y-1.5">
                     <Label>{t("crm-partner-name-required")}</Label>
-                    <Input value={form.name || ""} onChange={(e) => handleNameChange(e.target.value)} placeholder="Acme Trading Ltd." />
+                    <Input value={form.name || ""} onChange={(e) => handleNameChange(e.target.value)} placeholder="Acme Trading Ltd." aria-invalid={!!nameErr} />
+                    {nameErr && <p className="text-xs text-destructive">{nameErr}</p>}
                   </div>
 
                   {/* Type - Visual Buttons for full form too */}
@@ -1802,11 +1924,13 @@ function PartnerFormDialog({
 
                   <div className="space-y-1.5">
                     <Label>{t("email")}</Label>
-                    <Input type="email" value={form.email || ""} onChange={(e) => set("email", e.target.value)} placeholder="contact@company.com" />
+                    <Input type="email" value={form.email || ""} onChange={(e) => set("email", e.target.value)} placeholder="contact@company.com" aria-invalid={!!emailErr} />
+                    {emailErr && <p className="text-xs text-destructive">{emailErr}</p>}
                   </div>
                   <div className="space-y-1.5">
                     <Label>{t("crm-contact-phone")}</Label>
-                    <Input value={form.phone || ""} onChange={(e) => set("phone", e.target.value)} placeholder="+1 555 123 4567" />
+                    <Input value={form.phone || ""} onChange={(e) => set("phone", e.target.value)} placeholder="+1 555 123 4567" aria-invalid={!!phoneWarn} />
+                    {phoneWarn && <p className="text-xs text-amber-600 dark:text-amber-400">{phoneWarn}</p>}
                   </div>
                 </div>
 
@@ -1853,7 +1977,8 @@ function PartnerFormDialog({
                           </div>
                           <div className="space-y-1.5">
                             <Label>{t("crm-tax-id")}</Label>
-                            <Input value={form.tax_id || ""} onChange={(e) => set("tax_id", e.target.value)} placeholder={t("crm-tax-id-ph")} />
+                            <Input value={form.tax_id || ""} onChange={(e) => set("tax_id", e.target.value)} placeholder={t("crm-tax-id-ph")} aria-invalid={!!taxIdWarn} />
+                            {taxIdWarn && <p className="text-xs text-amber-600 dark:text-amber-400">{taxIdWarn}</p>}
                           </div>
                           <div className="space-y-1.5">
                             <Label>{t("crm-vat-number")}</Label>
@@ -2013,7 +2138,7 @@ function PartnerFormDialog({
 
         <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>{t("cancel")}</Button>
-          <Button onClick={save} disabled={saving}>
+          <Button onClick={save} disabled={saving || !isValid}>
             {saving ? t("crm-saving-ellipsis") : (partner ? t("crm-save-changes") : quickCreate ? t("crm-create-partner") : t("crm-create-partner"))}
           </Button>
         </DialogFooter>

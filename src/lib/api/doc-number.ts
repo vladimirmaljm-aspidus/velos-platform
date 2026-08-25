@@ -95,3 +95,99 @@ export function formatDocNumber(
             : "RFQ";
   return `${prefix}-${year}-${String(seq).padStart(4, "0")}`;
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// Document Register auto-numbering (FIX-UX)
+//
+// `document_register` rows used to receive whatever `number` the client
+// supplied. Concurrent creates could collide (and many rows persisted with
+// `number=null` when the client omitted it). Unlike invoices/proformas,
+// there is NO `document_register_*_seq` Postgres SEQUENCE in the migrations —
+// so we synthesise a per-tenant, per-type sequence client-side by reading
+// MAX(number) for the type and incrementing. A unique-violation retry loop
+// protects against the rare race where two concurrent POSTs each read the
+// same MAX and produce the same next number.
+// ────────────────────────────────────────────────────────────────────────────
+
+const DOC_REGISTER_PREFIX: Record<string, string> = {
+  contract: "CONTRACT",
+  invoice: "INVOICE",
+  proforma: "PROFORMA",
+  offer: "OFFER",
+  spec: "SPEC",
+  other: "DOC",
+};
+
+function docRegisterPrefix(type: string): string {
+  return DOC_REGISTER_PREFIX[type] || String(type || "DOC").toUpperCase().slice(0, 8);
+}
+
+/** Extract the trailing `-NNN` sequence from a document-register number.
+ *  Returns 0 when the number doesn't match the expected `PREFIX-YEAR-NNN`
+ *  shape (legacy rows, free-form numbers, etc.). */
+function parseSeq(num: string): number {
+  const m = String(num || "").match(/-(\d+)$/);
+  return m ? parseInt(m[1], 10) : 0;
+}
+
+/**
+ * Atomically reserve the next document-register number for the given
+ * tenant + type, formatted as `${PREFIX}-${YEAR}-${SEQ}` (SEQ zero-padded
+ * to 3 digits, matching the spec example "CONTRACT-2026-001").
+ *
+ * Returns null when Supabase isn't configured (local dev/CI) so the caller
+ * can fall back to whatever the client supplied (or an empty string).
+ *
+ * NOTE: this is NOT a true atomic SEQUENCE — it's MAX(number)+1 with a
+ * retry-on-collision loop in the caller. For low-volume document_register
+ * uploads this is acceptable; if volume grows, add a Postgres SEQUENCE
+ * (mirroring migration 004) and call it via RPC.
+ */
+export async function nextDocRegisterNumber(
+  tenantId: string,
+  type: string,
+): Promise<string | null> {
+  if (!isSupabaseConfigured()) return null;
+  if (!tenantId || !type) return null;
+  try {
+    const sb = getSupabase();
+    const prefix = docRegisterPrefix(type);
+    const year = new Date().getFullYear();
+    // Pattern: any string ending in `${prefix}-${year}-NNN`
+    const likePattern = `${prefix}-${year}-%`;
+    const { data, error } = await sb
+      .from("document_register")
+      .select("number")
+      .eq("tenant_id", tenantId)
+      .eq("type", type)
+      .like("number", likePattern)
+      .order("number", { ascending: false })
+      .limit(1);
+    if (error) {
+      console.warn("[doc-number] doc_register MAX query failed:", error.message);
+      return null;
+    }
+    const maxSeq = Array.isArray(data) && data.length > 0
+      ? parseSeq((data[0] as { number?: string }).number || "")
+      : 0;
+    const nextSeq = maxSeq + 1;
+    return `${prefix}-${year}-${String(nextSeq).padStart(3, "0")}`;
+  } catch (e: any) {
+    console.warn("[doc-number] nextDocRegisterNumber threw:", e?.message || e);
+    return null;
+  }
+}
+
+/** Generate the n-th retry candidate (SEQ + offset) for the document
+ *  register number, keeping the same PREFIX-YEAR shape. Used by the
+ *  route's retry-on-collision loop. */
+export function bumpDocRegisterNumber(
+  current: string,
+  offset: number,
+): string {
+  // current looks like "CONTRACT-2026-001" — replace the trailing digits
+  // with (parseSeq(current) + offset) zero-padded to at least 3.
+  const base = String(current || "").replace(/-\d+$/, "");
+  const seq = parseSeq(current) + offset;
+  return `${base}-${String(seq).padStart(3, "0")}`;
+}

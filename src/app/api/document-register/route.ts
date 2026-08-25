@@ -5,6 +5,7 @@ import { verifyFileContent } from "@/lib/upload/verify-file";
 import { ALLOWED_MIME_TYPES, MAX_UPLOAD_SIZE, MAX_UPLOAD_SIZE_LABEL } from "@/lib/upload/constants";
 import type { DocumentRegisterEntry } from "@/lib/supabase/types";
 import { getSupabase } from "@/lib/supabase/client";
+import { nextDocRegisterNumber, bumpDocRegisterNumber } from "@/lib/api/doc-number";
 
 export const runtime = "nodejs";
 
@@ -170,7 +171,12 @@ export async function POST(req: NextRequest) {
       const partner_id = (formData.get("partner_id") as string | null) || null;
       const reference_id = (formData.get("reference_id") as string | null) || null;
       const version = Number(formData.get("version") ?? 1) || 1;
-      const number = (formData.get("number") as string | null) || null;
+      // FIX-UX #1: server-side auto-numbering. If the client omitted the
+      // number (or sent an empty string), generate one atomically from
+      // per-tenant, per-type sequence. Prevents collisions from concurrent
+      // uploads + the "number=null" footgun.
+      const suppliedNumber = (formData.get("number") as string | null)?.trim() || "";
+      const number = suppliedNumber || (await nextDocRegisterNumber(tid, type)) || "";
       const change_note = (formData.get("change_note") as string | null) || "";
       // Optional linking to existing deal / invoice / offer. Stored in
       // metadata so the UI's "Linked to" dropdown can populate.
@@ -211,29 +217,48 @@ export async function POST(req: NextRequest) {
 
       // Use direct INSERT (not smartUpsert which UPDATEs if id exists —
       // the pre-generated entryId doesn't exist yet so UPDATE fails with
-      // "Record not found").
+      // "Record not found"). Retry on unique-key collision (23505) — rare
+      // race when two concurrent uploads each read the same MAX(number)
+      // and produce the same next number. Up to 5 retries with SEQ+1.
       const insertPayload = { ...entry } as Record<string, unknown>;
       delete insertPayload.id; // let the DB generate the id
       const sb = getSupabase();
-      const { data: created, error: insertError } = await sb
-        .from("document_register")
-        .insert(insertPayload)
-        .select()
-        .single();
+      let created: DocumentRegisterEntry | null = null;
+      let insertError: { message?: string } | null = null;
+      for (let attempt = 0; attempt < 5 && !created; attempt++) {
+        const candidateNumber = attempt === 0
+          ? entry.number!
+          : bumpDocRegisterNumber(entry.number!, attempt);
+        insertPayload.number = candidateNumber;
+        const { data: inserted, error } = await sb
+          .from("document_register")
+          .insert(insertPayload)
+          .select()
+          .single();
+        if (error) {
+          // 23505 = unique_violation. Bump SEQ and retry. Other errors
+          // (including RLS denial / missing column) break out.
+          if (error.code === "23505" && attempt < 4) {
+            continue;
+          }
+          insertError = error;
+          break;
+        }
+        created = inserted as DocumentRegisterEntry;
+      }
       if (insertError || !created) {
         return NextResponse.json({ error: sanitizeError(insertError) || "Failed to create entry." }, { status: 500 });
       }
-      const createdEntry = created as DocumentRegisterEntry;
       await audit(
         auth.store,
         auth.user,
         req,
         "document.register.create",
         "document_register",
-        createdEntry.id,
-        { number: createdEntry.number, file_name: file.name, verification_status: "pending" },
+        created.id,
+        { number: created.number, file_name: file.name, verification_status: "pending" },
       );
-      return NextResponse.json(normalizeEntry(createdEntry));
+      return NextResponse.json(normalizeEntry(created));
     }
 
     // ── JSON path (backward compat with the existing "New Entry" dialog) ──
@@ -245,7 +270,49 @@ export async function POST(req: NextRequest) {
     }
     body.tenant_id = tid;
     if (!body.created_by) body.created_by = auth.user.id;
-    const created = await auth.store.upsertDocumentRegisterEntry(body);
+    // FIX-UX #1: server-side auto-numbering for the JSON path too. If the
+    // caller didn't supply a `number` (or supplied an empty string),
+    // generate one. Only do this for CREATE (no body.id) — preserves
+    // user-edited numbers on UPDATEs.
+    if (!body.id) {
+      const suppliedJsonNumber = typeof body.number === "string" ? body.number.trim() : "";
+      if (!suppliedJsonNumber) {
+        const generated = body.type
+          ? (await nextDocRegisterNumber(tid, body.type))
+          : null;
+        body.number = generated || body.number || "";
+      }
+    }
+    // Retry-on-collision loop for fresh inserts that go through the
+    // smartUpsert path. On 23505, bump SEQ and retry up to 5 times.
+    let created: DocumentRegisterEntry | null = null;
+    let lastErr: unknown = null;
+    const isCreate = !body.id;
+    const originalNumber = body.number;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        created = await auth.store.upsertDocumentRegisterEntry(body);
+        break;
+      } catch (e: any) {
+        lastErr = e;
+        // PGRST116 / 23505 → unique collision on the number. Bump and retry
+        // if we have a generated number to bump; otherwise bail.
+        const isCollision =
+          (e?.code === "23505") ||
+          /unique|duplicate|constraint/i.test(String(e?.message || ""));
+        if (isCreate && attempt < 4 && isCollision && originalNumber) {
+          body.number = bumpDocRegisterNumber(originalNumber, attempt + 1);
+          continue;
+        }
+        break;
+      }
+    }
+    if (!created) {
+      return NextResponse.json(
+        { error: sanitizeError(lastErr) || "Failed to create entry." },
+        { status: 500 },
+      );
+    }
     await audit(auth.store, auth.user, req, body.id ? "document.register.update" : "document.register.create", "document_register", created.id, { number: created.number });
     return NextResponse.json(normalizeEntry(created));
   } catch (error: any) {

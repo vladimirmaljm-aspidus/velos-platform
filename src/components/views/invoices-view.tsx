@@ -294,6 +294,16 @@ export function InvoicesView() {
 
   const deleteMut = useMutation({
     mutationFn: async (id: string) => {
+      // FIX-UX #3: client-side guard — only draft invoices can be deleted.
+      // Paid / sent / overdue invoices must be cancelled instead (the
+      // server enforces this too via status-transition rules; we surface
+      // it here for a faster, friendlier error).
+      const inv = items.find((i) => i.id === id);
+      if (inv && inv.status !== "draft") {
+        throw new Error(
+          `Invoices in "${inv.status}" status cannot be deleted — cancel them instead.`,
+        );
+      }
       const r = await fetch(api(`/api/invoices/${id}`), { method: "DELETE" });
       if (!r.ok) throw new Error("Failed to delete invoice");
     },
@@ -303,7 +313,7 @@ export function InvoicesView() {
       qc.invalidateQueries({ queryKey: ["dashboard", tenantKey] });
       setDeleteId(null);
     },
-    onError: () => toast.error(t("fin-delete-failed")),
+    onError: (e: any) => toast.error(e?.message || t("fin-delete-failed")),
   });
 
   // Create invoice from offer mutation
@@ -730,14 +740,30 @@ export function InvoicesView() {
           <AlertDialogHeader>
             <AlertDialogTitle>{t("fin-delete-invoice-title")}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t("fin-delete-invoice-desc")}
+              {(() => {
+                // FIX-UX #3: only allow delete for draft status. Paid/sent/
+                // overdue invoices must be cancelled instead — show a clear
+                // message + disable the destructive action button.
+                const inv = items.find((i) => i.id === deleteId);
+                if (inv && inv.status !== "draft") {
+                  return `This invoice is in "${inv.status}" status and cannot be deleted. Cancel it instead — cancelling preserves the record for audit history while voiding it.`;
+                }
+                return t("fin-delete-invoice-desc");
+              })()}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => deleteId && deleteMut.mutate(deleteId)}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={
+                deleteMut.isPending ||
+                (() => {
+                  const inv = items.find((i) => i.id === deleteId);
+                  return !!inv && inv.status !== "draft";
+                })()
+              }
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
             >
               {t("delete")}
             </AlertDialogAction>
@@ -1437,6 +1463,9 @@ function InvoiceFormDialog({
     invoices: any[];
     proformas: any[];
   } | null>(null);
+  // FIX-UX #4: dirty flag drives the beforeunload guard so a tab close /
+  // refresh / route change with unsaved invoice edits prompts the user.
+  const [isDirty, setIsDirty] = useState(false);
 
   // Collapsible section states
   const isEditing = !!invoice;
@@ -1467,6 +1496,7 @@ function InvoiceFormDialog({
   useEffect(() => {
     if (open) {
 // eslint-disable-next-line react-hooks/set-state-in-effect
+      setIsDirty(false);
       setPartnerContext(null);
       if (invoice) {
         setForm({
@@ -1492,6 +1522,18 @@ function InvoiceFormDialog({
       }
     }
   }, [open, invoice]);
+
+  // beforeunload guard — fires the browser's "Leave site?" prompt when the
+  // invoice form has unsaved edits. Cleanup on unmount / when isDirty clears.
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isDirty]);
 
   // Fetch partner context when a partner is selected
   const fetchPartnerContext = useCallback(async (partnerId: string) => {
@@ -1624,6 +1666,7 @@ function InvoiceFormDialog({
 
   function set<K extends keyof Invoice>(k: K, v: Invoice[K]) {
     setForm((f) => ({ ...f, [k]: v }));
+    setIsDirty(true);
   }
 
   // Handle payment terms change — auto-calculate due date
@@ -1642,6 +1685,7 @@ function InvoiceFormDialog({
       items[idx] = { ...items[idx], ...patch };
       return { ...f, items };
     });
+    setIsDirty(true);
   }
 
   /**
@@ -1722,6 +1766,7 @@ function InvoiceFormDialog({
         quantity: 1, unit_price: 0, discount: 0, tax_rate: 20, total: 0,
       }],
     }));
+    setIsDirty(true);
   }
 
   function removeItem(idx: number) {
@@ -1729,13 +1774,51 @@ function InvoiceFormDialog({
       ...f,
       items: (f.items || []).filter((_, i) => i !== idx),
     }));
+    setIsDirty(true);
   }
 
   // Auto-calculate totals when items change
   const totals = useMemo(() => computeTotals(form.items || []), [form.items]);
 
+  // FIX-UX #2: inline validation for invoice form.
+  // - Partner required (existing rule, surfaced inline).
+  // - Due date must be today or in the future (warn — older drafts may
+  //   legitimately have past due dates when editing).
+  // - At least 1 line item required to save (block).
+  // - Each line: quantity > 0 (block) and price >= 0 (block when negative).
+  const partnerErr = !form.partner_id ? t("fin-select-partner-toast") : "";
+  const items = form.items || [];
+  const hasItems = items.length > 0;
+  const itemsErr = !hasItems ? "Add at least one line item before saving." : "";
+  const lineItemErrs = items.map((it) => {
+    const qty = Number(it.quantity) || 0;
+    const price = Number(it.unit_price) || 0;
+    if (qty <= 0) return "Quantity must be greater than 0.";
+    if (price < 0) return "Price cannot be negative.";
+    return "";
+  });
+  const firstLineErr = lineItemErrs.find((e) => e) || "";
+  // Due-date check — only when the user has manually set a due date.
+  let dueDateErr = "";
+  if (form.due_date) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const due = new Date(form.due_date);
+    due.setHours(0, 0, 0, 0);
+    if (due.getTime() < today.getTime()) {
+      // For new invoices, past due dates are almost always a user error.
+      // For edits of existing invoices, accept it (the user may be
+      // correcting a back-dated invoice). Warn inline instead of blocking.
+      dueDateErr = isEditing ? "" : "Due date must be today or later.";
+    }
+  }
+  const isValid = !partnerErr && !itemsErr && !firstLineErr && !dueDateErr;
+
   async function save() {
-    if (!form.partner_id) { toast.error(t("fin-select-partner-toast")); return; }
+    if (!isValid) {
+      toast.error(partnerErr || itemsErr || firstLineErr || dueDateErr);
+      return;
+    }
     setSaving(true);
     try {
       const method = invoice ? "PUT" : "POST";
@@ -1764,6 +1847,7 @@ function InvoiceFormDialog({
       } else {
         toast.success(t("fin-invoice-created-toast"), { description: saved.number || "" });
       }
+      setIsDirty(false);
       onSaved();
     } catch (e: any) {
       toast.error(e.message || t("fin-failed-save"));
@@ -1816,6 +1900,7 @@ function InvoiceFormDialog({
                 placeholder={t("fin-select-partner")}
                 onSelect={(p) => p?.id && handlePartnerChange(p.id)}
               />
+              {partnerErr && <p className="text-xs text-destructive">{partnerErr}</p>}
             </div>
 
             <div className="space-y-1.5">
@@ -1859,7 +1944,9 @@ function InvoiceFormDialog({
                 type="date"
                 value={form.due_date ? form.due_date.slice(0, 10) : ""}
                 onChange={(e) => set("due_date", e.target.value ? new Date(e.target.value).toISOString() : null as unknown as string)}
+                aria-invalid={!!dueDateErr}
               />
+              {dueDateErr && <p className="text-xs text-destructive">{dueDateErr}</p>}
             </div>
 
             {/* Partner context info card */}
@@ -1977,13 +2064,18 @@ function InvoiceFormDialog({
                 </div>
 
                 {(form.items || []).length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-4 border rounded-md">
-                    {t("fin-no-items-yet")}
-                  </p>
+                  <div className="space-y-2 py-4 border rounded-md text-center">
+                    <p className="text-sm text-muted-foreground">
+                      {t("fin-no-items-yet")}
+                    </p>
+                    {itemsErr && <p className="text-xs text-destructive">{itemsErr}</p>}
+                  </div>
                 ) : (
                   <div className="space-y-2 max-h-72 overflow-y-auto custom-scroll pr-1">
-                    {(form.items || []).map((it, idx) => (
-                      <div key={idx} className="rounded-md border p-2 grid grid-cols-12 gap-1.5 items-end">
+                    {(form.items || []).map((it, idx) => {
+                      const lineErr = lineItemErrs[idx] || "";
+                      return (
+                      <div key={idx} className="rounded-md border p-2 grid grid-cols-12 gap-1.5 items-end" aria-invalid={!!lineErr}>
                         <div className="col-span-12 sm:col-span-3 space-y-1">
                           <Label className="text-xs">{t("fin-product")}</Label>
                           <ProductPicker
@@ -2019,7 +2111,11 @@ function InvoiceFormDialog({
                             className="h-9"
                             value={it.quantity}
                             onChange={(e) => setItem(idx, { quantity: Number(e.target.value) })}
+                            aria-invalid={Number(it.quantity) <= 0}
                           />
+                          {Number(it.quantity) <= 0 && (
+                            <p className="text-xs text-destructive">Qty must be &gt; 0</p>
+                          )}
                         </div>
                         <div className="col-span-4 sm:col-span-2 space-y-1">
                           <Label className="text-xs">{t("fin-unit")}</Label>
@@ -2088,7 +2184,8 @@ function InvoiceFormDialog({
                           {t("fin-line-total").replace("${money}", fmtMoney(lineTotal(it), form.currency || "EUR"))}
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
 
@@ -2194,7 +2291,7 @@ function InvoiceFormDialog({
 
         <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>{t("cancel")}</Button>
-          <Button onClick={save} disabled={saving}>
+          <Button onClick={save} disabled={saving || !isValid}>
             {saving ? t("fin-saving") : isEditing ? t("fin-save-changes") : t("fin-create-invoice-btn")}
           </Button>
         </DialogFooter>

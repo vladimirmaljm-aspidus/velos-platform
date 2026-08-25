@@ -654,11 +654,23 @@ export function ProductsView() {
               {t(locale, "crm-delete-product-inventory-desc")}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {/* FIX-UX #3: cascade warning — the catalog has no per-product
+              foreign key to offers/deals, so we can't cheaply fetch exact
+              counts, but a stale product_id reference in past offers /
+              invoices stays around after the product is deleted. Surface
+              this so the user doesn't get a surprise "Product not found"
+              in historical line items. */}
+          <div className="rounded-md border border-amber-400/40 bg-amber-50 dark:bg-amber-950/30 p-3 text-sm text-amber-700 dark:text-amber-400">
+            <p>
+              Past offers, deals, and invoices that referenced this product will keep their line-item records, but the product name / SKU shown against them will become "deleted product". Consider deactivating the product instead of deleting it if you want to preserve history.
+            </p>
+          </div>
           <AlertDialogFooter>
             <AlertDialogCancel>{t(locale, "cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => deleteId && deleteMut.mutate(deleteId)}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleteMut.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
             >
               {t(locale, "delete")}
             </AlertDialogAction>
@@ -992,13 +1004,35 @@ function ProductFormDialog({
     setForm((f) => ({ ...f, [k]: v }));
   }
 
+  // FIX-UX #2: inline validation state. We compute these from `form` so
+  // the submit button can disable + inline error text shows immediately.
+  const trimmedName = (form.name || "").trim();
+  const nameErr = !trimmedName ? t(locale, "crm-name-required") : "";
+  const priceNum = Number(form.price ?? 0);
+  const priceErr = !(priceNum > 0) ? "Price must be greater than 0." : "";
+  const skuValue = (form.sku || "").trim();
+  // SKU: alphanumeric + dashes only, no spaces. Empty is allowed (auto-gen).
+  const skuErr = skuValue && !/^[A-Za-z0-9-]+$/.test(skuValue)
+    ? "SKU may only contain letters, numbers, and dashes."
+    : "";
+  const hsCodeValue = ((form as any).hs_code || "").toString().trim();
+  const hsCodeErr = hsCodeValue && !/^\d+$/.test(hsCodeValue)
+    ? "HS code must be numeric (digits only)."
+    : "";
+  const isValid = !nameErr && !priceErr && !skuErr && !hsCodeErr;
+
   const handleAutoSku = useCallback(() => {
     const sku = generateSku(form.name || "");
     if (sku) set("sku", sku);
   }, [form.name]);
 
   async function save() {
-    if (!form.name) { toast.error(t(locale, "crm-name-required")); return; }
+    if (!isValid) {
+      // Surface the first failing field as a toast so the user knows
+      // why nothing happened.
+      toast.error(nameErr || priceErr || skuErr || hsCodeErr);
+      return;
+    }
     // Auto-generate SKU if not provided
     const finalSku = form.sku || generateSku(form.name || "");
     setSaving(true);
@@ -1044,9 +1078,11 @@ function ProductFormDialog({
                 value={form.name || ""}
                 onChange={(e) => set("name", e.target.value)}
                 placeholder="e.g. Aluminum Rod"
-                className="h-11 text-base"
+                className="text-lg h-11"
                 autoFocus
+                aria-invalid={!!nameErr}
               />
+              {nameErr && <p className="text-xs text-destructive">{nameErr}</p>}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -1059,7 +1095,9 @@ function ProductFormDialog({
                   value={form.price ?? 0}
                   onChange={(e) => set("price", Number(e.target.value))}
                   className="h-10"
+                  aria-invalid={!!priceErr}
                 />
+                {priceErr && <p className="text-xs text-destructive">{priceErr}</p>}
               </div>
               <div className="space-y-1.5">
                 <Label>{t(locale, "crm-unit")}</Label>
@@ -1104,7 +1142,9 @@ function ProductFormDialog({
                 onChange={(e) => set("sku", e.target.value)}
                 placeholder={t(locale, "crm-auto-generated-from-name")}
                 className="font-mono"
+                aria-invalid={!!skuErr}
               />
+              {skuErr && <p className="text-xs text-destructive">{skuErr}</p>}
             </div>
           </div>
 
@@ -1196,7 +1236,9 @@ function ProductFormDialog({
                       onChange={(e) => set("hs_code" as any, e.target.value)}
                       placeholder="e.g. 24031100"
                       className="font-mono"
+                      aria-invalid={!!hsCodeErr}
                     />
+                    {hsCodeErr && <p className="text-xs text-destructive">{hsCodeErr}</p>}
                   </div>
                 </div>
 
@@ -1345,7 +1387,7 @@ function ProductFormDialog({
 
         <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>{t(locale, "cancel")}</Button>
-          <Button onClick={save} disabled={saving}>
+          <Button onClick={save} disabled={saving || !isValid}>
             {saving ? t(locale, "crm-saving") : product ? t(locale, "crm-update") : t(locale, "crm-create-product")}
           </Button>
         </DialogFooter>

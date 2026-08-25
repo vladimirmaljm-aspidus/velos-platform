@@ -108,6 +108,30 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         }
       }
     }
+    // FIX-MED-1 / Fix 2 — server-side expiry check on accept. A user could
+    // accept an offer whose `valid_until` has passed (the status-validator
+    // only checks the transition graph, not the date). Block it here at
+    // the server: when the request transitions the offer TO "accepted"
+    // (case-insensitive) and `existing.valid_until` is in the past, refuse
+    // with 400. Super-admins bypass so they can correct legacy data.
+    //
+    // The check uses the EXISTING offer's valid_until (not the body's) —
+    // a caller cannot extend the deadline by sending a new valid_until in
+    // the same PUT that accepts the offer, because `valid_until` is not
+    // in the locked-fields list above and would otherwise be writable.
+    // (Even if it were, evaluating against the existing snapshot is the
+    // correct semantic: "the offer as the customer saw it has expired".)
+    const targetStatusNorm = String(sanitizedBody.status || "").toLowerCase();
+    const isAccepting = targetStatusNorm === "accepted"
+      && String(existing.status || "").toLowerCase() !== "accepted";
+    if (isAccepting && !isSuperAdmin
+        && existing.valid_until
+        && new Date(existing.valid_until).getTime() < Date.now()) {
+      return NextResponse.json(
+        { error: "Cannot accept an expired offer." },
+        { status: 400 },
+      );
+    }
     // FIX-P1-LOGIC Fix 1: enforce valid status transitions. Super-admins
     // bypass so they can correct bad data.
     if (sanitizedBody.status && sanitizedBody.status !== existing.status && !isSuperAdmin) {

@@ -60,6 +60,40 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
+    // FIX-MED-1 / Fix 1 — verify the bank_account_id belongs to the caller's
+    // tenant BEFORE creating the transaction. Without this check a user with
+    // `erp.create` permission could POST a bank transaction against another
+    // tenant's `bank_account_id` (the upsertErpBankTransaction store method
+    // stamps `tenant_id` on the *transaction* row but never verifies the
+    // referenced `bank_account_id` row — so the FK is satisfied across
+    // tenants and the cross-tenant leak goes unnoticed).
+    //
+    // `getErpBankAccount` is not part of the store interface, so we use a
+    // direct Supabase lookup on `erp_bank_accounts(tenant_id)` and require
+    // an exact match. The service_role client bypasses RLS — which is the
+    // correct behavior here because we're enforcing a tenant boundary at
+    // the application layer (the route already gated on `requireAdmin` +
+    // `erp.create` + `module_finance` feature gate).
+    if (!body.bank_account_id) {
+      return NextResponse.json({ error: "bank_account_id is required." }, { status: 400 });
+    }
+    const { getSupabase } = await import("@/lib/supabase/client");
+    const sb = getSupabase();
+    const { data: bankAccount, error: baErr } = await sb
+      .from("erp_bank_accounts")
+      .select("tenant_id")
+      .eq("id", body.bank_account_id)
+      .maybeSingle();
+    if (baErr) {
+      console.error("[erp/bank-transactions POST] bank account lookup failed:", baErr);
+      return NextResponse.json({ error: "Failed to verify bank account." }, { status: 500 });
+    }
+    if (!bankAccount || bankAccount.tenant_id !== tenantId) {
+      return NextResponse.json(
+        { error: "Bank account not found or doesn't belong to your tenant." },
+        { status: 403 },
+      );
+    }
     const created = await auth.store.upsertErpBankTransaction({ ...body, tenant_id: tenantId });
     await audit(auth.store, auth.user, req, "bank_transaction.create", "erp_bank_transaction", created.id, {
       bank_account_id: created.bank_account_id,

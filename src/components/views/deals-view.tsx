@@ -1028,6 +1028,9 @@ function DealFormDialog({
   const isEditing = !!deal;
   const [form, setForm] = useState<Partial<Deal>>({});
   const [saving, setSaving] = useState(false);
+  // FIX-UX #4: dirty flag drives the beforeunload guard so users get a
+  // browser prompt before losing unsaved deal edits on tab close / refresh.
+  const [isDirty, setIsDirty] = useState(false);
 
   // Collapsible section state — all open when editing, closed when creating
   const [detailsOpen, setDetailsOpen] = useState(isEditing);
@@ -1103,6 +1106,8 @@ function DealFormDialog({
   // Fix: useMemo → useEffect for form initialization side effects
   useEffect(() => {
     if (open) {
+// eslint-disable-next-line react-hooks/set-state-in-effect
+      setIsDirty(false);
       const initial = deal ? { ...deal } : {
         stage: "qualified" as DealStage,
         value: 0,
@@ -1110,7 +1115,6 @@ function DealFormDialog({
         probability: 20,
         partner_id: partners[0]?.id || "",
       };
-// eslint-disable-next-line react-hooks/set-state-in-effect
       setForm(initial);
       setSelectedPartnerId(initial.partner_id || "");
 
@@ -1126,6 +1130,18 @@ function DealFormDialog({
       }
     }
   }, [open, deal, partners]);
+
+  // beforeunload guard — fires the browser's "Leave site?" prompt when
+  // the deal form has unsaved edits. Cleanup on unmount / when isDirty clears.
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isDirty]);
 
   // Auto-fill partner data when partner context loads
   useEffect(() => {
@@ -1190,6 +1206,7 @@ function DealFormDialog({
 
       return updated;
     });
+    setIsDirty(true);
   }
 
   function handlePartnerChange(partnerId: string) {
@@ -1200,12 +1217,30 @@ function DealFormDialog({
     const partner = partners.find((p) => p.id === partnerId);
     if (partner?.preferred_currency) {
       setForm((f) => ({ ...f, currency: partner.preferred_currency! as Deal["currency"] }));
+      setIsDirty(true);
     }
   }
 
+  // FIX-UX #2: validation for the deal form. The spec lists "Partner
+  // required" (existing), "At least 1 line item" (deals don't have a
+  // line-items array — they have a single quantity/value), and
+  // "Quantity > 0". We enforce quantity > 0 only when a value has been
+  // entered (so users can save a draft with value=0 quantity=0); block
+  // save when quantity is negative or zero alongside a non-zero value.
+  const titleErr = !(form.title || "").trim() ? t("crm-title-required") : "";
+  const partnerErr = !form.partner_id ? t("crm-select-a-partner-toast") : "";
+  const qtyNum = Number(form.quantity ?? 0);
+  const valNum = Number(form.value ?? 0);
+  const qtyErr = valNum > 0 && qtyNum <= 0
+    ? "Quantity must be greater than 0 when the deal has a value."
+    : "";
+  const isValid = !titleErr && !partnerErr && !qtyErr;
+
   async function save() {
-    if (!form.title) { toast.error(t("crm-title-required")); return; }
-    if (!form.partner_id) { toast.error(t("crm-select-a-partner-toast")); return; }
+    if (!isValid) {
+      toast.error(titleErr || partnerErr || qtyErr);
+      return;
+    }
     setSaving(true);
     try {
       const method = deal ? "PUT" : "POST";
@@ -1222,6 +1257,7 @@ function DealFormDialog({
       toast.success(deal ? t("crm-deal-updated") : t("crm-deal-created").replace("${title}", form.title || ""), {
         description: deal ? undefined : t("crm-added-to-pipeline"),
       });
+      setIsDirty(false);
       onSaved();
     } catch (e: any) {
       toast.error(e.message || t("crm-saving-failed-toast"));
@@ -1252,7 +1288,8 @@ function DealFormDialog({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="md:col-span-2 space-y-1.5">
               <Label>{t("crm-title-required-label")}</Label>
-              <Input value={form.title || ""} onChange={(e) => set("title", e.target.value)} placeholder={t("crm-search-by-title")} />
+              <Input value={form.title || ""} onChange={(e) => set("title", e.target.value)} placeholder={t("crm-search-by-title")} aria-invalid={!!titleErr} />
+              {titleErr && <p className="text-xs text-destructive">{titleErr}</p>}
             </div>
 
             <div className="space-y-1.5">
@@ -1263,6 +1300,7 @@ function DealFormDialog({
                 placeholder={t("crm-select-a-partner")}
                 onSelect={(p) => p?.id && handlePartnerChange(p.id)}
               />
+              {partnerErr && <p className="text-xs text-destructive">{partnerErr}</p>}
             </div>
 
             <div className="space-y-1.5">
@@ -1478,7 +1516,8 @@ function DealFormDialog({
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div className="space-y-1.5">
                     <Label>{t("crm-quantity-label")}</Label>
-                    <Input type="number" min={0} step={1} value={form.quantity ?? 0} onChange={(e) => set("quantity", Number(e.target.value))} placeholder="0" />
+                    <Input type="number" min={0} step={1} value={form.quantity ?? 0} onChange={(e) => set("quantity", Number(e.target.value))} placeholder="0" aria-invalid={!!qtyErr} />
+                    {qtyErr && <p className="text-xs text-destructive">{qtyErr}</p>}
                   </div>
                   <div className="space-y-1.5">
                     <Label>{t("crm-unit-of-measure")}</Label>
@@ -1689,7 +1728,7 @@ function DealFormDialog({
 
         <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>{t("cancel")}</Button>
-          <Button onClick={save} disabled={saving}>
+          <Button onClick={save} disabled={saving || !isValid}>
             {saving ? t("crm-saving-ellipsis") : deal ? t("crm-save-changes") : t("crm-create-deal")}
           </Button>
         </DialogFooter>
