@@ -208,17 +208,31 @@ export async function POST(req: NextRequest) {
         },
       };
 
-      const created = await auth.store.upsertDocumentRegisterEntry(entry);
+      // Use direct INSERT (not smartUpsert which UPDATEs if id exists —
+      // the pre-generated entryId doesn't exist yet so UPDATE fails with
+      // "Record not found").
+      const insertPayload = { ...entry } as Record<string, unknown>;
+      delete insertPayload.id; // let the DB generate the id
+      const sb = getSupabase();
+      const { data: created, error: insertError } = await sb
+        .from("document_register")
+        .insert(insertPayload)
+        .select()
+        .single();
+      if (insertError || !created) {
+        return NextResponse.json({ error: sanitizeError(insertError) || "Failed to create entry." }, { status: 500 });
+      }
+      const createdEntry = created as DocumentRegisterEntry;
       await audit(
         auth.store,
         auth.user,
         req,
         "document.register.create",
         "document_register",
-        created.id,
-        { number: created.number, file_name: file.name, verification_status: "pending" },
+        createdEntry.id,
+        { number: createdEntry.number, file_name: file.name, verification_status: "pending" },
       );
-      return NextResponse.json(normalizeEntry(created));
+      return NextResponse.json(normalizeEntry(createdEntry));
     }
 
     // ── JSON path (backward compat with the existing "New Entry" dialog) ──
