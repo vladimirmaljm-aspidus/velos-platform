@@ -35,6 +35,7 @@ import {
   Plus, Search, Inbox, Pencil, Trash2, Eye, X, Calendar, FileInput, ArrowRightLeft,
   Sparkles, Loader2, Building2, MapPin, Hash, Mail, Phone, FileCheck, Import,
   ChevronDown, ChevronRight, Globe, CreditCard, Banknote, Package, Truck, Tag,
+  ArrowRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
@@ -166,6 +167,40 @@ export function DemandsView() {
     onError: () => toast.error(t("crm-delete-failed")),
   });
 
+  // FIX-TENANT-DOC: demand → deal automation. Calls the new
+  // /api/automation/create-deal-from-demand route which copies the demand's
+  // partner / product / quantity / target_price into a draft "lead" deal and
+  // marks the demand as "quoted".
+  const createDealMut = useMutation({
+    mutationFn: async (demandId: string) => {
+      const r = await fetch(api("/api/automation/create-deal-from-demand"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ demand_id: demandId }),
+      });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.error || "Failed to create deal");
+      }
+      return r.json() as Promise<{ id: string; title: string }>;
+    },
+    onSuccess: (deal) => {
+      toast.success(t("crm-deal-from-demand-created"));
+      // Refresh the demands list (the demand status flips to "quoted")
+      // and the dashboard KPIs (open demands count drops).
+      qc.invalidateQueries({ queryKey: ["demands", tenantKey] });
+      qc.invalidateQueries({ queryKey: ["deals", tenantKey] });
+      qc.invalidateQueries({ queryKey: ["dashboard", tenantKey] });
+      // Navigate to the newly created deal so the operator can flesh it
+      // out (price, expected close date, etc.). We push to the deals view
+      // and pass the deal id via the hash so the deals view can deep-link.
+      if (deal?.id) {
+        window.location.hash = `#/deals/${deal.id}`;
+      }
+    },
+    onError: (e: any) => toast.error(e.message || t("crm-deal-from-demand-failed")),
+  });
+
   const items = data?.items || [];
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -259,13 +294,36 @@ export function DemandsView() {
                         <TableCell className="hidden xl:table-cell">{fmtDate(d.created_at)}</TableCell>
                         <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1">
-                            <Button size="icon" variant="ghost" className="size-8" onClick={() => setDetailId(d.id)} title={t("view")}>
+                            <Button size="icon" variant="ghost" className="size-8" onClick={() => setDetailId(d.id)} title={t("view")} aria-label={t("view")}>
                               <Eye className="size-4" />
                             </Button>
-                            <Button size="icon" variant="ghost" className="size-8" onClick={() => { setEditing(d); setShowForm(true); }} title={t("edit")}>
+                            <Button size="icon" variant="ghost" className="size-8" onClick={() => { setEditing(d); setShowForm(true); }} title={t("edit")} aria-label={t("edit")}>
                               <Pencil className="size-4" />
                             </Button>
-                            <Button size="icon" variant="ghost" className="size-8 text-destructive" onClick={() => setDeleteId(d.id)} title={t("delete")}>
+                            {/* FIX-TENANT-DOC: one-click demand→deal automation.
+                             * Calls /api/automation/create-deal-from-demand
+                             * which builds a draft Deal from this demand's
+                             * partner / product / quantity / target_price
+                             * and marks the demand as "quoted". Disabled
+                             * while a previous create is in-flight so the
+                             * operator can't double-fire duplicates. */}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 gap-1 text-xs"
+                              onClick={() => createDealMut.mutate(d.id)}
+                              disabled={createDealMut.isPending && createDealMut.variables === d.id}
+                              title={t("crm-create-deal-from-demand-tooltip")}
+                              aria-label={t("crm-create-deal-from-demand")}
+                            >
+                              {createDealMut.isPending && createDealMut.variables === d.id ? (
+                                <Loader2 className="size-3.5 animate-spin" />
+                              ) : (
+                                <ArrowRight className="size-3.5" />
+                              )}
+                              <span className="hidden sm:inline">{t("crm-create-deal-from-demand")}</span>
+                            </Button>
+                            <Button size="icon" variant="ghost" className="size-8 text-destructive" onClick={() => setDeleteId(d.id)} title={t("delete")} aria-label={t("delete")}>
                               <Trash2 className="size-4" />
                             </Button>
                           </div>

@@ -73,6 +73,7 @@ const STATUS_LABEL_KEYS: Record<OfferStatus, string> = {
   accepted: "crm-accepted",
   rejected: "crm-rejected",
   expired: "crm-expired",
+  countered: "marketplace-response-status-countered",
 };
 
 function StatusBadge({ status }: { status: OfferStatus }) {
@@ -81,6 +82,7 @@ function StatusBadge({ status }: { status: OfferStatus }) {
   if (status === "rejected") return <Badge variant="destructive">{t(STATUS_LABEL_KEYS[status])}</Badge>;
   if (status === "accepted") return <Badge className="border-transparent bg-emerald-600 text-white">{t(STATUS_LABEL_KEYS[status])}</Badge>;
   if (status === "sent") return <Badge className="border-transparent bg-primary text-primary-foreground">{t(STATUS_LABEL_KEYS[status])}</Badge>;
+  if (status === "countered") return <Badge className="border-transparent bg-amber-500 text-white">{t(STATUS_LABEL_KEYS[status])}</Badge>;
   return <Badge className="border-transparent bg-muted text-muted-foreground">{t(STATUS_LABEL_KEYS[status])}</Badge>;
 }
 
@@ -900,14 +902,14 @@ export function OffersView() {
                         <TableCell className="hidden xl:table-cell">{fmtDate(o.valid_until)}</TableCell>
                         <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1">
-                            <Button size="icon" variant="ghost" className="size-8" onClick={() => setDetailId(o.id)} title={t("view")}>
-                              <Eye className="size-4" />
+                            <Button size="icon" variant="ghost" className="size-8" onClick={() => setDetailId(o.id)} title={t("view")} aria-label={t("view")}>
+                              <Eye className="size-4" aria-hidden="true" />
                             </Button>
-                            <Button size="icon" variant="ghost" className="size-8" onClick={() => { setEditing(o); setShowForm(true); }} title={t("edit")}>
-                              <Pencil className="size-4" />
+                            <Button size="icon" variant="ghost" className="size-8" onClick={() => { setEditing(o); setShowForm(true); }} title={t("edit")} aria-label={t("edit")}>
+                              <Pencil className="size-4" aria-hidden="true" />
                             </Button>
-                            <Button size="icon" variant="ghost" className="size-8 text-destructive" onClick={() => setDeleteId(o.id)} title={t("delete")}>
-                              <Trash2 className="size-4" />
+                            <Button size="icon" variant="ghost" className="size-8 text-destructive" onClick={() => setDeleteId(o.id)} title={t("delete")} aria-label={t("delete")}>
+                              <Trash2 className="size-4" aria-hidden="true" />
                             </Button>
                           </div>
                         </TableCell>
@@ -3056,8 +3058,9 @@ function OfferFormDialog({
                             className="size-8 text-destructive"
                             onClick={() => removeItem(idx)}
                             title={t("remove")}
+                            aria-label={t("remove")}
                           >
-                            <X className="size-4" />
+                            <X className="size-4" aria-hidden="true" />
                           </Button>
                         </TableCell>
                       </TableRow>

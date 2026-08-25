@@ -10,7 +10,7 @@ import { withApm } from "@/lib/monitoring/apm";
 export const runtime = "nodejs";
 
 // GET /api/marketplace/questions — list questions.
-// Optional query: ?group_id=&tag=&search=&unanswered=1&limit=50&offset=0
+// Optional query: ?group_id=&post_id=&tag=&search=&unanswered=1&limit=50&offset=0
 async function _get(req: NextRequest) {
   const access = await getPortalSessionAccess();
   if (!access) {
@@ -19,6 +19,7 @@ async function _get(req: NextRequest) {
   try {
     const url = new URL(req.url);
     const group_id = url.searchParams.get("group_id") || undefined;
+    const post_id = url.searchParams.get("post_id") || undefined;
     const tag = url.searchParams.get("tag") || undefined;
     const search = url.searchParams.get("search") || undefined;
     const unanswered = url.searchParams.get("unanswered") === "1";
@@ -26,6 +27,7 @@ async function _get(req: NextRequest) {
     const offset = url.searchParams.get("offset");
     const items = await listQuestions(access.partner_id, {
       group_id,
+      post_id,
       tag,
       search,
       unanswered,
@@ -40,7 +42,7 @@ async function _get(req: NextRequest) {
 }
 
 // POST /api/marketplace/questions — create a question.
-// Body: { title, body?, tags?, group_id? }
+// Body: { title, body?, tags?, group_id?, post_id? }
 async function _post(req: NextRequest) {
   const access = await getPortalSessionAccess();
   if (!access) {
@@ -71,6 +73,9 @@ async function _post(req: NextRequest) {
   if (body.group_id !== undefined && body.group_id !== null && typeof body.group_id !== "string") {
     return NextResponse.json({ error: "group_id must be a string." }, { status: 400 });
   }
+  if (body.post_id !== undefined && body.post_id !== null && typeof body.post_id !== "string") {
+    return NextResponse.json({ error: "post_id must be a string." }, { status: 400 });
+  }
 
   try {
     const created = await createQuestion(access.partner_id, {
@@ -78,6 +83,7 @@ async function _post(req: NextRequest) {
       body: body.body ?? undefined,
       tags: Array.isArray(body.tags) ? body.tags : undefined,
       group_id: body.group_id ?? undefined,
+      post_id: body.post_id ?? undefined,
     });
     try {
       const store = await getStore();

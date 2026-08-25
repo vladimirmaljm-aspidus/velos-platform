@@ -4,6 +4,8 @@ import { registerForEvent, unregisterFromEvent } from "@/lib/data/marketplace-co
 import { audit } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { withApm } from "@/lib/monitoring/apm";
+import { getSupabase } from "@/lib/supabase/client";
+import { notifyEventRegistered } from "@/lib/notif/helper";
 
 export const runtime = "nodejs";
 
@@ -34,6 +36,48 @@ async function _post(req: NextRequest, ctx: RouteCtx) {
       );
     } catch (e) {
       console.error("[marketplace.community.events.register] audit failed:", e);
+    }
+
+    // FIX-NOTIF-A11Y: notify the event organiser that someone
+    // registered for their event. Only fires on the actual
+    // registration path (`result.registered === true`); the idempotent
+    // "already registered" return value skips the notify so the
+    // organiser isn't spammed by accidental double-clicks. Best-effort
+    // — failures are caught inside notifyEventRegistered and never
+    // break the response. We resolve the organiser + event title from
+    // marketplace_events and the registrant's name from the partners
+    // table via the store.
+    if (result.registered) {
+      try {
+        const sb = getSupabase();
+        const { data: eventRow } = await sb
+          .from("marketplace_events")
+          .select("organizer_partner_id, title")
+          .eq("id", id)
+          .maybeSingle();
+        const evt = eventRow as { organizer_partner_id: string | null; title: string } | null;
+        const organiserId = evt?.organizer_partner_id;
+        const eventTitle = evt?.title || "your event";
+        if (organiserId && organiserId !== access.partner_id) {
+          let registrantName = "A partner";
+          try {
+            const store2 = await getStore();
+            const reg = await store2.getPartner(access.partner_id);
+            if (reg?.name) registrantName = reg.name;
+          } catch {
+            /* non-fatal — fallback name used */
+          }
+          void notifyEventRegistered(
+            access.tenant_id,
+            organiserId,
+            id,
+            eventTitle,
+            registrantName,
+          );
+        }
+      } catch (e) {
+        console.error("[marketplace.community.events.register] notify failed:", e);
+      }
     }
     return NextResponse.json({
       registered: result.registered,

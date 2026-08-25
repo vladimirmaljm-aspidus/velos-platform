@@ -23,8 +23,12 @@ export type DocType = "offer" | "invoice" | "proforma" | "deal";
 const VALID_TRANSITIONS: Record<DocType, Record<string, string[]>> = {
   offer: {
     draft: ["sent", "cancelled", "viewed"],
-    sent: ["accepted", "rejected", "expired", "draft", "viewed", "cancelled"],
-    viewed: ["accepted", "rejected", "expired", "cancelled", "sent"],
+    sent: ["accepted", "rejected", "expired", "draft", "viewed", "cancelled", "countered"],
+    viewed: ["accepted", "rejected", "expired", "cancelled", "sent", "countered"],
+    // FIX-MARKET-UI / FIX 3 — portal clients can counter from "countered"
+    // again, or accept/reject the latest counter. The "countered" state
+    // is not final — it just signals an open negotiation in progress.
+    countered: ["accepted", "rejected", "expired", "cancelled", "sent", "countered"],
     accepted: ["cancelled"],
     rejected: [],
     expired: [],

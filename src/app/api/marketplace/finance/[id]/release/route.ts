@@ -4,6 +4,7 @@ import { releaseEscrow } from "@/lib/data/marketplace-finance-store";
 import { audit } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { withApm } from "@/lib/monitoring/apm";
+import { notifyEscrowReleased } from "@/lib/notif/helper";
 
 export const runtime = "nodejs";
 
@@ -44,6 +45,30 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
       );
     } catch (e) {
       console.error("[marketplace.finance.release] audit failed:", e);
+    }
+
+    // FIX-NOTIF-A11Y: notify the counterparty that the escrow funds
+    // have been released. The audit log entry above is the system
+    // record; this is the in-app signal to the partner on the other
+    // side of the escrow (typically the seller, when the buyer
+    // authorises release). When the instrument has no
+    // counterparty_partner_id recorded (a standalone escrow), or the
+    // counterparty is the caller themselves (release by both-parties
+    // confirm where the counterparty initiated), skip silently.
+    // Best-effort — failures are caught inside notifyEscrowReleased.
+    try {
+      const counterpartyPartnerId = released.counterparty_partner_id;
+      if (counterpartyPartnerId && counterpartyPartnerId !== access.partner_id) {
+        void notifyEscrowReleased(
+          access.tenant_id,
+          counterpartyPartnerId,
+          released.id,
+          released.amount,
+          released.currency,
+        );
+      }
+    } catch (e) {
+      console.error("[marketplace.finance.release] notify failed:", e);
     }
     return NextResponse.json(released);
   } catch (e: any) {

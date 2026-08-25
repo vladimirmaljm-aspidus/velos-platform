@@ -3,7 +3,7 @@ import { getSupabase } from "@/lib/supabase/client";
 import { authorizeCron } from "@/lib/api/cron-auth";
 import { audit } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
-import { notifyTrialExpiringSoon } from "@/lib/notif/helper";
+import { notifyTrialExpiringSoon, emailTrialExpiringSoon } from "@/lib/notif/helper";
 
 export const runtime = "nodejs";
 
@@ -73,6 +73,24 @@ export async function GET(req: NextRequest) {
       const daysLeft = Math.max(1, Math.round(msLeft / (24 * 60 * 60 * 1000)));
       try {
         await notifyTrialExpiringSoon(t.id, t.name, t.trial_ends_at, daysLeft);
+        // FIX-NOTIF-A11Y: also email the tenant admins so they don't
+        // have to log in to learn about the upcoming expiry. Fire-and-
+        // forget — failures are caught inside emailTrialExpiringSoon.
+        // The in-app notification above is the source of truth; the
+        // email is a bonus delivery path. The cron's idempotency guard
+        // (skip if a "Trial expiring soon" notification row already
+        // exists) means this branch is reached at most once per
+        // tenant per trial, so each tenant gets at most one email.
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL;
+        void emailTrialExpiringSoon({
+          tenantId: t.id,
+          tenantName: t.name,
+          trialEndsAt: t.trial_ends_at,
+          daysLeft,
+          baseUrl,
+        }).catch((e) =>
+          console.error("[subscription-sweep] trial warning email failed", t.id, e),
+        );
         trialWarnings.push(t.id);
       } catch (e) {
         console.error("[subscription-sweep] trial warning failed", t.id, e);

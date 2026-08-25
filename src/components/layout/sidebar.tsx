@@ -465,6 +465,13 @@ function NavItemButton({ icon: Icon, label, active, collapsed, onClick, badgeCou
   const button = (
     <button
       onClick={onClick}
+      // FIX-NOTIF-A11Y: when collapsed, the visible label is hidden
+      // (opacity-0 w-0) so screen readers have no text to announce.
+      // Pass the label through `aria-label` in that case so the nav
+      // item remains accessible. In expanded mode the label is
+      // visible text and `aria-label` would override it — so we only
+      // set the attribute when collapsed.
+      aria-label={collapsed ? label : undefined}
       className={cn(
         "group relative w-full flex items-center gap-3 rounded-lg",
         "text-[13px] font-medium",

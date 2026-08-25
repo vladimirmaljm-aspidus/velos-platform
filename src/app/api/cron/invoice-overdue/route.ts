@@ -3,6 +3,7 @@ import { getStore } from "@/lib/data/store";
 import { getSupabase } from "@/lib/supabase/client";
 import { authorizeCron } from "@/lib/api/cron-auth";
 import { audit } from "@/lib/api/helpers";
+import { emailInvoiceOverdue } from "@/lib/notif/helper";
 
 export const runtime = "nodejs";
 
@@ -32,14 +33,16 @@ export async function GET(req: NextRequest) {
     const sb = getSupabase();
     const today = new Date().toISOString().split("T")[0];
     // Mark sent/viewed invoices as overdue when due_date < today.
+    // FIX-NOTIF-A11Y: also select `due_date` so we can compute days
+    // overdue for the email body.
     const { data, error } = await sb
       .from("invoices")
       .update({ status: "overdue" })
       .in("status", ["sent", "viewed"])
       .lt("due_date", today)
-      .select("id, number, partner_id, tenant_id");
+      .select("id, number, partner_id, tenant_id, due_date");
     if (error) throw error;
-    const updated = (data as Array<{ id: string; number: string; partner_id: string | null; tenant_id: string }>) || [];
+    const updated = (data as Array<{ id: string; number: string; partner_id: string | null; tenant_id: string; due_date: string | null }>) || [];
     // Fire notifications for each overdue invoice. Errors here are non-fatal
     // — the status update is the source of truth.
     const store = await getStore();
@@ -55,6 +58,35 @@ export async function GET(req: NextRequest) {
           entityType: "invoice",
           entityId: inv.id,
         });
+        // FIX-NOTIF-A11Y: also email the tenant admins so finance
+        // teams learn about overdue invoices without logging in.
+        // Fire-and-forget — failures are caught inside
+        // emailInvoiceOverdue. The in-app notification above is the
+        // source of truth; the email is a bonus delivery path. We
+        // look up the partner name for context (best-effort) and
+        // compute days overdue from the due_date.
+        try {
+          let partnerName: string | null = null;
+          if (inv.partner_id) {
+            const p = await store.getPartner(inv.partner_id);
+            partnerName = p?.name || null;
+          }
+          const daysOverdue = inv.due_date
+            ? Math.max(1, Math.round((Date.now() - new Date(inv.due_date).getTime()) / (24 * 60 * 60 * 1000)))
+            : 1;
+          const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL;
+          void emailInvoiceOverdue({
+            tenantId: inv.tenant_id,
+            partnerName,
+            invoiceNumber: inv.number,
+            daysOverdue,
+            baseUrl,
+          }).catch((e) =>
+            console.error("[cron/invoice-overdue] email failed", inv.id, e),
+          );
+        } catch (e) {
+          console.error("[cron/invoice-overdue] email lookup failed", inv.id, e);
+        }
       } catch {
         /* non-fatal */
       }

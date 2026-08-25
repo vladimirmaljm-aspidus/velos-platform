@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Card, CardContent,
@@ -25,7 +25,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  Plus, Search, KeyRound, Pencil, Trash2, Lock, ShieldCheck, ShieldAlert, EyeOff, Database, Mail, CreditCard, Box,
+  Plus, Search, KeyRound, Pencil, Trash2, Lock, ShieldCheck, ShieldAlert, EyeOff, Eye, Database, Mail, CreditCard, Box,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
@@ -108,6 +108,90 @@ export function VaultView() {
   const [editing, setEditing] = useState<SafeSecret | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  // ── Reveal state ───────────────────────────────────────────────────────
+  // Tracks which vault rows currently have their decrypted value visible.
+  // The value is fetched on demand from /api/vault/[id]?reveal=true and is
+  // auto-hidden after 30s — defense in depth so a stray tab left open on
+  // the vault view doesn't keep the plaintext on-screen indefinitely.
+  // Loading state is tracked so the eye icon can show a "decrypting…"
+  // affordance while the API round-trips.
+  const [revealed, setRevealed] = useState<Record<string, { value: string; loading: boolean; revealedAt: number } | undefined>>({});
+  const revealTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const [revealTick, setRevealTick] = useState(0); // forces re-render so the "auto-hides in Xs" countdown updates
+
+  const REVEAL_AUTO_HIDE_MS = 30_000;
+
+  const revealSecret = useCallback(async (id: string) => {
+    setRevealed((cur) => ({ ...cur, [id]: { value: "", loading: true, revealedAt: Date.now() } }));
+    try {
+      const r = await fetch(api(`/api/vault/${id}?reveal=true`));
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.error || t("admin-vault-reveal-failed"));
+      }
+      const data = await r.json();
+      const value = typeof data?.encrypted_value === "string" ? data.encrypted_value : "";
+      setRevealed((cur) => ({ ...cur, [id]: { value, loading: false, revealedAt: Date.now() } }));
+      // Auto-hide after 30s.
+      if (revealTimersRef.current[id]) clearTimeout(revealTimersRef.current[id]);
+      revealTimersRef.current[id] = setTimeout(() => {
+        setRevealed((cur) => {
+          const next = { ...cur };
+          delete next[id];
+          return next;
+        });
+        delete revealTimersRef.current[id];
+      }, REVEAL_AUTO_HIDE_MS);
+      // The reveal API updates `last_accessed_at` server-side; refresh the
+      // list so the column reflects the new timestamp.
+      qc.invalidateQueries({ queryKey: ["vault", tenantKey] });
+    } catch (e: unknown) {
+      setRevealed((cur) => {
+        const next = { ...cur };
+        delete next[id];
+        return next;
+      });
+      const msg = e instanceof Error ? e.message : t("admin-vault-reveal-failed");
+      toast.error(msg);
+    }
+  }, [api, t, qc, tenantKey]);
+
+  const hideSecret = useCallback((id: string) => {
+    setRevealed((cur) => {
+      const next = { ...cur };
+      delete next[id];
+      return next;
+    });
+    if (revealTimersRef.current[id]) {
+      clearTimeout(revealTimersRef.current[id]);
+      delete revealTimersRef.current[id];
+    }
+  }, []);
+
+  // Ticking countdown for the "auto-hides in Xs" affordance. We re-render
+  // every second while ANY secret is revealed so the remaining-time label
+  // stays accurate. Stops when nothing is revealed.
+  useEffect(() => {
+    if (Object.keys(revealed).length === 0) return;
+    const interval = setInterval(() => setRevealTick((n) => n + 1), 1000);
+    return () => clearInterval(interval);
+  }, [revealed]);
+
+  // Clear any pending auto-hide timers on unmount so we don't try to
+  // setState on an unmounted component (React would warn).
+  useEffect(() => {
+    const timers = revealTimersRef.current;
+    return () => {
+      Object.values(timers).forEach((tm) => clearTimeout(tm));
+    };
+  }, []);
+
+  // Reference revealTick so the linter doesn't flag it as unused — its
+  // sole purpose is to force a re-render every second while any secret
+  // is revealed, which keeps the per-row "auto-hides in Xs" countdown
+  // accurate. Computed remaining seconds are read off `revealedAt`.
+  void revealTick;
 
   const { data, isLoading } = useQuery({
     queryKey: ["vault", tenantKey, debouncedSearch, category],
@@ -253,6 +337,11 @@ export function VaultView() {
                   {items.map((s) => {
                     const meta = CATEGORY_META[s.category];
                     const Icon = meta.icon;
+                    const revealState = revealed[s.id];
+                    const isRevealed = !!revealState && !revealState.loading;
+                    const remainingSec = isRevealed
+                      ? Math.max(0, Math.ceil((REVEAL_AUTO_HIDE_MS - (Date.now() - revealState.revealedAt)) / 1000))
+                      : 0;
                     return (
                       <TableRow key={s.id}>
                         <TableCell>
@@ -260,6 +349,22 @@ export function VaultView() {
                             <EyeOff className="size-3.5 text-muted-foreground shrink-0" />
                             <code className="text-sm font-semibold font-mono">{s.key}</code>
                           </div>
+                          {revealState && (
+                            <div className="mt-1.5 rounded-md border border-amber-500/30 bg-amber-50/60 dark:bg-amber-500/10 px-2 py-1.5">
+                              {revealState.loading ? (
+                                <p className="text-xs text-amber-700 dark:text-amber-300">{t("admin-vault-reveal-loading")}</p>
+                              ) : (
+                                <div className="space-y-1">
+                                  <code className="block font-mono text-sm text-amber-900 dark:text-amber-100 break-all whitespace-pre-wrap">
+                                    {revealState.value || "—"}
+                                  </code>
+                                  <p className="text-[10px] text-amber-600 dark:text-amber-400">
+                                    {t("admin-vault-reveal-timer").replace("{s}", String(remainingSec))}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
                           {s.description || "—"}
@@ -273,6 +378,30 @@ export function VaultView() {
                         <TableCell className="hidden md:table-cell text-xs">{fmtRelative(s.updated_at)}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
+                            {isRevealed ? (
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="size-8"
+                                onClick={() => hideSecret(s.id)}
+                                title={t("admin-vault-hide")}
+                                aria-label={t("admin-vault-hide")}
+                              >
+                                <EyeOff className="size-4" />
+                              </Button>
+                            ) : (
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="size-8"
+                                onClick={() => revealSecret(s.id)}
+                                title={t("admin-vault-reveal")}
+                                aria-label={t("admin-vault-reveal")}
+                                disabled={!!revealState?.loading}
+                              >
+                                <Eye className="size-4" />
+                              </Button>
+                            )}
                             <Button size="icon" variant="ghost" className="size-8" onClick={() => { setEditing(s); setShowForm(true); }} title={t("edit")} aria-label={t("edit")}>
                               <Pencil className="size-4" />
                             </Button>

@@ -1642,6 +1642,22 @@ export class SupabaseStore implements Store {
     return paginateQuery<InventoryMovement>(q, params);
   }
 
+  // FIX-MARKET-UI / FIX 4 — products at or below their reorder_level.
+  // Returns a paginated list of Product rows (NOT movements). Used by the
+  // inventory view's "Low Stock" mode. We don't add a search filter here —
+  // the inventory view already has a search box that filters client-side
+  // on the paginated result.
+  async listLowStockProducts(tenantId: string, params?: ListParams): Promise<ListResult<Product>> {
+    let q = this.sb()
+      .from("products")
+      .select("*", { count: "exact" })
+      .eq("tenant_id", tenantId)
+      .gt("reorder_level", 0)
+      .filter("stock", "lte", "reorder_level");
+    q = q.order("stock", { ascending: true });
+    return paginateQuery<Product>(q, params);
+  }
+
   // ---- tenants (multi-tenancy) ----
   async listTenants(): Promise<Tenant[]> {
     const { data, error } = await this.sb()

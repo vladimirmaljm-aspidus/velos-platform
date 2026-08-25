@@ -398,6 +398,10 @@ export const ADMINISTRATION: Record<Locale, Record<string, string>> = {
     "admin-vault-show": "Show",
     "admin-vault-hide": "Hide",
     "admin-vault-copy": "Copy",
+    "admin-vault-reveal": "Reveal value",
+    "admin-vault-reveal-failed": "Failed to reveal secret.",
+    "admin-vault-reveal-loading": "Decrypting…",
+    "admin-vault-reveal-timer": "Auto-hides in {s}s",
 
     // ─── Mail queue view ──────────────────────────────────────────────
     "admin-mail-admin-only-desc": "The mail queue monitor is only available to administrators.",
@@ -446,6 +450,8 @@ export const ADMINISTRATION: Record<Locale, Record<string, string>> = {
     "admin-mail-queued-toast": "Email queued.",
     "admin-mail-compose-title": "Compose email",
     "admin-mail-compose-desc": "Queue a manual email for sending.",
+    "admin-mail-cross-tenant-note": "Showing all tenants — no tenant context selected.",
+    "admin-mail-col-tenant": "Tenant",
     "admin-mail-form-to-placeholder": "recipient@example.com",
     "admin-mail-form-subject-placeholder": "Subject line",
     "admin-mail-form-body-placeholder": "Write your email…",

@@ -22,10 +22,19 @@ export async function GET(req: NextRequest) {
     const url = new URL(req.url);
     const search = url.searchParams.get("search") || undefined;
     const is_active = url.searchParams.get("is_active") || undefined;
+    // FIX-MARKET-UI / FIX 4 — pagination.
+    const limit = url.searchParams.get("limit")
+      ? Math.min(Number(url.searchParams.get("limit")), 500)
+      : undefined;
+    const offset = url.searchParams.get("offset")
+      ? Math.max(Number(url.searchParams.get("offset")), 0)
+      : undefined;
 
     const result = await auth.store.listErpCostCenters(tenantId, {
       search,
       filters: { is_active },
+      limit,
+      offset,
     });
     return NextResponse.json(result);
   } catch (e: any) {

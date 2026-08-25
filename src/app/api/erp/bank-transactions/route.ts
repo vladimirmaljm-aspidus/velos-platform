@@ -22,8 +22,19 @@ export async function GET(req: NextRequest) {
     const url = new URL(req.url);
     const bank_account_id = url.searchParams.get("bank_account_id") || undefined;
     const search = url.searchParams.get("search") || undefined;
+    // FIX-MARKET-UI / FIX 4 — pagination.
+    const limit = url.searchParams.get("limit")
+      ? Math.min(Number(url.searchParams.get("limit")), 500)
+      : undefined;
+    const offset = url.searchParams.get("offset")
+      ? Math.max(Number(url.searchParams.get("offset")), 0)
+      : undefined;
 
-    const result = await auth.store.listErpBankTransactions(tenantId, bank_account_id, { search });
+    const result = await auth.store.listErpBankTransactions(tenantId, bank_account_id, {
+      search,
+      limit,
+      offset,
+    });
     return NextResponse.json(result);
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });

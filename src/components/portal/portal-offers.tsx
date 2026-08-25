@@ -5,6 +5,23 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -41,6 +58,8 @@ import {
   Crown,
   Check,
   X,
+  ArrowRightLeft,
+  Send,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store/app-store";
 import { useT } from "@/lib/i18n/store";
@@ -49,6 +68,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import type { Offer, OfferStatus, OfferLineItem, PortalTier } from "@/lib/supabase/types";
 import { useDebounced } from "@/lib/hooks/use-debounced";
+import { CURRENCIES as REF_CURRENCIES } from "@/lib/data/reference";
 
 const STATUS_STYLES: Record<OfferStatus, string> = {
   draft: "bg-secondary text-secondary-foreground",
@@ -56,6 +76,7 @@ const STATUS_STYLES: Record<OfferStatus, string> = {
   accepted: "border-transparent bg-emerald-600 text-white",
   rejected: "border-transparent bg-destructive text-destructive-foreground",
   expired: "bg-muted text-muted-foreground",
+  countered: "border-transparent bg-amber-500 text-white",
 };
 
 const STATUS_LABEL_KEYS: Record<OfferStatus, string> = {
@@ -64,6 +85,7 @@ const STATUS_LABEL_KEYS: Record<OfferStatus, string> = {
   accepted: "portal-status-accepted",
   rejected: "portal-status-rejected",
   expired: "portal-status-expired",
+  countered: "portal-status-countered",
 };
 
 const STATUS_ICONS: Record<OfferStatus, React.ComponentType<{ className?: string }>> = {
@@ -72,6 +94,7 @@ const STATUS_ICONS: Record<OfferStatus, React.ComponentType<{ className?: string
   accepted: CheckCircle2,
   rejected: XCircle,
   expired: Calendar,
+  countered: ArrowRightLeft,
 };
 
 export function PortalOffers() {
@@ -320,29 +343,105 @@ function OfferDetail({
   const StatusIcon = STATUS_ICONS[offer.status];
   const [responding, setResponding] = useState(false);
 
-  const canRespond = offer.status === "sent" || (offer.status as string) === "viewed";
+  // FIX-MARKET-UI / FIX 3 — Dialog-driven accept / reject / counter.
+  // `window.prompt` was jarring and provided no validation surface; we now
+  // use a proper shadcn Dialog for each decision so the user can type a
+  // note / reason / counter amount in a styled form.
+  const [dialogMode, setDialogMode] = useState<"accept" | "reject" | "counter" | null>(null);
+  const [acceptNote, setAcceptNote] = useState("");
+  const [rejectReason, setRejectReason] = useState("");
+  const [counterAmount, setCounterAmount] = useState("");
+  const [counterCurrency, setCounterCurrency] = useState(offer.currency || "USD");
+  const [counterMessage, setCounterMessage] = useState("");
 
-  async function handleRespond(decision: "accept" | "reject") {
-    const promptLabel =
-      decision === "accept"
-        ? t("portal-prompt-add-note")
-        : t("portal-prompt-reject-reason");
-    const note = window.prompt(promptLabel, "") || "";
+  const canRespond =
+    offer.status === "sent" ||
+    (offer.status as string) === "viewed" ||
+    (offer.status as string) === "countered";
+
+  // Reset dialog state whenever the dialog closes.
+  function closeDialog() {
+    setDialogMode(null);
+    setAcceptNote("");
+    setRejectReason("");
+    setCounterAmount("");
+    setCounterCurrency(offer.currency || "USD");
+    setCounterMessage("");
+  }
+
+  async function submitAccept() {
     setResponding(true);
     try {
       const res = await fetch(`/api/portal/offers/${offer.id}/respond`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ decision, note }),
+        body: JSON.stringify({ decision: "accept", note: acceptNote.trim() || undefined }),
       });
       if (res.ok) {
-        toast.success(decision === "accept" ? t("portal-toast-offer-accepted") : t("portal-toast-offer-rejected"));
+        toast.success(t("portal-toast-offer-accepted"));
         onResponded();
+        closeDialog();
       } else {
         const e = await res.json().catch(() => ({}));
         toast.error(e.error || t("portal-toast-offer-update-failed"));
       }
-    } catch (e) {
+    } catch {
+      toast.error(t("portal-toast-network-error"));
+    } finally {
+      setResponding(false);
+    }
+  }
+
+  async function submitReject() {
+    setResponding(true);
+    try {
+      const res = await fetch(`/api/portal/offers/${offer.id}/respond`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision: "reject", note: rejectReason.trim() || undefined }),
+      });
+      if (res.ok) {
+        toast.success(t("portal-toast-offer-rejected"));
+        onResponded();
+        closeDialog();
+      } else {
+        const e = await res.json().catch(() => ({}));
+        toast.error(e.error || t("portal-toast-offer-update-failed"));
+      }
+    } catch {
+      toast.error(t("portal-toast-network-error"));
+    } finally {
+      setResponding(false);
+    }
+  }
+
+  async function submitCounter() {
+    const amt = Number(counterAmount);
+    if (!Number.isFinite(amt) || amt <= 0) {
+      toast.error(t("portal-detail-counter-amount"));
+      return;
+    }
+    setResponding(true);
+    try {
+      const res = await fetch(`/api/portal/offers/${offer.id}/respond`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          decision: "counter",
+          counter_amount: amt,
+          counter_currency: counterCurrency,
+          counter_message: counterMessage.trim() || undefined,
+        }),
+      });
+      if (res.ok) {
+        toast.success(t("portal-detail-counter-sent"));
+        onResponded();
+        closeDialog();
+      } else {
+        const e = await res.json().catch(() => ({}));
+        toast.error(e.error || t("portal-toast-offer-update-failed"));
+      }
+    } catch {
       toast.error(t("portal-toast-network-error"));
     } finally {
       setResponding(false);
@@ -467,29 +566,74 @@ function OfferDetail({
           </div>
         )}
 
-        {/* Accept / Reject actions — only available when offer is awaiting a response. */}
+        {/* FIX-MARKET-UI / FIX 3 — Counter-offer history. */}
+        {Array.isArray(offer.counter_offers) && offer.counter_offers.length > 0 && (
+          <div className="border-t border-border/60 pt-4 space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+              <ArrowRightLeft className="size-3.5" />
+              {t("portal-detail-counter-history")}
+            </p>
+            <div className="space-y-2">
+              {offer.counter_offers.map((c, i) => (
+                <div
+                  key={i}
+                  className="rounded-md border border-amber-500/30 bg-amber-500/[0.05] p-3 space-y-1"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-semibold tabular">
+                      {fmtMoney(c.amount, c.currency)}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(c.created_at).toLocaleString()}
+                    </span>
+                  </div>
+                  {c.message && (
+                    <p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap">
+                      {c.message}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Accept / Reject / Counter actions — only available when offer is
+            awaiting a response (sent, viewed, or countered). */}
         {canRespond && (
           <div className="border-t border-border/60 pt-4 space-y-2">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               {t("portal-detail-your-response")}
             </p>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <Button
-                onClick={() => handleRespond("accept")}
+                type="button"
+                onClick={() => setDialogMode("accept")}
                 disabled={responding}
                 className="bg-emerald-600 text-white hover:bg-emerald-700 shadow-soft hover:shadow-soft-md smooth"
               >
                 <Check className="size-4 mr-1.5" />
-                {responding ? "…" : t("portal-detail-accept")}
+                {t("portal-detail-accept")}
               </Button>
               <Button
-                onClick={() => handleRespond("reject")}
+                type="button"
+                onClick={() => setDialogMode("counter")}
+                disabled={responding}
+                variant="outline"
+                className="border-amber-500/40 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 smooth"
+              >
+                <ArrowRightLeft className="size-4 mr-1.5" />
+                {t("portal-detail-counter")}
+              </Button>
+              <Button
+                type="button"
+                onClick={() => setDialogMode("reject")}
                 disabled={responding}
                 variant="outline"
                 className="border-destructive/40 text-destructive hover:bg-destructive/10 smooth"
               >
                 <X className="size-4 mr-1.5" />
-                {responding ? "…" : t("portal-detail-reject")}
+                {t("portal-detail-reject")}
               </Button>
             </div>
             <p className="text-xs text-muted-foreground leading-relaxed">
@@ -527,6 +671,152 @@ function OfferDetail({
           )}
         </div>
       </div>
+
+      {/* FIX-MARKET-UI / FIX 3 — Accept / Reject / Counter dialogs.
+          Replaces the previous window.prompt() UX with a styled shadcn
+          Dialog for each decision. */}
+      <Dialog open={dialogMode === "accept"} onOpenChange={(o) => !o && closeDialog()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CheckCircle2 className="size-5 text-emerald-600" />
+              {t("portal-detail-accept-dialog-title")}
+            </DialogTitle>
+            <DialogDescription>
+              {t("portal-detail-accept-dialog-desc")}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="accept-note">{t("portal-detail-accept-dialog-note-label")}</Label>
+            <Textarea
+              id="accept-note"
+              rows={3}
+              value={acceptNote}
+              onChange={(e) => setAcceptNote(e.target.value)}
+              placeholder={t("portal-detail-accept-dialog-note-placeholder")}
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={closeDialog}>
+              {t("portal-action-cancel")}
+            </Button>
+            <Button
+              type="button"
+              onClick={submitAccept}
+              disabled={responding}
+              className="bg-emerald-600 text-white hover:bg-emerald-700 gap-1.5"
+            >
+              {responding ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+              {t("portal-detail-confirm-accept")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={dialogMode === "reject"} onOpenChange={(o) => !o && closeDialog()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <XCircle className="size-5 text-destructive" />
+              {t("portal-detail-reject-dialog-title")}
+            </DialogTitle>
+            <DialogDescription>
+              {t("portal-detail-reject-dialog-desc")}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="reject-reason">{t("portal-detail-reject-dialog-reason-label")}</Label>
+            <Textarea
+              id="reject-reason"
+              rows={3}
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder={t("portal-detail-reject-dialog-reason-placeholder")}
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={closeDialog}>
+              {t("portal-action-cancel")}
+            </Button>
+            <Button
+              type="button"
+              onClick={submitReject}
+              disabled={responding}
+              variant="outline"
+              className="border-destructive/40 text-destructive hover:bg-destructive/10 gap-1.5"
+            >
+              {responding ? <Loader2 className="size-4 animate-spin" /> : <X className="size-4" />}
+              {t("portal-detail-confirm-reject")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={dialogMode === "counter"} onOpenChange={(o) => !o && closeDialog()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ArrowRightLeft className="size-5 text-amber-600" />
+              {t("portal-detail-counter")}
+            </DialogTitle>
+            <DialogDescription>
+              {t("portal-detail-counter-desc")}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label htmlFor="counter-amount">{t("portal-detail-counter-amount")}</Label>
+                <Input
+                  id="counter-amount"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={counterAmount}
+                  onChange={(e) => setCounterAmount(e.target.value)}
+                  placeholder="0.00"
+                />
+              </div>
+              <div>
+                <Label htmlFor="counter-currency">{t("portal-detail-counter-currency")}</Label>
+                <Select value={counterCurrency} onValueChange={setCounterCurrency}>
+                  <SelectTrigger id="counter-currency"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {REF_CURRENCIES.slice(0, 16).map((c) => (
+                      <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="counter-message">{t("portal-detail-counter-message")}</Label>
+              <Textarea
+                id="counter-message"
+                rows={3}
+                value={counterMessage}
+                onChange={(e) => setCounterMessage(e.target.value)}
+                placeholder={t("portal-detail-counter-message-placeholder")}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={closeDialog}>
+              {t("portal-action-cancel")}
+            </Button>
+            <Button
+              type="button"
+              onClick={submitCounter}
+              disabled={responding || !counterAmount || Number(counterAmount) <= 0}
+              variant="outline"
+              className="border-amber-500/40 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 gap-1.5"
+            >
+              {responding ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+              {t("portal-detail-counter-submit")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

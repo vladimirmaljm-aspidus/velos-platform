@@ -501,6 +501,7 @@ export async function listQuestions(
   partnerId: string,
   opts?: {
     group_id?: string;
+    post_id?: string;
     tag?: string;
     search?: string;
     unanswered?: boolean;
@@ -517,6 +518,7 @@ export async function listQuestions(
     .select("*", { count: "exact" });
 
   if (opts?.group_id) q = q.eq("group_id", opts.group_id);
+  if (opts?.post_id) q = q.eq("post_id", opts.post_id);
   if (opts?.tag) q = q.contains("tags", [opts.tag]);
   if (opts?.search) {
     q = q.or(`title.ilike.%${opts.search}%,body.ilike.%${opts.search}%`);
@@ -619,6 +621,7 @@ export async function createQuestion(
 
   const payload: Record<string, unknown> = {
     group_id: data.group_id ?? null,
+    post_id: data.post_id ?? null,
     partner_id: partnerId,
     title: data.title,
     body: data.body ?? null,

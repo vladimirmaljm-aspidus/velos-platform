@@ -24,10 +24,20 @@ export async function GET(req: NextRequest) {
     const account_type = url.searchParams.get("account_type") || undefined;
     const is_active = url.searchParams.get("is_active") || undefined;
     const standard = url.searchParams.get("standard") || undefined;
+    // FIX-MARKET-UI / FIX 4 — pagination. Cap limit at 500 (matches the
+    // commission-payouts route's defensive cap).
+    const limit = url.searchParams.get("limit")
+      ? Math.min(Number(url.searchParams.get("limit")), 500)
+      : undefined;
+    const offset = url.searchParams.get("offset")
+      ? Math.max(Number(url.searchParams.get("offset")), 0)
+      : undefined;
 
     const result = await auth.store.listErpAccounts(tenantId, {
       search,
       filters: { account_type, is_active, standard },
+      limit,
+      offset,
     });
     return NextResponse.json(result);
   } catch (e: any) {

@@ -29,6 +29,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import {
   Plus, Search, Trash2, Eye, FileText, Receipt, FileCheck, ScrollText, ClipboardList, File, GitBranch, Clock, History,
+  Upload, ShieldCheck, XCircle, Loader2, Link as LinkIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
@@ -41,6 +42,7 @@ import { useApiUrl, useTenantKey } from "@/lib/hooks/use-api-url";
 import { useDebounced } from "@/lib/hooks/use-debounced";
 import { useT } from "@/lib/i18n/store";
 import { PartnerPicker } from "@/components/common/partner-picker";
+import { useAppStore, isAdmin } from "@/lib/store/app-store";
 
 type DocStatus = "current" | "superseded" | "archived";
 
@@ -95,6 +97,51 @@ function VersionBadge({ status, version }: { status: DocStatus; version: number 
   return <Badge className={`tabular ${cls}`}>V{version}</Badge>;
 }
 
+// ── FIX-TENANT-DOC: verification workflow badge ──
+// Reads the metadata-sourced `verification_status` field surfaced by the
+// API (normalizeEntry in route.ts). Legacy rows created before this
+// feature have NO verification_status in metadata — they render as
+// "Untracked" with a tooltip explaining they should be treated as
+// verified (since they pre-date the workflow).
+function VerifyStatusBadge({ entry }: { entry: DocumentRegisterEntry }) {
+  const t = useT();
+  const status = entry.verification_status;
+  if (!status) {
+    // Legacy row — metadata key absent.
+    return (
+      <Badge
+        variant="outline"
+        className="border-border/60 text-muted-foreground"
+        title={t("doc-vs-legacy-tooltip")}
+      >
+        {t("doc-vs-legacy")}
+      </Badge>
+    );
+  }
+  if (status === "verified") {
+    return (
+      <Badge className="border-transparent bg-emerald-600 text-white">
+        <ShieldCheck className="size-3 mr-1" />
+        {t("doc-vs-verified")}
+      </Badge>
+    );
+  }
+  if (status === "rejected") {
+    return (
+      <Badge className="border-transparent bg-destructive text-destructive-foreground">
+        <XCircle className="size-3 mr-1" />
+        {t("doc-vs-rejected")}
+      </Badge>
+    );
+  }
+  return (
+    <Badge className="border-transparent bg-amber-500 text-white">
+      <Clock className="size-3 mr-1" />
+      {t("doc-vs-pending")}
+    </Badge>
+  );
+}
+
 function parseNumberParts(number: string): { prefix: string; year: string; seq: string } | null {
   // e.g. OF-2026-001-V2 → { prefix: "OF", year: "2026", seq: "001" }
   const m = number.match(/^([A-Z]+)-(\d{4})-(\d+)/);
@@ -120,6 +167,8 @@ export function DocumentRegisterView() {
   const api = useApiUrl();
   const tenantKey = useTenantKey();
   const t = useT();
+  const user = useAppStore((s) => s.user);
+  const canVerifyReject = isAdmin(user);
 
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
@@ -130,6 +179,10 @@ export function DocumentRegisterView() {
   const [formParent, setFormParent] = useState<DocumentRegisterEntry | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  // FIX-TENANT-DOC: upload dialog + reject-reason dialog state.
+  const [showUpload, setShowUpload] = useState(false);
+  const [rejectTarget, setRejectTarget] = useState<DocumentRegisterEntry | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
 
   const { data, isLoading } = useQuery({
     queryKey: ["document-register", tenantKey, debouncedSearch, typeFilter, statusFilter],
@@ -177,6 +230,51 @@ export function DocumentRegisterView() {
     onError: () => toast.error(t("fin-delete-failed")),
   });
 
+  // FIX-TENANT-DOC: verify / reject mutations. Both hit the new PUT
+  // /api/document-register/[id] route. The route is permission-gated
+  // server-side (`document-register.update`), so the client-side
+  // `canVerifyReject` check is just a UX gate (hides the buttons from
+  // non-admins) — the server enforces the real auth.
+  const verifyMut = useMutation({
+    mutationFn: async (id: string) => {
+      const r = await fetch(api(`/api/document-register/${id}`), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ verification_status: "verified" }),
+      });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.error || "Verify failed");
+      }
+    },
+    onSuccess: () => {
+      toast.success(t("doc-toast-verified"));
+      qc.invalidateQueries({ queryKey: ["document-register", tenantKey] });
+    },
+    onError: (e: any) => toast.error(e.message || t("doc-toast-verify-failed")),
+  });
+
+  const rejectMut = useMutation({
+    mutationFn: async (args: { id: string; reason: string }) => {
+      const r = await fetch(api(`/api/document-register/${args.id}`), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ verification_status: "rejected", reject_reason: args.reason }),
+      });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.error || "Reject failed");
+      }
+    },
+    onSuccess: () => {
+      toast.success(t("doc-toast-rejected"));
+      qc.invalidateQueries({ queryKey: ["document-register", tenantKey] });
+      setRejectTarget(null);
+      setRejectReason("");
+    },
+    onError: (e: any) => toast.error(e.message || t("doc-toast-verify-failed")),
+  });
+
   const items = data?.items || [];
   const partnerList = partners.data?.items || [];
   const partnerName = (id: string | null) => (id ? (partnerList.find((p) => p.id === id)?.name || "—") : "—");
@@ -197,9 +295,20 @@ export function DocumentRegisterView() {
         title={t("doc-document-register-title")}
         description={`${data?.total ?? 0} ${t("fin-entries-suffix")}`}
         actions={
-          <Button onClick={openNew}>
-            <Plus className="size-4 mr-1" /> {t("doc-new-entry")}
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {/* FIX-TENANT-DOC: new "Upload Document" button — opens the
+             * upload dialog with a file picker + linking dropdowns. The
+             * existing "New entry" button (JSON metadata-only entry)
+             * stays alongside for the legacy "register metadata without
+             * uploading a file" workflow (e.g. logging a paper-originals
+             * document). */}
+            <Button variant="outline" onClick={() => setShowUpload(true)}>
+              <Upload className="size-4 mr-1" /> {t("doc-upload-document")}
+            </Button>
+            <Button onClick={openNew}>
+              <Plus className="size-4 mr-1" /> {t("doc-new-entry")}
+            </Button>
+          </div>
         }
       />
 
@@ -262,6 +371,10 @@ export function DocumentRegisterView() {
                     <TableHead>{t("doc-version")}</TableHead>
                     <TableHead className="hidden lg:table-cell">{t("fin-partner")}</TableHead>
                     <TableHead>{t("status")}</TableHead>
+                    {/* FIX-TENANT-DOC: new "Verification" column — surfaces the
+                     * pending → verified → rejected workflow state. Hidden
+                     * on small screens to keep the row readable. */}
+                    <TableHead className="hidden lg:table-cell">{t("doc-verification-status")}</TableHead>
                     <TableHead className="hidden xl:table-cell">{t("fin-created-col")}</TableHead>
                     <TableHead className="text-right">{t("actions")}</TableHead>
                   </TableRow>
@@ -277,12 +390,63 @@ export function DocumentRegisterView() {
                       <TableCell><VersionBadge status={e.status} version={e.version} /></TableCell>
                       <TableCell className="hidden lg:table-cell">{partnerName(e.partner_id)}</TableCell>
                       <TableCell><StatusBadge status={e.status} /></TableCell>
+                      <TableCell className="hidden lg:table-cell"><VerifyStatusBadge entry={e} /></TableCell>
                       <TableCell className="hidden xl:table-cell">{fmtDate(e.created_at)}</TableCell>
                       <TableCell className="text-right" onClick={(ev) => ev.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1">
                           <Button size="icon" variant="ghost" className="size-8" onClick={() => setDetailId(e.id)} title={t("view")} aria-label={t("view")}>
                             <Eye className="size-4" />
                           </Button>
+                          {/* FIX-TENANT-DOC: download button for entries
+                           * that have a stored file (legacy entries without
+                           * an upload render nothing). Opens file_url in a
+                           * new tab. */}
+                          {e.file_url && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="size-8"
+                              asChild
+                              title={t("doc-download")}
+                              aria-label={t("doc-download")}
+                            >
+                              <a href={e.file_url} target="_blank" rel="noopener noreferrer">
+                                <File className="size-4" />
+                              </a>
+                            </Button>
+                          )}
+                          {/* FIX-TENANT-DOC: Verify / Reject buttons. Only
+                           * shown to admins (`canVerifyReject`) and only
+                           * when the document is in "pending" state —
+                           * verified / rejected rows keep only the other
+                           * row actions (view / version / delete). */}
+                          {canVerifyReject && e.verification_status === "pending" && (
+                            <>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="size-8 text-emerald-600 hover:text-emerald-700"
+                                onClick={() => verifyMut.mutate(e.id)}
+                                disabled={verifyMut.isPending && verifyMut.variables === e.id}
+                                title={t("doc-verify")}
+                                aria-label={t("doc-verify")}
+                              >
+                                {verifyMut.isPending && verifyMut.variables === e.id
+                                  ? <Loader2 className="size-4 animate-spin" />
+                                  : <ShieldCheck className="size-4" />}
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="size-8 text-destructive"
+                                onClick={() => { setRejectTarget(e); setRejectReason(""); }}
+                                title={t("doc-reject")}
+                                aria-label={t("doc-reject")}
+                              >
+                                <XCircle className="size-4" />
+                              </Button>
+                            </>
+                          )}
                           <Button
                             size="icon"
                             variant="ghost"
@@ -366,6 +530,71 @@ export function DocumentRegisterView() {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {t("delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* FIX-TENANT-DOC: Upload Document dialog. Posts multipart/form-data
+       * to /api/document-register with the file + metadata fields. The
+       * route verifies the file via magic-bytes, uploads to the
+       * `documents` Supabase Storage bucket, and inserts a row with
+       * verification_status="pending" in metadata. */}
+      <UploadDocumentDialog
+        open={showUpload}
+        onOpenChange={setShowUpload}
+        existing={items}
+        onUploaded={() => {
+          setShowUpload(false);
+          qc.invalidateQueries({ queryKey: ["document-register", tenantKey] });
+          qc.invalidateQueries({ queryKey: ["dashboard", tenantKey] });
+        }}
+      />
+
+      {/* FIX-TENANT-DOC: reject reason dialog. Captures the mandatory
+       * reject_reason before calling the PUT /api/document-register/[id]
+       * route with verification_status="rejected". */}
+      <AlertDialog
+        open={!!rejectTarget}
+        onOpenChange={(o) => {
+          if (!o) {
+            setRejectTarget(null);
+            setRejectReason("");
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("doc-reject-title")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("doc-reject-desc")}
+              {rejectTarget && (
+                <span className="block mt-2 font-medium text-foreground">
+                  {rejectTarget.number} — {rejectTarget.title || "—"}
+                </span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="reject-reason" className="text-xs text-muted-foreground">
+              {t("doc-reject-reason-label")}
+            </Label>
+            <Textarea
+              id="reject-reason"
+              rows={3}
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder={t("doc-reject-reason-placeholder")}
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => rejectTarget && rejectMut.mutate({ id: rejectTarget.id, reason: rejectReason.trim() })}
+              disabled={!rejectReason.trim() || rejectMut.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {t("doc-reject-confirm")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -672,6 +901,316 @@ function DocumentFormDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>{t("cancel")}</Button>
           <Button onClick={save} disabled={saving}>
             {saving ? t("fin-saving") : parent ? t("fin-create-version-btn") : t("fin-create-entry-btn")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── FIX-TENANT-DOC: Upload Document dialog ────────────────────────────────
+// Posts multipart/form-data to /api/document-register (the new multipart
+// branch added to that route). The server validates + uploads the file to
+// the `documents` Supabase Storage bucket and inserts a row with
+// verification_status="pending" in metadata.
+//
+// Linking: the operator can optionally link the new document to an
+// existing deal / invoice / offer. The link is stored in metadata so the
+// detail panel + future cross-views can resolve it. We fetch the deal /
+// invoice / offer lists lazily (only when the corresponding Select is
+// opened) to keep the dialog's initial render fast — these lists can be
+// large for tenants with years of data.
+function UploadDocumentDialog({
+  open, onOpenChange, existing, onUploaded,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  existing: DocumentRegisterEntry[];
+  onUploaded: () => void;
+}) {
+  const api = useApiUrl();
+  const tenantKey = useTenantKey();
+  const t = useT();
+
+  const [form, setForm] = useState<{
+    type: DocumentType;
+    title: string;
+    partner_id: string;
+    change_note: string;
+    linked_deal_id: string;
+    linked_invoice_id: string;
+    linked_offer_id: string;
+  }>({
+    type: "other",
+    title: "",
+    partner_id: "",
+    change_note: "",
+    linked_deal_id: "",
+    linked_invoice_id: "",
+    linked_offer_id: "",
+  });
+  const [file, setFile] = useState<File | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  // Reset form on (re)open.
+  useEffect(() => {
+    if (open) {
+// eslint-disable-next-line react-hooks/set-state-in-effect
+      setForm({
+        type: "other",
+        title: "",
+        partner_id: "",
+        change_note: "",
+        linked_deal_id: "",
+        linked_invoice_id: "",
+        linked_offer_id: "",
+      });
+      setFile(null);
+    }
+  }, [open]);
+
+  // Lazy-loaded dropdown options. The deals / invoices / offers endpoints
+  // cap at 500 rows; for tenants with more, the operator can use the
+  // reference_id field on the legacy "New entry" dialog to link via free
+  // text instead. (Keeping the dropdown bounded is the right trade-off —
+  // an unbounded Select would be unusable.)
+  const dealsQ = useQuery({
+    queryKey: ["deals", tenantKey, "upload-dialog", "200"],
+    queryFn: async () => {
+      const r = await fetch(api(`/api/deals?limit=200`));
+      if (!r.ok) throw new Error("Failed to load deals");
+      return r.json() as Promise<{ items: Array<{ id: string; title: string }> }>;
+    },
+    enabled: open,
+  });
+  const invoicesQ = useQuery({
+    queryKey: ["invoices", tenantKey, "upload-dialog", "200"],
+    queryFn: async () => {
+      const r = await fetch(api(`/api/invoices?limit=200`));
+      if (!r.ok) throw new Error("Failed to load invoices");
+      return r.json() as Promise<{ items: Array<{ id: string; number: string; subject?: string | null }> }>;
+    },
+    enabled: open,
+  });
+  const offersQ = useQuery({
+    queryKey: ["offers", tenantKey, "upload-dialog", "200"],
+    queryFn: async () => {
+      const r = await fetch(api(`/api/offers?limit=200`));
+      if (!r.ok) throw new Error("Failed to load offers");
+      return r.json() as Promise<{ items: Array<{ id: string; number: string; subject?: string | null }> }>;
+    },
+    enabled: open,
+  });
+
+  function set<K extends keyof typeof form>(k: K, v: (typeof form)[K]) {
+    setForm((f) => ({ ...f, [k]: v }));
+  }
+
+  // Auto-generate the document number the same way the legacy form does
+  // (TYPE_PREFIX + year + next-seq + V1). We send it in the multipart body
+  // so the server has a stable identifier even before the row is inserted.
+  const number = useMemo(() => {
+    const prefix = TYPE_PREFIX[form.type];
+    const year = String(new Date().getFullYear());
+    const seq = nextSeqForType(existing, form.type);
+    return `${prefix}-${year}-${seq}-V1`;
+  }, [form.type, existing]);
+
+  async function save() {
+    if (!file) { toast.error(t("doc-file-required")); return; }
+    if (!form.title.trim()) { toast.error(t("fin-enter-title-toast")); return; }
+    setSaving(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("number", number);
+      fd.append("type", form.type);
+      fd.append("title", form.title.trim());
+      fd.append("version", "1");
+      fd.append("change_note", form.change_note.trim());
+      if (form.partner_id) fd.append("partner_id", form.partner_id);
+      if (form.linked_deal_id) fd.append("linked_deal_id", form.linked_deal_id);
+      if (form.linked_invoice_id) fd.append("linked_invoice_id", form.linked_invoice_id);
+      if (form.linked_offer_id) fd.append("linked_offer_id", form.linked_offer_id);
+
+      const r = await fetch(api("/api/document-register"), {
+        method: "POST",
+        body: fd, // multipart/form-data — Content-Type set automatically by the browser
+      });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.error || t("doc-toast-upload-failed"));
+      }
+      toast.success(t("doc-toast-uploaded"));
+      onUploaded();
+    } catch (e: any) {
+      toast.error(e.message || t("doc-toast-upload-failed"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent size="lg" className="max-h-[88vh] flex flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
+          <DialogTitle className="flex items-center gap-2">
+            <Upload className="size-5" />
+            {t("doc-upload-dialog-title")}
+          </DialogTitle>
+          <DialogDescription>{t("doc-upload-dialog-desc")}</DialogDescription>
+        </DialogHeader>
+
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
+          {/* File picker */}
+          <div className="space-y-1.5">
+            <Label>{t("doc-file")} *</Label>
+            <label
+              htmlFor="doc-upload-input"
+              className="flex flex-col items-center justify-center gap-2 cursor-pointer rounded-lg border border-dashed border-border/70 bg-muted/30 px-4 py-6 text-sm hover:bg-muted/50 transition-colors"
+            >
+              {file ? (
+                <>
+                  <File className="size-6 text-muted-foreground" />
+                  <span className="font-medium text-foreground">{file.name}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {(file.size / 1024 / 1024).toFixed(2)} MB
+                  </span>
+                </>
+              ) : (
+                <>
+                  <Upload className="size-6 text-muted-foreground" />
+                  <span className="text-muted-foreground">{t("doc-file-allowed")}</span>
+                </>
+              )}
+              <input
+                id="doc-upload-input"
+                type="file"
+                accept="application/pdf,image/*,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,text/csv"
+                className="sr-only"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) {
+                    setFile(f);
+                    // Auto-fill title if empty.
+                    if (!form.title.trim()) {
+                      const baseName = f.name.replace(/\.[^.]+$/, "");
+                      set("title", baseName.slice(0, 120));
+                    }
+                  }
+                }}
+              />
+            </label>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>{t("type")} *</Label>
+              <Select value={form.type} onValueChange={(v) => set("type", v as DocumentType)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="offer">{t("fin-doc-type-offer")}</SelectItem>
+                  <SelectItem value="invoice">{t("fin-doc-type-invoice")}</SelectItem>
+                  <SelectItem value="proforma">{t("fin-doc-type-proforma")}</SelectItem>
+                  <SelectItem value="contract">{t("fin-doc-type-contract")}</SelectItem>
+                  <SelectItem value="spec">{t("fin-doc-type-spec")}</SelectItem>
+                  <SelectItem value="other">{t("fin-doc-type-other")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="md:col-span-2 space-y-1.5">
+              <Label>{t("fin-title-required-label")} *</Label>
+              <Input
+                value={form.title}
+                onChange={(e) => set("title", e.target.value)}
+                placeholder={t("fin-title-placeholder")}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>{t("fin-partner")}</Label>
+              <PartnerPicker
+                value={form.partner_id}
+                placeholder={t("fin-no-partner-option")}
+                onSelect={(p) => set("partner_id", p?.id || "")}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>{t("fin-generated-number")}</Label>
+              <Input value={number} readOnly className="font-mono text-xs bg-muted/40" />
+            </div>
+
+            {/* Optional linking to existing CRM / finance entities. */}
+            <div className="md:col-span-2 space-y-1.5">
+              <Label className="flex items-center gap-1.5">
+                <LinkIcon className="size-3.5" />
+                {t("doc-linked-to")}
+              </Label>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                <Select value={form.linked_deal_id || "none"} onValueChange={(v) => set("linked_deal_id", v === "none" ? "" : v)}>
+                  <SelectTrigger><SelectValue placeholder={t("doc-no-link")} /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">{t("doc-no-link")}</SelectItem>
+                    {(dealsQ.data?.items || []).slice(0, 200).map((d) => (
+                      <SelectItem key={d.id} value={d.id}>
+                        {t("doc-linked-deal")}: {d.title?.slice(0, 40) || d.id}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select value={form.linked_invoice_id || "none"} onValueChange={(v) => set("linked_invoice_id", v === "none" ? "" : v)}>
+                  <SelectTrigger><SelectValue placeholder={t("doc-no-link")} /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">{t("doc-no-link")}</SelectItem>
+                    {(invoicesQ.data?.items || []).slice(0, 200).map((i) => (
+                      <SelectItem key={i.id} value={i.id}>
+                        {t("doc-linked-invoice")}: {i.number}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select value={form.linked_offer_id || "none"} onValueChange={(v) => set("linked_offer_id", v === "none" ? "" : v)}>
+                  <SelectTrigger><SelectValue placeholder={t("doc-no-link")} /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">{t("doc-no-link")}</SelectItem>
+                    {(offersQ.data?.items || []).slice(0, 200).map((o) => (
+                      <SelectItem key={o.id} value={o.id}>
+                        {t("doc-linked-offer")}: {o.number}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="md:col-span-2 space-y-1.5">
+              <Label>{t("fin-change-note")}</Label>
+              <Textarea
+                rows={2}
+                value={form.change_note}
+                onChange={(e) => set("change_note", e.target.value)}
+                placeholder={t("fin-initial-note-placeholder")}
+              />
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>{t("cancel")}</Button>
+          <Button onClick={save} disabled={saving || !file}>
+            {saving ? (
+              <>
+                <Loader2 className="size-4 mr-1 animate-spin" /> {t("doc-uploading")}
+              </>
+            ) : (
+              <>
+                <Upload className="size-4 mr-1" /> {t("doc-upload-button")}
+              </>
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>

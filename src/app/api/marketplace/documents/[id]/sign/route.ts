@@ -6,6 +6,8 @@ import { audit } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { triggerWebhooks } from "@/lib/webhooks/deliver";
 import { withApm } from "@/lib/monitoring/apm";
+import { getSupabase } from "@/lib/supabase/client";
+import { notifyDocumentSigned } from "@/lib/notif/helper";
 
 export const runtime = "nodejs";
 
@@ -107,6 +109,90 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
       console.error("[marketplace.documents.sign] audit failed:", e);
     }
 
+    // FIX-NOTIF-A11Y: notify the non-signing party that the document
+    // was digitally signed by the issuer. The audit + webhook above
+    // are the system record / external integration; this is the in-app
+    // signal to the partner on the other side of the trade so they
+    // know the issuer's signature is recorded and they can act on it
+    // (e.g. counter-sign, file customs, release goods).
+    //
+    // Counterparty resolution priority:
+    //   1. negotiation_id → the OTHER partner in the negotiation room
+    //      (partner_id_a vs partner_id_b, pick the one != signer).
+    //   2. post_id → if the signer is the post owner, the counterparty
+    //      is the partner whose response is accepted on this post;
+    //      otherwise the counterparty is the post owner.
+    //   3. neither → standalone doc, no counterparty to notify.
+    // Best-effort — failures are caught and never break the response.
+    try {
+      const sb = getSupabase();
+      let nonSigningPartyId: string | null = null;
+      if (signed.negotiation_id) {
+        const { data: negRow } = await sb
+          .from("marketplace_negotiations")
+          .select("partner_id_a, partner_id_b")
+          .eq("id", signed.negotiation_id)
+          .maybeSingle();
+        const neg = negRow as { partner_id_a: string; partner_id_b: string } | null;
+        if (neg) {
+          nonSigningPartyId =
+            neg.partner_id_a === access.partner_id
+              ? neg.partner_id_b
+              : neg.partner_id_a;
+        }
+      } else if (signed.post_id) {
+        const { data: postRow } = await sb
+          .from("marketplace_posts")
+          .select("partner_id")
+          .eq("id", signed.post_id)
+          .maybeSingle();
+        const postOwner = (postRow as { partner_id: string } | null)?.partner_id;
+        if (postOwner && postOwner !== access.partner_id) {
+          // Signer is the responder; counterparty is the post owner.
+          nonSigningPartyId = postOwner;
+        } else if (postOwner === access.partner_id) {
+          // Signer is the post owner; counterparty is the partner
+          // with an accepted response on this post (if any).
+          const { data: acceptedResp } = await sb
+            .from("marketplace_responses")
+            .select("partner_id")
+            .eq("post_id", signed.post_id)
+            .eq("tenant_id", access.tenant_id)
+            .eq("status", "accepted")
+            .limit(1)
+            .maybeSingle();
+          const responder = (acceptedResp as { partner_id: string } | null)?.partner_id;
+          if (responder && responder !== access.partner_id) {
+            nonSigningPartyId = responder;
+          }
+        }
+      }
+      if (nonSigningPartyId) {
+        const docTitle =
+          signed.reference_number ||
+          signed.document_type?.replace(/_/g, " ") ||
+          "a trade document";
+        // Look up the signing partner's name to include in the
+        // notification message for context.
+        let signedByName: string | undefined;
+        try {
+          const store2 = await getStore();
+          const signer = await store2.getPartner(access.partner_id);
+          if (signer?.name) signedByName = signer.name;
+        } catch {
+          /* non-fatal — name is optional context */
+        }
+        void notifyDocumentSigned(
+          access.tenant_id,
+          nonSigningPartyId,
+          signed.id,
+          docTitle,
+          signedByName,
+        );
+      }
+    } catch (e) {
+      console.error("[marketplace.documents.sign] notify failed:", e);
+    }
     return NextResponse.json({ document: signed, already_signed: false });
   } catch (e: any) {
     console.error("[marketplace.documents.sign]", e);

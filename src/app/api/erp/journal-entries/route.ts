@@ -25,10 +25,20 @@ export async function GET(req: NextRequest) {
     const date_from = url.searchParams.get("date_from") || undefined;
     const date_to = url.searchParams.get("date_to") || undefined;
     const reference_type = url.searchParams.get("reference_type") || undefined;
+    // FIX-MARKET-UI / FIX 4 — pagination. Cap limit at 500 (matches the
+    // commission-payouts route's defensive cap).
+    const limit = url.searchParams.get("limit")
+      ? Math.min(Number(url.searchParams.get("limit")), 500)
+      : undefined;
+    const offset = url.searchParams.get("offset")
+      ? Math.max(Number(url.searchParams.get("offset")), 0)
+      : undefined;
 
     const result = await auth.store.listErpJournalEntries(tenantId, {
       search,
       filters: { status, date_from, date_to, reference_type },
+      limit,
+      offset,
     });
     return NextResponse.json(result);
   } catch (e: any) {

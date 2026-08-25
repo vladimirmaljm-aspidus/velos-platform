@@ -75,6 +75,7 @@ const STATUS_FILL: Record<OfferStatus, string> = {
   accepted: "#16a34a",   // green-600 — "win"
   rejected: "#dc2626",   // red-600 — "lost"
   expired: "#92400E",    // burnt copper — "stale"
+  countered: "#D97706",  // amber-600 — "negotiation in progress"
 };
 
 // Shared tooltip styling — opaque popover, hairline border, small font.

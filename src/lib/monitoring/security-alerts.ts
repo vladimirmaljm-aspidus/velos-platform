@@ -86,11 +86,13 @@ export interface SecurityEvent {
     | "impersonate.start"
     | "impersonate.stop"
     | "vault.read"
+    | "vault.reveal"
     | "cross.tenant.attempt"
     | "csrf.blocked"
     | "rate.limit.hit"
     | "2fa.disabled"
     | "permission.denied"
+    | "password.reset"
     | "suspicious.activity";
   userId?: string;
   tenantId?: string;

@@ -5,6 +5,7 @@ import { getSupabase } from "@/lib/supabase/client";
 import { audit } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { withApm } from "@/lib/monitoring/apm";
+import { notifyContractCreated } from "@/lib/notif/helper";
 import type { ContractFrequency, ContractPriceType } from "@/lib/supabase/marketplace-auction-types";
 
 export const runtime = "nodejs";
@@ -143,6 +144,44 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
       );
     } catch (e) {
       console.error("[marketplace.contract.post] audit failed:", e);
+    }
+
+    // FIX-NOTIF-A11Y: notify the counterparty (the partner whose
+    // response was accepted on this post) that the contract has been
+    // created. The route already wrote the audit log; this is the
+    // in-app signal to the counterparty. Best-effort — failures are
+    // caught inside notifyContractCreated and never break the
+    // response. We resolve the counterparty's partner_id by querying
+    // marketplace_responses for an accepted response on this post.
+    // When no accepted response exists yet (the owner is creating
+    // the contract speculatively before any response is accepted),
+    // there's no counterparty to notify — we skip silently.
+    try {
+      const sb2 = getSupabase();
+      const { data: acceptedResp } = await sb2
+        .from("marketplace_responses")
+        .select("partner_id")
+        .eq("post_id", id)
+        .eq("tenant_id", access.tenant_id)
+        .eq("status", "accepted")
+        .limit(1)
+        .maybeSingle();
+      const counterpartyPartnerId = (acceptedResp as { partner_id: string } | null)?.partner_id;
+      if (counterpartyPartnerId && counterpartyPartnerId !== access.partner_id) {
+        // Fetch the post title for the notification body. The post is
+        // already known to exist + be in the caller's tenant (verified
+        // earlier in the handler), so we re-read just the product_name
+        // for the message body.
+        const { data: postTitleRow } = await sb2
+          .from("marketplace_posts")
+          .select("product_name")
+          .eq("id", id)
+          .maybeSingle();
+        const postTitle = (postTitleRow as { product_name: string } | null)?.product_name || "your contract post";
+        void notifyContractCreated(access.tenant_id, counterpartyPartnerId, contract.id, postTitle);
+      }
+    } catch (e) {
+      console.error("[marketplace.contract.post] notify failed:", e);
     }
     return NextResponse.json({ contract });
   } catch (e: any) {

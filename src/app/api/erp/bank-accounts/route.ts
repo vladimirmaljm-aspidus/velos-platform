@@ -19,8 +19,24 @@ export async function GET(req: NextRequest) {
   if (!tenantId) return NextResponse.json({ items: [], total: 0 });
 
   try {
-    const accounts = await auth.store.listErpBankAccounts(tenantId);
-    return NextResponse.json({ items: accounts, total: accounts.length });
+    // FIX-MARKET-UI / FIX 4 — pagination. The store's listErpBankAccounts
+    // returns the full array (no `count`); for pagination we slice the
+    // result on the route side. Bank accounts are typically few per
+    // tenant (<10) so the in-memory slice is acceptable.
+    const url = new URL(req.url);
+    const limit = url.searchParams.get("limit")
+      ? Math.min(Number(url.searchParams.get("limit")), 500)
+      : undefined;
+    const offset = url.searchParams.get("offset")
+      ? Math.max(Number(url.searchParams.get("offset")), 0)
+      : undefined;
+
+    const all = await auth.store.listErpBankAccounts(tenantId);
+    const total = all.length;
+    const items = limit !== undefined
+      ? all.slice(offset ?? 0, (offset ?? 0) + limit)
+      : all;
+    return NextResponse.json({ items, total });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }

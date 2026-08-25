@@ -23,10 +23,19 @@ export async function GET(req: NextRequest) {
     const search = url.searchParams.get("search") || undefined;
     const status = url.searchParams.get("status") || undefined;
     const fiscal_year = url.searchParams.get("fiscal_year") || undefined;
+    // FIX-MARKET-UI / FIX 4 — pagination.
+    const limit = url.searchParams.get("limit")
+      ? Math.min(Number(url.searchParams.get("limit")), 500)
+      : undefined;
+    const offset = url.searchParams.get("offset")
+      ? Math.max(Number(url.searchParams.get("offset")), 0)
+      : undefined;
 
     const result = await auth.store.listFiscalPeriods(tenantId, {
       search,
       filters: { status, fiscal_year },
+      limit,
+      offset,
     });
     return NextResponse.json(result);
   } catch (e: any) {

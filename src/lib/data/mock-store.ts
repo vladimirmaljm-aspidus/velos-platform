@@ -795,6 +795,16 @@ export class MockStore implements Store {
   async listAllInventory(_tenantId: string, params?: ListParams): Promise<ListResult<InventoryMovement>> {
     let items = [...mock.inventoryMovements].sort((a, b) => b.created_at.localeCompare(a.created_at));
     if (params?.filters?.partner_id) items = items.filter((m) => m.partner_id === params.filters!.partner_id);
+    if (params?.filters?.product_id) items = items.filter((m) => m.product_id === params.filters!.product_id);
+    return paginate(items, params);
+  }
+
+  // FIX-MARKET-UI / FIX 4 — products at or below reorder level.
+  async listLowStockProducts(_tenantId: string, params?: ListParams): Promise<ListResult<Product>> {
+    let items = mock.products.filter(
+      (p) => (p.reorder_level || 0) > 0 && (p.stock || 0) <= (p.reorder_level || 0),
+    );
+    items.sort((a, b) => (a.stock || 0) - (b.stock || 0));
     return paginate(items, params);
   }
 

@@ -132,6 +132,12 @@ export interface Store {
   // inventory
   listInventory(tenantId: string, partnerId: string): Promise<InventoryMovement[]>;
   listAllInventory(tenantId: string, params?: ListParams): Promise<ListResult<InventoryMovement>>;
+  /**
+   * FIX-MARKET-UI / FIX 4 — returns products whose `stock` is at or below
+   * their `reorder_level`, paginated. Used by the inventory view's
+   * "Low Stock" mode (separate from movements).
+   */
+  listLowStockProducts(tenantId: string, params?: ListParams): Promise<ListResult<Product>>;
   addInventoryMovement(m: Partial<InventoryMovement> & { id?: string }): Promise<InventoryMovement>;
 
   // vault

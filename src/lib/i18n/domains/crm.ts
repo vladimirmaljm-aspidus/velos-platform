@@ -886,6 +886,12 @@ export const CRM: Record<Locale, Record<string, string>> = {
     "crm-no-partner": "No partner",
     "crm-partners-count": "Partners ({n})",
     "crm-partner-type-prefix": "{type}s",
+
+    // ── FIX-TENANT-DOC: demand→deal automation ──
+    "crm-create-deal-from-demand": "Create Deal",
+    "crm-create-deal-from-demand-tooltip": "Auto-create a CRM deal from this demand",
+    "crm-deal-from-demand-created": "Deal created from demand.",
+    "crm-deal-from-demand-failed": "Failed to create deal from demand.",
   },
   sr: {
     "crm-product-deleted": "Proizvod obrisan.",

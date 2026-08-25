@@ -4,7 +4,7 @@
 export type UserRole = "super_admin" | "admin" | "user";
 export type PartnerType = "supplier" | "buyer" | "both" | "agent" | "logistics" | "customs" | "bank" | "inspector";
 export type DealStage = "lead" | "qualified" | "proposal" | "negotiation" | "won" | "lost";
-export type OfferStatus = "draft" | "sent" | "accepted" | "rejected" | "expired";
+export type OfferStatus = "draft" | "sent" | "accepted" | "rejected" | "expired" | "countered";
 export type DemandStatus = "open" | "quoted" | "closed";
 export type KycStatus = "not_submitted" | "pending" | "approved" | "rejected";
 
@@ -254,6 +254,18 @@ export interface Offer {
   client_accepted_at?: string | null;
   client_note?: string | null;
   client_signature?: string | null;
+  /**
+   * FIX-MARKET-UI / FIX 3 — counter-offer history. Array of
+   * {amount, currency, message, partner_id, created_at} entries, newest
+   * first. Null/empty on offers that have never been countered.
+   */
+  counter_offers?: Array<{
+    amount: number;
+    currency: string;
+    message?: string | null;
+    partner_id?: string | null;
+    created_at: string;
+  }> | null;
   document_id?: string | null;
   old_id?: string | null;
   payment_bank_idx?: number | null;
@@ -585,6 +597,39 @@ export interface DocumentRegisterEntry {
   metadata: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
+  // ── FIX-TENANT-DOC: file-upload + verification + linking extensions ──
+  // The live `document_register` table has only the columns above; we did
+  // NOT add new DB columns (the task allowed us to skip migration if too
+  // complex). Instead, these fields are persisted inside the `metadata`
+  // JSONB column by the API routes, and surfaced here as optional fields
+  // so the UI can read them as if they were columns. The API layer is the
+  // single place that reads/writes `metadata.<key>` ↔ these fields.
+  /** Public URL of the uploaded file in the `documents` Supabase Storage
+   *  bucket. Null for legacy rows created before the upload feature. */
+  file_url?: string | null;
+  /** Original client-supplied filename (kept for display only — the
+   *  stored-path extension is derived from the server-verified MIME type
+   *  via `uploadFile`, NOT the client filename, to prevent
+   *  `evil.aspx` / `evil.htm` path pollution). */
+  file_name?: string | null;
+  /** Verification workflow state. New uploads default to "pending"; an
+   *  admin flips it to "verified" or "rejected". Legacy rows (created
+   *  before this feature) are treated as "verified" for backward-compat
+   *  by the UI (the metadata key simply being absent). */
+  verification_status?: "pending" | "verified" | "rejected";
+  /** User id of the admin who verified / rejected the document. */
+  verified_by?: string | null;
+  /** ISO timestamp of the verify / reject action. */
+  verified_at?: string | null;
+  /** Reason captured when an admin rejects the document. Null when
+   *  verification_status is "pending" or "verified". */
+  reject_reason?: string | null;
+  /** Optional link to an existing deal (CRM). */
+  linked_deal_id?: string | null;
+  /** Optional link to an existing invoice (Finance). */
+  linked_invoice_id?: string | null;
+  /** Optional link to an existing offer (Finance). */
+  linked_offer_id?: string | null;
 }
 
 export interface DocumentRevision {
@@ -1480,6 +1525,8 @@ export type NotificationType =
   | "offer_accepted"
   | "offer_rejected"
   | "offer_expired"
+  // FIX-MARKET-UI / FIX 3 — portal client countered an offer.
+  | "offer_countered"
   | "invoice_sent"
   | "invoice_overdue"
   | "invoice_paid"

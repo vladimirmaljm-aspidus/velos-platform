@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Card, CardContent,
@@ -76,6 +76,13 @@ export function MailQueueView() {
   // surface). Tenant admins — including trial tenants whose
   // `isAdmin()` returns true via the role check — must not see it.
   const superAdmin = isSuperAdmin(user);
+  // When a super_admin has NO active tenant selected, the mail-queue API
+  // returns ALL entries across ALL tenants (cross-tenant observability).
+  // When a tenant IS selected (or the caller is a tenant admin), the API
+  // scopes to that tenant. We surface a tenant column + "all tenants"
+  // banner only when the view is genuinely cross-tenant.
+  const activeTenantId = useAppStore((s) => s.activeTenantId);
+  const crossTenantMode = superAdmin && !activeTenantId;
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounced(search, 300);
@@ -96,6 +103,24 @@ export function MailQueueView() {
     },
     enabled: superAdmin,
   });
+
+  // Tenant name lookup — only fetched in cross-tenant mode (the
+  // tenant-scoped view doesn't need it because every row belongs to the
+  // caller's own tenant and there's no tenant column to render).
+  const tenantsQ = useQuery({
+    queryKey: ["mail-queue-tenants"],
+    queryFn: async () => {
+      const r = await fetch("/api/tenants");
+      return r.ok ? (r.json() as Promise<{ items: { id: string; name: string }[] }>) : { items: [] };
+    },
+    enabled: superAdmin && crossTenantMode,
+    staleTime: 60_000,
+  });
+  const tenantNameMap = useMemo(() => {
+    const m = new Map<string, string>();
+    (tenantsQ.data?.items || []).forEach((tn) => m.set(tn.id, tn.name));
+    return m;
+  }, [tenantsQ.data]);
 
   const retryMut = useMutation({
     mutationFn: async (entry: MailQueueEntry) => {
@@ -188,6 +213,17 @@ export function MailQueueView() {
         />
       </div>
 
+      {crossTenantMode && (
+        <Card className="mb-4 border-amber-200 bg-amber-50/50 dark:bg-amber-950/10">
+          <CardContent className="p-3 flex items-start gap-2.5">
+            <AlertTriangle className="size-4 text-amber-600 mt-0.5 shrink-0" />
+            <p className="text-xs text-amber-700 dark:text-amber-300">
+              {t("admin-mail-cross-tenant-note")}
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       <Card className="mb-4">
         <CardContent className="p-3 flex flex-col md:flex-row gap-2">
           <div className="relative flex-1">
@@ -234,6 +270,9 @@ export function MailQueueView() {
               <Table>
                 <TableHeader className="sticky top-0 bg-card z-10">
                   <TableRow>
+                    {crossTenantMode && (
+                      <TableHead className="hidden md:table-cell">{t("admin-mail-col-tenant")}</TableHead>
+                    )}
                     <TableHead>{t("admin-mail-col-to")}</TableHead>
                     <TableHead>{t("admin-mail-subject")}</TableHead>
                     <TableHead>{t("admin-col-status")}</TableHead>
@@ -248,12 +287,20 @@ export function MailQueueView() {
                   {items.map((m) => {
                     const meta = STATUS_META[m.status];
                     const Icon = meta.icon;
+                    const tenantName = m.tenant_id
+                      ? tenantNameMap.get(m.tenant_id) || m.tenant_id.slice(0, 8)
+                      : "—";
                     return (
                       <TableRow
                         key={m.id}
                         className="cursor-pointer hover:bg-muted/50"
                         onClick={() => setDetailId(m.id)}
                       >
+                        {crossTenantMode && (
+                          <TableCell className="hidden md:table-cell text-xs text-muted-foreground truncate max-w-[160px]" title={tenantName}>
+                            {tenantName}
+                          </TableCell>
+                        )}
                         <TableCell className="font-medium text-sm truncate max-w-[200px]">{m.to_email}</TableCell>
                         <TableCell className="text-sm truncate max-w-[240px]">{m.subject || "—"}</TableCell>
                         <TableCell>

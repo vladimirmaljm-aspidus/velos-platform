@@ -570,8 +570,8 @@ export function InvoicesView() {
                           <div className="flex items-center justify-end gap-1">
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                <Button size="icon" variant="ghost" className="size-8" title={t("fin-quick-actions-tooltip")}>
-                                  <ChevronDown className="size-4" />
+                                <Button size="icon" variant="ghost" className="size-8" title={t("fin-quick-actions-tooltip")} aria-label={t("fin-quick-actions-tooltip")}>
+                                  <ChevronDown className="size-4" aria-hidden="true" />
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" className="w-48">
@@ -628,8 +628,8 @@ export function InvoicesView() {
                                 </DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
-                            <Button size="icon" variant="ghost" className="size-8" onClick={() => setDetailId(inv.id)} title={t("view")}>
-                              <Eye className="size-4" />
+                            <Button size="icon" variant="ghost" className="size-8" onClick={() => setDetailId(inv.id)} title={t("view")} aria-label={t("view")}>
+                              <Eye className="size-4" aria-hidden="true" />
                             </Button>
                           </div>
                         </TableCell>
@@ -2072,8 +2072,9 @@ function InvoiceFormDialog({
                             className="size-9 text-destructive"
                             onClick={() => removeItem(idx)}
                             title={t("fin-remove-item-title")}
+                            aria-label={t("fin-remove-item-title")}
                           >
-                            <X className="size-4" />
+                            <X className="size-4" aria-hidden="true" />
                           </Button>
                         </div>
                         <div className="col-span-12 text-right text-xs text-muted-foreground -mt-1">

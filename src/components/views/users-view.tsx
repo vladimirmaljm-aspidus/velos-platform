@@ -277,6 +277,7 @@ export function UsersView() {
                                 variant="ghost"
                                 className="size-8 text-amber-600 hover:text-amber-700"
                                 title={`${t("admin-users-impersonate-title")} ${u.username}`}
+                                aria-label={`${t("admin-users-impersonate-title")} ${u.username}`}
                                 onClick={async () => {
                                   if (!confirm(`${t("admin-users-impersonate-confirm")} ${u.username}? ${t("admin-users-impersonate-audit")}`)) return;
                                   try {
@@ -321,8 +322,9 @@ export function UsersView() {
                                 setDeleteConfirmText("");
                               }}
                               title={isSelf ? t("admin-users-cannot-delete-self") : t("delete")}
+                              aria-label={isSelf ? t("admin-users-cannot-delete-self") : t("delete")}
                             >
-                              <Trash2 className="size-4" />
+                              <Trash2 className="size-4" aria-hidden="true" />
                             </Button>
                           </div>
                         </TableCell>
@@ -721,6 +723,7 @@ function UserFormDialog({
                       className="absolute right-0 top-0 h-full px-2 hover:bg-transparent"
                       onClick={() => setShowPassword(!showPassword)}
                       title={showPassword ? t("admin-users-form-hide-password") : t("admin-users-form-show-password")}
+                      aria-label={showPassword ? t("admin-users-form-hide-password") : t("admin-users-form-show-password")}
                     >
                       {showPassword ? <EyeOff className="size-4 text-muted-foreground" /> : <Eye className="size-4 text-muted-foreground" />}
                     </Button>
@@ -774,6 +777,7 @@ function UserFormDialog({
                       className="absolute right-0 top-0 h-full px-2 hover:bg-transparent"
                       onClick={() => setShowPassword(!showPassword)}
                       title={showPassword ? t("admin-users-form-hide-password") : t("admin-users-form-show-password")}
+                      aria-label={showPassword ? t("admin-users-form-hide-password") : t("admin-users-form-show-password")}
                     >
                       {showPassword ? <EyeOff className="size-4 text-muted-foreground" /> : <Eye className="size-4 text-muted-foreground" />}
                     </Button>

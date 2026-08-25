@@ -109,6 +109,7 @@ export interface GroupMember {
 export interface Question {
   id: string;
   group_id: string | null;
+  post_id: string | null;
   partner_id: string;
   title: string;
   body: string | null;
@@ -123,6 +124,7 @@ export interface Question {
 
 export interface QuestionCreate {
   group_id?: string | null;
+  post_id?: string | null;
   title: string;
   body?: string | null;
   tags?: string[];

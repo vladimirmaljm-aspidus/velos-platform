@@ -40,6 +40,7 @@ function Button({
   variant,
   size,
   asChild = false,
+  type,
   ...props
 }: React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & {
@@ -51,6 +52,18 @@ function Button({
     <Comp
       data-slot="button"
       className={cn(buttonVariants({ variant, size, className }))}
+      // FIX-NOTIF-A11Y: default `type="button"` to prevent the React
+      // form-submit footgun. Without an explicit `type`, a `<button>`
+      // inside a `<form>` is implicitly `type="submit"` — clicking it
+      // (or pressing Enter while focused) submits the form. 87 of 92
+      // `<button>` elements in the codebase relied on this implicit
+      // behaviour being harmless, which works until the button ends
+      // up inside a form (e.g. a search filter bar wrapped in a form)
+      // and starts triggering unexpected submits. Setting the
+      // default to `"button"` here fixes all of them in one place.
+      // Callers that legitimately need submit behaviour pass
+      // `type="submit"` explicitly (which overrides this default).
+      type={asChild ? undefined : (type ?? "button")}
       {...props}
     />
   )

@@ -316,9 +316,10 @@ export function Topbar() {
               variant="ghost"
               size="icon"
               onClick={() => searchOpen()}
+              aria-label={t(locale, "search")}
               className="size-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 smooth"
             >
-              <Search className="size-4" />
+              <Search className="size-4" aria-hidden="true" />
             </Button>
           </TooltipTrigger>
           <TooltipContent side="bottom" className="text-xs">
@@ -332,12 +333,17 @@ export function Topbar() {
             <Button
               variant="ghost"
               size="icon"
+              aria-label={
+                unreadCount > 0
+                  ? `${t(locale, "notifications")} — ${unreadCount} unread`
+                  : t(locale, "notifications")
+              }
               className={cn(
                 "relative size-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 smooth",
                 bellPulse && "animate-pulse",
               )}
             >
-              <Bell className="size-4" />
+              <Bell className="size-4" aria-hidden="true" />
               {/* D-4: brief ping ring when a new WS notification arrives.
                   Renders ABOVE the unread-count badge so the two don't
                   collide visually. */}
@@ -345,7 +351,7 @@ export function Topbar() {
                 <span className="absolute inset-0 rounded-lg ring-2 ring-emerald-500/70 animate-ping" aria-hidden />
               )}
               {unreadCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-emerald-500 text-white text-[9px] font-semibold leading-none ring-2 ring-background">
+                <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-emerald-500 text-white text-[9px] font-semibold leading-none ring-2 ring-background" aria-hidden="true">
                   {unreadCount}
                 </span>
               )}
@@ -474,9 +480,10 @@ export function Topbar() {
                 <Button
                   variant="ghost"
                   size="icon"
+                  aria-label={t(locale, "switch-language")}
                   className="size-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 smooth"
                 >
-                  <Globe className="size-4" />
+                  <Globe className="size-4" aria-hidden="true" />
                 </Button>
               </DropdownMenuTrigger>
             </TooltipTrigger>
@@ -507,9 +514,10 @@ export function Topbar() {
                 <Button
                   variant="ghost"
                   size="icon"
+                  aria-label={t(locale, "theme-customize")}
                   className="size-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 smooth"
                 >
-                  <Palette className="size-4" />
+                  <Palette className="size-4" aria-hidden="true" />
                 </Button>
               </DropdownMenuTrigger>
             </TooltipTrigger>

@@ -437,14 +437,14 @@ export function ProformasView() {
                         </TableCell>
                         <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1">
-                            <Button size="icon" variant="ghost" className="size-8" onClick={() => setDetailId(p.id)} title={t("view")}>
-                              <Eye className="size-4" />
+                            <Button size="icon" variant="ghost" className="size-8" onClick={() => setDetailId(p.id)} title={t("view")} aria-label={t("view")}>
+                              <Eye className="size-4" aria-hidden="true" />
                             </Button>
-                            <Button size="icon" variant="ghost" className="size-8" onClick={() => { setEditing(p); setShowForm(true); }} title={t("edit")}>
-                              <Pencil className="size-4" />
+                            <Button size="icon" variant="ghost" className="size-8" onClick={() => { setEditing(p); setShowForm(true); }} title={t("edit")} aria-label={t("edit")}>
+                              <Pencil className="size-4" aria-hidden="true" />
                             </Button>
-                            <Button size="icon" variant="ghost" className="size-8 text-destructive" onClick={() => setDeleteId(p.id)} title={t("delete")}>
-                              <Trash2 className="size-4" />
+                            <Button size="icon" variant="ghost" className="size-8 text-destructive" onClick={() => setDeleteId(p.id)} title={t("delete")} aria-label={t("delete")}>
+                              <Trash2 className="size-4" aria-hidden="true" />
                             </Button>
                           </div>
                         </TableCell>
@@ -1549,8 +1549,9 @@ function ProformaFormDialog({
                               className="size-9 text-destructive"
                               onClick={() => removeItem(idx)}
                               title={t("fin-remove-item-title")}
+                              aria-label={t("fin-remove-item-title")}
                             >
-                              <X className="size-4" />
+                              <X className="size-4" aria-hidden="true" />
                             </Button>
                           </div>
                           <div className="col-span-12 text-right text-xs text-muted-foreground -mt-1">

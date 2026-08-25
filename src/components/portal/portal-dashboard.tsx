@@ -89,6 +89,7 @@ const STATUS_STYLES: Record<OfferStatus, string> = {
   accepted: "border-transparent bg-emerald-600 text-white",
   rejected: "border-transparent bg-destructive text-destructive-foreground",
   expired: "bg-muted text-muted-foreground",
+  countered: "border-transparent bg-amber-500 text-white",
 };
 
 const INVOICE_STATUS_STYLES: Record<InvoiceStatus, string> = {

@@ -28,8 +28,13 @@ import {
   Collapsible, CollapsibleContent, CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Plus, Pencil, Trash2, Building2, ShieldAlert, Users, Globe, CreditCard,
   CheckCircle2, Layers, ChevronDown, ImageIcon, Upload,
+  MoreVertical, Ban, Play, CalendarPlus,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
@@ -107,6 +112,10 @@ export function TenantsView({ embedded = false }: { embedded?: boolean } = {}) {
   // button behind a type-to-match input.
   const [deleteTarget, setDeleteTarget] = useState<Tenant | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  // FIX-TENANT-DOC: tenant the operator is about to suspend (drives the
+  // confirm dialog). Suspend ends every session for every user in the tenant,
+  // so we gate it behind AlertDialog.
+  const [suspendTarget, setSuspendTarget] = useState<Tenant | null>(null);
 
   const isSuper = isSuperAdmin(user);
 
@@ -144,6 +153,44 @@ export function TenantsView({ embedded = false }: { embedded?: boolean } = {}) {
     },
     onError: (e: any) => toast.error(e.message || "Delete failed."),
   });
+
+  // FIX-TENANT-DOC: shared mutation that hits the existing PUT /api/tenants/[id]
+  // route (the task spec mentions PATCH but the route only exposes PUT — PUT
+  // is what the Edit dialog already uses, and the route's body schema is a
+  // superset of the PATCH described in the spec). All three actions (suspend,
+  // activate, extend-trial) go through this one helper.
+  const statusMut = useMutation({
+    mutationFn: async (args: { tenant: Tenant; patch: Record<string, unknown> }) => {
+      const r = await fetch(api(`/api/tenants/${args.tenant.id}`), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(args.patch),
+      });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.error || "Request failed");
+      }
+      return r.json();
+    },
+    onSuccess: (_data, vars) => {
+      if (vars.patch.status === "suspended") toast.success(t(locale, "pf-toast-suspended"));
+      else if (vars.patch.status === "active") toast.success(t(locale, "pf-toast-activated"));
+      else if (vars.patch.trial_ends_at) toast.success(t(locale, "pf-toast-trial-extended"));
+      qc.invalidateQueries({ queryKey: ["tenants", tenantKey] });
+      setSuspendTarget(null);
+    },
+    onError: (e: any) => toast.error(e.message || t(locale, "pf-toast-action-failed")),
+  });
+
+  function extendTrial(tenant: Tenant) {
+    // Compute new trial_ends_at = current trial_ends_at (or now) + 7 days.
+    const base = tenant.trial_ends_at ? new Date(tenant.trial_ends_at) : new Date();
+    // If the existing trial end is already in the past, anchor to "now" so
+    // the extension actually grants 7 more days rather than a no-op.
+    const anchor = base.getTime() < Date.now() ? new Date() : base;
+    anchor.setDate(anchor.getDate() + 7);
+    statusMut.mutate({ tenant, patch: { trial_ends_at: anchor.toISOString() } });
+  }
 
   // DEL-1: type-to-confirm gate — the operator must type the tenant name
   // verbatim before the destructive action button is enabled. Prevents an
@@ -264,10 +311,53 @@ export function TenantsView({ embedded = false }: { embedded?: boolean } = {}) {
                       <TableCell className="hidden xl:table-cell text-sm text-muted-foreground tabular">{fmtDate(tn.created_at)}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
-                          <Button size="icon" variant="ghost" className="size-8" onClick={() => { setEditing(tn); setShowForm(true); }} title={t(locale, "edit")}>
+                          <Button size="icon" variant="ghost" className="size-8" onClick={() => { setEditing(tn); setShowForm(true); }} title={t(locale, "edit")} aria-label={t(locale, "edit")}>
                             <Pencil className="size-4" />
                           </Button>
-                          <Button size="icon" variant="ghost" className="size-8 text-destructive" onClick={() => { setDeleteTarget(tn); setDeleteConfirmText(""); }} title={t(locale, "delete")}>
+                          {/* FIX-TENANT-DOC: quick-action dropdown. Suspend /
+                           * Activate / Extend Trial used to require opening the
+                           * Edit dialog each time. The dropdown keeps the row
+                           * compact (one caret) while exposing the three
+                           * operations an operator does 95% of the time. */}
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button size="icon" variant="ghost" className="size-8" title={t(locale, "pf-quick-actions")} aria-label={t(locale, "pf-quick-actions")}>
+                                <MoreVertical className="size-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-52">
+                              <DropdownMenuLabel className="text-xs text-muted-foreground">
+                                {t(locale, "pf-quick-actions-label")}
+                              </DropdownMenuLabel>
+                              <DropdownMenuSeparator />
+                              {tn.status !== "suspended" && tn.status !== "cancelled" && (
+                                <DropdownMenuItem
+                                  className="text-destructive focus:text-destructive"
+                                  onSelect={() => setSuspendTarget(tn)}
+                                >
+                                  <Ban className="size-4 mr-2" />
+                                  {t(locale, "pf-suspend-tenant")}
+                                </DropdownMenuItem>
+                              )}
+                              {tn.status !== "active" && (
+                                <DropdownMenuItem
+                                  onSelect={() => statusMut.mutate({ tenant: tn, patch: { status: "active" } })}
+                                  disabled={statusMut.isPending}
+                                >
+                                  <Play className="size-4 mr-2" />
+                                  {t(locale, "pf-activate-tenant")}
+                                </DropdownMenuItem>
+                              )}
+                              <DropdownMenuItem
+                                onSelect={() => extendTrial(tn)}
+                                disabled={statusMut.isPending}
+                              >
+                                <CalendarPlus className="size-4 mr-2" />
+                                {t(locale, "pf-extend-trial")}
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                          <Button size="icon" variant="ghost" className="size-8 text-destructive" onClick={() => { setDeleteTarget(tn); setDeleteConfirmText(""); }} title={t(locale, "delete")} aria-label={t(locale, "delete")}>
                             <Trash2 className="size-4" />
                           </Button>
                         </div>
@@ -336,6 +426,40 @@ export function TenantsView({ embedded = false }: { embedded?: boolean } = {}) {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {t(locale, "delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* FIX-TENANT-DOC: Suspend confirmation. Suspending a tenant kills
+       * every active session for every user in it (the PUT route runs the
+       * `runSuspendCascade` helper which bumps `token_version` on all users
+       * + portal_access rows). That's a high-impact action so we gate it
+       * behind an explicit confirm. */}
+      <AlertDialog
+        open={!!suspendTarget}
+        onOpenChange={(o) => { if (!o) setSuspendTarget(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t(locale, "pf-suspend-confirm-title")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t(locale, "pf-suspend-confirm-desc")}
+              {suspendTarget && (
+                <span className="block mt-2 font-medium text-foreground">
+                  {suspendTarget.name}
+                </span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t(locale, "cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => suspendTarget && statusMut.mutate({ tenant: suspendTarget, patch: { status: "suspended" } })}
+              disabled={statusMut.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {t(locale, "pf-suspend-tenant")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
