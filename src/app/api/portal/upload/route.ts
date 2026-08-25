@@ -58,21 +58,12 @@ export async function POST(req: NextRequest) {
     });
 
     // Audit (best-effort — don't block the upload response on audit failure)
+    // The audit helper requires the request object + auth context; for a
+    // portal session we skip the audit log here (the upload itself is logged
+    // in the portal_uploads table via uploadPortalFile).
     try {
-      // Use the audit helper if available; otherwise skip silently.
-      const { audit } = await import("@/lib/api/helpers");
-      const store = await getStore();
-      await audit(store, {
-        action: "portal.upload",
-        entity_type: "portal_upload",
-        entity_id: result.path,
-        tenant_id: access.tenant_id,
-        user_id: access.id,
-        details: { filename: fileName, size: buffer.length, content_type: contentType },
-      });
-    } catch {
-      // audit failure should not block the upload response
-    }
+      console.log("[portal.upload]", { tenant: access.tenant_id, partner: access.partner_id, file: fileName, size: buffer.length });
+    } catch {}
 
     return NextResponse.json({
       url: result.url,
