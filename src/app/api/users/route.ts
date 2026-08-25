@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, audit, sanitizeError } from "@/lib/api/helpers";
+import { requireAuth, audit, sanitizeError, resolveTenantId } from "@/lib/api/helpers";
 import { hashPassword } from "@/lib/auth/password";
 import { validatePasswordWithPlatformPolicy } from "@/lib/auth/password-policy";
 import { enforceQuota } from "@/lib/api/plan-limits";
@@ -94,12 +94,27 @@ export async function POST(req: NextRequest) {
     }
 
     // Enforce tenant on new user
-    // Super-admin can pick which tenant the user belongs to
-    // Regular admin can only create users in their own tenant
+    // Super-admin can pick which tenant the user belongs to (via
+    // `body.tenant_id` OR `?tenant_id=` query). Regular admin can only
+    // create users in their own tenant.
+    // FIX-DOCS-CHECK: was `body.tenant_id = auth.tenantId!` which silently
+    // passed null for super_admin (whose `auth.tenantId` is null at the
+    // platform level) — the downstream `listUsers(null)` and
+    // `enforceQuota(null, ...)` calls then crashed with a confusing 500.
+    // We now resolve the tenant via the shared helper (which reads
+    // `?tenant_id=` for super_admin and falls back to `auth.tenantId`
+    // for regular admins). If neither is set, refuse with 400.
     if (auth.isSuperAdmin && body.tenant_id) {
-      // super_admin explicitly chose a tenant — keep it
+      // super_admin explicitly chose a tenant in the body — keep it
     } else {
-      body.tenant_id = auth.tenantId!;
+      const tid = resolveTenantId(auth, req);
+      if (!tid) {
+        return NextResponse.json(
+          { error: "No tenant context. Select a tenant or provide tenant_id in the body / ?tenant_id=." },
+          { status: 400 },
+        );
+      }
+      body.tenant_id = tid;
     }
 
     // Prevent more than 2 admins per tenant

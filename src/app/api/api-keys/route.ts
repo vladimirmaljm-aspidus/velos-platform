@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin, audit } from "@/lib/api/helpers";
+import { requireAdmin, audit, resolveTenantId } from "@/lib/api/helpers";
 import { randomBytes, createHash } from "crypto";
 
 export const runtime = "nodejs";
 
 /** List all API keys for the current tenant */
-export async function GET() {
-  const auth = await requireAdmin();
+export async function GET(req: NextRequest) {
+  const auth = await requireAdmin(req);
   if (auth instanceof NextResponse) return auth;
     // Permission gate (api-keys.read)
     { const { requirePermission } = await import("@/lib/permissions/can");
@@ -15,7 +15,11 @@ export async function GET() {
   { const { requireFeature } = await import("@/lib/api/feature-guard");
     const _f = await requireFeature(auth.tenantId, "module_api_keys", auth.isSuperAdmin); if (_f) return _f; } /* requireFeature wired */
 
-  const tid = auth.tenantId!;
+  // FIX-DOCS-CHECK: was `auth.tenantId!` — broke for super_admin (whose
+  // tenantId is null at the platform level). Super-admins now MUST pass
+  // `?tenant_id=xxx`; regular admins keep their own tenant scope.
+  const tid = resolveTenantId(auth, req);
+  if (!tid) return NextResponse.json({ error: "No tenant context. Select a tenant or provide ?tenant_id=." }, { status: 400 });
   const keys = await auth.store.listApiKeys(tid);
   // strip key_hash
   return NextResponse.json({ items: keys.map(({ key_hash, ...k }) => k) });
@@ -44,7 +48,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Name is required." }, { status: 400 });
   }
 
-  body.tenant_id = auth.tenantId!;
+  // FIX-DOCS-CHECK: was `body.tenant_id = auth.tenantId!` — broke for
+  // super_admin (whose tenantId is null at the platform level). The new
+  // key would be created with `tenant_id = null` which the table's NOT
+  // NULL constraint would reject with a confusing 500. Resolve tenant
+  // via the shared helper (super_admin: ?tenant_id=; admin: own tenant).
+  const tid = resolveTenantId(auth, req);
+  if (!tid) return NextResponse.json({ error: "No tenant context. Select a tenant or provide ?tenant_id=." }, { status: 400 });
+  body.tenant_id = tid;
 
   // Parse permissions
   let permissions: string[] = [];

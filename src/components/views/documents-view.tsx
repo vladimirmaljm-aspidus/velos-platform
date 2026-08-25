@@ -84,7 +84,7 @@ export function DocumentsView() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["documents", tenantKey, debouncedSearch, partnerFilter],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -182,6 +182,17 @@ export function DocumentsView() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-36 w-full rounded-xl" />)}
         </div>
+      ) : isError ? (
+        <EmptyState
+          icon={<FileText className="size-6" />}
+          title={t("doc-load-error-title")}
+          description={t("doc-load-error-desc")}
+          action={
+            <Button variant="outline" onClick={() => refetch()}>
+              {t("log-retry")}
+            </Button>
+          }
+        />
       ) : items.length === 0 ? (
         <EmptyState
           icon={<FileText className="size-6" />}
@@ -377,7 +388,9 @@ function DocumentDetail({
 // DOC-1: the admin "Add document" dialog used to POST JSON metadata to
 // `/api/documents` and ask the user to type MIME / size / storage_path by
 // hand — there was no real file upload. We now mirror the portal upload
-// pattern: a real file picker + multipart POST to `/api/documents/upload`.
+// pattern: a real file picker + multipart POST to `/api/documents` (the
+// base POST route now branches on Content-Type: multipart/form-data vs.
+// application/json — see `src/app/api/documents/route.ts`).
 // The server-side route verifies magic bytes, stores the file in Supabase
 // Storage (`shared-documents` bucket), and writes the metadata row.
 function DocumentFormDialog({
@@ -415,7 +428,7 @@ function DocumentFormDialog({
       fd.append("visible_to_partner", visibleToPartner ? "true" : "false");
       if (subject.trim()) fd.append("subject", subject.trim());
 
-      const r = await fetch(api("/api/documents/upload"), {
+      const r = await fetch(api("/api/documents"), {
         method: "POST",
         body: fd,
       });

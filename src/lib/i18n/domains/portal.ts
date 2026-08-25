@@ -242,6 +242,8 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     "portal-doc-uploaded": "Uploaded {date}",
     "portal-doc-preview-na": "Preview is not available for this file type. Downloading instead.",
     "portal-doc-preview-failed": "Failed to load preview",
+    "portal-doc-load-error-title": "Failed to load documents",
+    "portal-doc-load-error-desc": "An error occurred while fetching your documents. Please try again.",
     "portal-doc-preview-of": "Preview of {filename}",
 
     // ─── Catalog ─────────────────────────────────────────────────────────
@@ -2248,6 +2250,8 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     "portal-doc-uploaded": "Otpremljeno {date}",
     "portal-doc-preview-na": "Pregled nije dostupan za ovaj tip fajla. Preuzimanje umesto toga.",
     "portal-doc-preview-failed": "Neuspešno učitavanje pregleda",
+    "portal-doc-load-error-title": "Greška pri učitavanju dokumenata",
+    "portal-doc-load-error-desc": "Došlo je do greške pri preuzimanju vaših dokumenata. Pokušajte ponovo.",
     "portal-doc-preview-of": "Pregled fajla {filename}",
 
     // ─── Catalog ─────────────────────────────────────────────────────────
@@ -4224,6 +4228,8 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     "portal-doc-uploaded": "Yüklendi {date}",
     "portal-doc-preview-na": "Bu dosya türü için önizleme mevcut değil. Onun yerine indiriliyor.",
     "portal-doc-preview-failed": "Önizleme yüklenemedi",
+    "portal-doc-load-error-title": "Belgeler yüklenemedi",
+    "portal-doc-load-error-desc": "Belgeler alınırken bir hata oluştu. Lütfen tekrar deneyin.",
     "portal-doc-preview-of": "{filename} önizlemesi",
 
     // ─── Catalog ─────────────────────────────────────────────────────────
@@ -6200,6 +6206,8 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     "portal-doc-uploaded": "Hochgeladen {date}",
     "portal-doc-preview-na": "Für diesen Dateityp ist keine Vorschau verfügbar. Stattdessen wird heruntergeladen.",
     "portal-doc-preview-failed": "Vorschau konnte nicht geladen werden",
+    "portal-doc-load-error-title": "Dokumente konnten nicht geladen werden",
+    "portal-doc-load-error-desc": "Beim Abrufen Ihrer Dokumente ist ein Fehler aufgetreten. Bitte erneut versuchen.",
     "portal-doc-preview-of": "Vorschau von {filename}",
 
     // ─── Catalog ─────────────────────────────────────────────────────────
@@ -8176,6 +8184,8 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     "portal-doc-uploaded": "Загружено {date}",
     "portal-doc-preview-na": "Предпросмотр недоступен для этого типа файла. Скачивание вместо этого.",
     "portal-doc-preview-failed": "Не удалось загрузить предпросмотр",
+    "portal-doc-load-error-title": "Не удалось загрузить документы",
+    "portal-doc-load-error-desc": "Произошла ошибка при получении ваших документов. Попробуйте ещё раз.",
     "portal-doc-preview-of": "Предпросмотр {filename}",
 
     // ─── Catalog ─────────────────────────────────────────────────────────

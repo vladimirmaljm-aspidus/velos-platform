@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, audit } from "@/lib/api/helpers";
+import { requireAuth, audit, resolveTenantId } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
 
@@ -19,7 +19,12 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     // Verify the key belongs to the user's tenant.
     // listApiKeys ignores _tenantId in the store, so we fetch all and
     // filter for non-super_admin.
-    const keys = await auth.store.listApiKeys(auth.tenantId!);
+    // FIX-DOCS-CHECK: was `auth.tenantId!` — broke for super_admin (whose
+    // tenantId is null at the platform level). Super-admins now MUST pass
+    // `?tenant_id=xxx`; regular admins keep their own tenant scope.
+    const tid = resolveTenantId(auth, req);
+    if (!tid) return NextResponse.json({ error: "No tenant context. Select a tenant or provide ?tenant_id=." }, { status: 400 });
+    const keys = await auth.store.listApiKeys(tid);
     const key = keys.find((k) => k.id === id);
     if (!key) {
       return NextResponse.json({ error: "API key not found." }, { status: 404 });

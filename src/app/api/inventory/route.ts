@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth } from "@/lib/api/helpers";
+import { requireAuth, resolveTenantId } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
 
@@ -14,7 +14,15 @@ export async function GET(req: NextRequest) {
     { const { requireFeature } = await import("@/lib/api/feature-guard");
       const _f = await requireFeature(auth.tenantId, "module_inventory", auth.isSuperAdmin); if (_f) return _f; } /* requireFeature wired */
 
-    const tid = auth.tenantId!;
+    // FIX-DOCS-CHECK: was `auth.tenantId!` — broke for super_admin (whose
+    // tenantId is null at the platform level). The store's
+    // `listAllInventory(null, ...)` would then build a Supabase query with
+    // `.eq("tenant_id", null)` which returns zero rows (NOT a tenant-wide
+    // view), so a super_admin clicking "Inventory" saw a blank page.
+    // Super-admins now MUST pass `?tenant_id=xxx`; regular admins keep
+    // their own tenant scope.
+    const tid = resolveTenantId(auth, req);
+    if (!tid) return NextResponse.json({ error: "No tenant context. Select a tenant or provide ?tenant_id=." }, { status: 400 });
     const url = new URL(req.url);
     const partner_id = url.searchParams.get("partner_id") || undefined;
     const product_id = url.searchParams.get("product_id") || undefined;

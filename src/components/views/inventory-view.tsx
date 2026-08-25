@@ -63,7 +63,7 @@ export function InventoryView() {
     setDetailId(null);
   }
 
-  const { data, isLoading, isFetching } = useQuery({
+  const { data, isLoading, isFetching, isError, refetch } = useQuery({
     queryKey: ["inventory", tenantKey, "all", partnerFilter, productFilter, lowStock, pages],
     queryFn: async () => {
       const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) });
@@ -254,6 +254,24 @@ export function InventoryView() {
             <div className="p-4 space-y-2">
               {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
             </div>
+          ) : isError ? (
+            // FIX-DOCS-CHECK: render an explicit error state instead of a
+            // misleading "no data" empty state when the fetch fails. The
+            // previous code only destructured `isLoading`/`isFetching` so
+            // any fetch failure (401, 500, network) silently fell into the
+            // `items.length === 0` branch and showed "No inventory
+            // movements" — the user thought the tenant had no data when
+            // actually the request had failed.
+            <EmptyState
+              icon={<AlertTriangle className="size-6" />}
+              title={t(locale, "crm-inventory-load-error-title")}
+              description={t(locale, "crm-inventory-load-error-desc")}
+              action={
+                <Button variant="outline" onClick={() => refetch()}>
+                  {tFn("log-retry")}
+                </Button>
+              }
+            />
           ) : lowStock ? (
             // Low-stock mode — render products at/below reorder_level.
             lowStockProducts.length === 0 ? (

@@ -195,6 +195,35 @@ export function PortalDocuments() {
         <div className="flex items-center justify-center py-16">
           <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </div>
+      ) : docsQ.isError ? (
+        // FIX-DOCS-CHECK: render an explicit error state instead of a
+        // misleading "empty" state when the fetch fails. Previously the
+        // view fell through to the `filtered.length === 0` branch and
+        // showed the "no documents" empty card — the partner would
+        // conclude they had no documents when actually the request had
+        // failed (auth expired, network, etc.). The retry button re-runs
+        // the query; if the underlying cause was an expired session the
+        // next failure will surface a 401 and the portal shell will
+        // redirect to login (see portal-shell.tsx interceptors).
+        <div className="card-premium p-12 flex flex-col items-center justify-center text-center">
+          <div className="size-16 rounded-full bg-destructive/10 flex items-center justify-center mb-4">
+            <AlertCircle className="size-7 text-destructive" />
+          </div>
+          <p className="text-base font-semibold">
+            {t("portal-doc-load-error-title")}
+          </p>
+          <p className="text-sm text-muted-foreground mt-1 max-w-sm">
+            {t("portal-doc-load-error-desc")}
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-4"
+            onClick={() => docsQ.refetch()}
+          >
+            {t("portal-action-try-again")}
+          </Button>
+        </div>
       ) : filtered.length === 0 ? (
         <EmptyDocuments t={t} />
       ) : (
