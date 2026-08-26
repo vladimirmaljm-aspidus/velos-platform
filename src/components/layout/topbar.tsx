@@ -940,11 +940,13 @@ export function Topbar() {
             <DropdownMenuSeparator className="my-1 bg-border/50" />
 
             <DropdownMenuItem
-              onSelect={() => logout()}
+              asChild
               className="cursor-pointer rounded-lg mx-0.5 px-3 py-2 text-sm text-destructive focus:text-destructive focus:bg-destructive/10 smooth"
             >
-              <LogOut className="size-4 mr-2.5" />
-              {t(locale, "sign-out")}
+              <a href="/logout" className="flex items-center w-full">
+                <LogOut className="size-4 mr-2.5" />
+                {t(locale, "sign-out")}
+              </a>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
