@@ -419,6 +419,13 @@ export function Topbar() {
     setView("dashboard");
     useI18nStore.getState().reset();
     toast.success("Signed out.");
+    // CRITICAL FIX: force a full page reload so the browser processes the
+    // Set-Cookie: crm_session=; Max-Age=0 header from the logout response.
+    // Without this, the Zustand store may clear (user: null) but the browser
+    // still has the cookie → on refresh, auth/me finds the stale cookie →
+    // user is "re-logged in". A full navigation guarantees the cookie is
+    // gone before the next page load.
+    window.location.href = "/";
   }
 
   function openPortal() {
