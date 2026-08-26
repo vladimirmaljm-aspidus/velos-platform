@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionFromCookie, clearSessionCookie } from "@/lib/auth/session";
+import { getSessionFromCookie, clearSessionCookie, SESSION_COOKIE } from "@/lib/auth/session";
 import { audit } from "@/lib/api/helpers";
 import { getSupabase } from "@/lib/supabase/client";
 
@@ -71,8 +71,18 @@ export async function POST(req: NextRequest) {
     }
   } catch (e) { console.error("[portal/me.logout]", e); }
 
-  await clearSessionCookie();
-  return NextResponse.json({ ok: true });
+  // CRITICAL FIX: same as admin logout — clearSessionCookie() via
+  // cookies().delete() doesn't work when returning NextResponse.json().
+  // Set the cookie deletion directly on the response.
+  const res = NextResponse.json({ ok: true });
+  res.cookies.set(SESSION_COOKIE, "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 0,
+  });
+  return res;
 }
 
 // PUT — update portal client preferences (currently: locale).

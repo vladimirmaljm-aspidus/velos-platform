@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { clearSessionCookie, getSessionFromCookie } from "@/lib/auth/session";
+import { clearSessionCookie, getSessionFromCookie, SESSION_COOKIE } from "@/lib/auth/session";
 import { getStore } from "@/lib/data/store";
 import { audit } from "@/lib/api/helpers";
 
@@ -50,6 +50,19 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     console.error("[logout] Unexpected error:", e);
   }
-  await clearSessionCookie();
-  return NextResponse.json({ ok: true });
+  // CRITICAL FIX: clearSessionCookie() uses cookies().delete() from
+  // next/headers, but when we also return NextResponse.json(), the
+  // cookie deletion is NOT included in the response. The browser never
+  // receives Set-Cookie: velos_session=; Max-Age=0 → the cookie persists
+  // → on refresh, auth/me finds the stale cookie → user is "re-logged in".
+  // Fix: set the cookie deletion directly on the NextResponse object.
+  const res = NextResponse.json({ ok: true });
+  res.cookies.set(SESSION_COOKIE, "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 0,
+  });
+  return res;
 }
