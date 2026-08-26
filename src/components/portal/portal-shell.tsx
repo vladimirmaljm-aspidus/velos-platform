@@ -435,7 +435,7 @@ export function PortalShell({
 
   async function signOut() {
     try {
-      await fetch("/api/portal/me", { method: "POST" });
+      await fetch("/api/portal/me", { method: "POST", credentials: "include" });
     } catch {
       // ignore — still clear client state
     }

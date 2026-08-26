@@ -410,8 +410,11 @@ export function Topbar() {
   }
 
   async function logout() {
-    await fetch("/api/auth/logout", { method: "POST" });
-    // D-4: tear down the WebSocket so a logged-out tab doesn't keep an open
+    // CRITICAL: credentials: 'include' ensures the browser processes
+    // the Set-Cookie: crm_session=; Max-Age=0 header in the response.
+    // Without explicit credentials, some browsers don't process
+    // Set-Cookie from fetch() responses (same-origin default varies).
+    await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
     // connection under a stale identity. The next login will reconnect with
     // the new user's rooms.
     disconnectRealtime();
