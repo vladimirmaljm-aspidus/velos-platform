@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { clearSessionCookie, getSessionFromCookie, "velos_session" } from "@/lib/auth/session";
+import { clearSessionCookie, getSessionFromCookie, SESSION_COOKIE_NAME } from "@/lib/auth/session";
 import { getStore } from "@/lib/data/store";
 import { audit } from "@/lib/api/helpers";
 
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
   // → on refresh, auth/me finds the stale cookie → user is "re-logged in".
   // Fix: set the cookie deletion directly on the NextResponse object.
   const res = NextResponse.json({ ok: true });
-  res.cookies.set("velos_session", "", {
+  res.cookies.set(SESSION_COOKIE_NAME, "", {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",

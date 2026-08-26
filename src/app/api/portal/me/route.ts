@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionFromCookie, clearSessionCookie, "velos_session" } from "@/lib/auth/session";
+import { getSessionFromCookie, clearSessionCookie, SESSION_COOKIE_NAME } from "@/lib/auth/session";
 import { audit } from "@/lib/api/helpers";
 import { getSupabase } from "@/lib/supabase/client";
 
@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
   // cookies().delete() doesn't work when returning NextResponse.json().
   // Set the cookie deletion directly on the response.
   const res = NextResponse.json({ ok: true });
-  res.cookies.set("velos_session", "", {
+  res.cookies.set(SESSION_COOKIE_NAME, "", {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
