@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, audit, getIp } from "@/lib/api/helpers";
-import { clearSessionCookie } from "@/lib/auth/session";
+import { getSessionFromCookie } from "@/lib/auth/session";
 
 export const runtime = "nodejs";
 
@@ -84,6 +84,6 @@ export async function POST(req: NextRequest) {
   // 4. Clear the caller's own session cookie. Their JWT was already invalidated
   //    by the token_version bump above; this just prevents the next request
   //    from sending a stale cookie that would 401 anyway.
-  await clearSessionCookie();
+  const res = NextResponse.json({ ok: true }); res.cookies.set("velos_session", "", { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", maxAge: 0 }); return res;
   return NextResponse.json({ ok: true });
 }
