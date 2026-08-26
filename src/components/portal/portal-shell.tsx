@@ -433,19 +433,12 @@ export function PortalShell({
     }
   }, [kycBlocking, view, setView]);
 
-  async function signOut() {
-    try {
-      
-    } catch {
-      // ignore — still clear client state
-    }
+  function signOut() {
     setPortalAccess(null);
     setAppMode("crm");
-    toast.success(t("portal-toast-signed-out"));
-    // Use full-page navigation for reliable cookie clearing.
+    // Full-page navigation to /logout — the most reliable way to clear
+    // the session cookie. The /logout page calls the API and redirects.
     window.location.href = "/logout";
-    // CRITICAL FIX: force page reload so browser clears the cookie.
-    window.location.href = "/";
   }
 
   if (!portalAccess) {
