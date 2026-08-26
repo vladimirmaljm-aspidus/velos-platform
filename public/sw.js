@@ -17,7 +17,7 @@
  * previous caches on the next activate. Old `velos-v<N>` caches are wiped.
  */
 
-const CACHE_VERSION = "v1";
+const CACHE_VERSION = "v2";
 const CACHE_NAME = `velos-${CACHE_VERSION}`;
 const STATIC_CACHE = `${CACHE_NAME}-static`;
 const API_CACHE = `${CACHE_NAME}-api`;
@@ -136,7 +136,17 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // API requests → stale-while-revalidate.
+  // CRITICAL: Never cache auth/session-related API routes. Caching
+  // /api/auth/me would serve a stale 200 (with user data) after logout,
+  // making the user appear "re-logged in" on refresh. Auth routes must
+  // always go to the network — no cache, no stale-while-revalidate.
+  const AUTH_PATHS = /^\/api\/(auth|portal\/me|portal\/login|portal\/logout)/;
+  if (AUTH_PATHS.test(url.pathname)) {
+    event.respondWith(fetch(request));
+    return;
+  }
+
+  // API requests → stale-while-revalidate (non-auth only).
   if (API_PATH_PATTERN.test(url.pathname)) {
     event.respondWith(staleWhileRevalidate(request));
     return;
