@@ -55,7 +55,7 @@ export const TIER_CATALOG: Record<PortalTier, TierMeta> = {
     icon: "briefcase",
     requiresKyc: true,
     requiresDocuments: true,
-    requiresLocation: true,
+    requiresLocation: false, // GPS optional — don't block clients
     canDownloadPdf: true,
     canSubmitRfq: true,
     order: 80,
@@ -69,7 +69,7 @@ export const TIER_CATALOG: Record<PortalTier, TierMeta> = {
     icon: "user",
     requiresKyc: true,
     requiresDocuments: true,
-    requiresLocation: true,
+    requiresLocation: false, // GPS optional — don't block clients
     canDownloadPdf: false,
     canSubmitRfq: true,
     order: 60,
@@ -83,7 +83,7 @@ export const TIER_CATALOG: Record<PortalTier, TierMeta> = {
     icon: "user-minus",
     requiresKyc: true,
     requiresDocuments: true,
-    requiresLocation: true,
+    requiresLocation: false, // GPS optional — don't block clients
     canDownloadPdf: false,
     canSubmitRfq: false,
     order: 40,
@@ -99,7 +99,7 @@ export const TIER_CATALOG: Record<PortalTier, TierMeta> = {
     icon: "user-x",
     requiresKyc: true,
     requiresDocuments: true,
-    requiresLocation: true,
+    requiresLocation: false, // GPS optional — don't block clients
     canDownloadPdf: false,
     canSubmitRfq: false,
     order: 20,
