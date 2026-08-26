@@ -409,13 +409,11 @@ export function Topbar() {
     setNotifOpen(false);
   }
 
-  async function logout() {
-    // Use full-page navigation to /logout — fetch() doesn't reliably
-    // process Set-Cookie headers in all browsers. The /logout page
-    // calls the API and redirects to /, guaranteeing the cookie is
-    // cleared before the next page load.
-    disconnectRealtime();
-    setUser(null);
+  function logout() {
+    // Full-page navigation to /logout. The /logout page calls the API,
+    // clears the cookie, and redirects to /. Full navigation is the only
+    // reliable way to clear the session cookie — fetch() + cookies()
+    // + DropdownMenuItem onClick all had issues.
     window.location.href = "/logout";
   }
 
