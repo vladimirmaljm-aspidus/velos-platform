@@ -17,6 +17,24 @@ export const runtime = "nodejs";
 // endpoint already returns a generic "if account exists" response).
 
 /**
+ * HTML-escape a string before interpolating into the email HTML body.
+ * EMAIL-AUDIT (MEDIUM) — `tenant.name` is admin-settable; an admin
+ * (or a malicious actor who compromised the admin session) could
+ * rename a tenant to `<img src=x onerror=alert(1)>` and have it land
+ * in the password reset email that goes to their own portal clients.
+ * Same escape discipline as `src/lib/email/service.ts:escapeHtml`.
+ */
+function escapeHtml(str: string): string {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+/**
  * POST /api/portal/forgot-password
  * Body: { email: "client@example.com" }
  *
@@ -102,7 +120,7 @@ export async function POST(req: NextRequest) {
         <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:560px;margin:0 auto;padding:32px 20px;">
           <div style="background:#0f766e;color:white;padding:24px 28px;border-radius:12px 12px 0 0;">
             <h1 style="margin:0;font-size:18px;font-weight:600;">Password Reset Request</h1>
-            <p style="margin:6px 0 0;opacity:0.9;font-size:13px;">${tenant.name || "VELOS"} Client Portal</p>
+            <p style="margin:6px 0 0;opacity:0.9;font-size:13px;">${escapeHtml(tenant.name || "VELOS")} Client Portal</p>
           </div>
           <div style="background:white;padding:28px;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 12px 12px;">
             <p style="color:#333;font-size:14px;">Hello,</p>

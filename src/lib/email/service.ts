@@ -94,8 +94,142 @@ interface EmailConfig {
 }
 
 /**
+ * Domain allowlist for the `from` envelope header.
+ *
+ * EMAIL-AUDIT / CRITICAL — spoofing fix. Without this guard, a tenant admin
+ * who configures their own comms blob can set `from_email: ceo@victim.com`
+ * (or `resend_from_email` / `postmark_from_email`). The email service then
+ * emits the `from` header verbatim — and when the tenant uses SMTP to a
+ * relay that doesn't enforce SPF/DKIM, the recipient sees a forged
+ * `From: "VELOS Trade" <ceo@victim.com>` and trusts it. Resend/Postmark
+ * both enforce domain verification at the provider level, so they would
+ * reject the send — but SMTP does not, which is the actual attack vector.
+ *
+ * Defense:
+ *   1. The platform super-admin publishes a comma-separated list of
+ *      allowed from-domains in the platform-level setting
+ *      `email_allowed_from_domains` (tenant_id = NULL). Example:
+ *      "aspidus.onrender.com,mycompany.com".
+ *   2. At send time, `getEmailConfig` parses the from-email's domain
+ *      and checks it against the allowlist. If the domain is NOT on
+ *      the list, the from-email is replaced with `noreply@<first-allowed>`
+ *      — silently, with a console.warn so the platform operator sees it.
+ *   3. At save time, the settings PUT route rejects the comms blob
+ *      outright (400) if any of `from_email` / `resend_from_email` /
+ *      `postmark_from_email` carries a domain that's not on the
+ *      allowlist, so the admin gets an actionable error instead of a
+ *      silent rewrite.
+ *
+ * Default allowlist when no platform setting is configured:
+ *   ["aspidus.onrender.com", "resend.dev"]
+ * — the platform's deployment domain + the Resend sandbox domain
+ * (only `onboarding@resend.dev` is meaningful on resend.dev, but
+ * allowing the domain is harmless).
+ */
+const DEFAULT_ALLOWED_FROM_DOMAINS = ["aspidus.onrender.com", "resend.dev"];
+
+/**
+ * Load the platform-level allowed from-domains list. Returns the
+ * comma-separated string from the `email_allowed_from_domains`
+ * setting (tenant_id = NULL) — falls back to env var
+ * `ALLOWED_FROM_DOMAINS` — falls back to the default list above.
+ *
+ * Always returns a non-empty array; the caller can iterate without
+ * a null check.
+ */
+async function loadAllowedFromDomains(): Promise<string[]> {
+  try {
+    const store = await getStore();
+    const raw = await store.getSetting<string>("email_allowed_from_domains", null);
+    if (typeof raw === "string" && raw.trim()) {
+      const parsed = raw
+        .split(",")
+        .map((d) => d.trim().toLowerCase())
+        .filter((d) => d.length > 0);
+      if (parsed.length > 0) return parsed;
+    }
+  } catch (e) {
+    console.error("[email] loadAllowedFromDomains failed:", e);
+  }
+  const envRaw = process.env.ALLOWED_FROM_DOMAINS;
+  if (typeof envRaw === "string" && envRaw.trim()) {
+    const parsed = envRaw
+      .split(",")
+      .map((d) => d.trim().toLowerCase())
+      .filter((d) => d.length > 0);
+    if (parsed.length > 0) return parsed;
+  }
+  return DEFAULT_ALLOWED_FROM_DOMAINS.slice();
+}
+
+/**
+ * Validate a `from` email against the platform allowlist.
+ * Returns the validated email (if its domain is allowed) or a safe
+ * fallback (`noreply@<first-allowed-domain>`). The fallback is
+ * intentionally the FIRST entry of the allowlist so the platform
+ * operator can control what the rewritten address looks like by
+ * reordering the list.
+ *
+ * Exported so the settings PUT route can use it to reject bad
+ * inputs at save time (`validateFromEmailStrict`).
+ */
+export async function resolveFromEmail(fromEmail: string): Promise<string> {
+  const allowed = await loadAllowedFromDomains();
+  return validateFromEmailWithList(fromEmail, allowed);
+}
+
+/**
+ * Pure-function variant of the validator — takes the allowlist
+ * explicitly so it can be unit-tested without a DB round-trip.
+ * Returns the original email if its domain is on the list, or
+ * `noreply@<allowed[0]>` otherwise.
+ */
+export function validateFromEmailWithList(fromEmail: string, allowed: string[]): string {
+  const email = String(fromEmail || "").trim().toLowerCase();
+  // Reject obviously malformed emails entirely — the safe fallback
+  // is still a valid email so downstream SMTP/HTTP APIs don't blow up.
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return `noreply@${allowed[0] || "aspidus.onrender.com"}`;
+  }
+  const domain = email.split("@")[1] || "";
+  if (allowed.includes(domain)) return email;
+  // Rewrite to the safe default. We deliberately do NOT preserve the
+  // local-part — a tenant setting `from_email=ceo@victim.com` must NOT
+  // get `ceo@aspidus.onrender.com` back (which would still read as
+  // "ceo" and could mislead the recipient). The neutral `noreply` local-
+  // part makes it obvious this is an automated system address.
+  return `noreply@${allowed[0] || "aspidus.onrender.com"}`;
+}
+
+/**
+ * Strict variant for the settings PUT route — returns `null` if the
+ * from-email's domain is on the allowlist (valid), or the safe fallback
+ * if it isn't (invalid). The caller can distinguish the two cases and
+ * surface a 400 to the admin when invalid. Returns the original email
+ * when valid, so the route can store it verbatim.
+ */
+export async function validateFromEmailStrict(fromEmail: string): Promise<{ valid: boolean; value: string; fallback: string }> {
+  const allowed = await loadAllowedFromDomains();
+  const email = String(fromEmail || "").trim().toLowerCase();
+  const fallback = `noreply@${allowed[0] || "aspidus.onrender.com"}`;
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { valid: false, value: fromEmail, fallback };
+  }
+  const domain = email.split("@")[1] || "";
+  if (allowed.includes(domain)) return { valid: true, value: fromEmail, fallback };
+  return { valid: false, value: fromEmail, fallback };
+}
+
+/**
  * Load the email configuration for a tenant (or the global config).
  * Returns the resolved provider + its credentials.
+ *
+ * EMAIL-AUDIT / CRITICAL — the `from_email` (and provider-specific
+ * `resend_from_email` / `postmark_from_email`) are validated against
+ * the platform allowlist at load time. A tenant that configured
+ * `from_email=ceo@victim.com` before this fix silently gets the
+ * platform default `noreply@<allowed-domain>` instead — defense-in-
+ * depth on top of the save-time rejection in the settings PUT route.
  */
 export async function getEmailConfig(tenantId?: string): Promise<EmailConfig | null> {
   const store = await getStore();
@@ -106,7 +240,21 @@ export async function getEmailConfig(tenantId?: string): Promise<EmailConfig | n
 
   const provider: EmailProvider = comms.email_provider || (comms.smtp_host ? "smtp" : "none");
   const fromName = comms.from_name || "VELOS CRM";
-  const fromEmail = comms.from_email || process.env.NOREPLY_EMAIL || "noreply@aspidus.onrender.com";
+  // Validate the base from-email against the platform allowlist. This
+  // value is what SMTP uses directly AND what Resend/Postmark fall back
+  // to when their provider-specific from-email is missing.
+  const rawFromEmail = comms.from_email || process.env.NOREPLY_EMAIL || "noreply@aspidus.onrender.com";
+  const fromEmail = await resolveFromEmail(rawFromEmail);
+  if (fromEmail !== rawFromEmail.toLowerCase()) {
+    // The rawFromEmail was rewritten — log it so the platform operator
+    // can see the spoofing attempt in their logs. The send still goes
+    // through (with the safe fallback); we don't break the user-facing
+    // flow, we just refuse to use the spoofed address.
+    console.warn(
+      `[email] from_email "${rawFromEmail}" is not on the platform allowlist; falling back to "${fromEmail}". ` +
+      `Set the platform setting "email_allowed_from_domains" to allow this domain.`,
+    );
+  }
 
   const config: EmailConfig = { provider, fromName, fromEmail };
 
@@ -117,24 +265,44 @@ export async function getEmailConfig(tenantId?: string): Promise<EmailConfig | n
       user: comms.smtp_user,
       password: comms.smtp_password || "",
       fromName,
+      // SMTP uses config.fromEmail directly — already validated above.
       fromEmail,
     };
   }
 
   if (comms.resend_api_key) {
+    // Validate the provider-specific from-email too — a tenant could
+    // set `from_email=noreply@aspidus.onrender.com` (allowed) but
+    // `resend_from_email=ceo@victim.com` (not allowed). The provider-
+    // specific value goes into the `from` header, so it must be
+    // validated independently.
+    const rawResendFrom = comms.resend_from_email || fromEmail;
+    const resendFromEmail = await resolveFromEmail(rawResendFrom);
+    if (resendFromEmail !== String(rawResendFrom).toLowerCase() && comms.resend_from_email) {
+      console.warn(
+        `[email] resend_from_email "${comms.resend_from_email}" is not on the platform allowlist; falling back to "${resendFromEmail}".`,
+      );
+    }
     config.resend = {
       apiKey: comms.resend_api_key,
       fromName,
-      fromEmail: comms.resend_from_email || fromEmail,
+      fromEmail: resendFromEmail,
       replyTo: comms.reply_to || undefined,
     };
   }
 
   if (comms.postmark_server_token) {
+    const rawPostmarkFrom = comms.postmark_from_email || fromEmail;
+    const postmarkFromEmail = await resolveFromEmail(rawPostmarkFrom);
+    if (postmarkFromEmail !== String(rawPostmarkFrom).toLowerCase() && comms.postmark_from_email) {
+      console.warn(
+        `[email] postmark_from_email "${comms.postmark_from_email}" is not on the platform allowlist; falling back to "${postmarkFromEmail}".`,
+      );
+    }
     config.postmark = {
       serverToken: comms.postmark_server_token,
       fromName,
-      fromEmail: comms.postmark_from_email || fromEmail,
+      fromEmail: postmarkFromEmail,
       replyTo: comms.reply_to || undefined,
       messageStream: comms.postmark_message_stream || "outbound",
     };
@@ -699,6 +867,79 @@ export function logisticsQuoteReadyEmail(opts: {
         <p style="color:#888;font-size:12px;line-height:1.5;">Sign in to your portal to accept, decline, or ask for changes.</p>
       </div>
       <p style="text-align:center;color:#999;font-size:11px;margin-top:20px;">© ${new Date().getFullYear()} ${escapeHtml(opts.tenantName)}. Powered by Aspidus.</p>
+    </div>
+  `;
+  return { subject, html };
+}
+
+/**
+ * 2FA activation notification — EMAIL-AUDIT (HIGH).
+ *
+ * Sent to the user's registered email the moment their 2FA is activated
+ * (POST /api/auth/2fa/verify success). This is a defense-in-depth
+ * notification: if an attacker briefly holds the user's session and
+ * silently rotates the TOTP secret + recovery codes, the legitimate
+ * user gets an email at their real inbox saying "2FA was just turned
+ * on — was that you?". Without this notification, the user would have
+ * no signal until they next tried to log in and were prompted for a
+ * TOTP code they don't have.
+ *
+ * The email deliberately includes:
+ *   - The actor's username (so the user can verify it's them)
+ *   - The IP and user-agent of the activation request (so a user who
+ *     didn't activate can see where it came from)
+ *   - A "disable 2FA" link to the user's security settings
+ *
+ * It does NOT include the recovery codes (those were shown exactly
+ * once in the API response) — re-sending them in an email would
+ * massively widen the surface for a single-use credential.
+ */
+export function twoFactorActivatedEmail(opts: {
+  username: string;
+  tenantName: string;
+  activatedAt: string;
+  ip: string | null;
+  userAgent: string | null;
+  securityUrl: string;
+}): { subject: string; html: string } {
+  const subject = `2FA enabled on your VELOS account`;
+  const actorLine = opts.ip
+    ? `<tr><td style="padding:6px 0;color:#888;width:140px;">IP address</td><td style="padding:6px 0;font-family:monospace;font-size:13px;">${escapeHtml(opts.ip)}</td></tr>`
+    : "";
+  const uaLine = opts.userAgent
+    ? `<tr><td style="padding:6px 0;color:#888;width:140px;">Device</td><td style="padding:6px 0;font-family:monospace;font-size:13px;">${escapeHtml(opts.userAgent.slice(0, 120))}</td></tr>`
+    : "";
+  const html = `
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:560px;margin:0 auto;padding:32px 20px;">
+      <div style="background:#0f766e;color:white;padding:24px 28px;border-radius:12px 12px 0 0;">
+        <h1 style="margin:0;font-size:18px;font-weight:600;">Two-factor authentication enabled</h1>
+        <p style="margin:6px 0 0;opacity:0.9;font-size:13px;">${escapeHtml(opts.tenantName)} · ${escapeHtml(opts.activatedAt)}</p>
+      </div>
+      <div style="background:white;padding:28px;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 12px 12px;">
+        <p style="color:#333;font-size:14px;">Hi ${escapeHtml(opts.username)},</p>
+        <p style="color:#555;font-size:14px;line-height:1.6;">
+          Two-factor authentication was just enabled on your VELOS account.
+          From now on, you'll be asked for a code from your authenticator
+          app every time you sign in.
+        </p>
+        <table style="width:100%;font-size:13px;color:#555;margin:16px 0;border-collapse:collapse;">
+          <tr><td style="padding:6px 0;color:#888;width:140px;">Account</td><td style="padding:6px 0;font-family:monospace;font-size:13px;">${escapeHtml(opts.username)}</td></tr>
+          ${actorLine}
+          ${uaLine}
+        </table>
+        <p style="color:#555;font-size:14px;line-height:1.6;">
+          If this was you, no further action is needed. If you did NOT
+          enable 2FA, your session may have been compromised — sign in,
+          change your password, and disable 2FA from your security
+          settings, then re-enable it from a trusted device.
+        </p>
+        <div style="text-align:center;margin:24px 0;">
+          <a href="${escapeHtml(opts.securityUrl)}" style="background:#0f766e;color:white;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;font-size:14px;">Security settings</a>
+        </div>
+        <p style="color:#888;font-size:12px;line-height:1.5;">
+          This is an automated security notification from ${escapeHtml(opts.tenantName)}.
+        </p>
+      </div>
     </div>
   `;
   return { subject, html };

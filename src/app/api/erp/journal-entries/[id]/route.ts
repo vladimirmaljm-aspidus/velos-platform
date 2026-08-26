@@ -57,14 +57,25 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     // Recalculate totals if lines provided
     if (body.lines && Array.isArray(body.lines)) {
-      // P2-12: Validate each line's debit/credit BEFORE the balance check.
+      // P2-12 / LOGIC-DEEP audit: Validate each line's debit/credit BEFORE the
+      // balance check, mirroring the POST route's exact pattern.
       // `reduce` propagates NaN (NaN + x = NaN, Math.abs(NaN - NaN) > 0.01 === false),
       // so a single malformed line would silently bypass the balance gate. Negative
       // amounts are nonsensical in accounting and must also be rejected up-front.
-      // We normalize the values so downstream code sees clean finite numbers.
+      //
+      // CRITICAL FIX (LOGIC-DEEP §7): use `Number(l.debit)` WITHOUT the `|| 0`
+      // fallback. The previous form `Number(l.debit) || 0` silently coerced
+      // non-numeric input (e.g. `"abc"`, `null`, `undefined`) to 0 because
+      // `NaN || 0 === 0`, which then passed the `Number.isFinite(d)` check (0 is
+      // finite) and entered the balance computation as a 0-debit line — masking
+      // typos and allowing malformed PUT bodies to persist silent zero-amount
+      // lines that would later be postable as "balanced" entries (audit gap
+      // vs. the POST route which was already fixed). The bare `Number(l.debit)`
+      // returns NaN for invalid input, which the `!Number.isFinite(d)` check
+      // now correctly rejects.
       for (const l of body.lines) {
-        const d = Number(l.debit) || 0;
-        const c = Number(l.credit) || 0;
+        const d = Number(l.debit);
+        const c = Number(l.credit);
         if (!Number.isFinite(d) || d < 0) {
           return NextResponse.json({ error: "Invalid debit amount." }, { status: 400 });
         }

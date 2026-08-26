@@ -163,7 +163,16 @@ export async function listGroups(
 
   if (opts?.category) q = q.eq("category", opts.category);
   if (opts?.search) {
-    q = q.or(`name.ilike.%${opts.search}%,description.ilike.%${opts.search}%`);
+    // SEC-DEEP / Audit 1 (PostgREST filter injection): strip `,()` and
+    // backslashes from the search string before interpolating into the
+    // `.or()` filter clause — these chars are PostgREST's filter syntax
+    // and would otherwise let a malicious search string inject an extra
+    // OR clause. Same pattern as supabase-store.ts `safeSearch()` +
+    // marketplace-store.ts + logistics-requests/route.ts.
+    const s = String(opts.search).replace(/[(),\\]/g, " ").trim();
+    if (s) {
+      q = q.or(`name.ilike.%${s}%,description.ilike.%${s}%`);
+    }
   }
 
   if (opts?.joinedPartnerId) {
@@ -521,7 +530,11 @@ export async function listQuestions(
   if (opts?.post_id) q = q.eq("post_id", opts.post_id);
   if (opts?.tag) q = q.contains("tags", [opts.tag]);
   if (opts?.search) {
-    q = q.or(`title.ilike.%${opts.search}%,body.ilike.%${opts.search}%`);
+    // SEC-DEEP / Audit 1 — PostgREST filter-injection sanitization.
+    const s = String(opts.search).replace(/[(),\\]/g, " ").trim();
+    if (s) {
+      q = q.or(`title.ilike.%${s}%,body.ilike.%${s}%`);
+    }
   }
   if (opts?.unanswered) q = q.eq("is_answered", false);
 
@@ -892,7 +905,11 @@ export async function listEvents(
   if (opts?.event_type) q = q.eq("event_type", opts.event_type);
   if (upcoming) q = q.gte("start_date", new Date().toISOString());
   if (opts?.search) {
-    q = q.or(`title.ilike.%${opts.search}%,description.ilike.%${opts.search}%,location.ilike.%${opts.search}%`);
+    // SEC-DEEP / Audit 1 — PostgREST filter-injection sanitization.
+    const s = String(opts.search).replace(/[(),\\]/g, " ").trim();
+    if (s) {
+      q = q.or(`title.ilike.%${s}%,description.ilike.%${s}%,location.ilike.%${s}%`);
+    }
   }
 
   q = q.order("start_date", { ascending: true }).range(offset, offset + limit - 1);
@@ -1181,7 +1198,11 @@ export async function listBlogPosts(
   if (opts?.author_partner_id) q = q.eq("author_partner_id", opts.author_partner_id);
   if (opts?.tag) q = q.contains("tags", [opts.tag]);
   if (opts?.search) {
-    q = q.or(`title.ilike.%${opts.search}%,excerpt.ilike.%${opts.search}%,body.ilike.%${opts.search}%`);
+    // SEC-DEEP / Audit 1 — PostgREST filter-injection sanitization.
+    const s = String(opts.search).replace(/[(),\\]/g, " ").trim();
+    if (s) {
+      q = q.or(`title.ilike.%${s}%,excerpt.ilike.%${s}%,body.ilike.%${s}%`);
+    }
   }
 
   q = q.order("published_at", { ascending: false, nullsFirst: false })

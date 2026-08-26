@@ -1,0 +1,119 @@
+{
+  "timestamp": "2026-08-05T22:05:05.273Z",
+  "mode": "real",
+  "apiBase": "https://aspidus.onrender.com",
+  "category": "chemicals",
+  "total": 15,
+  "success": 15,
+  "failed": 0,
+  "dupName": 0,
+  "skipped": 5,
+  "results": [
+    {
+      "sku": "CHE-IND-01-006",
+      "name": "Calcium Carbide",
+      "ok": true,
+      "status": 200,
+      "id": "bb7ba258-5121-413a-bc3d-a96559932d7e"
+    },
+    {
+      "sku": "CHE-PET-01-001",
+      "name": "LDPE Film Grade",
+      "ok": true,
+      "status": 200,
+      "id": "d5f8361f-7210-4374-902f-c2eaec984bc8"
+    },
+    {
+      "sku": "CHE-PET-01-002",
+      "name": "HDPE Blow Moulding BM50100",
+      "ok": true,
+      "status": 200,
+      "id": "e1d560d9-cdd8-43a9-880c-177b790f9f0e"
+    },
+    {
+      "sku": "CHE-PET-01-003",
+      "name": "LLDPE Film Grade",
+      "ok": true,
+      "status": 200,
+      "id": "75738505-9f7e-43d9-b89f-2eb3d8d5428c"
+    },
+    {
+      "sku": "CHE-PET-01-004",
+      "name": "PP Raffia Grade",
+      "ok": true,
+      "status": 200,
+      "id": "0c998980-3627-4546-8566-ce27c4e46565"
+    },
+    {
+      "sku": "CHE-PET-01-005",
+      "name": "PVC Suspension SG-5",
+      "ok": true,
+      "status": 200,
+      "id": "9903ab86-2001-4cdf-8552-1f5e6a90980f"
+    },
+    {
+      "sku": "CHE-PET-01-006",
+      "name": "PET Resin Bottle Grade",
+      "ok": true,
+      "status": 200,
+      "id": "8383f463-0361-4fe3-a07c-1739d2443eab"
+    },
+    {
+      "sku": "CHE-AGC-01-001",
+      "name": "Glyphosate Technical 95%",
+      "ok": true,
+      "status": 200,
+      "id": "7949c270-3845-49fc-8ea1-7eb1d3a3c9ab"
+    },
+    {
+      "sku": "CHE-AGC-01-002",
+      "name": "Atrazine Technical 95%",
+      "ok": true,
+      "status": 200,
+      "id": "ed181231-bb63-43f2-b721-0386d6102727"
+    },
+    {
+      "sku": "CHE-AGC-01-003",
+      "name": "Mancozeb Technical 90%",
+      "ok": true,
+      "status": 200,
+      "id": "90f8a093-d60a-44b7-899a-c649c00c4f96"
+    },
+    {
+      "sku": "CHE-AGC-01-004",
+      "name": "Urea Formaldehyde",
+      "ok": true,
+      "status": 200,
+      "id": "a2186234-f731-45fc-b827-a4b156a3020f"
+    },
+    {
+      "sku": "CHE-WAT-01-001",
+      "name": "PAC (Poly Aluminium Chloride)",
+      "ok": true,
+      "status": 200,
+      "id": "00bfcd02-85c5-41d6-be26-5f0011ce2adc"
+    },
+    {
+      "sku": "CHE-WAT-01-002",
+      "name": "Ferric Chloride 39%",
+      "ok": true,
+      "status": 200,
+      "id": "fd1b52f6-24f7-4177-b99f-8f052edc3cc2"
+    },
+    {
+      "sku": "CHE-WAT-01-003",
+      "name": "Polyacrylamide Anionic",
+      "ok": true,
+      "status": 200,
+      "id": "4c64af2a-2d92-4711-afc8-d3a800714c0d"
+    },
+    {
+      "sku": "CHE-WAT-01-004",
+      "name": "Sodium Hypochlorite 12%",
+      "ok": true,
+      "status": 200,
+      "id": "b449a6ef-e500-49da-bd78-224d0185f115"
+    }
+  ],
+  "errors": []
+}

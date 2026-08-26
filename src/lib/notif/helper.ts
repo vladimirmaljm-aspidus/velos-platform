@@ -540,6 +540,154 @@ export async function notifyTrialExpiringSoon(
   });
 }
 
+// ============================================================
+// LOGIC-DEEP §5 — Trial / Subscription EXPIRED notifications
+// ============================================================
+// The subscription-sweep cron previously suspended expired trials +
+// paid subscriptions SILENTLY — the tenant admin only discovered the
+// suspension when they tried to log in (the login route returns 402
+// with "Your workspace is suspended. Contact the platform
+// administrator to reactivate it."). That UX is hostile: the admin
+// already missed the 48h warning window (the warning fired at T-48h
+// but they may not have been checking notifications), and they had
+// no chance to learn about the actual suspension until it bit them.
+//
+// These helpers fire an in-app notification + email at the moment of
+// suspension, so the admin sees both:
+//   1. The 48h-pre-expiry "trial expiring soon" warning (still fires).
+//   2. The post-suspension "trial expired / workspace suspended"
+//      notification + email (new — fires when the cron actually
+//      flips the row to `status=suspended`).
+//
+// Both are best-effort + idempotent at the cron layer (the cron
+// counts only newly-suspended rows per run, so re-runs within the
+// same minute don't double-fire).
+export async function notifyTrialExpired(
+  tenantId: string,
+  tenantName: string,
+  trialEndsAt: string | null,
+) {
+  const when = trialEndsAt
+    ? new Date(trialEndsAt).toLocaleDateString()
+    : "recently";
+  await notify({
+    tenantId,
+    userId: null, // broadcast to all tenant admins
+    type: "system_message",
+    title: "Trial expired — workspace suspended",
+    message:
+      `The trial for ${tenantName} ended on ${when}. The workspace has been suspended — ` +
+      `contact the platform administrator to reactivate it or upgrade to a paid plan.`,
+    entityType: "tenant",
+    entityId: tenantId,
+    actionLabel: "Manage subscription",
+  });
+}
+
+export async function notifySubscriptionExpired(
+  tenantId: string,
+  tenantName: string,
+  subscriptionEnd: string | null,
+) {
+  const when = subscriptionEnd
+    ? new Date(subscriptionEnd).toLocaleDateString()
+    : "recently";
+  await notify({
+    tenantId,
+    userId: null,
+    type: "system_message",
+    title: "Subscription expired — workspace suspended",
+    message:
+      `The subscription for ${tenantName} ended on ${when}. The workspace has been suspended — ` +
+      `renew your subscription to restore access.`,
+    entityType: "tenant",
+    entityId: tenantId,
+    actionLabel: "Manage subscription",
+  });
+}
+
+/**
+ * Email follow-up for the "trial expired / workspace suspended" event.
+ * Same shape as `emailTrialExpiringSoon` — fans out to every active
+ * admin of the tenant, best-effort per recipient.
+ */
+export async function emailTrialExpired(opts: {
+  tenantId: string;
+  tenantName: string;
+  trialEndsAt: string | null;
+  baseUrl?: string;
+}): Promise<void> {
+  const emails = await listTenantAdminEmails(opts.tenantId);
+  if (emails.length === 0) return;
+  try {
+    const { sendEmail } = await import("@/lib/email/service");
+    const manageUrl = opts.baseUrl
+      ? `${opts.baseUrl.replace(/\/$/, "")}/settings`
+      : "/settings";
+    const when = opts.trialEndsAt
+      ? new Date(opts.trialEndsAt).toLocaleDateString(undefined, {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        })
+      : "recently";
+    const subject = `Your VELOS trial has ended — workspace suspended`;
+    const html = trialExpiredEmailBody({
+      tenantName: opts.tenantName,
+      trialEndsAt: opts.trialEndsAt,
+      when,
+      manageUrl,
+    });
+    void Promise.all(
+      emails.map((to) =>
+        sendEmail({ tenantId: opts.tenantId, to, subject, html }).catch((e) =>
+          console.error("[emailTrialExpired] to", to, "failed:", e),
+        ),
+      ),
+    );
+  } catch (e) {
+    console.error("[emailTrialExpired] batch failed:", e);
+  }
+}
+
+function trialExpiredEmailBody(opts: {
+  tenantName: string;
+  trialEndsAt: string | null;
+  when: string;
+  manageUrl: string;
+}): string {
+  return `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 40px 20px;">
+      <div style="background: #b91c1c; color: white; padding: 30px; border-radius: 12px 12px 0 0;">
+        <h1 style="margin: 0; font-size: 22px; font-weight: 600;">Trial expired</h1>
+        <p style="margin: 8px 0 0; opacity: 0.9; font-size: 14px;">Your workspace has been suspended</p>
+      </div>
+      <div style="background: white; padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 12px 12px;">
+        <p style="font-size: 14px; color: #333; line-height: 1.6;">
+          Your VELOS trial for <strong>${escapeHtml(opts.tenantName)}</strong> ended on
+          <strong>${escapeHtml(opts.when)}</strong>. The workspace has been automatically
+          suspended — your team will not be able to sign in until the workspace is
+          reactivated.
+        </p>
+        <p style="font-size: 14px; color: #333; line-height: 1.6; margin-top: 16px;">
+          To restore access, sign in (platform administrators can still log in to a
+          suspended workspace) and choose a paid plan under
+          <em>Settings &rarr; Subscription</em>, or contact the platform administrator
+          to request an extension.
+        </p>
+        <div style="text-align: center; margin: 30px 0 10px;">
+          <a href="${escapeHtml(opts.manageUrl)}" style="background: #b45309; color: white; padding: 12px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-block;">
+            Manage subscription
+          </a>
+        </div>
+        <p style="color: #888; font-size: 12px; line-height: 1.5; margin-top: 20px;">
+          You are receiving this email because you are an administrator of this VELOS workspace.
+        </p>
+      </div>
+    </div>
+  `;
+}
+
 /**
  * Notify every super_admin user of a platform-level event (new tenant
  * signup, plan-upgrade request, etc.). The notifications table requires

@@ -1,0 +1,224 @@
+{
+  "timestamp": "2026-08-05T22:04:15.856Z",
+  "mode": "real",
+  "apiBase": "https://aspidus.onrender.com",
+  "category": "spices",
+  "total": 30,
+  "success": 30,
+  "failed": 0,
+  "dupName": 0,
+  "skipped": 0,
+  "results": [
+    {
+      "sku": "SPI-PEP-01-001",
+      "name": "Black Pepper MG1",
+      "ok": true,
+      "status": 200,
+      "id": "be53c51d-5978-4549-a43e-6279980a4401"
+    },
+    {
+      "sku": "SPI-PEP-02-002",
+      "name": "Black Pepper TGSEB (Trieur Garbled Special Extra Bold)",
+      "ok": true,
+      "status": 200,
+      "id": "079f4281-5a9f-4e86-8134-9f065ff9cf73"
+    },
+    {
+      "sku": "SPI-PEP-03-003",
+      "name": "White Pepper ASTA",
+      "ok": true,
+      "status": 200,
+      "id": "d3ae1701-4770-4ea4-9b1d-22e62a92205a"
+    },
+    {
+      "sku": "SPI-PEP-04-004",
+      "name": "Black Pepper 500 g/l",
+      "ok": true,
+      "status": 200,
+      "id": "d33d364d-fde1-40cd-b45c-e563edafc9bc"
+    },
+    {
+      "sku": "SPI-CIN-05-005",
+      "name": "Ceylon Cinnamon Quills Grade Alba",
+      "ok": true,
+      "status": 200,
+      "id": "c5399bec-1279-4af1-9788-f0b2381b79c1"
+    },
+    {
+      "sku": "SPI-CIN-06-006",
+      "name": "Cassia Hark (Broken)",
+      "ok": true,
+      "status": 200,
+      "id": "f1b2b132-e64a-48c4-a304-5a52d572464d"
+    },
+    {
+      "sku": "SPI-CIN-07-007",
+      "name": "Cassia Whole Sticks 5-10cm",
+      "ok": true,
+      "status": 200,
+      "id": "41d8afd3-026d-4ae4-876b-d428ad962a76"
+    },
+    {
+      "sku": "SPI-CRD-08-008",
+      "name": "Green Cardamom AGS-1 (8mm Bold)",
+      "ok": true,
+      "status": 200,
+      "id": "35c60c96-886b-4eaa-9523-33ca5ca39c4c"
+    },
+    {
+      "sku": "SPI-CRD-09-009",
+      "name": "Green Cardamom AGS-2 (7mm)",
+      "ok": true,
+      "status": 200,
+      "id": "2fbe5df1-4fc7-4a44-b375-9d2a1f422d83"
+    },
+    {
+      "sku": "SPI-CRD-10-010",
+      "name": "Bleached Cardamom",
+      "ok": true,
+      "status": 200,
+      "id": "19d93b38-e0d5-4835-97fc-5a36df944323"
+    },
+    {
+      "sku": "SPI-CLV-11-011",
+      "name": "Cloves Grade 1 Handpicked",
+      "ok": true,
+      "status": 200,
+      "id": "9e89afbf-7e2f-4ca7-9c98-dca488e17b93"
+    },
+    {
+      "sku": "SPI-CLV-12-012",
+      "name": "Cloves Grade 2 (Stem Cloves)",
+      "ok": true,
+      "status": 200,
+      "id": "38c89ae6-6c84-438c-9231-57f32bf2a2c2"
+    },
+    {
+      "sku": "SPI-NUT-13-013",
+      "name": "Nutmeg With Shell BWP (Broken Without Pieces)",
+      "ok": true,
+      "status": 200,
+      "id": "7bb083aa-3018-4561-b497-1ca6e41db5de"
+    },
+    {
+      "sku": "SPI-NUT-14-014",
+      "name": "Nutmeg Shelled Indonesian 80-85%",
+      "ok": true,
+      "status": 200,
+      "id": "3f1959eb-d496-4332-ab16-c0abf7d24e6c"
+    },
+    {
+      "sku": "SPI-GIN-15-015",
+      "name": "Dried Ginger Whole",
+      "ok": true,
+      "status": 200,
+      "id": "9a2b43e1-5111-4515-a268-6d7fd00ac026"
+    },
+    {
+      "sku": "SPI-GIN-16-016",
+      "name": "Ground Ginger",
+      "ok": true,
+      "status": 200,
+      "id": "59130c02-4be4-4415-b9cd-3f274892c2ea"
+    },
+    {
+      "sku": "SPI-GIN-17-017",
+      "name": "Ginger Oleoresin",
+      "ok": true,
+      "status": 200,
+      "id": "4ce10c63-89c4-423e-9c34-7df9f471a43a"
+    },
+    {
+      "sku": "SPI-TUR-18-018",
+      "name": "Turmeric Fingers Erode",
+      "ok": true,
+      "status": 200,
+      "id": "a84f3525-ca18-4a5d-82b9-9c3dd6d42380"
+    },
+    {
+      "sku": "SPI-TUR-19-019",
+      "name": "Turmeric Polished Nizamabad",
+      "ok": true,
+      "status": 200,
+      "id": "2a66b5cf-ab14-4498-8c50-5f2de0eeaa6c"
+    },
+    {
+      "sku": "SPI-TUR-20-020",
+      "name": "Ground Turmeric Curcumin 3%",
+      "ok": true,
+      "status": 200,
+      "id": "cc45b08b-cb89-4733-a58d-56ec860c0db0"
+    },
+    {
+      "sku": "SPI-CUM-21-021",
+      "name": "Cumin Seeds Europe Quality 99% Pure",
+      "ok": true,
+      "status": 200,
+      "id": "b77e1019-739d-485f-b2cb-44db14508ad0"
+    },
+    {
+      "sku": "SPI-CUM-22-022",
+      "name": "Cumin Seeds Singapore 98%",
+      "ok": true,
+      "status": 200,
+      "id": "ee608169-ee61-467c-bc62-6e75d35e7275"
+    },
+    {
+      "sku": "SPI-CUM-23-023",
+      "name": "Ground Cumin",
+      "ok": true,
+      "status": 200,
+      "id": "43fcafa2-20c3-43a0-87e5-c497b351ed9f"
+    },
+    {
+      "sku": "SPI-COR-24-024",
+      "name": "Coriander Seeds Eagle Type",
+      "ok": true,
+      "status": 200,
+      "id": "01dcc2d7-c0d6-415a-85b5-ee3c645f3f1f"
+    },
+    {
+      "sku": "SPI-COR-25-025",
+      "name": "Split Coriander",
+      "ok": true,
+      "status": 200,
+      "id": "839f7caf-4d5c-4b5d-882c-ddfcfce7fffc"
+    },
+    {
+      "sku": "SPI-XSP-26-026",
+      "name": "Saffron Grade 1 All-Red",
+      "ok": true,
+      "status": 200,
+      "id": "5fbfedb9-b3e7-47fb-8105-e77991eb29ab"
+    },
+    {
+      "sku": "SPI-XSP-27-027",
+      "name": "Vanilla Beans Grade A Bourbon (Madagascar)",
+      "ok": true,
+      "status": 200,
+      "id": "f2150121-059a-4162-b5ee-38c2a24c0828"
+    },
+    {
+      "sku": "SPI-XSP-28-028",
+      "name": "Paprika Sweet ASTA 100",
+      "ok": true,
+      "status": 200,
+      "id": "be12c8a5-03db-4c4e-b203-060d9315d903"
+    },
+    {
+      "sku": "SPI-XSP-29-029",
+      "name": "Chili Crushed 50K SHU",
+      "ok": true,
+      "status": 200,
+      "id": "97be4097-209e-4541-b930-cf439eb1d3ea"
+    },
+    {
+      "sku": "SPI-XSP-30-030",
+      "name": "Fennel Seeds",
+      "ok": true,
+      "status": 200,
+      "id": "1a9ccb2f-3564-47f5-a462-1182b6c10946"
+    }
+  ],
+  "errors": []
+}

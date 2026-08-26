@@ -1,0 +1,21 @@
+{
+  "timestamp": "2026-08-05T22:00:07.059Z",
+  "mode": "real",
+  "apiBase": "https://aspidus.onrender.com",
+  "category": "metals",
+  "total": 1,
+  "success": 1,
+  "failed": 0,
+  "dupName": 0,
+  "skipped": 0,
+  "results": [
+    {
+      "sku": "MET-ALU-01-001",
+      "name": "Aluminium Ingots P1020A",
+      "ok": true,
+      "status": 200,
+      "id": "b8b176ac-8c9a-4499-9660-95bab1bbebf4"
+    }
+  ],
+  "errors": []
+}

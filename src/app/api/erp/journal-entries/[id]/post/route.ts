@@ -28,6 +28,66 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "Only draft entries can be posted." }, { status: 400 });
     }
 
+    // ── LOGIC-DEEP §7 (HIGH): re-validate balance BEFORE flipping status ──
+    // The POST and PUT routes enforce balance at insert/update time, but a
+    // draft could still be unbalanced if:
+    //   • it was created via PUT with the (now-fixed) `|| 0` NaN-coercion bug,
+    //   • its lines were edited through another path (direct SQL, an older
+    //     app version, or a future migration that skips validation).
+    // Posting an unbalanced entry into the ledger corrupts the trial
+    // balance + P&L + balance sheet reports. We re-sum the lines stored on
+    // the DB row and refuse to post if they don't match `debit_total` /
+    // `credit_total` (within 0.01 tolerance, matching the POST/PUT gate).
+    try {
+      const fresh = await auth.store.getErpJournalEntry(id);
+      const lines = Array.isArray((fresh as any)?.lines) ? (fresh as any).lines : [];
+      const totalDebit = lines.reduce(
+        (sum: number, l: any) => sum + (Number(l?.debit) || 0),
+        0,
+      );
+      const totalCredit = lines.reduce(
+        (sum: number, l: any) => sum + (Number(l?.credit) || 0),
+        0,
+      );
+      if (Math.abs(totalDebit - totalCredit) > 0.01) {
+        return NextResponse.json(
+          {
+            error: `Cannot post an unbalanced journal entry. Debits (${totalDebit.toFixed(2)}) must equal credits (${totalCredit.toFixed(2)}).`,
+            debit_total: totalDebit,
+            credit_total: totalCredit,
+          },
+          { status: 400 },
+        );
+      }
+      // Defense-in-depth: also compare the recomputed sums against the
+      // stored totals — a drift here means the header was updated without
+      // the lines (or vice versa) and the row is internally inconsistent.
+      const storedDebit = Number((fresh as any)?.debit_total ?? 0);
+      const storedCredit = Number((fresh as any)?.credit_total ?? 0);
+      if (
+        Math.abs(storedDebit - totalDebit) > 0.01 ||
+        Math.abs(storedCredit - totalCredit) > 0.01
+      ) {
+        return NextResponse.json(
+          {
+            error: "Journal entry header totals are out of sync with the line sums. Refusing to post an inconsistent entry.",
+            stored_debit_total: storedDebit,
+            stored_credit_total: storedCredit,
+            actual_debit_total: totalDebit,
+            actual_credit_total: totalCredit,
+          },
+          { status: 400 },
+        );
+      }
+    } catch (e: any) {
+      // If we can't re-fetch the entry to validate, fail closed — never
+      // post an entry we couldn't verify.
+      return NextResponse.json(
+        { error: `Failed to re-validate entry balance before posting: ${e?.message || e}` },
+        { status: 500 },
+      );
+    }
+
     // ── P1-1 / Feature 2: Separation-of-Duties check ─────────────────
     // The "post" action IS the approval step for a journal entry
     // (posting moves a draft entry into the ledger — that's the

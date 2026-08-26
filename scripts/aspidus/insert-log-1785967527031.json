@@ -1,0 +1,13 @@
+{
+  "timestamp": "2026-08-05T22:05:27.031Z",
+  "mode": "real",
+  "apiBase": "https://aspidus.onrender.com",
+  "category": "chemicals",
+  "total": 0,
+  "success": 0,
+  "failed": 0,
+  "dupName": 0,
+  "skipped": 20,
+  "results": [],
+  "errors": []
+}

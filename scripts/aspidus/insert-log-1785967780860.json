@@ -1,0 +1,294 @@
+{
+  "timestamp": "2026-08-05T22:09:40.860Z",
+  "mode": "real",
+  "apiBase": "https://aspidus.onrender.com",
+  "category": "ores",
+  "total": 40,
+  "success": 40,
+  "failed": 0,
+  "dupName": 0,
+  "skipped": 0,
+  "results": [
+    {
+      "sku": "ORE-IRO-01-001",
+      "name": "Hematite Lump 62% Fe",
+      "ok": true,
+      "status": 200,
+      "id": "0ea6a95d-2d28-4b0d-b41d-a6af172197b0"
+    },
+    {
+      "sku": "ORE-IRO-02-002",
+      "name": "Hematite Fines 60% Fe",
+      "ok": true,
+      "status": 200,
+      "id": "efe39aa4-106b-4ed8-8256-858c11f21c1a"
+    },
+    {
+      "sku": "ORE-IRO-03-003",
+      "name": "Magnetite Concentrate 65% Fe",
+      "ok": true,
+      "status": 200,
+      "id": "f39b206d-d85c-4b04-b54b-6723273445d8"
+    },
+    {
+      "sku": "ORE-IRO-04-004",
+      "name": "Iron Ore Pellets 65% Fe",
+      "ok": true,
+      "status": 200,
+      "id": "f3ae1c3e-e586-4887-9d08-34ec337bafbf"
+    },
+    {
+      "sku": "ORE-IRO-05-005",
+      "name": "Iron Ore Lump 58% Fe",
+      "ok": true,
+      "status": 200,
+      "id": "c6455523-edd7-48b0-9787-5fa21cbd0dcd"
+    },
+    {
+      "sku": "ORE-IRO-06-006",
+      "name": "Iron Ore Fines 56% Fe",
+      "ok": true,
+      "status": 200,
+      "id": "449d7db3-0f3e-4578-aa33-f1be12cb27ea"
+    },
+    {
+      "sku": "ORE-IRO-07-007",
+      "name": "Sinter Feed 60% Fe",
+      "ok": true,
+      "status": 200,
+      "id": "62476d63-4b82-4d79-a956-8cf9c7086248"
+    },
+    {
+      "sku": "ORE-IRO-08-008",
+      "name": "DSO Lump 60% Fe",
+      "ok": true,
+      "status": 200,
+      "id": "195cf317-0764-4e3e-a48a-a0e934f4acab"
+    },
+    {
+      "sku": "ORE-CUO-01-009",
+      "name": "Copper Concentrate 25% Cu",
+      "ok": true,
+      "status": 200,
+      "id": "4fa0aa08-e56c-4105-a6e1-59dc3b2758d4"
+    },
+    {
+      "sku": "ORE-CUO-02-010",
+      "name": "Copper Concentrate 30% Cu",
+      "ok": true,
+      "status": 200,
+      "id": "ca4de223-8d9d-47bb-9a27-c39f9c3fabd4"
+    },
+    {
+      "sku": "ORE-CUO-03-011",
+      "name": "ROM Copper Ore 2% Cu",
+      "ok": true,
+      "status": 200,
+      "id": "e4410836-23ef-4226-8927-9306f4792212"
+    },
+    {
+      "sku": "ORE-CUO-04-012",
+      "name": "Copper Oxide Ore 1.5% Cu",
+      "ok": true,
+      "status": 200,
+      "id": "1ee10a92-56a2-45ad-a78a-3b020a28ca5b"
+    },
+    {
+      "sku": "ORE-CUO-05-013",
+      "name": "Copper Matte 70% Cu",
+      "ok": true,
+      "status": 200,
+      "id": "f8eff64e-61c8-4dfd-b509-9e307e08e116"
+    },
+    {
+      "sku": "ORE-BAU-01-014",
+      "name": "Metallurgical Bauxite 45% Al2O3",
+      "ok": true,
+      "status": 200,
+      "id": "e48d4352-1cf0-45e0-859b-57eb312e8785"
+    },
+    {
+      "sku": "ORE-BAU-02-015",
+      "name": "Refractory Bauxite 80% Al2O3",
+      "ok": true,
+      "status": 200,
+      "id": "bd9ef655-8054-4d6b-a240-528809d40fad"
+    },
+    {
+      "sku": "ORE-BAU-03-016",
+      "name": "Bauxite Cement Grade",
+      "ok": true,
+      "status": 200,
+      "id": "6a9461aa-7452-4160-bb74-a67dd7d472d3"
+    },
+    {
+      "sku": "ORE-BAU-04-017",
+      "name": "Calcined Bauxite 88%",
+      "ok": true,
+      "status": 200,
+      "id": "39b0a5af-524e-46d2-87f9-f27f964bc186"
+    },
+    {
+      "sku": "ORE-MAN-01-018",
+      "name": "Manganese Lump 44% Mn",
+      "ok": true,
+      "status": 200,
+      "id": "e3858912-c54c-41d3-8a9e-dd611df7a908"
+    },
+    {
+      "sku": "ORE-MAN-02-019",
+      "name": "Manganese Fines 38% Mn",
+      "ok": true,
+      "status": 200,
+      "id": "8b8e29e6-91c7-4ace-94f8-600636aad905"
+    },
+    {
+      "sku": "ORE-MAN-03-020",
+      "name": "Sintered Manganese 48% Mn",
+      "ok": true,
+      "status": 200,
+      "id": "a1f45424-3862-4a97-b7d3-e3d1ffc9b431"
+    },
+    {
+      "sku": "ORE-MAN-04-021",
+      "name": "Battery Grade Manganese 42% Mn",
+      "ok": true,
+      "status": 200,
+      "id": "f1407110-43b9-4d64-a25c-6ceb710d4af3"
+    },
+    {
+      "sku": "ORE-CHR-01-022",
+      "name": "Chromite Metallurgical Lump 48% Cr2O3",
+      "ok": true,
+      "status": 200,
+      "id": "e7eb5587-67ef-4895-9e2f-66e094569261"
+    },
+    {
+      "sku": "ORE-CHR-02-023",
+      "name": "Chromite Foundry Sand 46% Cr2O3",
+      "ok": true,
+      "status": 200,
+      "id": "b7430041-83f1-4cf4-af78-d49e3df86ce0"
+    },
+    {
+      "sku": "ORE-CHR-03-024",
+      "name": "Chromite Refractory 45% Cr2O3",
+      "ok": true,
+      "status": 200,
+      "id": "75573303-cf96-49db-a725-a2cf88bf3cd7"
+    },
+    {
+      "sku": "ORE-CHR-04-025",
+      "name": "Chromite Concentrate 42% Cr2O3",
+      "ok": true,
+      "status": 200,
+      "id": "8f95858b-798b-4e4e-bd5a-148bb91d765b"
+    },
+    {
+      "sku": "ORE-ZNO-01-026",
+      "name": "Sphalerite Concentrate 50% Zn",
+      "ok": true,
+      "status": 200,
+      "id": "e7a9d0b6-6038-4048-b61e-d8e591e94d80"
+    },
+    {
+      "sku": "ORE-ZNO-02-027",
+      "name": "Marmatite Concentrate 45% Zn",
+      "ok": true,
+      "status": 200,
+      "id": "fab9feef-4b80-4333-889f-fa19992c021a"
+    },
+    {
+      "sku": "ORE-ZNO-03-028",
+      "name": "ROM Zinc Ore 8% Zn",
+      "ok": true,
+      "status": 200,
+      "id": "e62700de-3c3e-4cb5-9378-571cff3c82ee"
+    },
+    {
+      "sku": "ORE-PBO-01-029",
+      "name": "Galena Concentrate 65% Pb",
+      "ok": true,
+      "status": 200,
+      "id": "201ef888-78db-426e-8dd3-0bed9f17a237"
+    },
+    {
+      "sku": "ORE-PBO-02-030",
+      "name": "Mixed Pb-Zn Concentrate",
+      "ok": true,
+      "status": 200,
+      "id": "53131f7f-9193-46d4-a092-463e46996967"
+    },
+    {
+      "sku": "ORE-PBO-03-031",
+      "name": "ROM Lead Ore 5% Pb",
+      "ok": true,
+      "status": 200,
+      "id": "03563bd7-6aa1-4746-9af1-7912f3ca8269"
+    },
+    {
+      "sku": "ORE-TNO-01-032",
+      "name": "Cassiterite Concentrate 70% Sn",
+      "ok": true,
+      "status": 200,
+      "id": "8877a09d-4cb5-4441-a4c2-c7a35770f1e3"
+    },
+    {
+      "sku": "ORE-TNO-02-033",
+      "name": "Tin Concentrate 60% Sn",
+      "ok": true,
+      "status": 200,
+      "id": "bbcd8238-7517-4f9b-8e88-be4ae28f74bb"
+    },
+    {
+      "sku": "ORE-TNO-03-034",
+      "name": "Alluvial Tin Ore",
+      "ok": true,
+      "status": 200,
+      "id": "4037c615-9ba8-4d5d-aa4d-453a40e2cee3"
+    },
+    {
+      "sku": "ORE-NIO-01-035",
+      "name": "Nickel Laterite 1.8% Ni",
+      "ok": true,
+      "status": 200,
+      "id": "0fce7bed-98a1-42a3-9275-f51e7e9bbc29"
+    },
+    {
+      "sku": "ORE-NIO-02-036",
+      "name": "Nickel Laterite 2.0% Ni",
+      "ok": true,
+      "status": 200,
+      "id": "7f10a4b8-47d7-4afe-a3d6-fe905be4c32b"
+    },
+    {
+      "sku": "ORE-NIO-03-037",
+      "name": "Nickel Sulfide Concentrate 12% Ni",
+      "ok": true,
+      "status": 200,
+      "id": "e6b8d913-0b1f-4e88-9fab-2eedac2c241d"
+    },
+    {
+      "sku": "ORE-XRO-01-038",
+      "name": "Ilmenite 50% TiO2",
+      "ok": true,
+      "status": 200,
+      "id": "f9eb773d-d642-45df-a758-d9f4d48912d6"
+    },
+    {
+      "sku": "ORE-XRO-02-039",
+      "name": "Tungsten Concentrate 65% WO3",
+      "ok": true,
+      "status": 200,
+      "id": "a69cd4bd-c7db-4d8f-a963-2d6aabaa06cd"
+    },
+    {
+      "sku": "ORE-XRO-03-040",
+      "name": "Molybdenum Concentrate 50% Mo",
+      "ok": true,
+      "status": 200,
+      "id": "eeb5f1d3-910d-412c-acbd-543d2d11af17"
+    }
+  ],
+  "errors": []
+}

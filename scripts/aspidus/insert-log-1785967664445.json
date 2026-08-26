@@ -1,0 +1,294 @@
+{
+  "timestamp": "2026-08-05T22:07:44.445Z",
+  "mode": "real",
+  "apiBase": "https://aspidus.onrender.com",
+  "category": "fertilizers",
+  "total": 40,
+  "success": 40,
+  "failed": 0,
+  "dupName": 0,
+  "skipped": 0,
+  "results": [
+    {
+      "sku": "FER-NIT-01-001",
+      "name": "Urea 46% N Granular",
+      "ok": true,
+      "status": 200,
+      "id": "fb1cb78d-caa2-46c1-9a58-6ccb99b250e0"
+    },
+    {
+      "sku": "FER-NIT-01-002",
+      "name": "Urea 46% N Prilled",
+      "ok": true,
+      "status": 200,
+      "id": "a0583731-f49a-40f6-83d5-169720a32d4d"
+    },
+    {
+      "sku": "FER-NIT-01-003",
+      "name": "Ammonium Nitrate 33.5% N",
+      "ok": true,
+      "status": 200,
+      "id": "595f740a-466e-4edd-8d4d-4c4f1922f593"
+    },
+    {
+      "sku": "FER-NIT-01-004",
+      "name": "Ammonium Sulfate 21% N",
+      "ok": true,
+      "status": 200,
+      "id": "d0ec04fd-a45b-4b39-a9e2-995f64bc7db4"
+    },
+    {
+      "sku": "FER-NIT-01-005",
+      "name": "UAN 32% Solution",
+      "ok": true,
+      "status": 200,
+      "id": "800aeb2d-8c28-462f-8042-1a498854e0bc"
+    },
+    {
+      "sku": "FER-NIT-01-006",
+      "name": "UAN 28% Solution",
+      "ok": true,
+      "status": 200,
+      "id": "a718a60b-f5be-4d0f-b57e-157041822c62"
+    },
+    {
+      "sku": "FER-NIT-01-007",
+      "name": "CAN (Calcium Ammonium Nitrate) 27% N",
+      "ok": true,
+      "status": 200,
+      "id": "b1e83791-a262-47f1-912f-3fa5cf50084e"
+    },
+    {
+      "sku": "FER-NIT-01-008",
+      "name": "Aqua Ammonia 20% N",
+      "ok": true,
+      "status": 200,
+      "id": "358d5095-adcb-470d-b68f-25d6fe773fad"
+    },
+    {
+      "sku": "FER-NIT-01-009",
+      "name": "Ammonium Chloride 25% N",
+      "ok": true,
+      "status": 200,
+      "id": "856f4e6f-636c-465b-9ca5-0e1517d316e6"
+    },
+    {
+      "sku": "FER-NIT-01-010",
+      "name": "Sulfur-Coated Urea 40% N",
+      "ok": true,
+      "status": 200,
+      "id": "97f09296-3f32-4c5b-8f58-eabab838216e"
+    },
+    {
+      "sku": "FER-PHO-01-001",
+      "name": "DAP 18-46-0",
+      "ok": true,
+      "status": 200,
+      "id": "b2263958-57b0-41b0-b8b8-74fd0bbf41ff"
+    },
+    {
+      "sku": "FER-PHO-01-002",
+      "name": "MAP 11-52-0",
+      "ok": true,
+      "status": 200,
+      "id": "f78a6ef5-e523-4796-8d5a-45ddbb473e13"
+    },
+    {
+      "sku": "FER-PHO-01-003",
+      "name": "TSP 46% P2O5",
+      "ok": true,
+      "status": 200,
+      "id": "f2789c15-7965-48c0-b3d5-06e0829f2473"
+    },
+    {
+      "sku": "FER-PHO-01-004",
+      "name": "SSP 16% P2O5",
+      "ok": true,
+      "status": 200,
+      "id": "56001cd2-38a7-4699-9b3b-ae4db9169b7f"
+    },
+    {
+      "sku": "FER-PHO-01-005",
+      "name": "Rock Phosphate 28% P2O5",
+      "ok": true,
+      "status": 200,
+      "id": "2da16cb5-cb71-4ef4-808d-00bbcd8941b9"
+    },
+    {
+      "sku": "FER-PHO-01-006",
+      "name": "MKP 0-52-34",
+      "ok": true,
+      "status": 200,
+      "id": "702f5bd0-79c0-46cc-ae44-a798050f2704"
+    },
+    {
+      "sku": "FER-PHO-01-007",
+      "name": "NPS 19-38-7",
+      "ok": true,
+      "status": 200,
+      "id": "9f4363f9-b8d9-4daa-92e9-e03bc07795f7"
+    },
+    {
+      "sku": "FER-PHO-01-008",
+      "name": "DAP Low Cadmium",
+      "ok": true,
+      "status": 200,
+      "id": "644570b5-b52e-4c20-b2e4-ea5f575d4b75"
+    },
+    {
+      "sku": "FER-POT-01-001",
+      "name": "MOP 60% K2O White",
+      "ok": true,
+      "status": 200,
+      "id": "b952bdb0-9768-4647-b2c5-5b49326f97d6"
+    },
+    {
+      "sku": "FER-POT-01-002",
+      "name": "MOP 60% K2O Red/Pink",
+      "ok": true,
+      "status": 200,
+      "id": "6b7eb2d1-9d27-4044-a317-1deb9d2832f3"
+    },
+    {
+      "sku": "FER-POT-01-003",
+      "name": "SOP 50% K2O",
+      "ok": true,
+      "status": 200,
+      "id": "9f028626-a4e1-4070-9f5a-634cb8f3ab87"
+    },
+    {
+      "sku": "FER-POT-01-004",
+      "name": "Potassium Nitrate 13-0-46",
+      "ok": true,
+      "status": 200,
+      "id": "0ce0b974-cad4-451e-9e1e-e58625438f67"
+    },
+    {
+      "sku": "FER-POT-01-005",
+      "name": "KMS (Potassium Magnesium Sulfate)",
+      "ok": true,
+      "status": 200,
+      "id": "2a6f1340-251c-48c7-ba17-ff4ae131d062"
+    },
+    {
+      "sku": "FER-POT-01-006",
+      "name": "MOP Standard Granular",
+      "ok": true,
+      "status": 200,
+      "id": "99424a3a-214d-4226-8c66-fe4816fd3820"
+    },
+    {
+      "sku": "FER-NPK-01-001",
+      "name": "NPK 15-15-15",
+      "ok": true,
+      "status": 200,
+      "id": "6103ee85-bbbe-4e11-a0e0-1bdd186bd976"
+    },
+    {
+      "sku": "FER-NPK-01-002",
+      "name": "NPK 20-20-20",
+      "ok": true,
+      "status": 200,
+      "id": "bb595911-ab88-42e3-88a5-bd30f47051ec"
+    },
+    {
+      "sku": "FER-NPK-01-003",
+      "name": "NPK 10-26-26",
+      "ok": true,
+      "status": 200,
+      "id": "e775fbab-9f18-4591-bd1e-767cdb0abb68"
+    },
+    {
+      "sku": "FER-NPK-01-004",
+      "name": "NPK 12-32-16",
+      "ok": true,
+      "status": 200,
+      "id": "95b87e3f-5465-4cdf-baf9-8aaaa2896b4e"
+    },
+    {
+      "sku": "FER-NPK-01-005",
+      "name": "NPK 17-17-17",
+      "ok": true,
+      "status": 200,
+      "id": "29574838-1bab-4a1d-944b-747634c7b8ab"
+    },
+    {
+      "sku": "FER-NPK-01-006",
+      "name": "NPK 14-28-28",
+      "ok": true,
+      "status": 200,
+      "id": "7de1da13-ce49-4c76-b26b-774e8ee14e14"
+    },
+    {
+      "sku": "FER-NPK-01-007",
+      "name": "NPK 19-19-19",
+      "ok": true,
+      "status": 200,
+      "id": "79af80b4-72df-4310-80d6-a1a84f4a9b6f"
+    },
+    {
+      "sku": "FER-NPK-01-008",
+      "name": "NPK 20-10-10",
+      "ok": true,
+      "status": 200,
+      "id": "e53e13f5-6ded-4fbd-998f-4ea3e2601611"
+    },
+    {
+      "sku": "FER-NPK-01-009",
+      "name": "NPK 16-16-8",
+      "ok": true,
+      "status": 200,
+      "id": "25e1b294-71f6-49f1-911f-03bc8594bc62"
+    },
+    {
+      "sku": "FER-NPK-01-010",
+      "name": "NPK 8-24-24",
+      "ok": true,
+      "status": 200,
+      "id": "0023b3cf-b62a-457c-9792-99a0602db8fa"
+    },
+    {
+      "sku": "FER-SPE-01-001",
+      "name": "Zinc Sulfate 33% Zn",
+      "ok": true,
+      "status": 200,
+      "id": "66a3bc83-d8f8-4a5c-a1a6-c5755a3df89f"
+    },
+    {
+      "sku": "FER-SPE-01-002",
+      "name": "Borax 11% B",
+      "ok": true,
+      "status": 200,
+      "id": "914a4c0b-5970-424f-8b1c-19547a78970c"
+    },
+    {
+      "sku": "FER-SPE-01-003",
+      "name": "Magnesium Sulfate 9.6% Mg",
+      "ok": true,
+      "status": 200,
+      "id": "c3954ac1-4d87-4039-829c-c28422c460f4"
+    },
+    {
+      "sku": "FER-SPE-01-004",
+      "name": "Micronutrient Mix (Zn+B+Cu+Fe+Mn+Mo)",
+      "ok": true,
+      "status": 200,
+      "id": "bb4e6f70-afcb-4dae-8369-5c6647a5270d"
+    },
+    {
+      "sku": "FER-SPE-01-005",
+      "name": "Humic Acid 60%",
+      "ok": true,
+      "status": 200,
+      "id": "909d1ede-3f9e-4677-a5a1-1b57d7049aba"
+    },
+    {
+      "sku": "FER-SPE-01-006",
+      "name": "Seaweed Extract Bio-stimulant",
+      "ok": true,
+      "status": 200,
+      "id": "01e09323-6520-4c78-abd0-2809a01664e2"
+    }
+  ],
+  "errors": []
+}

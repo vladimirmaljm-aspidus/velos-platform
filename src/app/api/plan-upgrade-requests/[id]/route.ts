@@ -5,6 +5,27 @@ import { getSupabase } from "@/lib/supabase/client";
 export const runtime = "nodejs";
 
 /**
+ * HTML-escape a string before interpolating into the email HTML body.
+ * EMAIL-AUDIT (MEDIUM) — `requester.full_name`, `tenant.name`,
+ * `requested_plan`, and `admin_note` are all user/admin-settable
+ * fields interpolated into the upgrade-notification email HTML body.
+ * Without escaping, a tenant admin who set their `full_name` to
+ * `<script>alert(1)</script>` would inject script tags into the
+ * upgrade-approval email they themselves receive (self-XSS, but
+ * still a bug — and a compromised super_admin account could
+ * weaponize the `admin_note` to inject into ANY user's email).
+ */
+function escapeHtml(str: string): string {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+/**
  * Super-admin approves or rejects a plan-upgrade request.
  * On approve the tenant's plan is switched and a fresh subscription window
  * is stamped (12 months from now by default; caller can override).
@@ -85,12 +106,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
               <h1 style="margin:0;font-size:20px;">${approved ? "Upgrade approved" : "Upgrade not approved"}</h1>
             </div>
             <div style="background:white;padding:24px;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 12px 12px;">
-              <p>Hi ${requester.full_name || requester.username},</p>
+              <p>Hi ${escapeHtml(requester.full_name || requester.username)},</p>
               ${approved
-                ? `<p>Your request to upgrade <strong>${tenant?.name || "your workspace"}</strong> to <strong>${(current as any).requested_plan}</strong> has been approved. The new plan is active immediately.</p>`
-                : `<p>Your request to upgrade <strong>${tenant?.name || "your workspace"}</strong> to <strong>${(current as any).requested_plan}</strong> was not approved at this time.</p>`}
-              ${body.admin_note ? `<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin:16px 0;"><p style="color:#374151;margin:0;font-size:13px;">${body.admin_note}</p></div>` : ""}
-              <p style="margin-top:16px;"><a href="${baseUrl}" style="background:#0f766e;color:white;padding:10px 24px;border-radius:6px;text-decoration:none;font-weight:600;font-size:14px;">Open VELOS</a></p>
+                ? `<p>Your request to upgrade <strong>${escapeHtml(tenant?.name || "your workspace")}</strong> to <strong>${escapeHtml((current as any).requested_plan)}</strong> has been approved. The new plan is active immediately.</p>`
+                : `<p>Your request to upgrade <strong>${escapeHtml(tenant?.name || "your workspace")}</strong> to <strong>${escapeHtml((current as any).requested_plan)}</strong> was not approved at this time.</p>`}
+              ${body.admin_note ? `<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin:16px 0;"><p style="color:#374151;margin:0;font-size:13px;">${escapeHtml(body.admin_note)}</p></div>` : ""}
+              <p style="margin-top:16px;"><a href="${escapeHtml(baseUrl)}" style="background:#0f766e;color:white;padding:10px 24px;border-radius:6px;text-decoration:none;font-weight:600;font-size:14px;">Open VELOS</a></p>
             </div>
           </div>`;
         await sendEmail({ to: requester.email, subject, html, tenantId: (current as any).tenant_id });

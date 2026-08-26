@@ -1,0 +1,434 @@
+{
+  "timestamp": "2026-08-06T14:58:11.671Z",
+  "mode": "real",
+  "apiBase": "https://aspidus.onrender.com",
+  "category": "metals",
+  "total": 59,
+  "success": 58,
+  "failed": 1,
+  "dupName": 1,
+  "skipped": 1,
+  "results": [
+    {
+      "sku": "MET-ALU-02-002",
+      "name": "Aluminium Ingots A7 (GOST)",
+      "ok": true,
+      "status": 200,
+      "id": "1c37cfff-fd0c-48ae-977f-c4b77b26ef84"
+    },
+    {
+      "sku": "MET-ALU-03-003",
+      "name": "Aluminium Ingots A8 (GOST)",
+      "ok": true,
+      "status": 200,
+      "id": "f26e397b-55b6-441a-afd8-dd95c100f672"
+    },
+    {
+      "sku": "MET-ALU-04-004",
+      "name": "Aluminium Billets 6063",
+      "ok": true,
+      "status": 200,
+      "id": "60ab8d7d-cbd0-4141-9ea9-53e614b2e033"
+    },
+    {
+      "sku": "MET-ALU-05-005",
+      "name": "Aluminium Billets 6061",
+      "ok": true,
+      "status": 200,
+      "id": "b1951519-9e71-4746-8eb3-f77074770ac1"
+    },
+    {
+      "sku": "MET-ALU-06-006",
+      "name": "Aluminium Slabs 3003",
+      "ok": true,
+      "status": 200,
+      "id": "de177a90-446d-49f8-b2ff-2b29bc38a5ef"
+    },
+    {
+      "sku": "MET-ALU-07-007",
+      "name": "Aluminium Slabs 5052",
+      "ok": true,
+      "status": 200,
+      "id": "d6a93f31-dde0-4c48-b2a2-0726198509e4"
+    },
+    {
+      "sku": "MET-ALU-08-008",
+      "name": "Primary Aluminium 99.7%",
+      "ok": true,
+      "status": 200,
+      "id": "c36a46e2-23f1-475f-8f50-18d5b4921839"
+    },
+    {
+      "sku": "MET-ALU-09-009",
+      "name": "Primary Aluminium 99.8%",
+      "ok": true,
+      "status": 200,
+      "id": "1d34e709-01b4-4ea2-8f73-699b4d8bb64d"
+    },
+    {
+      "sku": "MET-ALU-10-010",
+      "name": "ADC12 Aluminium Alloy Ingots",
+      "ok": true,
+      "status": 200,
+      "id": "f16a27a4-2e16-45b2-ace8-08e6cc5a622e"
+    },
+    {
+      "sku": "MET-ALU-11-011",
+      "name": "Aluminium Wire Rods 9.5mm",
+      "ok": true,
+      "status": 200,
+      "id": "f780da8c-a0cb-45aa-b564-4d7b49776945"
+    },
+    {
+      "sku": "MET-ALU-12-012",
+      "name": "Aluminium T-Bars",
+      "ok": true,
+      "status": 200,
+      "id": "5e4ec949-38a3-45bc-8ca1-b478a2d3fb30"
+    },
+    {
+      "sku": "MET-COP-01-013",
+      "name": "Copper Cathode Grade A (LME)",
+      "ok": true,
+      "status": 200,
+      "id": "d92c9e30-1f55-49b4-860c-59fdbc47886c"
+    },
+    {
+      "sku": "MET-COP-02-014",
+      "name": "Copper Wire Rods 8mm",
+      "ok": true,
+      "status": 200,
+      "id": "2d8ecb70-3174-49de-980c-b7132ee43e3e"
+    },
+    {
+      "sku": "MET-COP-03-015",
+      "name": "Copper Scrap Birch/Cliff (No.1)",
+      "ok": true,
+      "status": 200,
+      "id": "75d1e2d4-65d1-400c-bb7b-68b2ec962992"
+    },
+    {
+      "sku": "MET-COP-04-016",
+      "name": "Copper Scrap Candy (No.2)",
+      "ok": true,
+      "status": 200,
+      "id": "046d1fcf-ef98-4af9-ba8a-fce1345c33b4"
+    },
+    {
+      "sku": "MET-COP-05-017",
+      "name": "Copper Concentrate 25% Cu",
+      "ok": false,
+      "status": 409,
+      "error": "A product with name \"Copper Concentrate 25% Cu\" already exists. Send force:true to override."
+    },
+    {
+      "sku": "MET-COP-06-018",
+      "name": "Blister Copper 98%",
+      "ok": true,
+      "status": 200,
+      "id": "43986f4e-2346-45a5-bd34-46626e64a26a"
+    },
+    {
+      "sku": "MET-COP-07-019",
+      "name": "Brass Ingots",
+      "ok": true,
+      "status": 200,
+      "id": "6b273869-f6f3-4f07-a07b-647bbc818add"
+    },
+    {
+      "sku": "MET-COP-08-020",
+      "name": "Bronze Ingots",
+      "ok": true,
+      "status": 200,
+      "id": "b0d0c718-6cfd-43e7-b954-01a36c0f8150"
+    },
+    {
+      "sku": "MET-ZIN-01-021",
+      "name": "Zinc SHG 99.99% (LME)",
+      "ok": true,
+      "status": 200,
+      "id": "415cb14f-173e-4f32-9c75-34d670be902f"
+    },
+    {
+      "sku": "MET-ZIN-02-022",
+      "name": "Zinc Prime Western 98%",
+      "ok": true,
+      "status": 200,
+      "id": "57b19f4b-666d-4b82-9bd3-a2e182efb288"
+    },
+    {
+      "sku": "MET-ZIN-03-023",
+      "name": "Zinc Ingots 99.95%",
+      "ok": true,
+      "status": 200,
+      "id": "d322c822-6fef-4ffe-9e90-74ebdb86e4a7"
+    },
+    {
+      "sku": "MET-ZIN-04-024",
+      "name": "Zinc Scrap (Clean Dross-Free)",
+      "ok": true,
+      "status": 200,
+      "id": "6697300c-6120-46e1-861f-7560e32e15c9"
+    },
+    {
+      "sku": "MET-ZIN-05-025",
+      "name": "Zinc Oxide (Direct Process)",
+      "ok": true,
+      "status": 200,
+      "id": "85bf9ec8-1b69-4453-947d-22572d129c99"
+    },
+    {
+      "sku": "MET-ZIN-06-026",
+      "name": "Zinc Concentrate 50% Zn",
+      "ok": true,
+      "status": 200,
+      "id": "12300c31-7191-42de-9cce-0349ef0f1429"
+    },
+    {
+      "sku": "MET-LEA-01-027",
+      "name": "Refined Lead 99.97%",
+      "ok": true,
+      "status": 200,
+      "id": "06272aff-275e-4cb2-9805-caaac813050a"
+    },
+    {
+      "sku": "MET-LEA-02-028",
+      "name": "Lead Ingots (Pure)",
+      "ok": true,
+      "status": 200,
+      "id": "dbcec8ea-855c-448e-b994-59e7d96a615c"
+    },
+    {
+      "sku": "MET-LEA-03-029",
+      "name": "Lead Scrap (Racks)",
+      "ok": true,
+      "status": 200,
+      "id": "ee0b75e9-d1ca-462f-8fc5-a53759b9345c"
+    },
+    {
+      "sku": "MET-LEA-04-030",
+      "name": "Lead Concentrate 65% Pb",
+      "ok": true,
+      "status": 200,
+      "id": "be05d7af-eb2d-485a-b228-cf82f37d821f"
+    },
+    {
+      "sku": "MET-LEA-05-031",
+      "name": "Antimonial Lead (Hard Lead)",
+      "ok": true,
+      "status": 200,
+      "id": "4b78dd10-1060-4575-b4fb-ad401c10280d"
+    },
+    {
+      "sku": "MET-TIN-01-032",
+      "name": "Tin Ingots 99.9% (LME)",
+      "ok": true,
+      "status": 200,
+      "id": "28b1488a-50d7-47e4-9aee-a2b0db4d21f8"
+    },
+    {
+      "sku": "MET-TIN-02-033",
+      "name": "Tin Solder 60/40",
+      "ok": true,
+      "status": 200,
+      "id": "ff166b3c-072b-4e6d-ac66-e61125a15b5e"
+    },
+    {
+      "sku": "MET-TIN-03-034",
+      "name": "Tin Solder 63/37",
+      "ok": true,
+      "status": 200,
+      "id": "96668d3d-0da1-4cb7-a6e4-24124c9a54fd"
+    },
+    {
+      "sku": "MET-TIN-04-035",
+      "name": "Tin Anodes",
+      "ok": true,
+      "status": 200,
+      "id": "6a65cdae-3623-4348-bdae-913f61e9c762"
+    },
+    {
+      "sku": "MET-NIC-01-036",
+      "name": "Nickel Cathode 99.8%",
+      "ok": true,
+      "status": 200,
+      "id": "a2c22133-1b24-4e04-b4fd-c0f2e3d20dae"
+    },
+    {
+      "sku": "MET-NIC-02-037",
+      "name": "Nickel Pig Iron (NPI) 10-12%",
+      "ok": true,
+      "status": 200,
+      "id": "b94b0904-1216-4050-9af0-4b172ac08a2a"
+    },
+    {
+      "sku": "MET-NIC-03-038",
+      "name": "Ferronickel 20% Ni",
+      "ok": true,
+      "status": 200,
+      "id": "7ffc8d0c-6762-423d-a4db-7acfbb351d25"
+    },
+    {
+      "sku": "MET-NIC-04-039",
+      "name": "Nickel Scrap (Clean Solids)",
+      "ok": true,
+      "status": 200,
+      "id": "7485cb5e-c1e6-4b55-8833-338e98b4d655"
+    },
+    {
+      "sku": "MET-NIC-05-040",
+      "name": "Nickel Concentrate 12% Ni",
+      "ok": true,
+      "status": 200,
+      "id": "8718ebc8-9eac-4de3-92db-c2a6ef211bcf"
+    },
+    {
+      "sku": "MET-STL-01-041",
+      "name": "HRC (Hot Rolled Coil) 3mm",
+      "ok": true,
+      "status": 200,
+      "id": "dfae3ad7-ccda-4589-89a0-c40684c31a6c"
+    },
+    {
+      "sku": "MET-STL-02-042",
+      "name": "CRC (Cold Rolled Coil) 1mm",
+      "ok": true,
+      "status": 200,
+      "id": "a05d54b8-76f2-4c49-b62f-6c9ac6536145"
+    },
+    {
+      "sku": "MET-STL-03-043",
+      "name": "Rebar 12mm",
+      "ok": true,
+      "status": 200,
+      "id": "90091966-7b5a-4994-8780-c17ab176ebfe"
+    },
+    {
+      "sku": "MET-STL-04-044",
+      "name": "Wire Rod 5.5mm",
+      "ok": true,
+      "status": 200,
+      "id": "9ae45105-6f35-4b34-83c9-83d9680948f4"
+    },
+    {
+      "sku": "MET-STL-05-045",
+      "name": "Steel Billets 125x125",
+      "ok": true,
+      "status": 200,
+      "id": "ca6ef72e-e791-4f29-af3a-e0fee63f0301"
+    },
+    {
+      "sku": "MET-STL-06-046",
+      "name": "Steel Slabs",
+      "ok": true,
+      "status": 200,
+      "id": "3ce90395-2cdf-4c53-b4f2-f5136c84b150"
+    },
+    {
+      "sku": "MET-STL-07-047",
+      "name": "Galvanized Coil 0.5mm",
+      "ok": true,
+      "status": 200,
+      "id": "cb48f9c1-4173-403f-96f3-edfd11a7bfdf"
+    },
+    {
+      "sku": "MET-STL-08-048",
+      "name": "PPGI 0.5mm",
+      "ok": true,
+      "status": 200,
+      "id": "6031027a-f310-491e-9fce-41b278c8f48e"
+    },
+    {
+      "sku": "MET-STL-09-049",
+      "name": "Tinplate 0.2mm",
+      "ok": true,
+      "status": 200,
+      "id": "6da0d782-1d43-4378-8c06-52336b81e627"
+    },
+    {
+      "sku": "MET-STL-10-050",
+      "name": "Stainless 304 Coil",
+      "ok": true,
+      "status": 200,
+      "id": "5ef23d96-c961-4a36-919c-9efb20e6a885"
+    },
+    {
+      "sku": "MET-STL-11-051",
+      "name": "Stainless 316 Coil",
+      "ok": true,
+      "status": 200,
+      "id": "9138f664-a6c7-4834-b2e0-9e9a3fc1a39f"
+    },
+    {
+      "sku": "MET-STL-12-052",
+      "name": "Steel Scrap HMS 1&2 (80:20)",
+      "ok": true,
+      "status": 200,
+      "id": "6cda1032-dbd7-4a48-803c-5676c32e2a10"
+    },
+    {
+      "sku": "MET-PRE-01-053",
+      "name": "Gold Doré",
+      "ok": true,
+      "status": 200,
+      "id": "111edb6f-3442-497b-a290-9e4d9da76cfd"
+    },
+    {
+      "sku": "MET-PRE-02-054",
+      "name": "Silver Granules 99.9%",
+      "ok": true,
+      "status": 200,
+      "id": "aea8b802-ff04-4802-8ab9-34abccefa668"
+    },
+    {
+      "sku": "MET-PRE-03-055",
+      "name": "Platinum Sponge",
+      "ok": true,
+      "status": 200,
+      "id": "cc6f9e0d-ad8f-4f3c-b095-9f30c4412938"
+    },
+    {
+      "sku": "MET-PRE-04-056",
+      "name": "Palladium Sponge",
+      "ok": true,
+      "status": 200,
+      "id": "95d71856-dcce-4f0f-acde-bdeb6c5e8ba2"
+    },
+    {
+      "sku": "MET-OTH-01-057",
+      "name": "Cobalt Metal 99.8%",
+      "ok": true,
+      "status": 200,
+      "id": "6c519fe4-863c-4814-ade5-bbbc7ef372c0"
+    },
+    {
+      "sku": "MET-OTH-02-058",
+      "name": "Magnesium Ingots 99.9%",
+      "ok": true,
+      "status": 200,
+      "id": "2f387ff7-6ec8-4a5d-bce1-e61ba6841aca"
+    },
+    {
+      "sku": "MET-OTH-03-059",
+      "name": "Silicon Metal 553",
+      "ok": true,
+      "status": 200,
+      "id": "824f9810-e044-4263-80fd-9c2476bb3278"
+    },
+    {
+      "sku": "MET-OTH-04-060",
+      "name": "Silicon Metal 441",
+      "ok": true,
+      "status": 200,
+      "id": "c4f3f53e-c9ea-4637-8c44-66db66ef5721"
+    }
+  ],
+  "errors": [
+    {
+      "sku": "MET-COP-05-017",
+      "name": "Copper Concentrate 25% Cu",
+      "status": 500,
+      "error": "Could not find the 'force' column of 'products' in the schema cache"
+    }
+  ]
+}

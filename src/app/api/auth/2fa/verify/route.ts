@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, audit, sanitizeError } from "@/lib/api/helpers";
+import { requireAuth, audit, getIp, sanitizeError } from "@/lib/api/helpers";
 import { verifyTotp, hashRecoveryCode } from "@/lib/auth/totp";
+// EMAIL-AUDIT (HIGH) — fire a notification email to the user's
+// registered inbox the moment 2FA is activated. Defense-in-depth
+// against silent 2FA hijack: if an attacker briefly holds the
+// session and rotates the TOTP secret, the legitimate user gets
+// an email saying "2FA was just turned on — was that you?".
+// The email passes the user's tenantId so the right comms config
+// is loaded; the send is fire-and-forget so a mail-provider blip
+// can't block the activation (the user is already logged in and
+// 2FA is already active by the time the email is dispatched).
+import { sendEmail, twoFactorActivatedEmail } from "@/lib/email/service";
 
 export const runtime = "nodejs";
 
@@ -112,6 +122,47 @@ export async function POST(req: NextRequest) {
       user.id,
       { recovery_code_count: hashes.length },
     );
+
+    // EMAIL-AUDIT (HIGH) — fire the 2FA-activated notification email.
+    // Best-effort: a transient mail-provider outage must NOT block the
+    // activation response (the user is already authenticated and 2FA
+    // is already active). The email passes the user's tenantId so the
+    // right comms config is loaded; for super_admin users (who have no
+    // tenant_id), `getEmailConfig(undefined)` falls back to the
+    // platform-level comms blob — same path the signup-request
+    // notification uses. Skipped silently when the user has no email
+    // on file (some legacy accounts may not).
+    if (user.email) {
+      try {
+        const tenant = auth.tenantId
+          ? await auth.store.getTenant(auth.tenantId)
+          : null;
+        const baseUrl =
+          process.env.NEXT_PUBLIC_APP_URL ||
+          process.env.NEXT_PUBLIC_BASE_URL ||
+          process.env.APP_BASE_URL ||
+          "";
+        const securityUrl = baseUrl ? `${baseUrl}/settings/security` : "/settings/security";
+        const { subject, html } = twoFactorActivatedEmail({
+          username: user.username || user.email,
+          tenantName: tenant?.name || "VELOS",
+          activatedAt: new Date().toISOString(),
+          ip: getIp(req),
+          userAgent: req.headers.get("user-agent") || null,
+          securityUrl,
+        });
+        void sendEmail({
+          to: user.email,
+          subject,
+          html,
+          tenantId: auth.tenantId || undefined,
+        }).catch((e) =>
+          console.error("[2fa.verify] 2FA activation notification email failed:", e),
+        );
+      } catch (e) {
+        console.error("[2fa.verify] 2FA activation email setup failed:", e);
+      }
+    }
 
     return NextResponse.json({ activated: true });
   } catch (e) {

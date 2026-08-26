@@ -41,6 +41,7 @@
     "examples",
     "tests",
     "skills",
+    "scripts",
     "aspidusReady-inspect",
     "tool-results",
     "agent-ctx",

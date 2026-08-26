@@ -1,0 +1,154 @@
+{
+  "timestamp": "2026-08-05T22:05:38.382Z",
+  "mode": "real",
+  "apiBase": "https://aspidus.onrender.com",
+  "category": "coffee",
+  "total": 20,
+  "success": 20,
+  "failed": 0,
+  "dupName": 0,
+  "skipped": 0,
+  "results": [
+    {
+      "sku": "COF-ARB-01-001",
+      "name": "Brazil Santos 2/3 SS17",
+      "ok": true,
+      "status": 200,
+      "id": "b8eaeadb-cf91-4e39-acfc-a39e431cf20b"
+    },
+    {
+      "sku": "COF-ARB-02-001",
+      "name": "Colombia Excelso EP",
+      "ok": true,
+      "status": 200,
+      "id": "13143eb3-0ce7-4b13-a5dc-7f3dd5d81d8d"
+    },
+    {
+      "sku": "COF-ARB-03-001",
+      "name": "Ethiopia Yirgacheffe G2",
+      "ok": true,
+      "status": 200,
+      "id": "71af30d7-8d52-4d69-9035-89fd18575d70"
+    },
+    {
+      "sku": "COF-ARB-04-001",
+      "name": "Guatemala SHB EP",
+      "ok": true,
+      "status": 200,
+      "id": "bbcd3dba-c7cf-45ca-810b-9606ff5d085b"
+    },
+    {
+      "sku": "COF-ARB-05-001",
+      "name": "Honduras HG EP",
+      "ok": true,
+      "status": 200,
+      "id": "7aabd7e0-ba66-4199-98c5-3f5758bf4518"
+    },
+    {
+      "sku": "COF-ARB-06-001",
+      "name": "Costa Rica SHB EP",
+      "ok": true,
+      "status": 200,
+      "id": "f2386fd8-1d67-45fb-9948-84ecf0950b59"
+    },
+    {
+      "sku": "COF-ARB-07-001",
+      "name": "Peru Organic FTO",
+      "ok": true,
+      "status": 200,
+      "id": "b72a973f-9680-42f9-a56e-97f0b6c022bb"
+    },
+    {
+      "sku": "COF-ARB-08-001",
+      "name": "Mexico Altura HG",
+      "ok": true,
+      "status": 200,
+      "id": "cbd7246f-1ae7-4523-ba9b-cfa4d980ce26"
+    },
+    {
+      "sku": "COF-ARB-09-001",
+      "name": "Kenya AA",
+      "ok": true,
+      "status": 200,
+      "id": "c5d9971b-c53a-4f2d-8e1b-262692e991d9"
+    },
+    {
+      "sku": "COF-ARB-10-001",
+      "name": "India Monsooned Malabar",
+      "ok": true,
+      "status": 200,
+      "id": "7af32276-95f0-41d9-91ec-d3e6543974d0"
+    },
+    {
+      "sku": "COF-ARB-11-001",
+      "name": "Uganda Bugisu AA",
+      "ok": true,
+      "status": 200,
+      "id": "26304587-aa48-45b1-bc8a-347f18eccff0"
+    },
+    {
+      "sku": "COF-ARB-12-001",
+      "name": "Indonesia Mandheling G1",
+      "ok": true,
+      "status": 200,
+      "id": "9a451714-0431-4b7b-819d-da8063a882d4"
+    },
+    {
+      "sku": "COF-ROB-01-001",
+      "name": "Vietnam G2 18 screen",
+      "ok": true,
+      "status": 200,
+      "id": "451e441b-454d-4dfd-9051-ff33ef8b0b20"
+    },
+    {
+      "sku": "COF-ROB-02-001",
+      "name": "India Cherry AB",
+      "ok": true,
+      "status": 200,
+      "id": "9011684e-4469-44df-a902-69f4c1496fba"
+    },
+    {
+      "sku": "COF-ROB-03-001",
+      "name": "Indonesia G1 18 screen",
+      "ok": true,
+      "status": 200,
+      "id": "8d588349-3e0f-4170-a49c-bf1040797948"
+    },
+    {
+      "sku": "COF-ROB-04-001",
+      "name": "Uganda Screen 18",
+      "ok": true,
+      "status": 200,
+      "id": "375611e1-9739-4f0c-9080-668483cccd93"
+    },
+    {
+      "sku": "COF-ROB-05-001",
+      "name": "Brazil Conilon",
+      "ok": true,
+      "status": 200,
+      "id": "0b52663a-d5a1-42ed-a4b2-973549ee9adb"
+    },
+    {
+      "sku": "COF-ROB-06-001",
+      "name": "Cote d'Ivoire Grade 2",
+      "ok": true,
+      "status": 200,
+      "id": "1a795d50-fc2d-4523-815d-c5705523de16"
+    },
+    {
+      "sku": "COF-SPC-01-001",
+      "name": "Decaf Arabica MC Process",
+      "ok": true,
+      "status": 200,
+      "id": "a8769a23-50ca-42b3-8100-365326916ac6"
+    },
+    {
+      "sku": "COF-SPC-02-001",
+      "name": "Instant Coffee 100% Spray Dried",
+      "ok": true,
+      "status": 200,
+      "id": "efd5afe2-56ca-4bea-b7d8-4065957bdd41"
+    }
+  ],
+  "errors": []
+}

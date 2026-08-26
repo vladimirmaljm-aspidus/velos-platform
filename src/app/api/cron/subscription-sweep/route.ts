@@ -3,7 +3,13 @@ import { getSupabase } from "@/lib/supabase/client";
 import { authorizeCron } from "@/lib/api/cron-auth";
 import { audit } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
-import { notifyTrialExpiringSoon, emailTrialExpiringSoon } from "@/lib/notif/helper";
+import {
+  notifyTrialExpiringSoon,
+  emailTrialExpiringSoon,
+  notifyTrialExpired,
+  emailTrialExpired,
+  notifySubscriptionExpired,
+} from "@/lib/notif/helper";
 
 export const runtime = "nodejs";
 
@@ -98,31 +104,64 @@ export async function GET(req: NextRequest) {
     }
 
     // 1) Trials that have expired → suspend the tenant.
+    //
+    // LOGIC-DEEP §5 (MEDIUM→HIGH): the previous implementation flipped
+    // the row to `status="suspended"` with NO notification to the tenant
+    // admin — they only discovered the suspension when login returned
+    // 402 "Your workspace is suspended." That's a hostile UX when the
+    // admin already missed the 48h warning. We now fire an in-app
+    // notification + an email at the moment of suspension so the admin
+    // sees both the warning AND the actual suspension event.
     const { data: expiredTrials } = await sb
       .from("tenants")
-      .select("id, name")
+      .select("id, name, trial_ends_at")
       .eq("status", "trial")
       .not("trial_ends_at", "is", null)
       .lt("trial_ends_at", nowIso);
 
     const trialSuspended = [] as string[];
-    for (const t of (expiredTrials as { id: string; name: string }[] | null) || []) {
+    for (const t of (expiredTrials as { id: string; name: string; trial_ends_at: string | null }[] | null) || []) {
       await sb.from("tenants").update({ status: "suspended", updated_at: nowIso }).eq("id", t.id);
       trialSuspended.push(t.id);
+      // Fire the trial-expired notification + email. Best-effort —
+      // failures are caught inside the helpers and never break the
+      // sweep. The cron loop continues regardless so a transient
+      // mail/notify outage on one tenant doesn't block the next.
+      try {
+        await notifyTrialExpired(t.id, t.name, t.trial_ends_at);
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL;
+        void emailTrialExpired({
+          tenantId: t.id,
+          tenantName: t.name,
+          trialEndsAt: t.trial_ends_at,
+          baseUrl,
+        }).catch((e) =>
+          console.error("[subscription-sweep] trial-expired email failed", t.id, e),
+        );
+      } catch (e) {
+        console.error("[subscription-sweep] trial-expired notify failed", t.id, e);
+      }
     }
 
     // 2) Paid subscriptions whose subscription_end has passed → suspend.
+    // Same fix as trials — fire the subscription-expired notification
+    // + email at the moment of suspension, not just at login time.
     const { data: expiredPaid } = await sb
       .from("tenants")
-      .select("id, name")
+      .select("id, name, subscription_end")
       .eq("status", "active")
       .not("subscription_end", "is", null)
       .lt("subscription_end", nowIso);
 
     const paidSuspended = [] as string[];
-    for (const t of (expiredPaid as { id: string; name: string }[] | null) || []) {
+    for (const t of (expiredPaid as { id: string; name: string; subscription_end: string | null }[] | null) || []) {
       await sb.from("tenants").update({ status: "suspended", updated_at: nowIso }).eq("id", t.id);
       paidSuspended.push(t.id);
+      try {
+        await notifySubscriptionExpired(t.id, t.name, t.subscription_end);
+      } catch (e) {
+        console.error("[subscription-sweep] subscription-expired notify failed", t.id, e);
+      }
     }
 
     // P2 / task C-6 Fix 4: audit-log the sweep outcome.

@@ -194,9 +194,18 @@ export async function POST(req: NextRequest) {
     const existing = await store.getUserByUsername(email);
     if (existing) {
       // Audit the duplicate attempt so the security pipeline sees
-      // enumeration. Do NOT reveal "this email is already registered" to
-      // the caller — return the same shape a successful registration would
-      // so an attacker can't probe for valid emails.
+      // enumeration. HACK-SIM Fix 3 (MEDIUM): previously this branch
+      // returned a 409 "An account with this email already exists" — a
+      // textbook email-enumeration leak. The code comment one line above
+      // explicitly said "Do NOT reveal 'this email is already registered'
+      // to the caller", but the implementation did exactly that. We now
+      // return the SAME success shape a fresh signup would return (status
+      // pending_approval) so an attacker cannot distinguish duplicate-
+      // email from genuine signup — they just see the generic
+      // "your request has been submitted" message in both cases. The
+      // existing user is NOT emailed (they already have an account; a
+      // duplicate-probe should not spam them). The audit log + security
+      // event below carry the real `reason` server-side for ops triage.
       try {
         await store.appendAudit({
           user_id: null,
@@ -217,13 +226,11 @@ export async function POST(req: NextRequest) {
         details: { reason: "register_duplicate_email", email },
         severity: "info",
       });
-      return NextResponse.json(
-        {
-          error:
-            "An account with this email already exists. Please sign in instead.",
-        },
-        { status: 409 },
-      );
+      return NextResponse.json({
+        status: "pending_approval",
+        message:
+          "Your account request has been submitted. A platform administrator will review and approve it.",
+      });
     }
 
     // ── Create tenant (plan=trial, status=pending_approval) ───────────

@@ -61,11 +61,49 @@ export async function uploadFile(
   const sb = getSupabase();
   const { error } = await sb.storage.from(bucket).upload(path, buffer, { contentType, upsert: true });
   if (error) throw new Error(`Upload failed: ${error.message}`);
+  // CRITICAL FIX (LOGIC-DEEP §6 / Workflow 6): prefer a SHORT-LIVED SIGNED
+  // URL over a PUBLIC URL. The previous implementation called
+  // `sb.storage.from(bucket).getPublicUrl(path)` and returned the result
+  // unconditionally — but Supabase's `getPublicUrl` ALWAYS returns a
+  // constructed URL string regardless of whether the bucket is configured
+  // as public or private. For a private bucket the returned URL is
+  // unusable (returns 400 to anonymous callers); for a public bucket it
+  // exposes the file permanently to anyone with the link. The signed-URL
+  // fallback below was therefore dead code — it never ran because the
+  // public-URL branch always succeeded first.
+  //
+  // Sensitive buckets (`documents`, `kyc-documents`, `portal-uploads`,
+  // `shared-documents`) hold contracts, KYC scans, ID cards, bank
+  // statements — they MUST NOT be reachable via a permanent public URL
+  // even if the bucket is misconfigured as public (defense-in-depth).
+  //
+  // New behaviour: ALWAYS try to mint a 1-hour signed URL first, and
+  // fall back to the public URL ONLY if the signed-URL endpoint fails
+  // outright (which generally means Supabase Storage is unconfigured for
+  // the project — the local dev `data:` URL branch above already
+  // covers that case, so this fallback is rarely reached in practice).
+  //
+  // For long-term access (UI previews, repeated downloads), the
+  // existing `GET /api/portal-uploads/[id]/download` and
+  // `GET /api/portal/documents/[id]/download` endpoints mint fresh
+  // short-lived signed URLs on demand — the URL stored here is only
+  // used for the first preview after upload.
+  const { data: signedData, error: signedError } = await sb.storage
+    .from(bucket)
+    .createSignedUrl(path, 3600);
+  if (!signedError && signedData?.signedUrl) {
+    return { url: signedData.signedUrl, path };
+  }
+  // Last-resort fallback: a public URL. Only used when the signed-URL
+  // endpoint is unavailable (e.g. bucket is marked public + project
+  // configuration disallows signed URLs). Logged so ops can spot the
+  // degradation.
+  console.warn(
+    `[upload] signed-URL mint failed for ${bucket}/${path} (${signedError?.message || "unknown error"}) — falling back to public URL. The bucket may be misconfigured for public access.`,
+  );
   const { data: publicData } = sb.storage.from(bucket).getPublicUrl(path);
   if (publicData?.publicUrl) return { url: publicData.publicUrl, path };
-  const { data: signedData, error: signedError } = await sb.storage.from(bucket).createSignedUrl(path, 3600);
-  if (signedError || !signedData?.signedUrl) return { url: path, path };
-  return { url: signedData.signedUrl, path };
+  return { url: path, path };
 }
 
 /**

@@ -7,6 +7,28 @@ import type { EmailProvider } from "@/lib/email/service";
 export const runtime = "nodejs";
 
 /**
+ * HTML-escape a string before interpolating into the test email HTML body.
+ * EMAIL-AUDIT (MEDIUM) — `fromName`, `fromEmail`, `resendFromEmail`,
+ * `postmarkFromEmail`, `smtp.fromName`, `smtp.fromEmail`, `smtp.user`,
+ * and `messageStream` are all admin-settable fields interpolated into
+ * the test email HTML body. Without escaping, an admin who set
+ * `fromName = '<img src=x onerror=alert(1)>'` would inject script into
+ * the test email they themselves receive. Self-XSS, but the same
+ * shared table-row is also what shows up in the Mail Queue — so an
+ * admin who has been socially engineered to paste a "weird from-name"
+ * could end up logging an XSS payload into the audit trail.
+ */
+function escapeHtml(str: string): string {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+/**
  * POST /api/settings/test-email
  *
  * Sends a test email using either Resend or SMTP (whichever is currently
@@ -120,8 +142,8 @@ export async function POST(req: NextRequest) {
                 </p>
                 <table style="width:100%;font-size:13px;color:#555;margin:16px 0;border-collapse:collapse;">
                   <tr><td style="padding:6px 0;color:#888;width:140px;">Provider</td><td style="padding:6px 0;">Resend (HTTP API)</td></tr>
-                  <tr><td style="padding:6px 0;color:#888;">From</td><td style="padding:6px 0;font-family:monospace;">${fromName} &lt;${resendFromEmail}&gt;</td></tr>
-                  <tr><td style="padding:6px 0;color:#888;">Sent at</td><td style="padding:6px 0;">${new Date().toLocaleString()}</td></tr>
+                  <tr><td style="padding:6px 0;color:#888;">From</td><td style="padding:6px 0;font-family:monospace;">${escapeHtml(fromName)} &lt;${escapeHtml(resendFromEmail)}&gt;</td></tr>
+                  <tr><td style="padding:6px 0;color:#888;">Sent at</td><td style="padding:6px 0;">${escapeHtml(new Date().toLocaleString())}</td></tr>
                 </table>
                 <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0;" />
                 <p style="color:#888;font-size:12px;line-height:1.5;">
@@ -219,9 +241,9 @@ export async function POST(req: NextRequest) {
                 </p>
                 <table style="width:100%;font-size:13px;color:#555;margin:16px 0;border-collapse:collapse;">
                   <tr><td style="padding:6px 0;color:#888;width:140px;">Provider</td><td style="padding:6px 0;">Postmark (HTTP API)</td></tr>
-                  <tr><td style="padding:6px 0;color:#888;">From</td><td style="padding:6px 0;font-family:monospace;">${fromName} &lt;${postmarkFromEmail}&gt;</td></tr>
-                  <tr><td style="padding:6px 0;color:#888;">Message stream</td><td style="padding:6px 0;font-family:monospace;">${messageStream}</td></tr>
-                  <tr><td style="padding:6px 0;color:#888;">Sent at</td><td style="padding:6px 0;">${new Date().toLocaleString()}</td></tr>
+                  <tr><td style="padding:6px 0;color:#888;">From</td><td style="padding:6px 0;font-family:monospace;">${escapeHtml(fromName)} &lt;${escapeHtml(postmarkFromEmail)}&gt;</td></tr>
+                  <tr><td style="padding:6px 0;color:#888;">Message stream</td><td style="padding:6px 0;font-family:monospace;">${escapeHtml(messageStream)}</td></tr>
+                  <tr><td style="padding:6px 0;color:#888;">Sent at</td><td style="padding:6px 0;">${escapeHtml(new Date().toLocaleString())}</td></tr>
                 </table>
                 <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0;" />
                 <p style="color:#888;font-size:12px;line-height:1.5;">
@@ -330,10 +352,10 @@ export async function POST(req: NextRequest) {
                 If you are reading this, your SMTP configuration is working correctly.
               </p>
               <table style="width:100%;font-size:13px;color:#555;margin:16px 0;border-collapse:collapse;">
-                <tr><td style="padding:6px 0;color:#888;width:120px;">SMTP server</td><td style="padding:6px 0;font-family:monospace;">${smtp.host}:${smtp.port}</td></tr>
-                <tr><td style="padding:6px 0;color:#888;">Username</td><td style="padding:6px 0;font-family:monospace;">${smtp.user}</td></tr>
-                <tr><td style="padding:6px 0;color:#888;">From</td><td style="padding:6px 0;font-family:monospace;">${smtp.fromName} &lt;${smtp.fromEmail}&gt;</td></tr>
-                <tr><td style="padding:6px 0;color:#888;">Sent at</td><td style="padding:6px 0;">${new Date().toLocaleString()}</td></tr>
+                <tr><td style="padding:6px 0;color:#888;width:120px;">SMTP server</td><td style="padding:6px 0;font-family:monospace;">${escapeHtml(smtp.host)}:${escapeHtml(String(smtp.port))}</td></tr>
+                <tr><td style="padding:6px 0;color:#888;">Username</td><td style="padding:6px 0;font-family:monospace;">${escapeHtml(smtp.user)}</td></tr>
+                <tr><td style="padding:6px 0;color:#888;">From</td><td style="padding:6px 0;font-family:monospace;">${escapeHtml(smtp.fromName)} &lt;${escapeHtml(smtp.fromEmail)}&gt;</td></tr>
+                <tr><td style="padding:6px 0;color:#888;">Sent at</td><td style="padding:6px 0;">${escapeHtml(new Date().toLocaleString())}</td></tr>
               </table>
               <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0;" />
               <p style="color:#888;font-size:12px;line-height:1.5;">

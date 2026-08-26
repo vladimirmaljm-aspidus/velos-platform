@@ -24,7 +24,7 @@
  *   async plugins. We `await` it.
  */
 
-import { createHash } from "crypto";
+import { createHash, randomInt } from "crypto";
 import { generateSecret, generateURI, verify } from "otplib";
 
 // 6-digit codes, 30s step — the de-facto TOTP standard. Matches Google
@@ -103,12 +103,26 @@ const RECOVERY_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
  *
  * Codes are stored hashed (sha256) in the DB, so a DB read doesn't
  * recover them — see POST /api/auth/2fa/verify for the hashing flow.
+ *
+ * CRITICAL FIX (LOGIC-DEEP §10 / 2FA audit): use the Node.js
+ * `crypto.randomInt(max)` CSPRNG instead of `Math.random()`.
+ * `Math.random()` is a non-cryptographic PRNG seeded only by V8's
+ * entropy pool — observable + predictable across calls in the same
+ * process. A 2FA recovery code generated with `Math.random()` is
+ * theoretically brute-forceable if an attacker can observe enough
+ * outputs (e.g. via a timing side-channel or shared process). At ~80
+ * bits of target entropy per code, the practical risk is low, but the
+ * defense-in-depth principle mandates a CSPRNG for any value used as an
+ * authentication factor. `crypto.randomInt(n)` draws from the OS
+ * CSPRNG (getrandom on Linux, BCryptGenRandom on Windows, SecRandomCopy
+ * on Darwin) and is the correct primitive for security-sensitive
+ * random selection.
  */
 export function generateRecoveryCodes(): string[] {
   return Array.from({ length: 10 }, () =>
     Array.from(
       { length: 16 },
-      () => RECOVERY_ALPHABET[Math.floor(Math.random() * RECOVERY_ALPHABET.length)],
+      () => RECOVERY_ALPHABET[randomInt(RECOVERY_ALPHABET.length)],
     ).join(""),
   );
 }

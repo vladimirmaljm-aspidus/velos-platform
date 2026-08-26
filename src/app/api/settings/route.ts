@@ -6,6 +6,14 @@ import {
   COMMS_SENSITIVE_KEYS,
   isEncrypted,
 } from "@/lib/crypto/field-encryption";
+// EMAIL-AUDIT / CRITICAL — from-email spoofing guard. The settings PUT
+// route is the canonical write path for the `comms` blob, so we
+// validate the from-email fields here at save time (defense-in-depth
+// on top of the send-time rewrite in `getEmailConfig`). Importing
+// `validateFromEmailStrict` keeps the validation logic in one place
+// (`src/lib/email/service.ts`) so the save-time + send-time checks
+// can't drift apart.
+import { validateFromEmailStrict } from "@/lib/email/service";
 
 export const runtime = "nodejs";
 
@@ -144,6 +152,58 @@ export async function PUT(req: NextRequest) {
     const body = await req.json();
     const { key, value } = body;
     if (!key) return NextResponse.json({ error: "Missing key." }, { status: 400 });
+
+    // EMAIL-AUDIT / CRITICAL — from-email spoofing guard at save time.
+    // The `comms` blob carries up to three from-email fields:
+    //   - `from_email`             (used by SMTP and as fallback for the
+    //                              provider-specific from-emails)
+    //   - `resend_from_email`      (Resend `from` header)
+    //   - `postmark_from_email`    (Postmark `From` header)
+    //
+    // Each is validated against the platform allowlist
+    // (`email_allowed_from_domains` platform setting, or env
+    // `ALLOWED_FROM_DOMAINS`, or the default `["aspidus.onrender.com",
+    // "resend.dev"]`). An invalid from-email returns a 400 with the
+    // safe fallback so the admin sees the actual rewrite that would
+    // happen at send time.
+    //
+    // NOTE: this check is skipped for the platform-level setting itself
+    // (`tenantId === null`) so a super_admin can save the
+    // `email_allowed_from_domains` blob without being gated by the
+    // previous allowlist — they're the ones who edit the allowlist.
+    if (key === "comms" && tenantId !== null && value && typeof value === "object") {
+      const v = value as Record<string, unknown>;
+      const candidates: Array<{ field: string; email: string }> = [];
+      if (typeof v.from_email === "string" && v.from_email.trim()) {
+        candidates.push({ field: "from_email", email: v.from_email });
+      }
+      if (typeof v.resend_from_email === "string" && v.resend_from_email.trim()) {
+        candidates.push({ field: "resend_from_email", email: v.resend_from_email });
+      }
+      if (typeof v.postmark_from_email === "string" && v.postmark_from_email.trim()) {
+        candidates.push({ field: "postmark_from_email", email: v.postmark_from_email });
+      }
+      // Sequential validation so the error message names the first
+      // invalid field (so the admin knows which one to fix). The
+      // platform-level allowlist is the same one `getEmailConfig`
+      // consults at send time — they can't drift apart.
+      for (const c of candidates) {
+        const result = await validateFromEmailStrict(c.email);
+        if (!result.valid) {
+          return NextResponse.json(
+            {
+              error:
+                `Email spoofing protection: the "${c.field}" value "${c.email}" ` +
+                `uses a domain that is not on the platform's allowed from-domains list. ` +
+                `Ask a super admin to add the domain to the platform setting ` +
+                `"email_allowed_from_domains", or use a domain that is already ` +
+                `allowed. The send would have been rewritten to "${result.fallback}".`,
+            },
+            { status: 400 },
+          );
+        }
+      }
+    }
 
     // P0-3 Feature 2: encrypt sensitive comms sub-keys before persisting.
     // `encryptSettingValue` is idempotent — re-saving a value the admin

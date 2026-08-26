@@ -40,7 +40,19 @@ export async function GET(req: NextRequest) {
       // hatch; tenant isolation for non-super-admin callers is preserved
       // by `requireAuth` + the `resolveTenantId` non-super-admin branch.
       let q = (auth.store as any).sb().from("mail_queue").select("*", { count: "exact" as const });
-      if (search) q = q.or(`subject.ilike.%${search}%,to_email.ilike.%${search}%`);
+      if (search) {
+        // HACK-SIM Fix 2 (MEDIUM): sanitize the search string before passing
+        // it to `.or()` to prevent PostgREST filter-expression injection.
+        // Commas separate OR clauses, parens group them, backslashes escape
+        // — an attacker (or even a curious super_admin) could inject
+        // `id.eq.<x>` or `tenant_id.eq.<y>` to bypass intended filters.
+        // Mirror the sanitization pattern used in logistics-requests/route.ts
+        // and admin/marketplace/posts/route.ts.
+        const s = search.replace(/[(),\\]/g, " ").trim();
+        if (s) {
+          q = q.or(`subject.ilike.%${s}%,to_email.ilike.%${s}%`);
+        }
+      }
       if (status) q = q.eq("status", status);
       q = q.order("created_at", { ascending: false });
       const { data, count, error } = await q;

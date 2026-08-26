@@ -6,6 +6,22 @@ import { getStore, getStoreSync } from "@/lib/data/store";
 export const runtime = "nodejs";
 
 /**
+ * HTML-escape a string before interpolating into the test email HTML body.
+ * EMAIL-AUDIT (MEDIUM) — same discipline as test-email/route.ts. The
+ * `fromName`, `fromEmail`, `smtp.user`, `smtp.host` are admin-settable
+ * fields interpolated into the test email HTML body.
+ */
+function escapeHtml(str: string): string {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+/**
  * POST /api/settings/test-smtp
  *
  * Sends a small test email to a recipient address using the SMTP config that
@@ -136,10 +152,10 @@ export async function POST(req: NextRequest) {
               If you are reading this, your SMTP configuration is working correctly.
             </p>
             <table style="width:100%;font-size:13px;color:#555;margin:16px 0;border-collapse:collapse;">
-              <tr><td style="padding:6px 0;color:#888;width:120px;">SMTP server</td><td style="padding:6px 0;font-family:monospace;">${smtp.host}:${smtp.port}</td></tr>
-              <tr><td style="padding:6px 0;color:#888;">Username</td><td style="padding:6px 0;font-family:monospace;">${smtp.user}</td></tr>
-              <tr><td style="padding:6px 0;color:#888;">From</td><td style="padding:6px 0;font-family:monospace;">${smtp.fromName} &lt;${smtp.fromEmail}&gt;</td></tr>
-              <tr><td style="padding:6px 0;color:#888;">Sent at</td><td style="padding:6px 0;">${new Date().toLocaleString()}</td></tr>
+              <tr><td style="padding:6px 0;color:#888;width:120px;">SMTP server</td><td style="padding:6px 0;font-family:monospace;">${escapeHtml(smtp.host)}:${escapeHtml(String(smtp.port))}</td></tr>
+              <tr><td style="padding:6px 0;color:#888;">Username</td><td style="padding:6px 0;font-family:monospace;">${escapeHtml(smtp.user)}</td></tr>
+              <tr><td style="padding:6px 0;color:#888;">From</td><td style="padding:6px 0;font-family:monospace;">${escapeHtml(smtp.fromName)} &lt;${escapeHtml(smtp.fromEmail)}&gt;</td></tr>
+              <tr><td style="padding:6px 0;color:#888;">Sent at</td><td style="padding:6px 0;">${escapeHtml(new Date().toLocaleString())}</td></tr>
             </table>
             <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0;" />
             <p style="color:#888;font-size:12px;line-height:1.5;">

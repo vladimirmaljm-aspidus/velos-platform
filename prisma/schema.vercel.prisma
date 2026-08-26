@@ -1,0 +1,194 @@
+// Production schema for Vercel deployment.
+// Switch provider from "sqlite" to "postgresql" and set DATABASE_URL to a
+// Postgres connection string (Neon / Supabase / Vercel Postgres / Render Postgres).
+//
+// To deploy on Vercel:
+//   1. Provision a Postgres database (e.g. Neon free tier).
+//   2. Set DATABASE_URL in Vercel project env vars (e.g. postgresql://user:pass@host/db?sslmode=require).
+//   3. Replace prisma/schema.prisma with this file's datasource block
+//      (or run: prisma db push --schema=prisma/schema.vercel.prisma).
+//   4. Run `prisma migrate deploy` or `prisma db push` in the Vercel build step
+//      (add to package.json: "postinstall": "prisma generate && prisma db push").
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// All models below are identical to schema.prisma — the only difference is the datasource provider.
+// See prisma/schema.prisma for full model definitions (kept in sync).
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String?
+  passwordHash  String
+  role          String   @default("user")
+  company       String?
+  phone         String?
+  country       String?
+  emailVerified Boolean  @default(false)
+  verifyToken   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  sessions Session[]
+  aiUsages AiUsage[]
+  posts    MarketplacePost[]
+  offers   MarketplaceOffer[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model AiUsage {
+  id        String   @id @default(cuid())
+  userId    String
+  tool      String
+  input     String   @default("{}")
+  output    String   @default("")
+  tokens    Int      @default(0)
+  ms        Int      @default(0)
+  success   Boolean  @default(true)
+  error     String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tool])
+  @@index([createdAt])
+}
+
+model MarketplacePost {
+  id          String   @id @default(cuid())
+  userId      String
+  type        String
+  title       String
+  description String
+  category    String   @default("general")
+  quantity    Float    @default(1)
+  unit        String   @default("MT")
+  price       Float    @default(0)
+  currency    String   @default("USD")
+  location    String?
+  status      String   @default("open")
+  imageUrl    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user   User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  offers MarketplaceOffer[]
+
+  @@index([userId])
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model MarketplaceOffer {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  amount    Float    @default(0)
+  currency  String   @default("USD")
+  message   String?
+  status    String   @default("pending")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  post MarketplacePost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+  @@index([userId])
+  @@index([status])
+}
+
+model TradeCalculation {
+  id               String   @id @default(cuid())
+  name             String
+  commodity        String   @default("")
+  baseCurrency     String   @default("USD")
+  quantity         Float    @default(1)
+  unit             String   @default("MT")
+  purchaseCurrency String   @default("USD")
+  purchasePrice    Float    @default(0)
+  purchaseFxRate   Float    @default(1)
+  salesCurrency    String   @default("USD")
+  salesPrice       Float    @default(0)
+  salesFxRate      Float    @default(1)
+  totalCost        Float    @default(0)
+  totalRevenue     Float    @default(0)
+  grossMargin      Float    @default(0)
+  marginPct        Float    @default(0)
+  status           String   @default("draft")
+  notes            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  costItems TradeCostItem[]
+
+  @@index([updatedAt])
+}
+
+model TradeCostItem {
+  id              String   @id @default(cuid())
+  calculationId   String
+  label           String
+  category        String   @default("other")
+  amount          Float    @default(0)
+  currency        String   @default("USD")
+  fxRate          Float    @default(1)
+  convertedAmount Float    @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  calculation TradeCalculation @relation(fields: [calculationId], references: [id], onDelete: Cascade)
+
+  @@index([calculationId])
+}
+
+model ExchangeRateCache {
+  id        String   @id @default(cuid())
+  base      String
+  quote     String
+  rate      Float
+  source    String   @default("er-api")
+  fetchedAt DateTime @default(now())
+
+  @@unique([base, quote])
+}
+
+model DocumentTemplate {
+  id            String   @id @default(cuid())
+  name          String   @unique
+  description   String?
+  category      String   @default("letter")
+  defaultLocale String   @default("en")
+  translations  String   @default("{}")
+  conditions    String   @default("[]")
+  variables     String   @default("[]")
+  layout        String   @default("{}")
+  sampleData    String   @default("{}")
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([category])
+  @@index([active])
+}
