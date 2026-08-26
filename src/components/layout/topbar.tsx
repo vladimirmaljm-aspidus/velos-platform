@@ -942,7 +942,7 @@ export function Topbar() {
             <DropdownMenuSeparator className="my-1 bg-border/50" />
 
             <DropdownMenuItem
-              onClick={logout}
+              onSelect={() => logout()}
               className="cursor-pointer rounded-lg mx-0.5 px-3 py-2 text-sm text-destructive focus:text-destructive focus:bg-destructive/10 smooth"
             >
               <LogOut className="size-4 mr-2.5" />
