@@ -442,6 +442,8 @@ export function PortalShell({
     setPortalAccess(null);
     setAppMode("crm");
     toast.success(t("portal-toast-signed-out"));
+    // CRITICAL FIX: force page reload so browser clears the cookie.
+    window.location.href = "/";
   }
 
   if (!portalAccess) {
