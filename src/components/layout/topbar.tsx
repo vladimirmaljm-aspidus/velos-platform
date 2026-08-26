@@ -410,25 +410,13 @@ export function Topbar() {
   }
 
   async function logout() {
-    // CRITICAL: credentials: 'include' ensures the browser processes
-    // the Set-Cookie: crm_session=; Max-Age=0 header in the response.
-    // Without explicit credentials, some browsers don't process
-    // Set-Cookie from fetch() responses (same-origin default varies).
-    await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
-    // connection under a stale identity. The next login will reconnect with
-    // the new user's rooms.
+    // Use full-page navigation to /logout — fetch() doesn't reliably
+    // process Set-Cookie headers in all browsers. The /logout page
+    // calls the API and redirects to /, guaranteeing the cookie is
+    // cleared before the next page load.
     disconnectRealtime();
     setUser(null);
-    setView("dashboard");
-    useI18nStore.getState().reset();
-    toast.success("Signed out.");
-    // CRITICAL FIX: force a full page reload so the browser processes the
-    // Set-Cookie: crm_session=; Max-Age=0 header from the logout response.
-    // Without this, the Zustand store may clear (user: null) but the browser
-    // still has the cookie → on refresh, auth/me finds the stale cookie →
-    // user is "re-logged in". A full navigation guarantees the cookie is
-    // gone before the next page load.
-    window.location.href = "/";
+    window.location.href = "/logout";
   }
 
   function openPortal() {

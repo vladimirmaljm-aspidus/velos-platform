@@ -435,13 +435,15 @@ export function PortalShell({
 
   async function signOut() {
     try {
-      await fetch("/api/portal/me", { method: "POST", credentials: "include" });
+      
     } catch {
       // ignore — still clear client state
     }
     setPortalAccess(null);
     setAppMode("crm");
     toast.success(t("portal-toast-signed-out"));
+    // Use full-page navigation for reliable cookie clearing.
+    window.location.href = "/logout";
     // CRITICAL FIX: force page reload so browser clears the cookie.
     window.location.href = "/";
   }
