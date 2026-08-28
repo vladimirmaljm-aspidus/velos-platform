@@ -102,6 +102,15 @@ async function _post(req: NextRequest) {
       }
     }
 
+    // CRITICAL FIX: require at least 1 line item — an invoice with 0 items
+    // and total=0 is meaningless and breaks the payment flow.
+    if (!Array.isArray(body.items) || body.items.length === 0) {
+      return NextResponse.json(
+        { error: "At least one line item is required." },
+        { status: 400 },
+      );
+    }
+
     // CRITICAL FIX (audit P1-11): recompute totals from line items — never trust
     // client-supplied totals (parity with PUT routes and offers POST).
     if (Array.isArray(body.items) && body.items.length > 0) {
