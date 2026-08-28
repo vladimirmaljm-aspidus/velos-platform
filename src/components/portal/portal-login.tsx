@@ -463,6 +463,11 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
                     </DialogHeader>
                     <form onSubmit={setupPassword} className="flex-1 min-h-0 flex flex-col">
                       <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
+                      {/* Access ID field — HIDDEN when setup_token is present
+                          (token is auto-filled from the email link URL param).
+                          Only show when user manually opens setup dialog
+                          without a token (legacy fallback). */}
+                      {!setupToken && (
                       <div className="space-y-2">
                         <Label htmlFor="access_id">{t("portal-login-access-id")}</Label>
                         <Input
@@ -472,7 +477,16 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
                           placeholder="pa_..."
                           disabled={setupLoading}
                         />
+                        <p className="text-xs text-muted-foreground">
+                          You can find your Access ID in the invite email. Click the
+                          "Set up your password" button in the email to open this form
+                          with the ID pre-filled.
+                        </p>
                       </div>
+                      )}
+                      {setupToken && (
+                        <input type="hidden" value={setupToken} name="setup_token" />
+                      )}
                       <div className="space-y-2">
                         <Label htmlFor="new_password">{t("portal-login-new-password")}</Label>
                         <Input
