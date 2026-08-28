@@ -737,6 +737,8 @@ function CommsTab() {
   const api = useApiUrl();
   const tenantKey = useTenantKey();
   const t = useT();
+  const currentUser = useAppStore((s) => s.user);
+  const isSuperAdmin = !!currentUser && currentUser.role === "super_admin";
 
   const { value, setValue, loading, saving, save } = useSettingLoader<CommsForm>("comms", DEFAULT_COMMS);
 
