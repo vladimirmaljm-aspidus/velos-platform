@@ -371,31 +371,63 @@ export async function sendEmail(opts: SendEmailOptions): Promise<{ success: bool
     return { success: true, messageId: result.messageId, provider: config.provider };
   } catch (e: any) {
     console.error("[email:error]", e.message);
-    // Queue for manual retry (Re-Audit-2 N9: previously the queue entry was
-    // terminal — no worker ever picked it up, no notification fired, no
-    // retry endpoint existed). We now keep the queue entry AND emit an
-    // in-app notification so the admin can see the failure and hit the
-    // Retry button in the Mail Queue view. NO auto-retry (per audit rule).
+    // Queue for manual retry. But DON'T create duplicate entries —
+    // check if there's already a failed entry for the same to+subject
+    // within the last hour. If so, just update the error/attempts
+    // instead of creating a new row. This prevents the mail_queue
+    // from accumulating dozens of identical failed entries when an
+    // action retries (e.g. a cron fires, a user clicks retry, etc.).
     const store = await getStore();
     let queueEntryId: string | undefined;
     try {
-      const entry = await store.upsertMailQueueEntry({
-        to_email: opts.to,
-        subject: opts.subject,
-        body: opts.html,
-        status: "failed",
-        attempts: 1,
-        error: e.message,
-        // P1 mail_queue orphan fix (task C-5 Fix 3): same sentinel
-        // pattern as the no-provider branch above — a NULL tenant_id
-        // here would create an invisible orphan row. The notification
-        // broadcast below only fires when `opts.tenantId` is set (the
-        // notifications table has a NOT NULL constraint on tenant_id),
-        // but the mail_queue row should NOT silently depend on that
-        // same gate.
-        tenant_id: opts.tenantId || "SYSTEM",
-      } as any);
-      queueEntryId = (entry as any)?.id;
+      // Check for existing failed entry (same to_email + subject)
+      const sb = (store as any).sb?.() || null;
+      if (sb) {
+        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+        const { data: existing } = await sb
+          .from("mail_queue")
+          .select("id, attempts")
+          .eq("to_email", opts.to)
+          .eq("subject", opts.subject)
+          .eq("status", "failed")
+          .gte("created_at", oneHourAgo)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (existing) {
+          // Update existing entry — bump attempts, update error
+          await sb.from("mail_queue").update({
+            error: e.message,
+            attempts: (existing.attempts || 0) + 1,
+          }).eq("id", existing.id);
+          queueEntryId = existing.id;
+        } else {
+          // Create new failed entry
+          const entry = await store.upsertMailQueueEntry({
+            to_email: opts.to,
+            subject: opts.subject,
+            body: opts.html,
+            status: "failed",
+            attempts: 1,
+            error: e.message,
+            tenant_id: opts.tenantId || "SYSTEM",
+          } as any);
+          queueEntryId = (entry as any)?.id;
+        }
+      } else {
+        // No Supabase client — fallback to insert
+        const entry = await store.upsertMailQueueEntry({
+          to_email: opts.to,
+          subject: opts.subject,
+          body: opts.html,
+          status: "failed",
+          attempts: 1,
+          error: e.message,
+          tenant_id: opts.tenantId || "SYSTEM",
+        } as any);
+        queueEntryId = (entry as any)?.id;
+      }
     } catch (queueErr) {
       console.error("[email] failed to persist mail_queue entry:", queueErr);
     }
