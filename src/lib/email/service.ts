@@ -233,10 +233,23 @@ export async function validateFromEmailStrict(fromEmail: string): Promise<{ vali
  */
 export async function getEmailConfig(tenantId?: string): Promise<EmailConfig | null> {
   const store = await getStore();
-  // Prefer the tenant's own comms config; fall back to platform-level (tenant_id NULL).
-  let comms = tenantId ? await store.getSetting<any>("comms", tenantId) : null;
-  if (!comms) comms = await store.getSetting<any>("comms", null);
-  if (!comms) return null;
+  // Tenant email config is STRICTLY separate from platform email config.
+  // - If tenantId is provided: load TENANT comms. If tenant has NO comms
+  //   config (null), return null (no email sent). DO NOT fall back to
+  //   platform comms — platform comms is only for super-admin → tenant
+  //   communication, not for tenant → client communication.
+  // - If tenantId is null/undefined: load PLATFORM comms (super-admin
+  //   level communication).
+  let comms: any = null;
+  if (tenantId) {
+    // Tenant-level email — STRICTLY tenant comms, NO platform fallback.
+    comms = await store.getSetting<any>("comms", tenantId);
+    if (!comms || (comms.email_provider === "none" && !comms.smtp_host)) return null;
+  } else {
+    // Platform-level email (super-admin communication).
+    comms = await store.getSetting<any>("comms", null);
+    if (!comms) return null;
+  }
 
   const provider: EmailProvider = comms.email_provider || (comms.smtp_host ? "smtp" : "none");
   const fromName = comms.from_name || "VELOS CRM";

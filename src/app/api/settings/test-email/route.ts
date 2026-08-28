@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import nodemailer from "nodemailer";
-import { requireAdmin, audit, sanitizeError } from "@/lib/api/helpers";
+import { requireAdmin, audit, sanitizeError, resolveTenantId } from "@/lib/api/helpers";
 import { getStore, getStoreSync } from "@/lib/data/store";
 import type { EmailProvider } from "@/lib/email/service";
 
@@ -90,10 +90,16 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Load saved config as defaults
+  // Load saved config — TENANT comms first, then platform-level fallback.
+  // This is CRITICAL: a tenant admin who configured Postmark in their
+  // tenant comms must be able to test it. Previously, getSetting("comms")
+  // without a tenantId read the PLATFORM comms (which is "none"), so the
+  // test always failed for tenant admins.
   let saved: Record<string, any> = {};
   const store = getStoreSync() ?? (await getStore());
-  const comms = await store.getSetting<any>("comms");
+  const tid = resolveTenantId(auth, req);
+  let comms = tid ? await store.getSetting<any>("comms", tid) : null;
+  if (!comms) comms = await store.getSetting<any>("comms", null);
   if (comms) saved = comms;
 
   const provider: EmailProvider = body.provider || saved.email_provider || "smtp";
