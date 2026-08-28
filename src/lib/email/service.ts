@@ -234,21 +234,26 @@ export async function validateFromEmailStrict(fromEmail: string): Promise<{ vali
 export async function getEmailConfig(tenantId?: string): Promise<EmailConfig | null> {
   const store = await getStore();
   // Tenant email config is STRICTLY separate from platform email config.
-  // - If tenantId is provided: load TENANT comms. If tenant has NO comms
-  //   config (null), return null (no email sent). DO NOT fall back to
-  //   platform comms — platform comms is only for super-admin → tenant
-  //   communication, not for tenant → client communication.
-  // - If tenantId is null/undefined: load PLATFORM comms (super-admin
-  //   level communication).
   let comms: any = null;
   if (tenantId) {
-    // Tenant-level email — STRICTLY tenant comms, NO platform fallback.
     comms = await store.getSetting<any>("comms", tenantId);
     if (!comms || (comms.email_provider === "none" && !comms.smtp_host)) return null;
   } else {
-    // Platform-level email (super-admin communication).
     comms = await store.getSetting<any>("comms", null);
     if (!comms) return null;
+  }
+
+  // CRITICAL: decrypt sensitive fields (smtp_password, resend_api_key,
+  // postmark_server_token) before using them. The settings PUT route
+  // encrypts these at save time; the settings GET route decrypts on read
+  // for the UI. But getEmailConfig reads directly from the store (not via
+  // the GET route), so it gets the ENCRYPTED values (enc:...). Without
+  // this decrypt, Postmark gets "enc:eUq4..." instead of the real token.
+  try {
+    const { decryptSensitiveFields, COMMS_SENSITIVE_KEYS } = await import("@/lib/crypto/field-encryption");
+    comms = decryptSensitiveFields(comms, COMMS_SENSITIVE_KEYS as readonly string[]) as any;
+  } catch (e) {
+    console.error("[email] failed to decrypt sensitive comms fields:", e);
   }
 
   const provider: EmailProvider = comms.email_provider || (comms.smtp_host ? "smtp" : "none");
