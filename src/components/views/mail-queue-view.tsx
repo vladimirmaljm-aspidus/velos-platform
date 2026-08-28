@@ -180,9 +180,32 @@ export function MailQueueView() {
         title={t("admin-mail-title")}
         description={t("admin-mail-desc")}
         actions={
-          <Button onClick={() => setShowCompose(true)}>
-            <Plus className="size-4 mr-1" /> {t("admin-mail-compose")}
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={async () => {
+                if (!confirm("Delete ALL failed and pending emails? This cannot be undone.")) return;
+                try {
+                  const r = await fetch(api("/api/mail-queue/bulk-delete"), {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({}),
+                  });
+                  const d = await r.json();
+                  if (!r.ok) throw new Error(d.error || "Failed");
+                  toast.success(`Deleted ${d.deleted} email(s)`);
+                  qc.invalidateQueries({ queryKey: ["mail-queue", tenantKey] });
+                } catch (e: any) {
+                  toast.error(e.message || "Failed to delete");
+                }
+              }}
+            >
+              <Trash2 className="size-4 mr-1" /> Bulk Delete
+            </Button>
+            <Button onClick={() => setShowCompose(true)}>
+              <Plus className="size-4 mr-1" /> {t("admin-mail-compose")}
+            </Button>
+          </div>
         }
       />
       <ModuleInfoTooltip
