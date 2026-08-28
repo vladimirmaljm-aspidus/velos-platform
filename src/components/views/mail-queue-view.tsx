@@ -37,7 +37,7 @@ import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
 import { KpiCard } from "@/components/common/kpi-card";
 import { EmptyState } from "@/components/common/empty-state";
 import { fmtRelative, fmtDateTime } from "@/lib/utils/format";
-import { useAppStore, isSuperAdmin } from "@/lib/store/app-store";
+import { useAppStore, isAdmin, isSuperAdmin } from "@/lib/store/app-store";
 import type { MailQueueEntry, MailStatus } from "@/lib/supabase/types";
 import { useApiUrl, useTenantKey } from "@/lib/hooks/use-api-url";
 import { useDebounced } from "@/lib/hooks/use-debounced";
@@ -73,16 +73,11 @@ export function MailQueueView() {
   const t = useT();
 
   const user = useAppStore((s) => s.user);
-  // SUPER-ADMIN ONLY — the mail queue is a PLATFORM-level concern
-  // (cross-tenant delivery observability, system-wide bounce/retry
-  // surface). Tenant admins — including trial tenants whose
-  // `isAdmin()` returns true via the role check — must not see it.
+  // Admin (tenant or super) can see the mail queue. Super-admin without
+  // a tenant sees ALL entries across ALL tenants (cross-tenant mode).
+  // Tenant admins see only their own tenant's emails.
+  const admin = isAdmin(user);
   const superAdmin = isSuperAdmin(user);
-  // When a super_admin has NO active tenant selected, the mail-queue API
-  // returns ALL entries across ALL tenants (cross-tenant observability).
-  // When a tenant IS selected (or the caller is a tenant admin), the API
-  // scopes to that tenant. We surface a tenant column + "all tenants"
-  // banner only when the view is genuinely cross-tenant.
   const activeTenantId = useAppStore((s) => s.activeTenantId);
   const crossTenantMode = superAdmin && !activeTenantId;
   const qc = useQueryClient();
@@ -154,7 +149,7 @@ export function MailQueueView() {
     onError: () => toast.error(t("admin-mail-delete-failed-toast")),
   });
 
-  if (!superAdmin) {
+  if (!admin) {
     return (
       <div>
         <PageHeader title={t("admin-mail-title")} description={t("admin-mail-desc")} />
