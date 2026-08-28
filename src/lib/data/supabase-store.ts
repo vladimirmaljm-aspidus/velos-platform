@@ -801,35 +801,41 @@ export class SupabaseStore implements Store {
     return (data?.value as T) ?? null;
   }
   async setSetting(key: string, value: unknown, tenantId: string | null = null): Promise<void> {
-    // Manual upsert: composite key (tenant_id, key) — but tenant_id can be null,
-    // so we look up first then update or insert.
-    const existing = this.sb().from("settings").select("id").eq("key", key);
-    if (tenantId === null) existing.is("tenant_id", null);
-    else existing.eq("tenant_id", tenantId);
-    const { data: found } = await existing.maybeSingle();
-    if (found) {
-      const { error } = await this.sb()
+    // Try UPDATE first (faster, avoids duplicate key errors).
+    // The composite key is (tenant_id, key) — but tenant_id can be null,
+    // so we need to handle that case specially.
+    let updateQuery = this.sb()
+      .from("settings")
+      .update({ value, updated_at: new Date().toISOString() })
+      .eq("key", key);
+    if (tenantId === null) {
+      updateQuery = updateQuery.is("tenant_id", null);
+    } else {
+      updateQuery = updateQuery.eq("tenant_id", tenantId);
+    }
+    const { data: updated, error: updErr } = await updateQuery.select("id").maybeSingle();
+    if (updErr) throw updErr;
+    if (updated) return; // Update succeeded
+
+    // Row doesn't exist — INSERT. If duplicate or FK error, try UPDATE
+    // one more time (race condition: another request inserted it).
+    const { error: insErr } = await this.sb()
+      .from("settings")
+      .insert({ key, value, tenant_id: tenantId, updated_at: new Date().toISOString() });
+    if (insErr) {
+      // Retry UPDATE (maybe another request inserted it between our
+      // SELECT and INSERT — a race condition).
+      let retryQuery = this.sb()
         .from("settings")
         .update({ value, updated_at: new Date().toISOString() })
-        .eq("id", (found as any).id);
-      if (error) throw error;
-    } else {
-      // Insert new row. If FK constraint fails (tenant_id doesn't exist),
-      // retry with tenant_id = null (platform-level).
-      const { error: insErr } = await this.sb()
-        .from("settings")
-        .insert({ key, value, tenant_id: tenantId, updated_at: new Date().toISOString() });
-      if (insErr) {
-        // If FK error and tenantId is not null, try platform-level
-        if (tenantId !== null && String(insErr.message || "").includes("foreign key")) {
-          const { error: insErr2 } = await this.sb()
-            .from("settings")
-            .insert({ key, value, tenant_id: null, updated_at: new Date().toISOString() });
-          if (insErr2) throw insErr2;
-        } else {
-          throw insErr;
-        }
+        .eq("key", key);
+      if (tenantId === null) {
+        retryQuery = retryQuery.is("tenant_id", null);
+      } else {
+        retryQuery = retryQuery.eq("tenant_id", tenantId);
       }
+      const { error: retryErr } = await retryQuery;
+      if (retryErr) throw retryErr;
     }
   }
   async getAllSettings(tenantId: string | null = null): Promise<Setting[]> {
