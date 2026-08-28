@@ -331,7 +331,11 @@ export async function getEmailConfig(tenantId?: string): Promise<EmailConfig | n
 export async function sendEmail(opts: SendEmailOptions): Promise<{ success: boolean; error?: string; messageId?: string; provider?: EmailProvider }> {
   const config = await getEmailConfig(opts.tenantId);
 
-  // No provider configured — queue for later
+  // No provider configured — DON'T queue, just log and return.
+  // Previously this created a mail_queue entry with status='queued',
+  // which accumulated forever because there's no worker to send them.
+  // Now we just log and return success:false — the caller can handle
+  // the failure (e.g. show a toast) without polluting the queue.
   if (
     !config ||
     config.provider === "none" ||
@@ -339,32 +343,8 @@ export async function sendEmail(opts: SendEmailOptions): Promise<{ success: bool
     (config.provider === "resend" && !config.resend) ||
     (config.provider === "postmark" && !config.postmark)
   ) {
-    console.log(`[email:dev] To: ${opts.to} | Subject: ${opts.subject}`);
-    const store = await getStore();
-    // P1 mail_queue orphan fix (task C-5 Fix 3): previously this insert
-    // omitted `tenant_id`, producing orphaned mail_queue rows that no
-    // tenant-scoped listMailQueue query could ever surface — they
-    // accumulated forever in the table with status='queued' and no
-    // visible owner. The `notifications` table has a NOT NULL constraint
-    // on tenant_id, so the in-app notification path (below in the catch
-    // block) already required a tenant_id and was silently skipped when
-    // it was missing — but the mail_queue insert itself was not gated,
-    // which is exactly how the orphans accumulated.
-    //
-    // Resolution: always set tenant_id. If the caller genuinely has no
-    // tenant context (e.g. a system-level cron job that emails a global
-    // admin address), fall back to the literal sentinel "SYSTEM" so the
-    // row is still visible in a super-admin "all mail queue" listing
-    // (filtered as `tenant_id = 'SYSTEM'`) rather than being a NULL
-    // orphan that no query surfaces.
-    await store.upsertMailQueueEntry({
-      to_email: opts.to,
-      subject: opts.subject,
-      body: opts.html,
-      status: "queued",
-      tenant_id: opts.tenantId || "SYSTEM",
-    } as any);
-    return { success: true, messageId: "dev-queued", provider: "none" };
+    console.log(`[email] No provider configured for tenant ${opts.tenantId || "platform"} — email to ${opts.to} not sent.`);
+    return { success: false, error: "No email provider configured. Set up Postmark/SMTP in Settings → Communications.", provider: "none" };
   }
 
   try {
