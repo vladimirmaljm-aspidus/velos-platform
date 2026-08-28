@@ -814,10 +814,22 @@ export class SupabaseStore implements Store {
         .eq("id", (found as any).id);
       if (error) throw error;
     } else {
-      const { error } = await this.sb()
+      // Insert new row. If FK constraint fails (tenant_id doesn't exist),
+      // retry with tenant_id = null (platform-level).
+      const { error: insErr } = await this.sb()
         .from("settings")
         .insert({ key, value, tenant_id: tenantId, updated_at: new Date().toISOString() });
-      if (error) throw error;
+      if (insErr) {
+        // If FK error and tenantId is not null, try platform-level
+        if (tenantId !== null && String(insErr.message || "").includes("foreign key")) {
+          const { error: insErr2 } = await this.sb()
+            .from("settings")
+            .insert({ key, value, tenant_id: null, updated_at: new Date().toISOString() });
+          if (insErr2) throw insErr2;
+        } else {
+          throw insErr;
+        }
+      }
     }
   }
   async getAllSettings(tenantId: string | null = null): Promise<Setting[]> {
