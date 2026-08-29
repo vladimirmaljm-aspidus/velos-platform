@@ -395,8 +395,13 @@ export function buildPdfDocument({
       objectFit: "contain",
     },
 
-    // ── FOOTER (memorandum — repeats on every page) ────────────────────
+    // ── FOOTER (memorandum — fixed, repeats on every page) ────────────
     // 3 columns: [QR]  [Address / Website / Email]  [Page X of Y]
+    // NOTE: this View has the `fixed` prop set at render time (line ~754)
+    // so it's absolutely positioned + repeats on every page. We don't use
+    // marginTop: "auto" here because that only works in normal flow, not
+    // in fixed/absolute positioning — and it can prevent the page-number
+    // Text (which uses the `render` prop) from rendering correctly.
     footer: {
       width: "100%",
       height: footerHeightPts,
@@ -405,7 +410,6 @@ export function buildPdfDocument({
       borderTopColor: accentColor,
       flexDirection: "row",
       alignItems: "flex-start",
-      marginTop: "auto",
     },
     footerColLeft: {
       flexDirection: "column",
@@ -770,18 +774,16 @@ export function buildPdfDocument({
           ) : null}
         </View>
 
-        {/* Center column — tenant address / website / email */}
+        {/* Center column — tenant address + website/email only.
+            Company name is NOT repeated here — it's already in the
+            header (memorandum). Showing it again in the footer would
+            duplicate it on every page. */}
         <View style={styles.footerColCenter}>
           {addrLine ? (
             <Text style={styles.footerAddrLine}>{addrLine}</Text>
           ) : null}
           {contactParts.length > 0 ? (
             <Text style={styles.footerAddrLine}>{contactParts.join("  ·  ")}</Text>
-          ) : null}
-          {tenant?.legal_name || tenant?.name ? (
-            <Text style={styles.footerAddrLine}>
-              {tenant?.legal_name || tenant?.name}
-            </Text>
           ) : null}
         </View>
 
@@ -1283,6 +1285,62 @@ export function buildPdfDocument({
                   </Text>
                 </View>
               </View>
+
+              {/* ── COA (Certificate of Analysis) Parameters ─────────────────
+                  Auto-populated from product.coa_params when a product was
+                  selected. Rendered as key/value rows mirroring the product
+                  spec table. Skipped entirely when the LOI has no COA data. */}
+              {loi.coa_params && typeof loi.coa_params === "object" && Object.keys(loi.coa_params).length > 0 && (() => {
+                const coaEntries = Object.entries(loi.coa_params as Record<string, unknown>)
+                  .filter(([, v]) => v != null && v !== "")
+                  .map(([k, v]) => [k, String(v)] as [string, string]);
+                if (coaEntries.length === 0) return null;
+                return (
+                  <>
+                    <Text style={styles.sectionHeader}>Certificate of Analysis (COA)</Text>
+                    <View style={styles.specTable} wrap={false}>
+                      {coaEntries.map(([key, val], idx) => (
+                        <View key={`coa-${idx}`} style={styles.specRow}>
+                          <Text style={styles.specName}>{key}</Text>
+                          <Text style={styles.specValue}>{val}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  </>
+                );
+              })()}
+
+              {/* ── Product Specifications (key/value pairs) ──────────────────
+                  Auto-populated from product.specifications when a product was
+                  selected. Supports both array format [{name, value}] and
+                  object format {key: value}. Skipped when empty. */}
+              {loi.specifications && (() => {
+                const specs = loi.specifications as any;
+                let specEntries: [string, string][] = [];
+                if (Array.isArray(specs)) {
+                  specEntries = specs
+                    .filter((s: any) => s && s.name && s.value != null)
+                    .map((s: any) => [String(s.name), String(s.value)] as [string, string]);
+                } else if (typeof specs === "object") {
+                  specEntries = Object.entries(specs)
+                    .filter(([, v]) => v != null && v !== "")
+                    .map(([k, v]) => [k, String(v)] as [string, string]);
+                }
+                if (specEntries.length === 0) return null;
+                return (
+                  <>
+                    <Text style={styles.sectionHeader}>Technical Specifications</Text>
+                    <View style={styles.specTable} wrap={false}>
+                      {specEntries.map(([key, val], idx) => (
+                        <View key={`spec-${idx}`} style={styles.specRow}>
+                          <Text style={styles.specName}>{key}</Text>
+                          <Text style={styles.specValue}>{val}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  </>
+                );
+              })()}
 
               {/* Delivery & Payment Terms */}
               <Text style={styles.sectionHeader}>Delivery &amp; Payment Terms</Text>

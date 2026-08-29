@@ -623,6 +623,13 @@ export interface LetterOfIntent {
    *  product_name/description/hs_code/origin_country/unit/unit_price were
    *  auto-populated from this product at creation time. */
   product_id?: string | null;
+  /** Certificate of Analysis parameters auto-populated from the product's
+   *  coa_params field. Stored as JSONB so the LOI carries a full COA
+   *  specification snapshot even if the product is later edited. */
+  coa_params?: Record<string, unknown> | null;
+  /** Product specifications (key-value pairs) auto-populated from the
+   *  product's specifications field. */
+  specifications?: Array<{ name: string; value: string }> | Record<string, string> | null;
   created_at: string;
   updated_at: string;
 }

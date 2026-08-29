@@ -156,12 +156,15 @@ export async function POST(req: NextRequest) {
     let originCountry = body.origin_country?.trim() || null;
     let unit = body.unit?.trim() || "";
     let unitPrice = Number(body.unit_price);
+    // COA + specifications auto-filled from product (or manually entered)
+    let loiCoa: Record<string, unknown> | null = body.coa_params || null;
+    let loiSpecs: any = body.specifications || null;
     if (body.product_id) {
       const product = await store.getProduct(body.product_id);
       if (product && product.tenant_id === tid) {
         if (!productName) productName = product.name;
         // Build a rich description: product.description + detailed_spec + brand +
-        // shelf_life + tags. This gives the LOI PDF a full product specification
+        // shelf_life. This gives the LOI PDF a full product specification
         // section without adding new columns to the lois table.
         if (!productDescription) {
           const specParts: string[] = [];
@@ -175,6 +178,12 @@ export async function POST(req: NextRequest) {
         if (!originCountry) originCountry = product.origin_country || (product.attributes as any)?.origin_country || null;
         if (!unit) unit = product.unit;
         if (!Number.isFinite(unitPrice) || unitPrice <= 0) unitPrice = product.price;
+        // ── COA (Certificate of Analysis) parameters ───────────────────
+        // Auto-populate from product.coa_params (JSONB). Stored on the LOI
+        // so the PDF can render a full COA specification section.
+        if (!loiCoa) loiCoa = (product as any).coa_params || null;
+        // ── Product specifications (key-value pairs) ─────────────────────
+        if (!loiSpecs) loiSpecs = (product as any).specifications || null;
       }
     }
 
@@ -228,6 +237,8 @@ export async function POST(req: NextRequest) {
       deal_id: body.deal_id || null,
       offer_id: body.offer_id || null,
       product_id: body.product_id || null,
+      coa_params: loiCoa,
+      specifications: loiSpecs,
     } as Partial<LetterOfIntent> & { id?: string });
 
     await audit(auth.store, auth.user, req, "loi.create", "loi", created.id, {
