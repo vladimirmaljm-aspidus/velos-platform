@@ -1156,6 +1156,21 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     "marketplace-negotiation-cancel-confirm-title": "Cancel this negotiation?",
     "marketplace-negotiation-cancel-confirm-desc": "This cannot be undone. The negotiation will be closed and no further messages can be sent.",
     "marketplace-negotiation-cancel-success": "Negotiation cancelled.",
+    // FIX-AUDIT4-SEC / Fix 11 — negotiation offer form labels. These 7 keys
+    // were referenced in src/components/portal/marketplace/negotiation-room.tsx
+    // via `t("key") || "fallback"` patterns. Because `t()` returns the raw
+    // key (not the empty string) when the key is missing, the `|| fallback`
+    // never fired and the UI rendered the raw key (e.g.
+    // "marketplace-negotiation-product"). The fallbacks are now removed
+    // from the component so missing keys surface visibly — these keys
+    // must therefore exist in every locale.
+    "marketplace-negotiation-product": "Product",
+    "marketplace-negotiation-offer-quantity": "Quantity",
+    "marketplace-negotiation-offer-price": "Price",
+    "marketplace-negotiation-offer-currency": "Currency",
+    "marketplace-negotiation-offer-delivery-date": "Delivery Date",
+    "marketplace-negotiation-offer-incoterm": "Incoterm",
+    "marketplace-negotiation-offer-payment-terms": "Payment Terms",
 
     // ─── Marketplace Phase 4: auctions, contracts, smart pricing ──────────
     "marketplace-auction-title": "Live auction",
@@ -3173,6 +3188,14 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     "marketplace-negotiation-cancel-confirm-title": "Otkaži ovaj pregovor?",
     "marketplace-negotiation-cancel-confirm-desc": "Ovo se ne može opozvati. Pregovor će biti zatvoren i dalje poruke ne mogu biti poslate.",
     "marketplace-negotiation-cancel-success": "Pregovor otkazan.",
+    // FIX-AUDIT4-SEC / Fix 11 — labele za formu ponude u pregovorima.
+    "marketplace-negotiation-product": "Proizvod",
+    "marketplace-negotiation-offer-quantity": "Količina",
+    "marketplace-negotiation-offer-price": "Cena",
+    "marketplace-negotiation-offer-currency": "Valuta",
+    "marketplace-negotiation-offer-delivery-date": "Datum isporuke",
+    "marketplace-negotiation-offer-incoterm": "Incoterm",
+    "marketplace-negotiation-offer-payment-terms": "Uslovi plaćanja",
 
     // ─── Marketplace Phase 4: aukcije, ugovori, pametno određivanje cena ─
     "marketplace-auction-title": "Aukcija uživo",
@@ -5183,6 +5206,14 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     "marketplace-negotiation-cancel-confirm-title": "Bu müzakere iptal edilsin mi?",
     "marketplace-negotiation-cancel-confirm-desc": "Bu geri alınamaz. Müzakere kapanacak ve yeni mesaj gönderilemeyecek.",
     "marketplace-negotiation-cancel-success": "Müzakere iptal edildi.",
+    // FIX-AUDIT4-SEC / Fix 11 — müzakere teklif formu etiketleri.
+    "marketplace-negotiation-product": "Ürün",
+    "marketplace-negotiation-offer-quantity": "Miktar",
+    "marketplace-negotiation-offer-price": "Fiyat",
+    "marketplace-negotiation-offer-currency": "Para Birimi",
+    "marketplace-negotiation-offer-delivery-date": "Teslimat Tarihi",
+    "marketplace-negotiation-offer-incoterm": "Incoterm",
+    "marketplace-negotiation-offer-payment-terms": "Ödeme Şartları",
 
     // ─── Marketplace Phase 4: açık artırmalar, sözleşmeler, akıllı fiyatlandırma ─
     "marketplace-auction-title": "Canlı açık artırma",
@@ -7190,6 +7221,14 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     "marketplace-negotiation-cancel-confirm-title": "Diese Verhandlung abbrechen?",
     "marketplace-negotiation-cancel-confirm-desc": "Dies kann nicht rückgängig gemacht werden. Die Verhandlung wird geschlossen und es können keine weiteren Nachrichten gesendet werden.",
     "marketplace-negotiation-cancel-success": "Verhandlung abgebrochen.",
+    // FIX-AUDIT4-SEC / Fix 11 — Beschriftungen für das Verhandlungs-Angebotsformular.
+    "marketplace-negotiation-product": "Produkt",
+    "marketplace-negotiation-offer-quantity": "Menge",
+    "marketplace-negotiation-offer-price": "Preis",
+    "marketplace-negotiation-offer-currency": "Währung",
+    "marketplace-negotiation-offer-delivery-date": "Lieferdatum",
+    "marketplace-negotiation-offer-incoterm": "Incoterm",
+    "marketplace-negotiation-offer-payment-terms": "Zahlungsbedingungen",
 
     // ─── Marketplace Phase 4: Auktionen, Verträge, smarte Preisfindung ────
     "marketplace-auction-title": "Live-Auktion",
@@ -9197,6 +9236,14 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     "marketplace-negotiation-cancel-confirm-title": "Отменить эти переговоры?",
     "marketplace-negotiation-cancel-confirm-desc": "Это действие нельзя отменить. Переговоры будут закрыты, и новые сообщения будет отправить нельзя.",
     "marketplace-negotiation-cancel-success": "Переговоры отменены.",
+    // FIX-AUDIT4-SEC / Fix 11 — метки формы предложения в переговорах.
+    "marketplace-negotiation-product": "Товар",
+    "marketplace-negotiation-offer-quantity": "Количество",
+    "marketplace-negotiation-offer-price": "Цена",
+    "marketplace-negotiation-offer-currency": "Валюта",
+    "marketplace-negotiation-offer-delivery-date": "Дата доставки",
+    "marketplace-negotiation-offer-incoterm": "Инкотерм",
+    "marketplace-negotiation-offer-payment-terms": "Условия оплаты",
 
     // ─── Marketplace Phase 4: аукционы, договоры, умное ценообразование ──
     "marketplace-auction-title": "Аукцион в реальном времени",

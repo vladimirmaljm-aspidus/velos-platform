@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requireKycApproved } from "@/lib/portal/kyc-gate";
+import { validateStatusTransition } from "@/lib/api/status-validator";
 import {
   getMarketplacePost,
   updateMarketplacePost,
@@ -39,13 +41,24 @@ async function _put(req: NextRequest, ctx: { params: Promise<{ id: string }> }) 
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // AUDIT4-PATHS / Fix 2 — gate marketplace PUT on KYC approval. A
+  // portal client whose KYC has been suspended / rejected must not be
+  // able to mutate existing posts (price, quantity, status, visibility).
+  // Combined with the missing transition graph (Fix 3 below), an
+  // unverified partner could otherwise revive an expired/closed/flagged
+  // post by setting status="active". Mirrors the gate on the POST route.
+  const _kycBlock = await requireKycApproved(access);
+  if (_kycBlock) return _kycBlock;
   const { id } = await ctx.params;
 
   // Verify ownership — fetch raw post row (not the sanitised public shape).
+  // AUDIT4-PATHS / Fix 3 — also fetch `status` so we can validate the
+  // transition below (the previous SELECT only included id / tenant_id /
+  // partner_id, so the existing status was unknown at the API layer).
   const sb = getSupabase();
   const { data: raw, error: rawErr } = await sb
     .from("marketplace_posts")
-    .select("id, tenant_id, partner_id")
+    .select("id, tenant_id, partner_id, status")
     .eq("id", id)
     .maybeSingle();
   if (rawErr) {
@@ -70,6 +83,33 @@ async function _put(req: NextRequest, ctx: { params: Promise<{ id: string }> }) 
   const allowedStatus = ["draft", "active", "closed", "expired", "flagged"];
   if (body.status && !allowedStatus.includes(body.status)) {
     return NextResponse.json({ error: "Invalid status." }, { status: 400 });
+  }
+  // AUDIT4-PATHS / Fix 3 — marketplace post state machine. Without
+  // this guard, a post owner could revive an expired post (expired →
+  // active), re-open a closed post (closed → active), or un-flag a
+  // flagged post (flagged → active) without admin review. The graph
+  // (defined in status-validator.ts) is: draft → active; active →
+  // closed / expired / cancelled / flagged; flagged → active (admin
+  // un-flag only); closed / expired / cancelled → terminal. We only
+  // validate when the caller is actually changing the status — a
+  // no-op PUT (same status) is always valid. Portal clients are
+  // never super-admins, so the bypass in status-validator.ts's header
+  // does not apply here.
+  {
+    const _existingStatus = (raw as any)?.status as string | undefined;
+    if (body.status && _existingStatus && body.status !== _existingStatus) {
+      const _postTransition = validateStatusTransition(
+        "marketplace_post",
+        _existingStatus,
+        body.status,
+      );
+      if (!_postTransition.valid) {
+        return NextResponse.json(
+          { error: _postTransition.error },
+          { status: 409 },
+        );
+      }
+    }
   }
   const allowedVisibility = ["public", "private"];
   if (body.visibility && !allowedVisibility.includes(body.visibility)) {

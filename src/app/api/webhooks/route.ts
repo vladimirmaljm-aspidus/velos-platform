@@ -1,5 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, audit, resolveTenantId } from "@/lib/api/helpers";
+// FIX-AUDIT4-SEC / Fix 10 — SSRF validation for the webhook target URL.
+// The previous implementation accepted any URL string and stored it
+// verbatim — a `webhooks:create` caller could register a webhook pointing
+// at http://169.254.169.254/... (cloud metadata endpoint) or any
+// RFC-1918 / loopback address, and the delivery worker would happily
+// POST the tenant's event payload to it, leaking the instance's
+// service-account token / internal service state. The new helper
+// resolves the hostname via dns.lookup and rejects non-routable /
+// loopback / link-local / cloud-metadata addresses.
+import { assertSafeWebhookUrl } from "@/lib/webhooks/url-validation";
 
 export const runtime = "nodejs";
 
@@ -49,6 +59,17 @@ export async function POST(req: NextRequest) {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+  }
+  // FIX-AUDIT4-SEC / Fix 10 — SSRF validation BEFORE the upsert. The
+  // helper resolves the hostname and rejects non-routable / loopback /
+  // link-local / cloud-metadata addresses. This is the create-time gate;
+  // the delivery worker should re-resolve at delivery time to close the
+  // DNS-rebinding gap between this check and the actual outbound POST.
+  if (body.url != null) {
+    const urlCheck = await assertSafeWebhookUrl(String(body.url));
+    if (!urlCheck.ok) {
+      return NextResponse.json({ error: urlCheck.error }, { status: 400 });
+    }
   }
   // FIX-FUNC-2: resolve tenant via resolveTenantId so super-admins acting
   // under ?tenant_id=xxx (or impersonation) are scoped correctly. See

@@ -21,7 +21,34 @@ export async function GET() {
     if ((session.token_version || 0) !== (access.token_version || 0)) {
       return NextResponse.json({ access: null }, { status: 200 });
     }
-    return NextResponse.json({ access: { ...access, password_hash: undefined } });
+    // FIX-AUDIT4-SEC / Fix 8 — strip sensitive / internal columns from the
+    // portal_access row before returning it to the portal client. The
+    // previous implementation only stripped `password_hash`, leaking:
+    //   • `portal_email_hmac` — internal HMAC search token (server-side
+    //     key only — leaking it to the client gives an attacker who
+    //     also exfiltrates the DB a head start on email-equality
+    //     offline enumeration, even with the env key).
+    //   • `failed_attempts` / `locked_until` — internal lockout state;
+    //     exposing these lets an attacker tune a credential-stuffing
+    //     campaign to stay just under the lockout threshold.
+    //   • `token_version` — the JWT-binding version. The portal client
+    //     has no business reading it (it's checked server-side); leaking
+    //     it gives an attacker an oracle for "did my password reset
+    //     invalidate my old session?" recon.
+    //   • `recovery_codes` / `setup_token` if present (defense-in-depth
+    //     — they should already be null on an active session, but
+    //     strip anyway in case the schema grows them later).
+    const {
+      password_hash,
+      portal_email_hmac,
+      failed_attempts,
+      locked_until,
+      token_version,
+      recovery_codes,
+      setup_token,
+      ...safeAccess
+    } = access as any;
+    return NextResponse.json({ access: safeAccess });
   } catch (e) {
     console.error("[portal/me] Error:", e);
     return NextResponse.json({ access: null }, { status: 200 });

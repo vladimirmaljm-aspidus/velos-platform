@@ -4,6 +4,14 @@ import { getStore } from "@/lib/data/store";
 import { verifyPassword, hashPassword } from "@/lib/auth/password";
 import { validatePasswordWithPlatformPolicy } from "@/lib/auth/password-policy";
 import { getIp } from "@/lib/api/helpers";
+// FIX-AUDIT4-SEC / Fix 3 — per-account rate limit. Without this cap, a
+// portal client whose session cookie was leaked could brute-force the
+// `current_password` field indefinitely (one verifyPassword() call per
+// request, no lockout — the lockout in /api/auth/login only fires when
+// the password is checked via the LOGIN flow, not here). 5 attempts /
+// 15 min matches the password-attempt budget the platform enforces
+// elsewhere (login, setup-password, reset-password).
+import { checkRateLimit } from "@/lib/security/rate-limiter";
 // FIX-AUDIT2-CRIT / C6 — after bumping token_version, the user's existing
 // cookie is now stale (the next getPortalSessionAccess() check rejects
 // sessions whose token_version does not match the DB). The previous
@@ -34,6 +42,22 @@ export async function POST(req: NextRequest) {
     const access = await getPortalSessionAccess();
     if (!access) {
       return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+    }
+
+    // FIX-AUDIT4-SEC / Fix 3 — per-account rate limit (5 attempts / 15 min).
+    // Buckets by `access.id` (the portal_access row primary key) so the
+    // limit follows the account regardless of which device / IP the
+    // attacker is using. A leaked session cookie can't brute-force
+    // `current_password` past 5 tries.
+    const rl = await checkRateLimit(`portal-pw-change:${access.id}`, 5, 15 * 60 * 1000);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: "Too many password change attempts. Please try again later." },
+        {
+          status: 429,
+          headers: rl.retryAfter ? { "Retry-After": String(Math.ceil(rl.retryAfter / 1000)) } : {},
+        },
+      );
     }
 
     // Check that the portal access has a password hash (i.e. password-based login)

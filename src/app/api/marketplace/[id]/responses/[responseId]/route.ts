@@ -118,9 +118,16 @@ async function _put(
   } catch (e: any) {
     console.error("[marketplace.response.put]", e);
     const msg = e?.message || "Failed to update response.";
-    // Surface ownership errors as 403, not-found as 404.
+    // Surface ownership errors as 403, not-found as 404, invalid
+    // status-transition errors as 409 (AUDIT4-PATHS / Fix 4 — the store
+    // throws an error whose message starts with "Cannot change
+    // marketplace_response status from ... Allowed transitions: ...").
+    // The transition error is the only one that mentions "Allowed
+    // transitions", so that's the discriminator.
     const status = /not found/i.test(msg) ? 404 :
-      /only the post owner/i.test(msg) ? 403 : 500;
+      /only the post owner/i.test(msg) ? 403 :
+      /Allowed transitions/i.test(msg) ? 409 :
+      500;
     return NextResponse.json({ error: msg }, { status });
   }
 }

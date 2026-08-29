@@ -8,6 +8,14 @@ import {
 } from "@/lib/auth/session";
 import { verifyTotp } from "@/lib/auth/totp";
 import { getIp, audit, sanitizeError } from "@/lib/api/helpers";
+// FIX-AUDIT4-SEC / Fix 5 — per-tempToken rate limit. The tempToken is a
+// short-lived bearer credential issued after a valid password (before
+// TOTP). Without a per-token cap, an attacker who stole a tempToken
+// (e.g. via XSS, referrer header, browser history) could brute-force
+// the 6-digit TOTP (10^6 = 1M possibilities) before the tempToken's
+// 10-minute TTL expired. 5 attempts / 5 min matches the budget the
+// platform uses on the login flow.
+import { checkRateLimit } from "@/lib/security/rate-limiter";
 import { lookupIp } from "@/lib/utils/geo-ip";
 import { createHash } from "crypto";
 
@@ -82,6 +90,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { error: "Invalid or expired 2FA session. Please log in again." },
         { status: 401 },
+      );
+    }
+
+    // FIX-AUDIT4-SEC / Fix 5 — per-tempToken rate limit (5 / 5 min).
+    // Buckets by a 16-char truncated SHA-256 of the tempToken (NOT the
+    // raw token) so the rate-limits table doesn't store a credential-
+    // equivalent value. Without this cap, an attacker who stole a
+    // tempToken could brute-force the 6-digit TOTP (10^6 space) within
+    // the tempToken's 10-minute TTL — 5 attempts / 5 min caps the
+    // guessing budget at 10 attempts over the full TTL window.
+    const tempTokenHash = createHash('sha256').update(tempToken).digest('hex').slice(0,16);
+    const rl = await checkRateLimit(`2fa:${tempTokenHash}`, 5, 5 * 60 * 1000);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: "Too many 2FA attempts. Please log in again." },
+        {
+          status: 429,
+          headers: rl.retryAfter ? { "Retry-After": String(Math.ceil(rl.retryAfter / 1000)) } : {},
+        },
       );
     }
 

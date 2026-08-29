@@ -20,6 +20,7 @@
 //     `contact_revealed` flag (Phase 2).
 
 import { getSupabase } from "@/lib/supabase/client";
+import { validateStatusTransition } from "@/lib/api/status-validator";
 import type {
   MarketplaceMessage,
   MarketplaceMessageCreate,
@@ -510,6 +511,29 @@ export async function updateMarketplaceResponseStatus(
   if (!post || post.tenant_id !== tenantId) throw new Error("Response not found.");
   if (post.partner_id !== callerPartnerId) {
     throw new Error("Only the post owner can change a response status.");
+  }
+
+  // AUDIT4-PATHS / Fix 4 — marketplace response state machine. The
+  // audit found that this function did a raw UPDATE with no transition
+  // check, letting a post owner revert a "rejected" response back to
+  // "sent", revive an "expired" response to "accepted", or change
+  // their mind after accepting (accepted → rejected). The downstream
+  // contract-creation flow assumes status="accepted" is permanent — a
+  // reversion silently invalidates any contract auto-generated from
+  // the acceptance. Validate the transition BEFORE the UPDATE; on
+  // invalid, throw — the route handler maps the throw to 409.
+  //
+  // The graph (defined in status-validator.ts): sent → viewed/accepted/
+  // rejected/countered/expired; viewed → accepted/rejected/countered/
+  // expired; countered → accepted/rejected/countered/expired;
+  // accepted / rejected / expired → terminal. A no-op (same status)
+  // is always valid.
+  const _currentStatus = (row as any).status as string;
+  if (_currentStatus && _currentStatus !== newStatus) {
+    const _t = validateStatusTransition("marketplace_response", _currentStatus, newStatus);
+    if (!_t.valid) {
+      throw new Error(_t.error || "Invalid status transition");
+    }
   }
 
   const { data: updated, error } = await sb

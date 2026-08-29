@@ -1,8 +1,56 @@
 import { NextRequest, NextResponse } from "next/server";
 import { writeFileSync, appendFileSync, existsSync } from "fs";
+// FIX-AUDIT4-SEC / Fix 1 — the previous implementation had NO auth gate and
+// blindly auto-PATCHed the production Vercel project's env vars based on the
+// inbound Host header. An unauthenticated caller with the ability to set
+// their own Host (or X-Forwarded-Host) header could force ZAI_RELAY_URL on
+// the production Vercel project to any attacker-controlled URL — every
+// browser request to /api/ai/relay-proxy would then proxy to the attacker.
+//
+// The fix is two-layered:
+//   1. `requireSuperAdmin(req)` — only a logged-in super_admin can call this
+//      route. The CSRF Origin check inside requireAuth (which super_admin
+//      delegates through) also runs because we pass `req`.
+//   2. A Host allowlist — even an authenticated super_admin can't redirect
+//      the relay to an arbitrary host. The inbound Host (or
+//      X-Forwarded-Host) must match `process.env.ALLOWED_HOST` (a comma-
+//      separated list), falling back to the hostnames of
+//      `NEXT_PUBLIC_APP_URL` or `APP_BASE_URL`. This defends against a
+//      compromised super-admin session being used to retarget the relay
+//      from a one-off DNS-rebinding / cache-poisoning attempt.
+import { requireSuperAdmin } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/**
+ * Resolve the set of hosts the setup-relay endpoint will accept. Reads
+ * `ALLOWED_HOST` (comma-separated list) first, then falls back to the
+ * hostname component of `NEXT_PUBLIC_APP_URL` / `APP_BASE_URL`. Each
+ * entry is lowercased and trimmed.
+ */
+function getAllowedHosts(): string[] {
+  const raw = process.env.ALLOWED_HOST;
+  if (raw && raw.trim() !== "") {
+    return raw
+      .split(",")
+      .map((h) => h.trim().toLowerCase())
+      .filter(Boolean);
+  }
+  const fallbacks: string[] = [];
+  for (const envVar of ["NEXT_PUBLIC_APP_URL", "APP_BASE_URL"]) {
+    const v = process.env[envVar];
+    if (!v) continue;
+    try {
+      const u = new URL(v);
+      if (u.hostname) fallbacks.push(u.hostname.toLowerCase());
+    } catch {
+      // Not a URL — maybe a bare hostname. Use as-is.
+      fallbacks.push(v.trim().toLowerCase());
+    }
+  }
+  return fallbacks;
+}
 
 /**
  * GET/POST /api/setup-relay
@@ -12,12 +60,40 @@ export const dynamic = "force-dynamic";
  * operator can read it and configure ZAI_RELAY_URL on Vercel.
  *
  * If VERCEL_TOKEN is set, it also auto-configures the Vercel project env.
+ *
+ * CRITICAL FIX (AUDIT4-SEC / Fix 1): the route now requires a super_admin
+ * session AND validates the inbound Host against an allowlist before
+ * touching the filesystem or the Vercel API.
  */
 export async function handler(req: NextRequest) {
-  const host =
+  // ── Auth gate — only a super_admin may retarget the AI relay. ───────────
+  const auth = await requireSuperAdmin(req);
+  if (auth instanceof NextResponse) return auth;
+
+  const host = (
     req.headers.get("x-forwarded-host") ||
     req.headers.get("host") ||
-    "";
+    ""
+  ).toLowerCase();
+
+  // ── Host allowlist — even an authenticated super_admin can't redirect
+  //    the relay to an arbitrary host. This blocks DNS-rebinding /
+  //    cache-poisoning / XSS-leveraged attacks where the super-admin's
+  //    browser is tricked into POSTing with an attacker-chosen Host.
+  const allowedHosts = getAllowedHosts();
+  if (allowedHosts.length === 0) {
+    return NextResponse.json(
+      { ok: false, error: "Host allowlist not configured. Set ALLOWED_HOST (comma-separated), NEXT_PUBLIC_APP_URL, or APP_BASE_URL." },
+      { status: 400 },
+    );
+  }
+  if (!host || !allowedHosts.includes(host)) {
+    return NextResponse.json(
+      { ok: false, host, error: "Host not allowed." },
+      { status: 400 },
+    );
+  }
+
   const proto = req.headers.get("x-forwarded-proto") || "https";
 
   // Capture and persist the discovered host

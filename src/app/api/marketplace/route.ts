@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requireKycApproved } from "@/lib/portal/kyc-gate";
+import { validateStatusTransition } from "@/lib/api/status-validator";
 import { listMarketplacePosts, createMarketplacePost } from "@/lib/data/marketplace-store";
 import { sanitizeFields } from "@/lib/security/sanitize-input";
 import { audit } from "@/lib/api/helpers";
@@ -50,6 +52,17 @@ async function _post(req: NextRequest) {
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // AUDIT4-PATHS / Fix 1 — gate marketplace POST on KYC approval. The
+  // audit task spec requires `requireKycApproved` on marketplace
+  // POST/PUT (not GET). Every other marketplace creation route
+  // (responses, negotiations, contract, finance, reviews) already gates
+  // on KYC; the top-level POST that creates the post itself was missing
+  // the gate, so a partner with unapproved KYC could publicly list
+  // buy/sell/auction/contract posts. requireKycApproved returns null
+  // when allowed; a 403/503 NextResponse when blocked (503 = fail-closed
+  // on transient DB errors).
+  const _kycBlock = await requireKycApproved(access);
+  if (_kycBlock) return _kycBlock;
 
   let body;
   try {
@@ -99,6 +112,26 @@ async function _post(req: NextRequest) {
   const allowedStatus = ["draft", "active", "closed", "expired", "flagged"];
   if (body.status && !allowedStatus.includes(body.status)) {
     return NextResponse.json({ error: "Invalid status." }, { status: 400 });
+  }
+  // AUDIT4-PATHS / Fix 3 — marketplace post state machine. A new row
+  // conceptually starts in "draft"; the only valid create transition is
+  // draft → active. Block attempts to create a post directly in a non-
+  // active state (e.g. status="closed" / "expired" / "flagged"), which
+  // would bypass the lifecycle entirely. The store defaults body.status
+  // to "active" when omitted (createMarketplacePost line 301), so we
+  // validate draft → (body.status ?? "active"). A same-status
+  // transition (draft → draft) is always allowed by the validator.
+  // Portal clients are NEVER super-admins, so the bypass documented in
+  // status-validator.ts's header does not apply here.
+  {
+    const _createStatus = body.status ?? "active";
+    const _createTransition = validateStatusTransition("marketplace_post", "draft", _createStatus);
+    if (!_createTransition.valid) {
+      return NextResponse.json(
+        { error: _createTransition.error },
+        { status: 409 },
+      );
+    }
   }
   const allowedVisibility = ["public", "private"];
   if (body.visibility && !allowedVisibility.includes(body.visibility)) {

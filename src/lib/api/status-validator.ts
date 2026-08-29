@@ -18,7 +18,14 @@
  * `const err = validateStatusTransition(...); if (err) return 409;`.
  */
 
-export type DocType = "offer" | "invoice" | "proforma" | "deal" | "kyc";
+export type DocType =
+  | "offer"
+  | "invoice"
+  | "proforma"
+  | "deal"
+  | "kyc"
+  | "marketplace_post"
+  | "marketplace_response";
 
 const VALID_TRANSITIONS: Record<DocType, Record<string, string[]>> = {
   offer: {
@@ -84,6 +91,49 @@ const VALID_TRANSITIONS: Record<DocType, Record<string, string[]>> = {
     rejected: ["resubmit"],
     resubmit: ["submitted", "draft"],
     draft: ["submitted"],
+  },
+  // AUDIT4-PATHS / Fix 3 — marketplace posts state machine. The audit
+  // found that POST /api/marketplace and PUT /api/marketplace/[id] only
+  // validated the enum, never the transition. Without this guard a post
+  // owner could revive an `expired` post (expired → active), re-open a
+  // `closed` post, or un-flag a `flagged` post (flagged → active) without
+  // admin review — defeating the moderation flag mechanism. The graph
+  // mirrors the lifecycle the marketplace UI documents: a partner drafts
+  // → activates → the cron expires / the owner closes / the admin flags.
+  // `flagged → active` is the only re-activation path and is admin-only
+  // (the route layer only allows portal clients, who are NEVER super-
+  // admins, so the bypass documented in this file's header does not
+  // apply here — but a future admin route may opt in). `closed`,
+  // `expired`, `cancelled` are terminal: reviving them would silently
+  // undo the cron / owner action that produced them.
+  marketplace_post: {
+    draft: ["active"],
+    active: ["closed", "expired", "cancelled", "flagged"],
+    closed: [],
+    expired: [],
+    flagged: ["active"],
+    cancelled: [],
+  },
+  // AUDIT4-PATHS / Fix 4 — marketplace responses state machine. The
+  // audit found that updateMarketplaceResponseStatus did a raw UPDATE
+  // with no transition check, letting a post owner revert a "rejected"
+  // response back to "sent", revive an "expired" response to
+  // "accepted", or change their mind after accepting (accepted →
+  // rejected). The downstream contract-creation flow assumes
+  // status="accepted" is permanent — a reversion silently invalidates
+  // any contract auto-generated from the acceptance. The graph:
+  // sent → viewed/accepted/rejected/countered/expired (initial state
+  // is `sent` when the responder creates the response; `viewed` is
+  // set when the owner opens it; `countered` keeps the negotiation
+  // open — the owner can counter again or accept/reject the latest
+  // counter). accepted / rejected / expired are terminal.
+  marketplace_response: {
+    sent: ["viewed", "accepted", "rejected", "countered", "expired"],
+    viewed: ["accepted", "rejected", "countered", "expired"],
+    countered: ["accepted", "rejected", "countered", "expired"],
+    accepted: [],
+    rejected: [],
+    expired: [],
   },
 };
 

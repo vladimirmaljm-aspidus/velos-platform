@@ -538,7 +538,7 @@ export function NegotiationRoom({ negotiationId }: { negotiationId: string }) {
             {post && (
               <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
                 <span className="text-xs text-muted-foreground mr-2">
-                  {t("marketplace-negotiation-product") || "Product"}:
+                  {t("marketplace-negotiation-product")}:
                 </span>
                 <span className="font-medium">{post.product_name}</span>
                 <span className="text-xs text-muted-foreground ml-2">
@@ -659,7 +659,7 @@ export function NegotiationRoom({ negotiationId }: { negotiationId: string }) {
             <div className="rounded-md border bg-muted/20 p-3 space-y-3">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <Label htmlFor="o-qty">{t("marketplace-negotiation-offer-quantity") || t("marketplace-quantity")}</Label>
+                  <Label htmlFor="o-qty">{t("marketplace-negotiation-offer-quantity")}</Label>
                   <Input
                     id="o-qty"
                     type="number"
@@ -668,7 +668,7 @@ export function NegotiationRoom({ negotiationId }: { negotiationId: string }) {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="o-price">{t("marketplace-negotiation-offer-price") || t("marketplace-unit-price")}</Label>
+                  <Label htmlFor="o-price">{t("marketplace-negotiation-offer-price")}</Label>
                   <Input
                     id="o-price"
                     type="number"
@@ -677,7 +677,7 @@ export function NegotiationRoom({ negotiationId }: { negotiationId: string }) {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="o-cur">{t("marketplace-negotiation-offer-currency") || t("marketplace-currency")}</Label>
+                  <Label htmlFor="o-cur">{t("marketplace-negotiation-offer-currency")}</Label>
                   <Select value={offer.currency} onValueChange={(v) => setOffer({ ...offer, currency: v })}>
                     <SelectTrigger id="o-cur"><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -688,7 +688,7 @@ export function NegotiationRoom({ negotiationId }: { negotiationId: string }) {
                   </Select>
                 </div>
                 <div>
-                  <Label htmlFor="o-ddate">{t("marketplace-negotiation-offer-delivery-date") || t("marketplace-delivery-date")}</Label>
+                  <Label htmlFor="o-ddate">{t("marketplace-negotiation-offer-delivery-date")}</Label>
                   <Input
                     id="o-ddate"
                     type="date"
@@ -697,7 +697,7 @@ export function NegotiationRoom({ negotiationId }: { negotiationId: string }) {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="o-inco">{t("marketplace-negotiation-offer-incoterm") || t("marketplace-incoterm")}</Label>
+                  <Label htmlFor="o-inco">{t("marketplace-negotiation-offer-incoterm")}</Label>
                   <Select value={offer.incoterm} onValueChange={(v) => setOffer({ ...offer, incoterm: v })}>
                     <SelectTrigger id="o-inco"><SelectValue placeholder="—" /></SelectTrigger>
                     <SelectContent>
@@ -708,7 +708,7 @@ export function NegotiationRoom({ negotiationId }: { negotiationId: string }) {
                   </Select>
                 </div>
                 <div>
-                  <Label htmlFor="o-pay">{t("marketplace-negotiation-offer-payment-terms") || t("marketplace-payment-terms")}</Label>
+                  <Label htmlFor="o-pay">{t("marketplace-negotiation-offer-payment-terms")}</Label>
                   <Select value={offer.payment_terms} onValueChange={(v) => setOffer({ ...offer, payment_terms: v })}>
                     <SelectTrigger id="o-pay"><SelectValue placeholder="—" /></SelectTrigger>
                     <SelectContent>
