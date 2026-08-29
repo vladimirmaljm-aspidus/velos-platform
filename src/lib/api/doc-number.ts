@@ -23,7 +23,7 @@ export type DocType = "offer" | "invoice" | "proforma" | "rfq" | "demand" | "log
  * Atomically reserve the next document number for the given type.
  *
  * Returns the number in the canonical format `<PREFIX>-<YEAR>-<NNNN>`:
- *   - offer    → OF-2025-0042
+ *   - offer    → OFF-2025-0042
  *   - invoice  → INV-2025-0042
  *   - proforma → PRO-2025-0042
  *   - rfq      → RFQ-2025-0042  (Tier 2 fix C-2; requires SQL migration —
@@ -33,38 +33,80 @@ export type DocType = "offer" | "invoice" | "proforma" | "rfq" | "demand" | "log
  *                and this function returns null so callers fall back to
  *                their legacy `listX().total + 1` pattern.)
  *
+ * Per-tenant numbering (migration 063_per_tenant_doc_sequences.sql):
+ *   The new RPC signature is `get_next_doc_number(p_doc_type, p_tenant_id)`.
+ *   When `tenantId` is provided, we call the per-tenant RPC (no cross-tenant
+ *   sequence leak; EU VAT compliant). When `tenantId` is omitted, we fall
+ *   back to the legacy global-RPC path (kept for backward compat with
+ *   callers that don't have tenant context — e.g. system cron jobs).
+ *
  * Strategy:
- *   1. Call `get_next_doc_number(doc_type)` via Supabase RPC — atomic
- *      (Postgres SEQUENCE nextval).
- *   2. If RPC unavailable / unconfigured / errors → return null so the
+ *   1. If tenantId provided → call `get_next_doc_number(p_doc_type, p_tenant_id)`
+ *      (per-tenant atomic sequence).
+ *   2. Else → call legacy `get_next_doc_number(p_doc_type)` (global sequence).
+ *   3. If RPC unavailable / unconfigured / errors → return null so the
  *      caller can fall back to its legacy `listX().total + 1` logic.
  */
-export async function nextDocNumber(docType: DocType): Promise<string | null> {
+export async function nextDocNumber(
+  docType: DocType,
+  tenantId?: string,
+): Promise<string | null> {
   if (!isSupabaseConfigured()) return null;
   try {
     const sb = getSupabase();
-    // CRITICAL FIX (F-FINAL / P0): the canonical RPC signature is
-    // `get_next_doc_number(p_doc_type text, p_tenant_id text DEFAULT NULL)`
-    // (migration 011). Calling with `{ doc_type }` produced a PostgREST
-    // PGRST202 "Could not find the function public.get_next_doc_number(doc_type)"
-    // error on every create-offer/invoice/proforma without an explicit
-    // number → 500 with sanitized "Database error." body. Use the canonical
-    // `p_doc_type` arg name so the RPC resolves correctly.
-    const { data, error } = await sb.rpc("get_next_doc_number", {
-      p_doc_type: docType,
-    });
-    if (error) {
+    let data: any;
+    let error: any;
+
+    if (tenantId) {
+      // Per-tenant path (migration 063). Atomic per-(tenant, doc_type, year).
+      const r = await sb.rpc("get_next_doc_number", {
+        p_doc_type: docType,
+        p_tenant_id: tenantId,
+      });
+      data = r.data;
+      error = r.error;
+    } else {
+      // Legacy global path (migration 011). Kept for callers without
+      // tenant context (system jobs). Logs a deprecation warning so we
+      // can find + migrate the remaining callers.
       console.warn(
-        `[doc-number] RPC get_next_doc_number('${docType}') failed:`,
-        error.message,
+        `[doc-number] nextDocNumber('${docType}') called without tenantId — ` +
+        `using global sequence (cross-tenant leak risk). ` +
+        `Update the caller to pass tenantId for per-tenant numbering (migration 063).`,
       );
-      return null;
+      const r = await sb.rpc("get_next_doc_number", {
+        p_doc_type: docType,
+      });
+      data = r.data;
+      error = r.error;
+    }
+
+    if (error) {
+      // The per-tenant signature may not exist yet (migration 063 not
+      // applied). Fall back to the legacy global RPC so the route keeps
+      // working during the rollout window.
+      if (tenantId && /could not find.*function|does not exist/i.test(error.message || "")) {
+        console.warn(
+          `[doc-number] per-tenant RPC not available, falling back to global:`,
+          error.message,
+        );
+        const r2 = await sb.rpc("get_next_doc_number", { p_doc_type: docType });
+        data = r2.data;
+        error = r2.error;
+      }
+      if (error) {
+        console.warn(
+          `[doc-number] RPC get_next_doc_number('${docType}', tenantId=${tenantId || 'null'}) failed:`,
+          error.message,
+        );
+        return null;
+      }
     }
     if (!data || typeof data !== "string") return null;
     return data;
   } catch (e: any) {
     console.warn(
-      `[doc-number] RPC get_next_doc_number('${docType}') threw:`,
+      `[doc-number] RPC get_next_doc_number('${docType}', tenantId=${tenantId || 'null'}) threw:`,
       e?.message || e,
     );
     return null;

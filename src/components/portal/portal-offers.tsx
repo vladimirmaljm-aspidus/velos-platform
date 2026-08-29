@@ -83,7 +83,7 @@ const STATUS_STYLES: Record<string, string> = {
   sent: "border-transparent bg-chart-1 text-white",
   viewed: "border-transparent bg-sky-500/15 text-sky-700 dark:text-sky-400",
   accepted: "border-transparent bg-emerald-600 text-white",
-  rejected: "border-transparent bg-destructive text-destructive-foreground",
+  rejected: "border-transparent bg-rose-600 text-white",
   expired: "bg-muted text-muted-foreground",
   countered: "border-transparent bg-amber-500 text-white",
 };

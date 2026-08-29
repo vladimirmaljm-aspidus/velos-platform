@@ -588,13 +588,13 @@ function PostsTab() {
                   <TableHead className="text-xs">{t("pf-ma-col-type")}</TableHead>
                   <TableHead className="text-xs">{t("pf-ma-col-product")}</TableHead>
                   <TableHead className="text-xs">{t("pf-ma-col-company")}</TableHead>
-                  <TableHead className="text-xs">{t("pf-ma-col-country")}</TableHead>
+                  <TableHead className="text-xs hidden md:table-cell">{t("pf-ma-col-country")}</TableHead>
                   <TableHead className="text-xs text-right">{t("pf-ma-col-price")}</TableHead>
                   <TableHead className="text-xs text-right">{t("pf-ma-col-quantity")}</TableHead>
-                  <TableHead className="text-xs">{t("status")}</TableHead>
-                  <TableHead className="text-xs text-right">{t("pf-ma-col-views")}</TableHead>
-                  <TableHead className="text-xs text-right">{t("pf-ma-col-responses")}</TableHead>
-                  <TableHead className="text-xs">{t("date")}</TableHead>
+                  <TableHead className="text-xs hidden lg:table-cell">{t("status")}</TableHead>
+                  <TableHead className="text-xs text-right hidden md:table-cell">{t("pf-ma-col-views")}</TableHead>
+                  <TableHead className="text-xs text-right hidden md:table-cell">{t("pf-ma-col-responses")}</TableHead>
+                  <TableHead className="text-xs hidden lg:table-cell">{t("date")}</TableHead>
                   <TableHead className="text-xs text-right">{t("actions")}</TableHead>
                 </TableRow>
               </TableHeader>
@@ -627,14 +627,14 @@ function PostsTab() {
                       <TableCell className="text-xs max-w-[160px] truncate" title={p.company_name ?? ""}>
                         {p.company_name ?? "—"}
                       </TableCell>
-                      <TableCell className="text-xs">{p.delivery_country ?? "—"}</TableCell>
+                      <TableCell className="text-xs hidden md:table-cell">{p.delivery_country ?? "—"}</TableCell>
                       <TableCell className="text-xs text-right tabular">
                         {p.target_price != null ? formatPrice(p.target_price, p.currency) : "—"}
                       </TableCell>
                       <TableCell className="text-xs text-right tabular">
                         {p.quantity} {p.unit}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="hidden lg:table-cell">
                         <Badge variant="outline" className={`text-xs ${POST_STATUS_TONE[p.status] ?? ""}`}>
                           {/* FIX-AUDIT3 #2 — admin posts tab showed the raw
                               `p.status` string ("flagged", "active", ...) while
@@ -647,9 +647,9 @@ function PostsTab() {
                           {t(`marketplace-status-${p.status}`) || p.status}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-xs text-right tabular">{p.views_count}</TableCell>
-                      <TableCell className="text-xs text-right tabular">{p.responses_count}</TableCell>
-                      <TableCell className="text-xs whitespace-nowrap">{formatDate(p.created_at)}</TableCell>
+                      <TableCell className="text-xs text-right tabular hidden md:table-cell">{p.views_count}</TableCell>
+                      <TableCell className="text-xs text-right tabular hidden md:table-cell">{p.responses_count}</TableCell>
+                      <TableCell className="text-xs whitespace-nowrap hidden lg:table-cell">{formatDate(p.created_at)}</TableCell>
                       <TableCell>
                         <div className="flex items-center justify-end gap-1">
                           <Button size="icon" variant="ghost" className="size-7" title={t("view")} aria-label={t("view")} onClick={() => setDetailPost(p)}>
@@ -1777,6 +1777,8 @@ function CategoriesTab() {
                           type="button"
                           className="inline-flex"
                           title={c.is_featured ? t("pf-ma-action-unfeature") : t("pf-ma-action-feature")}
+                          aria-label={c.is_featured ? t("pf-ma-action-unfeature") : t("pf-ma-action-feature")}
+                          aria-pressed={c.is_featured}
                           onClick={() => toggleFeaturedMut.mutate({ id: c.id, current: c.is_featured })}
                         >
                           <Badge variant="outline" className={`text-xs cursor-pointer ${c.is_featured ? "border-primary/30 bg-primary/10 text-primary" : "border-slate-400/30 bg-slate-400/10 text-slate-700 dark:text-slate-300"}`}>

@@ -81,7 +81,7 @@ const STATUS_LABEL_KEYS: Record<OfferStatus, string> = {
 function StatusBadge({ status }: { status: OfferStatus }) {
   const t = useT();
   if (status === "draft") return <Badge variant="secondary">{t(STATUS_LABEL_KEYS[status])}</Badge>;
-  if (status === "rejected") return <Badge variant="destructive">{t(STATUS_LABEL_KEYS[status])}</Badge>;
+  if (status === "rejected") return <Badge className="border-transparent bg-rose-600 text-white">{t(STATUS_LABEL_KEYS[status])}</Badge>;
   if (status === "accepted") return <Badge className="border-transparent bg-emerald-600 text-white">{t(STATUS_LABEL_KEYS[status])}</Badge>;
   if (status === "sent") return <Badge className="border-transparent bg-primary text-primary-foreground">{t(STATUS_LABEL_KEYS[status])}</Badge>;
   if (status === "countered") return <Badge className="border-transparent bg-amber-500 text-white">{t(STATUS_LABEL_KEYS[status])}</Badge>;
