@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useAppStore } from "@/lib/store/app-store";
 import { useSearchParams } from "next/navigation";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Store, Package, Inbox, Send } from "lucide-react";
+import { Store, Package, Inbox } from "lucide-react";
 import { useT } from "@/lib/i18n/store";
 import { MarketplaceList } from "./marketplace-list";
 import { MarketplaceCreatePost } from "./marketplace-create-post";
@@ -95,10 +95,6 @@ export function MarketplaceBrowser() {
       </Tabs>
 
       <MarketplaceCreatePost open={createOpen} onOpenChange={setCreateOpen} />
-
-      {/* Unused import placeholder so the Send icon stays in the bundle
-          for future tab additions. */}
-      <span className="hidden"><Send /></span>
     </div>
   );
 }

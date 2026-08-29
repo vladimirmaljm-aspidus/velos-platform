@@ -42,7 +42,15 @@ const RATE_LIMITS: Record<string, { maxRequests: number; windowMs: number }> = {
   "/api/portal/messages": { maxRequests: 20, windowMs: 60_000 },      // 20/min
 
   // ── account recovery / verification ─────────────────────────────────────
-  "/api/auth/forgot-password": { maxRequests: 3, windowMs: 60_000 },  // 3/min (email flood)
+  // SEC-L1: removed dead `/api/auth/forgot-password` entry — that route
+  // does not exist (the CRM flow uses /api/auth/change-password; the
+  // portal flow is at /api/portal/forgot-password which is rate-limited
+  // on the next line). The stale entry was a no-op that gave a false
+  // sense of coverage for a brute-force vector that the route didn't
+  // actually present, AND would have silently failed to rate-limit a
+  // future /api/auth/forgot-password implementation if one was added
+  // because `findRouteConfig` longest-prefix matches by full path
+  // segment (the dead key matched only the exact pathname).
   "/api/portal/forgot-password": { maxRequests: 3, windowMs: 60_000 },// 3/min (portal email flood)
   "/api/verify": { maxRequests: 10, windowMs: 60_000 },               // 10/min (code brute-force)
 };

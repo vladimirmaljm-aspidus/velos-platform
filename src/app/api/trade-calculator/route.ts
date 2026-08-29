@@ -195,6 +195,30 @@ export async function POST(req: NextRequest) {
   const buyCurrency = (body.buy_currency || "USD").toUpperCase();
   const computedLines: TradeCostLine[] = [];
   for (const line of (body.cost_lines || []) as TradeCostLine[]) {
+    // ADMIN-M11: validate the cost-line value before applying it.
+    //  - For ALL bases, the value MUST be a finite number — a string,
+    //    null, or NaN flows through the arithmetic as NaN and silently
+    //    zeroes the landed cost (which is the exact NaN-propagation
+    //    bug P2-5 fixed for the top-level inputs but missed here).
+    //  - For `basis === "percent"`, the value MUST be between 0 and
+    //    100. A negative percentage makes no sense (and would invert
+    //    the cost into a credit); > 100 means the line alone is more
+    //    than the entire buy value, which the UI never intends and
+    //    which would silently explode `landedCost` into the sky.
+    const lineValue = Number(line.value);
+    if (!Number.isFinite(lineValue)) {
+      return NextResponse.json(
+        { error: "Each cost line must have a numeric value." },
+        { status: 400 },
+      );
+    }
+    line.value = lineValue;
+    if (line.basis === "percent" && (lineValue < 0 || lineValue > 100)) {
+      return NextResponse.json(
+        { error: "Percentage cost lines must be between 0 and 100." },
+        { status: 400 },
+      );
+    }
     let amount = 0;
     if (line.basis === "unit") amount = line.value * qty;
     else if (line.basis === "fixed") amount = line.value;

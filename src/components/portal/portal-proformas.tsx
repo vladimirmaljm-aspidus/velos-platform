@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -55,10 +55,18 @@ import { useDebounced } from "@/lib/hooks/use-debounced";
 const STATUS_STYLES: Record<ProformaStatus, string> = {
   draft: "bg-secondary text-secondary-foreground",
   sent: "border-transparent bg-chart-1 text-white",
-  viewed: "border-transparent bg-chart-1 text-white",
+  // PORTAL-L4 — "viewed" was identical to "sent" (both bg-chart-1 solid).
+  // A partner scanning the list could not tell "I've seen this proforma"
+  // apart from "this is freshly issued, awaiting first view". The 80%
+  // opacity mute keeps it in the same visual family (chart-1 / blue) but
+  // signals that the proforma has been opened by the client.
+  viewed: "border-transparent bg-chart-1/80 text-white",
   accepted: "border-transparent bg-emerald-600 text-white",
   paid: "border-transparent bg-emerald-700 text-white",
   expired: "border-transparent bg-destructive text-destructive-foreground",
+  // AUDIT2-LOGIC-UX H1 — proper "rejected" status (was collapsed into
+  // "expired"). Distinct from timeout — this is an active rejection.
+  rejected: "border-transparent bg-rose-600 text-white",
 };
 
 const STATUS_LABEL_KEYS: Record<ProformaStatus, string> = {
@@ -68,6 +76,7 @@ const STATUS_LABEL_KEYS: Record<ProformaStatus, string> = {
   accepted: "portal-status-accepted",
   paid: "portal-status-paid",
   expired: "portal-status-expired",
+  rejected: "portal-status-rejected",
 };
 
 const STATUS_ICONS: Record<ProformaStatus, React.ComponentType<{ className?: string }>> = {
@@ -77,6 +86,7 @@ const STATUS_ICONS: Record<ProformaStatus, React.ComponentType<{ className?: str
   accepted: CheckCircle2,
   paid: CheckCircle2,
   expired: Hourglass,
+  rejected: XCircle,
 };
 
 export function PortalProformas() {
@@ -351,6 +361,15 @@ function ProformaDetail({
 }) {
   const StatusIcon = STATUS_ICONS[proforma.status];
   const canRespond = proforma.status === "sent" || proforma.status === "viewed";
+
+  // PORTAL-M2 — Fire view-tracking endpoint once per detail open.
+  useEffect(() => {
+    if (!proforma.id) return;
+    fetch(`/api/portal/proformas/${proforma.id}/view`, {
+      method: "POST",
+    }).catch(() => {});
+  }, [proforma.id]);
+
   return (
     <>
       <SheetHeader>

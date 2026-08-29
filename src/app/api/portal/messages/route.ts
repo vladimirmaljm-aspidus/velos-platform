@@ -8,7 +8,33 @@ import { audit } from "@/lib/api/helpers";
 export const runtime = "nodejs";
 
 /**
- * GET  /api/portal/messages          → returns full thread + marks incoming read
+ * Allowed attachment_url pattern.
+ * AUDIT2-LOGIC-UX C3 — portal clients could previously submit arbitrary URLs
+ * (e.g. https://evil.com/phish) and have them rendered as clickable links in
+ * the admin partners-view. We now require attachment_url to be null OR to
+ * point at the admin-scoped portal-upload download path. Anything else is
+ * silently stripped (the message still inserts with attachment_name/metadata
+ * but no clickable URL), so a portal client cannot inject a phishing link.
+ */
+const ATTACHMENT_URL_RE = /^\/api\/portal-uploads\/[a-f0-9-]+\/download(\?|$)/;
+
+function sanitizeAttachmentUrl(value: unknown): string | null {
+  if (typeof value !== "string" || value.length === 0) return null;
+  if (!ATTACHMENT_URL_RE.test(value)) return null;
+  return value;
+}
+
+/**
+ * GET  /api/portal/messages          → returns full thread (no auto-mark-read).
+ *                                       PORTAL-M7: previously the GET handler
+ *                                       called markThreadRead on every fetch,
+ *                                       but PortalMessages polls every 15s —
+ *                                       that meant every incoming message was
+ *                                       marked read instantly, even if the user
+ *                                       never scrolled. Marking read is now an
+ *                                       explicit user action (frontend calls
+ *                                       /api/portal/messages/read on mount or
+ *                                       focus).
  * POST /api/portal/messages          → portal client sends message to admin,
  *                                      notifies (in-app + email to tenant contact)
  */
@@ -19,8 +45,6 @@ export async function GET() {
 
   try {
     const items = await listThread(access.tenant_id, access.partner_id);
-    // Mark admin→portal messages as read for this partner (the client is viewing now).
-    await markThreadRead(access.tenant_id, access.partner_id, "portal").catch(() => {});
     return NextResponse.json({ items });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
@@ -40,6 +64,12 @@ export async function POST(req: NextRequest) {
   const body = sanitizeMessageBody(raw?.body ?? raw?.message);
   if (!body && !raw?.attachment_url) return NextResponse.json({ error: "Message body is required." }, { status: 400 });
 
+  // AUDIT2-LOGIC-UX C3 — strip any attachment_url that does not point at the
+  // admin-scoped portal-upload download path. attachment_name/type are kept
+  // (the admin still sees a placeholder) but the href is dropped, so a
+  // phishing URL the client injected is never rendered as a link.
+  const safeAttachmentUrl = sanitizeAttachmentUrl(raw?.attachment_url);
+
   try {
     const msg = await insertMessage({
       tenant_id: access.tenant_id,
@@ -49,7 +79,7 @@ export async function POST(req: NextRequest) {
       body,
       sender_username: `portal:${access.portal_email || access.id}`,
       sender_user_id: null,
-      attachment_url: raw?.attachment_url || null,
+      attachment_url: safeAttachmentUrl,
       attachment_name: raw?.attachment_name || null,
       attachment_type: raw?.attachment_type || null,
     });
@@ -66,7 +96,7 @@ export async function POST(req: NextRequest) {
         (msg as any)?.id,
         {
           body_preview: body.slice(0, 200),
-          has_attachment: !!(raw?.attachment_url),
+          has_attachment: !!safeAttachmentUrl,
           attachment_name: raw?.attachment_name || null,
         },
       );

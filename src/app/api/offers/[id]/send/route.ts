@@ -5,8 +5,27 @@ import { generatePdf } from "@/lib/pdf/generator";
 import { notify } from "@/lib/notif/helper";
 import { validateStatusTransition } from "@/lib/api/status-validator";
 import { assertNoSoDViolation } from "@/lib/permissions/sod-matrix";
+// AUDIT2-LOGIC-UX H10 — rate-limit + idempotency for offer send. Previously
+// an admin could re-send an already-accepted/cancelled/expired/rejected
+// offer (the email would fire even though the status was terminal) and
+// spam the recipient. Now: (1) state guard — refuse send for terminal
+// states; (2) per-(offer-id) 60s idempotency — refuse re-sends inside the
+// window; (3) per-(offer-id) 5-per-15-min rate limit as the backstop.
+import { checkRateLimit } from "@/lib/security/rate-limiter";
 
 export const runtime = "nodejs";
+
+// 60s minimum interval between sends to the SAME offer. Matches the
+// pattern from /api/portal-access/[id]/invite — generous for a legit
+// "I want to re-send" intent, tight enough to stop a runaway loop.
+const OFFER_RESEND_MIN_INTERVAL_MS = 60 * 1000;
+
+// Final / non-sendable offer states. Sending an offer in any of these
+// would email a stale document to the partner (e.g. a cancelled offer
+// the partner already saw rejected, an accepted offer that's already
+// been converted to a deal/invoice). Send is only meaningful from
+// draft | sent | viewed | countered.
+const TERMINAL_OFFER_STATES = new Set(["cancelled", "expired", "rejected", "accepted"]);
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireAuth(req);
@@ -51,6 +70,60 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         approve_perm: "offers.send",
       });
       if (sod) return sod;
+    }
+
+    // AUDIT2-LOGIC-UX H10 — state guard. Refuse to send an offer that's
+    // in a terminal / non-sendable state. Previously an admin could
+    // re-send an accepted offer (which the partner already converted to
+    // a deal/invoice) or a cancelled / rejected / expired offer — the
+    // status stayed put but the PDF was still emailed, spamming the
+    // recipient with a stale document. Super-admin bypasses so they can
+    // correct bad data.
+    if (!auth.isSuperAdmin && offer.status && TERMINAL_OFFER_STATES.has(offer.status)) {
+      return NextResponse.json(
+        { error: `Cannot send a ${offer.status} offer.` },
+        { status: 400 },
+      );
+    }
+
+    // AUDIT2-LOGIC-UX H10 — idempotency guard. If this offer was sent
+    // within the last OFFER_RESEND_MIN_INTERVAL_MS, refuse to re-send
+    // (prevents the "spam re-send" bug where a double-click or a stale
+    // UI effect fires the send twice in seconds). The guard is per
+    // offer-id (not per-recipient) — the audit log shows a single
+    // "send_email" event regardless of recipient, so it's safe to
+    // deduplicate at the offer level. Super-admin bypasses.
+    if (!auth.isSuperAdmin && offer.sent_at) {
+      const lastSendMs = new Date(offer.sent_at).getTime();
+      const elapsedMs = Date.now() - lastSendMs;
+      if (Number.isFinite(lastSendMs) && elapsedMs < OFFER_RESEND_MIN_INTERVAL_MS) {
+        const retryAfterSec = Math.ceil((OFFER_RESEND_MIN_INTERVAL_MS - elapsedMs) / 1000);
+        return NextResponse.json(
+          {
+            error: `This offer was sent ${elapsedMs < 60_000 ? "just now" : Math.floor(elapsedMs / 1000) + "s ago"}. Please wait ${retryAfterSec}s before re-sending to avoid spamming the recipient.`,
+            retry_after: retryAfterSec,
+            already_sent: true,
+          },
+          { status: 429, headers: { "Retry-After": String(retryAfterSec) } },
+        );
+      }
+    }
+
+    // AUDIT2-LOGIC-UX H10 — per-offer-id rate limit (defense-in-depth).
+    // 5 sends per 15 min per offer. The idempotency guard above is the
+    // primary defense; this is the backstop (clock skew, concurrent
+    // races on sent_at). Super-admin bypasses (the rate limiter is
+    // per-IP/per-key globally — we skip the check for super_admin so
+    // they can correct bad data without tripping the cap).
+    if (!auth.isSuperAdmin) {
+      const rl = await checkRateLimit(`offer-send:${id}`, 5, 15 * 60 * 1000);
+      if (!rl.allowed) {
+        const retryAfterSec = Math.ceil((rl.retryAfter ?? 60_000) / 1000);
+        return NextResponse.json(
+          { error: "Too many sends for this offer recently. Please try again later.", retry_after: retryAfterSec },
+          { status: 429, headers: { "Retry-After": String(retryAfterSec) } },
+        );
+      }
     }
 
     // Fetch partner for email info / portal notification

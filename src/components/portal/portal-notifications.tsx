@@ -26,21 +26,32 @@ import { useRealtime } from "@/hooks/use-realtime";
 /** Map a server-issued action_url (often an admin path) to a portal ViewKey. */
 function portalViewForUrl(url: string, type: NotificationType): ViewKey | null {
   const u = url.toLowerCase();
-  if (u.includes("/portal-access") || type === "portal_message") return "portal-messages";
+  // PORTAL-M3 — URL-based matching takes precedence over type-based matching.
+  // A notification with type="rfq_received" but URL="/logistics?open=..." must
+  // route to the logistics view, not the RFQ view. We check the URL first,
+  // then fall back to type-based matching for URLs with no clear path segment.
   if (u.includes("/logistics")) return "portal-logistics";
-  if (u.includes("/rfq") || type === "rfq_received" || type === "rfq_quoted") return "portal-rfq";
-  if (u.includes("/kyc") || type.startsWith("kyc_")) return "portal-kyc";
-  if (u.includes("/invoice") || type.startsWith("invoice_")) return "portal-invoices";
-  if (u.includes("/offer") || type.startsWith("offer_")) return "portal-offers";
-  if (u.includes("/proforma") || type.startsWith("proforma_")) return "portal-proformas";
-  if (u.includes("/document") || type === "document_shared") return "portal-documents";
+  if (u.includes("/rfq")) return "portal-rfq";
+  if (u.includes("/kyc")) return "portal-kyc";
+  if (u.includes("/invoice")) return "portal-invoices";
+  if (u.includes("/offer")) return "portal-offers";
+  if (u.includes("/proforma")) return "portal-proformas";
+  if (u.includes("/document")) return "portal-documents";
   if (u.includes("/messages")) return "portal-messages";
+  if (u.includes("/portal-access")) return "portal-messages";
   // Marketplace (Phase 2) — point negotiation + response notifications at the
   // negotiation rooms view. The deep-link path /portal/marketplace/negotiations
   // is rendered by NegotiationsBrowser inside PortalShell.
-  if (u.includes("/marketplace/negotiation") || type.startsWith("marketplace_")) {
-    return "portal-marketplace-negotiations";
-  }
+  if (u.includes("/marketplace/negotiation")) return "portal-marketplace-negotiations";
+  // Fall back to type-based matching when the URL has no clear path segment.
+  if (type === "portal_message") return "portal-messages";
+  if (type === "rfq_received" || type === "rfq_quoted") return "portal-rfq";
+  if (type.startsWith("kyc_")) return "portal-kyc";
+  if (type.startsWith("invoice_")) return "portal-invoices";
+  if (type.startsWith("offer_")) return "portal-offers";
+  if (type.startsWith("proforma_")) return "portal-proformas";
+  if (type === "document_shared") return "portal-documents";
+  if (type.startsWith("marketplace_")) return "portal-marketplace-negotiations";
   return null;
 }
 
@@ -77,7 +88,11 @@ export function PortalNotifications() {
   const setView = useAppStore((s) => s.setView);
   const [markingRead, setMarkingRead] = useState<string | null>(null);
 
-  const notifsQ = useQuery<{ items: Notification[]; total: number }>({
+  // PORTAL-L1 — backend now returns { items, count, unread_count } (was
+  // { items, total }). `count` is the number of items returned (after the
+  // optional ?limit slice), `unread_count` is the number of unread items.
+  // This page renders the FULL list (no limit), so count === items.length.
+  const notifsQ = useQuery<{ items: Notification[]; count: number; unread_count: number }>({
     queryKey: ["portal-notifications"],
     queryFn: async () => {
       const r = await fetch("/api/portal/notifications");

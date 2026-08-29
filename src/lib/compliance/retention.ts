@@ -269,7 +269,7 @@ export const DEFAULT_RETENTION_CONFIG: RetentionConfig = {
   password_resets_hours: 24,
   rate_limits_hours: 24,
   mail_queue_days: 90,
-  notifications_days: 30,
+  notifications_days: 90,
   audit_logs_years: 7,
   kyc_submissions_years: 5,
 };

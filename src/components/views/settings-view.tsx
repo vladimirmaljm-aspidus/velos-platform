@@ -93,10 +93,10 @@ const DEFAULT_SECURITY: SecurityForm = {
 };
 
 const DEFAULT_COMMS: CommsForm = {
-  email_provider: "none",
+  email_provider: "resend",
   smtp_host: "", smtp_port: 587, smtp_user: "", smtp_password: "",
   resend_api_key: "", resend_from_email: "",
-  postmark_server_token: "", postmark_from_email: "", postmark_message_stream: "",
+  postmark_server_token: "", postmark_from_email: "", postmark_message_stream: "outbound",
   from_name: "", from_email: "", reply_to: "",
 };
 
@@ -737,8 +737,6 @@ function CommsTab() {
   const api = useApiUrl();
   const tenantKey = useTenantKey();
   const t = useT();
-  const currentUser = useAppStore((s) => s.user);
-  const isSuperAdmin = !!currentUser && currentUser.role === "super_admin";
 
   const { value, setValue, loading, saving, save } = useSettingLoader<CommsForm>("comms", DEFAULT_COMMS);
 
@@ -971,13 +969,6 @@ function CommsTab() {
           </Button>
         </div>
 
-        {/* Super-admin only: Allowed From Domains — controls which email
-            domains can be used in from_email / postmark_from_email / etc.
-            Prevents email spoofing (a tenant setting from: ceo@victim.com). */}
-        {isSuperAdmin && (
-          <AllowedFromDomainsSection api={api} />
-        )}
-
         <EmailTestSection value={value} />
       </CardContent>
     </Card>
@@ -985,74 +976,6 @@ function CommsTab() {
 }
 
 /** Provider picker card */
-/** Allowed From Domains — super-admin only section to control which email
- *  domains can be used as the From address. Prevents email spoofing. */
-function AllowedFromDomainsSection({ api }: { api: (path: string) => string }) {
-  const [domains, setDomains] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const t = useT();
-
-  useEffect(() => {
-    fetch(api("/api/settings?key=email_allowed_from_domains"))
-      .then((r) => r.json())
-      .then((d) => {
-        setDomains(typeof d.value === "string" ? d.value : "");
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, [api]);
-
-  async function saveDomains() {
-    setSaving(true);
-    try {
-      const r = await fetch(api("/api/settings"), {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key: "email_allowed_from_domains", value: domains }),
-      });
-      if (!r.ok) throw new Error("Failed to save");
-      toast.success("Allowed from-domains saved.");
-    } catch (e: any) {
-      toast.error(e.message || "Failed to save");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="mt-6 border-t pt-6">
-      <div className="flex items-center gap-2 mb-2">
-        <ShieldCheck className="size-4 text-muted-foreground" />
-        <h4 className="text-sm font-semibold">Allowed From Domains (Platform-Level)</h4>
-      </div>
-      <p className="text-xs text-muted-foreground mb-3">
-        Comma-separated list of email domains that can be used as the From address.
-        Emails using a domain NOT in this list will be rejected or rewritten.
-        This prevents email spoofing (e.g. a tenant setting from: ceo@victim.com).
-      </p>
-      {loading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      ) : (
-        <div className="flex gap-2">
-          <Input
-            value={domains}
-            onChange={(e) => setDomains(e.target.value)}
-            placeholder="aspidus.co, example.com, your-domain.com"
-            className="flex-1 font-mono text-sm"
-          />
-          <Button onClick={saveDomains} disabled={saving} size="sm">
-            {saving ? "Saving…" : "Save"}
-          </Button>
-        </div>
-      )}
-      <p className="text-xs text-muted-foreground mt-2">
-        Current: {domains || "(empty — all domains blocked)"}
-      </p>
-    </div>
-  );
-}
-
 function ProviderCard({
   active, onClick, title, subtitle, description, badge,
 }: {

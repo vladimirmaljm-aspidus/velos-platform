@@ -107,6 +107,8 @@ const PROFORMA_STATUS_STYLES: Record<ProformaStatus, string> = {
   accepted: "border-transparent bg-emerald-600 text-white",
   paid: "border-transparent bg-emerald-700 text-white",
   expired: "border-transparent bg-destructive text-destructive-foreground",
+  // AUDIT2-LOGIC-UX H1 — proper "rejected" status
+  rejected: "border-transparent bg-rose-600 text-white",
 };
 
 const DOC_CATEGORY_STYLES: Record<string, string> = {

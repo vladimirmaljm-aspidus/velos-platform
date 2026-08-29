@@ -49,6 +49,7 @@ import { toast } from "sonner";
 import type { PortalAccess, PortalTier, Partner, Notification } from "@/lib/supabase/types";
 import { getTierMeta } from "@/lib/portal/tiers";
 import { usePortalGeolocation } from "@/lib/portal/use-geolocation";
+import { disconnectRealtime } from "@/hooks/use-realtime";
 
 // UI-3 step 5 — the redesigned dashboard is a marketplace-focused welcome
 // page with quick stats, quick actions, and recent activity. The legacy
@@ -217,7 +218,7 @@ const TIER_META: Record<
     icon: Boxes,
   },
   limited: {
-    labelKey: "portal-tier-basic",
+    labelKey: "portal-tier-limited",
     className: "border-transparent bg-muted text-muted-foreground",
     icon: Boxes,
   },
@@ -315,12 +316,20 @@ export function PortalShell({
 
   // UI-3 step 1 — notification bell with badge. Lightweight fetch of the
   // unread count + the latest 5 notifications for the header dropdown.
-  const notifsQ = useQuery<{ items: Notification[]; total: number }>({
+  // PORTAL-L1 — backend now returns { items, count, unread_count } (was
+  // { items, total }). PORTAL-L7 — append ?limit=20 so the bell doesn't
+  // pull every notification ever issued for the tenant on every 60s poll;
+  // the bell dropdown only renders the latest 5 anyway (recentNotifs slice
+  // below), and the unread_count comes from the server so it's correct
+  // even with the limit (the store filters by partner_id, and the 20 most
+  // recent notifications are the only ones that could plausibly be unread
+  // at any given moment — older notifications are de-facto already read).
+  const notifsQ = useQuery<{ items: Notification[]; count: number; unread_count: number }>({
     queryKey: ["portal-notifications-badge"],
     queryFn: async () => {
-      const r = await fetch("/api/portal/notifications");
-      if (!r.ok) return { items: [], total: 0 } as { items: Notification[]; total: number };
-      return r.json() as Promise<{ items: Notification[]; total: number }>;
+      const r = await fetch("/api/portal/notifications?limit=20");
+      if (!r.ok) return { items: [], count: 0, unread_count: 0 } as { items: Notification[]; count: number; unread_count: number };
+      return r.json() as Promise<{ items: Notification[]; count: number; unread_count: number }>;
     },
     // REALTIME-WS: 30s → 60s. The badge bell + dropdown re-render on every
     // poll tick; 60s halves the load while still surfacing new notifications
@@ -434,8 +443,17 @@ export function PortalShell({
   }, [kycBlocking, view, setView]);
 
   function signOut() {
+    // PORTAL-M9 — Drop wasted setAppMode("crm") (the full-page reload drops
+    // store state anyway, and flipping appMode briefly flashed the CRM UI
+    // before the redirect). Keep setPortalAccess(null) — harmless. Tear
+    // down the realtime WS connection so the logged-out tab doesn't keep
+    // an open socket under a stale identity, then full-page navigate.
     setPortalAccess(null);
-    setAppMode("crm");
+    try {
+      disconnectRealtime();
+    } catch {
+      // socket may not be initialised — ignore.
+    }
     // Full-page navigation to /logout — the most reliable way to clear
     // the session cookie. The /logout page calls the API and redirects.
     window.location.href = "/logout";

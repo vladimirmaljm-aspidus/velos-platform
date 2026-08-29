@@ -42,6 +42,17 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: "Not found." }, { status: 404 });
     }
     const body = await req.json();
+    // ADMIN-H5: if the caller is changing the partner_id, validate that
+    // the new partner belongs to the SAME tenant as the demand itself.
+    // Without this, a tenant admin could move a demand from their own
+    // partner to another tenant's partner (the FK passes, but the
+    // demand would now be cross-tenant-linked). Super-admin bypasses.
+    if (body.partner_id && body.partner_id !== existing.partner_id) {
+      const partner = await auth.store.getPartner(body.partner_id);
+      if (!partner || partner.tenant_id !== existing.tenant_id) {
+        return NextResponse.json({ error: "Not found." }, { status: 404 });
+      }
+    }
     const updated = await auth.store.upsertDemand({ ...body, id, tenant_id: existing.tenant_id });
     await audit(auth.store, auth.user, req, "demand.update", "demand", id, { status: updated.status });
     return NextResponse.json(updated);

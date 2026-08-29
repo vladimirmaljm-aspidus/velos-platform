@@ -775,6 +775,17 @@ export class SupabaseStore implements Store {
     let q = this.sb().from("audit_logs").select("*", { count: "exact" });
     if (tenantId) q = q.eq("tenant_id", tenantId);
     if (params?.search) q = q.or(`action.ilike.%${safeSearch(params.search)}%,username.ilike.%${safeSearch(params.search)}%`);
+    // ADMIN-H12: push the action / username / entity_type / date_from /
+    // date_to filters down to PostgREST so we don't fetch 5,000 rows
+    // then drop most of them in memory. `.ilike` matches the previous
+    // (case-insensitive substring) semantics; `.gte` / `.lte` cover the
+    // date range. date_to is inclusive of the entire day (end-of-day
+    // is computed by the caller).
+    if (params?.action) q = q.ilike("action", `%${params.action}%`);
+    if (params?.username) q = q.ilike("username", `%${params.username}%`);
+    if (params?.entity_type) q = q.ilike("entity_type", `%${params.entity_type}%`);
+    if (params?.date_from) q = q.gte("created_at", params.date_from);
+    if (params?.date_to) q = q.lte("created_at", params.date_to);
     q = q.order("created_at", { ascending: false });
     return paginateQuery<AuditLog>(q, params);
   }
@@ -801,41 +812,23 @@ export class SupabaseStore implements Store {
     return (data?.value as T) ?? null;
   }
   async setSetting(key: string, value: unknown, tenantId: string | null = null): Promise<void> {
-    // Try UPDATE first (faster, avoids duplicate key errors).
-    // The composite key is (tenant_id, key) — but tenant_id can be null,
-    // so we need to handle that case specially.
-    let updateQuery = this.sb()
-      .from("settings")
-      .update({ value, updated_at: new Date().toISOString() })
-      .eq("key", key);
-    if (tenantId === null) {
-      updateQuery = updateQuery.is("tenant_id", null);
-    } else {
-      updateQuery = updateQuery.eq("tenant_id", tenantId);
-    }
-    const { data: updated, error: updErr } = await updateQuery.select("id").maybeSingle();
-    if (updErr) throw updErr;
-    if (updated) return; // Update succeeded
-
-    // Row doesn't exist — INSERT. If duplicate or FK error, try UPDATE
-    // one more time (race condition: another request inserted it).
-    const { error: insErr } = await this.sb()
-      .from("settings")
-      .insert({ key, value, tenant_id: tenantId, updated_at: new Date().toISOString() });
-    if (insErr) {
-      // Retry UPDATE (maybe another request inserted it between our
-      // SELECT and INSERT — a race condition).
-      let retryQuery = this.sb()
+    // Manual upsert: composite key (tenant_id, key) — but tenant_id can be null,
+    // so we look up first then update or insert.
+    const existing = this.sb().from("settings").select("id").eq("key", key);
+    if (tenantId === null) existing.is("tenant_id", null);
+    else existing.eq("tenant_id", tenantId);
+    const { data: found } = await existing.maybeSingle();
+    if (found) {
+      const { error } = await this.sb()
         .from("settings")
         .update({ value, updated_at: new Date().toISOString() })
-        .eq("key", key);
-      if (tenantId === null) {
-        retryQuery = retryQuery.is("tenant_id", null);
-      } else {
-        retryQuery = retryQuery.eq("tenant_id", tenantId);
-      }
-      const { error: retryErr } = await retryQuery;
-      if (retryErr) throw retryErr;
+        .eq("id", (found as any).id);
+      if (error) throw error;
+    } else {
+      const { error } = await this.sb()
+        .from("settings")
+        .insert({ key, value, tenant_id: tenantId, updated_at: new Date().toISOString() });
+      if (error) throw error;
     }
   }
   async getAllSettings(tenantId: string | null = null): Promise<Setting[]> {
@@ -2634,6 +2627,37 @@ export class SupabaseStore implements Store {
   async getUnreadCount(tenantId: string, userId: string): Promise<number> {
     const { count, error } = await this.sb().from("notifications").select("*", { count: "exact", head: true })
       .eq("tenant_id", tenantId).or(`user_id.eq.${userId},user_id.is.null`).eq("read", false);
+    if (error) throw error;
+    return count ?? 0;
+  }
+  /**
+   * AUDIT2-LOGIC-UX M1 — TOTAL unread count for a portal partner (no
+   * limit slice). Mirrors listNotificationsByPartner's portal-safe-type
+   * filter so the count matches what the partner would see if they
+   * paginated through the full list.
+   */
+  async getUnreadCountByPartner(tenantId: string, partnerId: string): Promise<number> {
+    const PORTAL_SAFE_TYPES = [
+      "kyc_submitted", "kyc_approved", "kyc_rejected",
+      "rfq_received", "rfq_quoted",
+      "offer_sent", "offer_accepted", "offer_rejected", "offer_expired",
+      "invoice_sent", "invoice_overdue", "invoice_paid",
+      "proforma_sent",
+      "document_shared",
+      "portal_access_requested", "portal_access_approved", "portal_invite_sent",
+      "portal_message",
+      "marketplace_response_received",
+      "marketplace_response_accepted",
+      "marketplace_response_rejected",
+      "marketplace_message_received",
+    ];
+    const { count, error } = await this.sb()
+      .from("notifications")
+      .select("*", { count: "exact", head: true })
+      .eq("tenant_id", tenantId)
+      .eq("partner_id", partnerId)
+      .in("type", PORTAL_SAFE_TYPES)
+      .eq("read", false);
     if (error) throw error;
     return count ?? 0;
   }

@@ -55,7 +55,11 @@ async function _get(req: NextRequest) {
   if (type) q = q.eq("post_type", type);
   let rows: any[] = [];
   try {
-    const { data } = await q.limit(10000);
+    // MARKET-H30: order by created_at DESC before the cap so the most
+    // recent N posts are taken (see top-countries/route.ts for the full
+    // rationale). The heatmap is a "what's happening now" view, so
+    // biasing toward recent posts is desirable.
+    const { data } = await q.order("created_at", { ascending: false }).limit(10000);
     rows = (data as any[]) || [];
   } catch (e) {
     console.error("[marketplace.intelligence.heatmap] fetch failed:", e);

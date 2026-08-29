@@ -79,6 +79,13 @@ export function PortalMessages() {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [items.length]);
 
+  // PORTAL-M7 — Explicit "mark thread read" on mount only (NOT on every 15s
+  // poll). The GET handler no longer auto-marks read; the user must
+  // deliberately open the thread (mount) for messages to be marked read.
+  useEffect(() => {
+    fetch("/api/portal/messages/read", { method: "POST" }).catch(() => {});
+  }, []);
+
   const [attachment, setAttachment] = useState<{ id: string; filename: string; mime_type: string } | null>(null);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -233,7 +240,13 @@ export function PortalMessages() {
             className="resize-none flex-1 min-h-[52px]"
             disabled={sendMut.isPending}
           />
-          <Button size="lg" onClick={submit} disabled={!canSend} className="h-[52px] px-4">
+          <Button
+            size="lg"
+            onClick={submit}
+            disabled={!canSend}
+            className="h-[52px] px-4"
+            aria-label={t("portal-messages-send")}
+          >
             {sendMut.isPending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
           </Button>
         </div>

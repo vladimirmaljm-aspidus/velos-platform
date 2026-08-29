@@ -20,8 +20,13 @@ export const runtime = "nodejs";
  * by "no log page shows everything needed". The endpoint now supports the
  * same query params as /api/super-admin/audit:
  *   search, action, user, entity_type, date_from, date_to, limit, offset.
- * The store only exposes `search` server-side; the rest are applied in
- * memory (same pattern the super-admin route uses).
+ *
+ * ADMIN-H12: the filters are now pushed down to the store's `listAudit`
+ * (PostgREST `.ilike` / `.gte` / `.lte`) instead of fetching 5,000 rows
+ * and filtering in memory. The 5k cap silently truncated tenants with
+ * more audit history, and the returned `total` was the post-truncate
+ * count, not the real DB count. We now return the actual count from
+ * the DB and let Postgres do the filtering.
  */
 export async function GET(req: NextRequest) {
   try {
@@ -41,42 +46,38 @@ export async function GET(req: NextRequest) {
   const user = url.searchParams.get("user") || undefined;
   const entityType = url.searchParams.get("entity_type") || undefined;
   const dateFrom = url.searchParams.get("date_from") || undefined;
-  const dateTo = url.searchParams.get("date_to") || undefined;
-  // Same cap pattern as /api/super-admin/audit: the store fetches up to
-  // 5,000 rows (so the in-memory filters have enough headroom to actually
-  // slice them) and we page the filtered result.
-  const internalLimit = 5000;
-  const result = await auth.store.listAudit(tid, { search, limit: internalLimit, offset: 0 });
-
-  let items = result.items;
-  if (action) items = items.filter((i) => i.action?.includes(action));
-  if (user) items = items.filter((i) => (i.username || "").toLowerCase().includes(user.toLowerCase()));
-  if (entityType) items = items.filter((i) => (i.entity_type || "").toLowerCase().includes(entityType.toLowerCase()));
-  if (dateFrom) {
-    const t = new Date(dateFrom).getTime();
-    if (!isNaN(t)) items = items.filter((i) => new Date(i.created_at).getTime() >= t);
-  }
+  // date_to is inclusive of the entire day — push to end-of-day so a
+  // user filtering by "today" actually sees today's events. The store
+  // applies `.lte` directly to this final value, so the boundary work
+  // must happen here (and in the super-admin route) before calling it.
+  let dateTo = url.searchParams.get("date_to") || undefined;
   if (dateTo) {
-    // date_to is inclusive of the entire day — push to end-of-day so a
-    // user filtering by "today" actually sees today's events.
     const endOfDay = new Date(dateTo);
     if (!isNaN(endOfDay.getTime())) {
       endOfDay.setHours(23, 59, 59, 999);
-      const t = endOfDay.getTime();
-      items = items.filter((i) => new Date(i.created_at).getTime() <= t);
+      dateTo = endOfDay.toISOString();
     }
   }
 
   const limit = url.searchParams.get("limit") ? Math.min(Number(url.searchParams.get("limit")), 500) : 100;
   const offset = url.searchParams.get("offset") ? Number(url.searchParams.get("offset")) : 0;
-  const total = items.length;
-  const paged = items.slice(offset, offset + limit);
 
-  return NextResponse.json({
-    total,
+  const result = await auth.store.listAudit(tid, {
+    search,
+    action,
+    username: user,
+    entity_type: entityType,
+    date_from: dateFrom,
+    date_to: dateTo,
     limit,
     offset,
-    items: paged.map((item) => ({ ...item, details: redactDetails(item.details, TENANT_REDACT_KEYS) })),
+  });
+
+  return NextResponse.json({
+    total: result.total,
+    limit,
+    offset,
+    items: result.items.map((item) => ({ ...item, details: redactDetails(item.details, TENANT_REDACT_KEYS) })),
   });
   } catch (error: any) {
     console.error("[audit GET]", error);

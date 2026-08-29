@@ -37,7 +37,15 @@ interface ResponseRow {
   created_at: string;
 }
 
-const STATUS_LABEL_KEY: Record<MarketplaceResponseStatus, string> = {
+// MARKET-M5 — widened from `Record<MarketplaceResponseStatus, string>` to
+// `Record<string, string>` so an unrecognised status string (e.g. a
+// future status added by the backend before the i18n keys catch up, or a
+// legacy / corrupted row) doesn't crash the render with a TS index error
+// at runtime — the call site below now falls back to the raw status
+// string when no i18n key is found. The set of known statuses is still
+// exhaustively listed here so the common path keeps producing proper
+// localised labels.
+const STATUS_LABEL_KEY: Record<string, string> = {
   sent: "marketplace-response-status-sent",
   viewed: "marketplace-response-status-viewed",
   accepted: "marketplace-response-status-accepted",
@@ -46,7 +54,7 @@ const STATUS_LABEL_KEY: Record<MarketplaceResponseStatus, string> = {
   countered: "marketplace-response-status-countered",
 };
 
-const STATUS_CLASS: Record<MarketplaceResponseStatus, string> = {
+const STATUS_CLASS: Record<string, string> = {
   sent: "border-transparent bg-sky-500/15 text-sky-700 dark:text-sky-400",
   viewed: "border-transparent bg-muted text-muted-foreground",
   accepted: "border-transparent bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
@@ -98,8 +106,15 @@ export function MarketplaceResponses() {
         <CardContent className="p-4 space-y-3">
           <div className="flex items-start justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2 flex-wrap">
-              <Badge variant="outline" className={STATUS_CLASS[r.status]}>
-                {t(STATUS_LABEL_KEY[r.status])}
+              <Badge variant="outline" className={STATUS_CLASS[r.status] ?? ""}>
+                {/* MARKET-M5 — defensive fallback: if the status isn't in the
+                    STATUS_LABEL_KEY map (or t() returns the raw key because
+                    the locale lacks the entry), fall back to rendering the
+                    raw status string so the badge never shows a missing-
+                    translation key like "marketplace-response-status-foo"
+                    to the user. The raw status is human-readable enough for
+                    an emergency fallback ("sent", "viewed", etc.). */}
+                {t(STATUS_LABEL_KEY[r.status] || r.status) || r.status}
               </Badge>
               {r.is_counter && (
                 <Badge variant="outline" className="text-xs">

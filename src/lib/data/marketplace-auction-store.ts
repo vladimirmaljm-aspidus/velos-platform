@@ -426,6 +426,20 @@ export async function createContract(
     throw new Error("total_quantity must be positive.");
   }
 
+  // FIX-MARKET-2 / fix #6: a post can have AT MOST one contract. The
+  // marketplace data model assumes a 1:1 post→contract relationship
+  // (see getContract() below which uses `limit(1)` and the UI that shows
+  // "the" contract for a post). Without this guard, a post owner could
+  // create multiple overlapping contracts with different delivery
+  // schedules, and getContract() would silently return only the most
+  // recent one — orphaning the rest. Reuse the existing tenant-scoped
+  // getContract() lookup so the duplicate check honours RLS-equivalent
+  // isolation.
+  const existing = await getContract(data.post_id, tenantId);
+  if (existing) {
+    throw new Error("A contract already exists for this post.");
+  }
+
   const { data: inserted, error: insErr } = await sb
     .from("marketplace_contracts")
     .insert({
@@ -738,6 +752,11 @@ export async function getMarketPriceStats(
   if (!productName || productName.trim().length === 0) return result;
 
   // Recent sell posts (active OR closed in last 180 days) with a price.
+  // FIX-MARKET-2 / fix #1: the previous `.or(status.eq.active,created_at.gte.since)`
+  // accepted ANY post created in the last 180 days regardless of status, so
+  // draft/cancelled/flagged/expired posts were leaking into the sample. The
+  // OR is now two ANDed clauses so only `active` posts OR `closed` posts
+  // newer than the 180-day window are included.
   const since = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString();
   const { data: posts, error: pErr } = await sb
     .from("marketplace_posts")
@@ -746,7 +765,7 @@ export async function getMarketPriceStats(
     .eq("post_type", "sell")
     .ilike("product_name", productName.trim())
     .not("target_price", "is", null)
-    .or(`status.eq.active,created_at.gte.${since}`);
+    .or(`and(status.eq.active),and(status.eq.closed,created_at.gte.${since})`);
   if (pErr) throw pErr;
   const postRows = (posts as Array<{ target_price: number; currency?: string }>) || [];
 

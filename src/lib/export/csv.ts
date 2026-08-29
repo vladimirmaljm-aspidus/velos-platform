@@ -12,9 +12,26 @@ export function toCSV(rows: Record<string, unknown>[], columns?: string[]): stri
   const escape = (val: unknown): string => {
     if (val === null || val === undefined) return "";
     const s = typeof val === "object" ? JSON.stringify(val) : String(val);
+    // FIX-AUDIT2-CRIT / C3 — CSV-injection protection. The previous
+    // implementation only quoted cells containing `"`, `,`, `\n`, `\r` —
+    // it did NOT prefix cells starting with a formula trigger (`=`,
+    // `+`, `-`, `@`, tab, CR) with a single quote. Excel / Sheets /
+    // LibreOffice interpret such leading chars as a formula, so a
+    // malicious partner with `name="=HYPERLINK(...)"` could execute
+    // arbitrary formulas in the admin's spreadsheet when the admin
+    // exported the partners CSV and double-clicked the cell.
+    //
+    // The same single-quote-prefix pattern is already applied to the
+    // audit-view.tsx export (lines 145-155); the shared toCSV here was
+    // missed. This helper backs 5 export routes (invoices, products,
+    // partners, offers, generic), so all 5 are now patched.
+    let out = s;
+    if (/^[=+\-@\t\r]/.test(out)) {
+      out = `'${out}`;
+    }
     // Escape quotes by doubling, wrap in quotes if contains comma/quote/newline
-    if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-    return s;
+    if (/[",\n\r]/.test(out)) return `"${out.replace(/"/g, '""')}"`;
+    return out;
   };
 
   const header = cols.map(escape).join(",");

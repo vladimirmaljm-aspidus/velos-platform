@@ -1,7 +1,7 @@
 // DEPRECATED: This route has no active UI consumers. Kept for potential future use.
 // If you're building a new feature, consider whether this integration is still needed.
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, audit } from "@/lib/api/helpers";
+import { requireAuth, audit, sanitizeError } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
 
@@ -165,6 +165,9 @@ export async function GET(req: NextRequest) {
       matches: matches.slice(0, 50), // Top 50 matches
     });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 502 });
+    // SEC-L4 — never leak raw e.message. OFAC / sanctions upstream
+    // error bodies can include internal fetch URLs / payload hints.
+    console.error("[sanctions]", e);
+    return NextResponse.json({ error: sanitizeError(e) }, { status: 502 });
   }
 }

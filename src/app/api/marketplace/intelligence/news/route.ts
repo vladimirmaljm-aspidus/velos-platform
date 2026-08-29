@@ -93,13 +93,38 @@ async function _get(req: NextRequest) {
       query,
       num,
     });
-    const items: NewsItem[] = (results || []).map((r: any, i: number) => ({
-      title: r.name || r.title || `Result ${i + 1}`,
-      url: r.url || "",
-      snippet: r.snippet || "",
-      source: r.host_name || new URL(r.url || "https://example.com").hostname,
-      date: r.date || "",
-    }));
+    // MARKET-M13 — filter out items with no URL. The previous code
+    // assigned `source: r.host_name || new URL(r.url || "https://example.com").hostname`
+    // — items where the search SDK returned no `url` got the literal
+    // string "example.com" as their source, and an empty `url` field,
+    // which produced dead cards in the news panel (the "Open source"
+    // link pointed to nowhere). Now we drop those rows entirely so
+    // the panel only renders items the user can actually click
+    // through to. The defensive `new URL(r.url)` fallback for
+    // `source` is no longer reachable with an empty url — but keep
+    // the try/catch around it because `r.url` could be a malformed
+    // string that the URL constructor rejects (we'd rather drop the
+    // row than 500 the whole feed).
+    const items: NewsItem[] = (results || [])
+      .map((r: any): NewsItem | null => {
+        if (!r.url) return null;
+        let host = r.host_name || "";
+        if (!host) {
+          try {
+            host = new URL(r.url).hostname;
+          } catch {
+            return null;
+          }
+        }
+        return {
+          title: r.name || r.title || r.url,
+          url: r.url,
+          snippet: r.snippet || "",
+          source: host,
+          date: r.date || "",
+        };
+      })
+      .filter((x: NewsItem | null): x is NewsItem => x !== null);
     NEWS_CACHE.set(cacheKey, { items, fetchedAt: Date.now() });
     return NextResponse.json({
       items,

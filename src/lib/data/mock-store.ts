@@ -426,6 +426,30 @@ export class MockStore implements Store {
   async listAudit(_tenantId: string, params?: ListParams): Promise<ListResult<AuditLog>> {
     let items = [...mock.auditLogs].sort((a, b) => b.created_at.localeCompare(a.created_at));
     if (params?.search) items = items.filter((a) => matchesSearch(`${a.action} ${a.username || ""}`, params.search));
+    // ADMIN-H12: in-memory mirror of the server-side filters the
+    // Supabase store pushes down. Mock store is dev-only, but should
+    // still honour the same filter contract so dev tests don't pass
+    // here and fail in production.
+    if (params?.action) {
+      const a = params.action.toLowerCase();
+      items = items.filter((x) => (x.action || "").toLowerCase().includes(a));
+    }
+    if (params?.username) {
+      const u = params.username.toLowerCase();
+      items = items.filter((x) => (x.username || "").toLowerCase().includes(u));
+    }
+    if (params?.entity_type) {
+      const e = params.entity_type.toLowerCase();
+      items = items.filter((x) => (x.entity_type || "").toLowerCase().includes(e));
+    }
+    if (params?.date_from) {
+      const t = new Date(params.date_from).getTime();
+      if (!isNaN(t)) items = items.filter((x) => new Date(x.created_at).getTime() >= t);
+    }
+    if (params?.date_to) {
+      const t = new Date(params.date_to).getTime();
+      if (!isNaN(t)) items = items.filter((x) => new Date(x.created_at).getTime() <= t);
+    }
     return paginate(items, params);
   }
   async appendAudit(entry: Omit<AuditLog, "id" | "created_at">): Promise<AuditLog> {
@@ -1336,6 +1360,18 @@ export class MockStore implements Store {
   }
   async getUnreadCount(tenantId: string, userId: string): Promise<number> {
     return mock.notifications.filter((n) => n.tenant_id === tenantId && !n.read && (n.user_id === null || n.user_id === userId)).length;
+  }
+  /**
+   * AUDIT2-LOGIC-UX M1 — TOTAL unread count for a portal partner. Mock
+   * implementation just filters the in-memory list (parity with
+   * listNotificationsByPartner's portal-safe-type filter is approximated
+   * by the partner_id filter — the mock store doesn't enforce portal-safe
+   * types).
+   */
+  async getUnreadCountByPartner(tenantId: string, partnerId: string): Promise<number> {
+    return mock.notifications.filter(
+      (n) => n.tenant_id === tenantId && n.partner_id === partnerId && !n.read,
+    ).length;
   }
   async getNotificationById(id: string): Promise<Notification | null> {
     return mock.notifications.find((n) => n.id === id) || null;

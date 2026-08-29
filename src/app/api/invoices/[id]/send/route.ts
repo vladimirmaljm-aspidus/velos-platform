@@ -5,8 +5,29 @@ import { generatePdf } from "@/lib/pdf/generator";
 import { notify } from "@/lib/notif/helper";
 import { validateStatusTransition } from "@/lib/api/status-validator";
 import { assertNoSoDViolation } from "@/lib/permissions/sod-matrix";
+// AUDIT2-LOGIC-UX H10 — rate-limit + idempotency + state guard for
+// invoice send. Previously an admin could re-send an already-paid /
+// cancelled invoice (the email would fire even though the status was
+// terminal) and overwrite sent_at on every re-send (losing the
+// original send timestamp). Now: (1) state guard — refuse send for
+// paid / cancelled; (2) per-(invoice-id) 60s idempotency; (3) per-
+// (invoice-id) 5-per-15-min rate limit; (4) only stamp sent_at on the
+// FIRST successful send (parity with the offer send route).
+import { checkRateLimit } from "@/lib/security/rate-limiter";
 
 export const runtime = "nodejs";
+
+// 60s minimum interval between sends to the SAME invoice. Matches the
+// pattern from /api/portal-access/[id]/invite — generous for a legit
+// "I want to re-send" intent, tight enough to stop a runaway loop.
+const INVOICE_RESEND_MIN_INTERVAL_MS = 60 * 1000;
+
+// Final / non-sendable invoice states. Sending an invoice in any of
+// these would email a stale document to the partner — a paid invoice
+// (already settled, the partner has the receipt), or a cancelled one
+// (voided, no longer owed). Send is only meaningful from draft | sent
+// | viewed | partial | overdue.
+const TERMINAL_INVOICE_STATES = new Set(["paid", "cancelled"]);
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireAuth(req);
@@ -56,6 +77,54 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         approve_perm: "invoices.send",
       });
       if (sod) return sod;
+    }
+
+    // AUDIT2-LOGIC-UX H10 — state guard. Refuse to send an invoice that's
+    // in a terminal / non-sendable state. Previously an admin could
+    // re-send a paid invoice (already settled, partner has the receipt)
+    // or a cancelled one (voided, no longer owed) — the status stayed
+    // put but the PDF was still emailed, spamming the recipient with a
+    // stale document. Super-admin bypasses so they can correct bad data.
+    if (!auth.isSuperAdmin && invoice.status && TERMINAL_INVOICE_STATES.has(invoice.status)) {
+      return NextResponse.json(
+        { error: `Cannot send a ${invoice.status} invoice.` },
+        { status: 400 },
+      );
+    }
+
+    // AUDIT2-LOGIC-UX H10 — idempotency guard. If this invoice was sent
+    // within the last INVOICE_RESEND_MIN_INTERVAL_MS, refuse to re-send.
+    // Per-(invoice-id) (not per-recipient) — the audit log shows a
+    // single "send_email" event regardless of recipient. Super-admin
+    // bypasses.
+    if (!auth.isSuperAdmin && invoice.sent_at) {
+      const lastSendMs = new Date(invoice.sent_at).getTime();
+      const elapsedMs = Date.now() - lastSendMs;
+      if (Number.isFinite(lastSendMs) && elapsedMs < INVOICE_RESEND_MIN_INTERVAL_MS) {
+        const retryAfterSec = Math.ceil((INVOICE_RESEND_MIN_INTERVAL_MS - elapsedMs) / 1000);
+        return NextResponse.json(
+          {
+            error: `This invoice was sent ${elapsedMs < 60_000 ? "just now" : Math.floor(elapsedMs / 1000) + "s ago"}. Please wait ${retryAfterSec}s before re-sending to avoid spamming the recipient.`,
+            retry_after: retryAfterSec,
+            already_sent: true,
+          },
+          { status: 429, headers: { "Retry-After": String(retryAfterSec) } },
+        );
+      }
+    }
+
+    // AUDIT2-LOGIC-UX H10 — per-invoice-id rate limit (defense-in-depth).
+    // 5 sends per 15 min per invoice. Idempotency guard is primary;
+    // this is the backstop. Super-admin bypasses.
+    if (!auth.isSuperAdmin) {
+      const rl = await checkRateLimit(`invoice-send:${id}`, 5, 15 * 60 * 1000);
+      if (!rl.allowed) {
+        const retryAfterSec = Math.ceil((rl.retryAfter ?? 60_000) / 1000);
+        return NextResponse.json(
+          { error: "Too many sends for this invoice recently. Please try again later.", retry_after: retryAfterSec },
+          { status: 429, headers: { "Retry-After": String(retryAfterSec) } },
+        );
+      }
     }
 
     // Fetch partner for email info / portal notification
@@ -113,7 +182,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             return NextResponse.json({ error: t.error }, { status: 400 });
           }
         }
-        await auth.store.upsertInvoice({ id, status: newStatus, sent_at: new Date().toISOString() } as any);
+        // AUDIT2-LOGIC-UX H10 — only stamp sent_at on FIRST successful send.
+        // The previous line unconditionally wrote `sent_at: now` on every
+        // re-send, overwriting the original send timestamp and making the
+        // "Sent N days ago" badge in the UI jump back to "Sent just now"
+        // every time the admin re-sent. Parity with the offer send route
+        // (line 114 there: `if (!offer.sent_at) updateFields.sent_at = ...`).
+        const nowIso = new Date().toISOString();
+        const patch: Record<string, unknown> = { id, status: newStatus };
+        if (!invoice.sent_at) {
+          patch.sent_at = nowIso;
+        }
+        await auth.store.upsertInvoice(patch as any);
       } catch (e) { console.warn("[invoice.send] status bump failed:", e); }
     }
 

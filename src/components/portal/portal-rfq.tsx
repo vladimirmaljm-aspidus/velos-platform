@@ -573,8 +573,8 @@ export function PortalRfq() {
 function RfqCard({ rfq }: { rfq: PortalRfq }) {
   const [expanded, setExpanded] = useState(false);
   const t = useT();
-  const meta = STATUS_META[rfq.status];
-  const StatusIcon = meta.icon;
+  const meta = STATUS_META[rfq.status] ?? STATUS_META.pending;
+  const StatusIcon = meta?.icon ?? Clock;
 
   return (
     <Card

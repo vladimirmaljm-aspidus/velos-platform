@@ -18,7 +18,7 @@ function getAuthUser(auth: AuthContext | ApiKeyAuthContext) {
   return { id: `api:${auth.apiKeyId}`, username: auth.apiKeyName, tenant_id: auth.tenantId };
 }
 
-type InvoiceBulkAction = "send" | "mark_paid" | "mark_sent" | "cancel" | "delete";
+type InvoiceBulkAction = "send" | "mark_sent" | "cancel" | "delete";
 
 interface ResultRow {
   id: string;
@@ -29,13 +29,19 @@ interface ResultRow {
 
 /**
  * POST /api/invoices/bulk
- * Body: { ids: string[], action: "send" | "mark_paid" | "mark_sent" | "cancel" | "delete" }
+ * Body: { ids: string[], action: "send" | "mark_sent" | "cancel" | "delete" }
  *
  * Mirrors /api/offers/bulk but for invoices. The actions exposed here are
  * the safe subset that does NOT require an email round-trip (use
  * /api/invoices/[id]/send for that). "send" here is a status-only promotion
  * to "sent" (no email); the list-view bulk action bar treats the
  * per-row "send" (with email) as a separate action.
+ *
+ * AUDIT2-LOGIC-UX C5 — the "mark_paid" action was REMOVED from this bulk
+ * route. Setting status="paid" here bypassed the record-payment flow's bank
+ * transaction, commission cascade, journal entry, and payment-method /
+ * reference capture — a financial audit-trail disaster. Paid invoices
+ * must now flow through POST /api/invoices/[id]/record-payment.
  *
  * Caps:
  *  - Max 100 IDs per call.
@@ -74,7 +80,17 @@ export async function POST(req: NextRequest) {
     if (ids.length > 100) {
       return NextResponse.json({ error: "Maximum 100 items per bulk operation." }, { status: 400 });
     }
-    const validActions: InvoiceBulkAction[] = ["send", "mark_paid", "mark_sent", "cancel", "delete"];
+    // AUDIT2-LOGIC-UX C5 — refuse "mark_paid" up-front with an actionable
+    // message that points the caller at the record-payment endpoint. This
+    // catches both the "action: 'mark_paid'" string and any mis-spelled
+    // variant before we hit the validActions check below.
+    if ((action as string | undefined) === "mark_paid") {
+      return NextResponse.json(
+        { error: "Bulk mark_paid is disabled — use per-row record-payment." },
+        { status: 400 },
+      );
+    }
+    const validActions: InvoiceBulkAction[] = ["send", "mark_sent", "cancel", "delete"];
     if (!action || !validActions.includes(action)) {
       return NextResponse.json(
         { error: `Invalid action. Must be one of: ${validActions.join(", ")}.` },
@@ -86,7 +102,6 @@ export async function POST(req: NextRequest) {
     const statusForAction: Record<Exclude<InvoiceBulkAction, "delete">, string> = {
       send: "sent",
       mark_sent: "sent",
-      mark_paid: "paid",
       cancel: "cancelled",
     };
 
@@ -149,9 +164,7 @@ export async function POST(req: NextRequest) {
         if ((action === "send" || action === "mark_sent") && !invoice.sent_at) {
           patch.sent_at = new Date().toISOString();
         }
-        if (action === "mark_paid" && !invoice.paid_at) {
-          patch.paid_at = new Date().toISOString();
-        }
+        // AUDIT2-LOGIC-UX C5 — bulk mark_paid removed; record-payment only.
 
         const updated = await auth.store.upsertInvoice(patch as Parameters<typeof auth.store.upsertInvoice>[0]);
         results.push({ id, success: true, status: updated.status });

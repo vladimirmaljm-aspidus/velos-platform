@@ -60,6 +60,9 @@ const STATUS_LABEL_KEYS: Record<ProformaStatus, string> = {
   accepted: "fin-status-accepted",
   paid: "fin-status-paid",
   expired: "fin-status-expired",
+  // AUDIT2-LOGIC-UX H1 — admin sees "Rejected" badge (was previously
+  // collapsed into "Expired" by the portal respond route).
+  rejected: "fin-status-rejected",
 };
 
 // Status-specific Tailwind class (used by both StatusBadge and filter dropdown).
@@ -71,6 +74,8 @@ const STATUS_STYLES: Record<ProformaStatus, string> = {
   accepted: "border-transparent bg-emerald-600 text-white",
   paid: "border-transparent bg-emerald-700 text-white",
   expired: "border-transparent bg-muted text-muted-foreground",
+  // AUDIT2-LOGIC-UX H1
+  rejected: "border-transparent bg-rose-600 text-white",
 };
 
 function StatusBadge({ status }: { status: ProformaStatus }) {

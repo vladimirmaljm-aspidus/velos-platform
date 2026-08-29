@@ -69,7 +69,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       );
     }
 
-    const newStatus = decision === "accept" ? "accepted" : "expired";
+    // AUDIT2-LOGIC-UX H1 — use the proper "rejected" status for a Reject
+    // decision (was "expired", which conflated an active rejection with
+    // a timeout). The state machine in status-validator.ts now allows
+    // sent|viewed → rejected.
+    const newStatus = decision === "accept" ? "accepted" : "rejected";
 
     // Validate the status transition.
     const transitionError = validateStatusTransition("proforma", currentStatus, newStatus);

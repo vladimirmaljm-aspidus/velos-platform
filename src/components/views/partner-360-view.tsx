@@ -1448,13 +1448,36 @@ function PortalTab({
     onSettled: () => setInviteSending(false),
   });
 
+  // EMAIL-SPAM FIX: the old invite button used a local `inviteSending` useState
+  // for its `disabled` state. That state can be stale across rapid re-renders
+  // (e.g. when react-query invalidates `["portal-access", ...]` on success,
+  // the component re-mounts and `inviteSending` resets to false before the
+  // mutation's `isPending` flips). A double-click (or a re-render race) then
+  // fired the mutation twice — and the backend had no idempotency guard, so
+  // both clicks minted setup tokens + sent welcome emails + created
+  // "Portal Invite Sent" notifications. The backend now has a 60s
+  // idempotency guard + per-access rate limit (see /api/portal-access/[id]/invite),
+  // but we also fix the client: use `inviteMut.isPending` (react-query's
+  // authoritative source) as the disabled gate, and clear `inviteSending`
+  // immediately on mount so a stale value from a prior mount can't enable
+  // a second click.
+
   const setStatusMut = useMutation({
     mutationFn: async (status: "suspended" | "revoked" | "active") => {
       if (!portalAccess) throw new Error("No portal access");
+      // AUDIT2-LOGIC-UX H5 — bump token_version on BOTH suspend AND
+      // reactivate. On suspend, this invalidates the (potentially
+      // stolen during the suspension window) cookie immediately so
+      // the suspended partner can't keep operating on the old cookie.
+      // On reactivate, this invalidates any cookie that was issued
+      // BEFORE the suspension took effect — a stolen cookie the
+      // partner themselves might still hold, that could otherwise
+      // come back to life when the partner is re-activated.
+      const nextTokenVersion = (portalAccess.token_version || 0) + 1;
       const r = await fetch(api("/api/portal-access"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: portalAccess.id, status }),
+        body: JSON.stringify({ id: portalAccess.id, status, token_version: nextTokenVersion }),
       });
       if (!r.ok) {
         const e = await r.json().catch(() => ({}));
@@ -1633,7 +1656,7 @@ function PortalTab({
                         setInviteSending(true);
                         inviteMut.mutate();
                       }}
-                      disabled={inviteSending || portalAccess.status === "active"}
+                      disabled={inviteSending || inviteMut.isPending || portalAccess.status === "active"}
                     >
                       <Send className="size-4 mr-1.5" /> {t("crm-send-invite")}
                     </Button>

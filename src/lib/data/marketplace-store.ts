@@ -391,6 +391,24 @@ export async function createMarketplaceResponse(
     throw new Error("Post has expired.");
   }
 
+  // FIX-MARKET-2 / fix #3: cap a single partner to 5 responses per post per
+  // 24h window. Without this guard, a malicious responder could spam the
+  // post owner's notification queue with thousands of offers. The API
+  // route ALSO applies a 10/min rate limit per partner (defense-in-depth)
+  // but this per-post cap is the real spam gate because it cannot be
+  // bypassed by IP rotation.
+  const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const { count: recentCount, error: countErr } = await sb
+    .from("marketplace_responses")
+    .select("id", { count: "exact", head: true })
+    .eq("post_id", data.post_id)
+    .eq("partner_id", partnerId)
+    .gte("created_at", since24h);
+  if (countErr) throw countErr;
+  if ((recentCount ?? 0) >= 5) {
+    throw new Error("You have already responded 5 times to this post in the last 24 hours.");
+  }
+
   const payload = {
     post_id: data.post_id,
     tenant_id: tenantId,
@@ -582,16 +600,21 @@ export async function createNegotiation(
     throw new Error("Post not found.");
   }
 
-  // Look for an existing active negotiation between these two partners on
-  // this post (either direction — partner_id_a/b are interchangeable
-  // depending on who initiated).
+  // AUDIT2-LOGIC-UX H2 — duplicate suppression must check BOTH directions.
+  // The previous query only matched negotiations where the caller was
+  // partner_id_a AND the other party was partner_id_b. A partner Y could
+  // open a duplicate negotiation with X after X already opened one with
+  // Y (the existing negotiation had X=a, Y=b, so the Y-initiated query
+  // Y=a, X=b matched zero rows). The PostgREST `or` below covers both
+  // directions while keeping the same post_id + status filters.
   const { data: existing } = await sb
     .from("marketplace_negotiations")
     .select("*")
     .eq("post_id", data.post_id)
-    .eq("partner_id_a", partnerId)
-    .eq("partner_id_b", data.partner_id_b)
     .eq("status", "active")
+    .or(
+      `and(partner_id_a.eq.${partnerId},partner_id_b.eq.${data.partner_id_b}),and(partner_id_a.eq.${data.partner_id_b},partner_id_b.eq.${partnerId})`,
+    )
     .maybeSingle();
   if (existing) return existing as MarketplaceNegotiation;
 

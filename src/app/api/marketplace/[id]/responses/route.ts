@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requireKycApproved } from "@/lib/portal/kyc-gate";
 import {
   listMarketplaceResponses,
   createMarketplaceResponse,
@@ -11,6 +12,7 @@ import { getStore } from "@/lib/data/store";
 import { notify } from "@/lib/notif/helper";
 import { triggerWebhooks } from "@/lib/webhooks/deliver";
 import { withApm } from "@/lib/monitoring/apm";
+import { checkRateLimit } from "@/lib/security/rate-limiter";
 
 export const runtime = "nodejs";
 
@@ -61,7 +63,34 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // AUDIT2-LOGIC-UX H7 — gate marketplace POST on KYC approval. A portal
+  // client with unapproved KYC must not be able to create marketplace
+  // responses (browse GET stays open). requireKycApproved returns null
+  // when allowed; a 403/503 NextResponse when blocked.
+  const _kycBlock = await requireKycApproved(access);
+  if (_kycBlock) return _kycBlock;
   const { id } = await ctx.params;
+
+  // FIX-MARKET-2 / fix #3: per-partner rate limit on response creation —
+  // 10 responses per 60s. The store additionally caps at 5 per post per 24h,
+  // so this gate mainly protects against a script that fires one request
+  // per post across many posts in a tight loop. Fails open if the rate-limiter
+  // RPC is unavailable (defense-in-depth, not the primary auth gate).
+  const rl = await checkRateLimit(`mkt:resp:${access.partner_id}`, 10, 60_000);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      {
+        error: "You are responding to marketplace posts too quickly. Please slow down.",
+        retry_after_seconds: rl.retryAfter ? Math.ceil(rl.retryAfter / 1000) : 60,
+      },
+      {
+        status: 429,
+        headers: rl.retryAfter
+          ? { "Retry-After": String(Math.ceil(rl.retryAfter / 1000)) }
+          : undefined,
+      },
+    );
+  }
 
   let body;
   try {
@@ -177,8 +206,9 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
   } catch (e: any) {
     console.error("[marketplace.response.create]", e);
     const msg = e?.message || "Failed to create response.";
-    // Surface "post not found" / "post expired" as 400 instead of 500.
-    const status = /not found|expired|not active|own post/i.test(msg) ? 400 : 500;
+    // Surface "post not found" / "post expired" / "not active" / "own post" /
+    // "5 times in the last 24 hours" (rate cap from the store) as 400, not 500.
+    const status = /not found|expired|not active|own post|last 24 hours/i.test(msg) ? 400 : 500;
     return NextResponse.json({ error: msg }, { status });
   }
 }

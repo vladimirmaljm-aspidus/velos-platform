@@ -61,7 +61,14 @@ async function _get(req: NextRequest) {
   if (category) q = q.ilike("product_category", category);
   let rows: any[] = [];
   try {
-    const { data } = await q.limit(5000);
+    // MARKET-H30: order by created_at DESC before the cap so the most
+    // recent N posts are taken. Without an explicit order, PostgREST
+    // returns rows in an unspecified order, so the 5000-row cap would
+    // silently take an arbitrary (and inconsistent across calls) sample.
+    // The bias toward recent posts is intentional + consistent — a
+    // dashboard showing "top countries" should weight recent activity
+    // more than months-old activity anyway.
+    const { data } = await q.order("created_at", { ascending: false }).limit(5000);
     rows = (data as any[]) || [];
   } catch (e) {
     console.error("[marketplace.intelligence.top-countries] fetch failed:", e);

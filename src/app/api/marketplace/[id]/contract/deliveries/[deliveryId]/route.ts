@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requireKycApproved } from "@/lib/portal/kyc-gate";
 import { updateContractDelivery } from "@/lib/data/marketplace-auction-store";
 import { getSupabase } from "@/lib/supabase/client";
 import { audit } from "@/lib/api/helpers";
@@ -21,6 +22,9 @@ async function _put(
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // AUDIT2-LOGIC-UX H7 — gate delivery update on KYC approval.
+  const _kycBlock = await requireKycApproved(access);
+  if (_kycBlock) return _kycBlock;
   const { id, deliveryId } = await ctx.params;
 
   let body;

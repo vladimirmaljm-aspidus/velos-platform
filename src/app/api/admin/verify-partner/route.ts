@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireSuperAdmin } from "@/lib/api/helpers";
+import { requireSuperAdmin, sanitizeError } from "@/lib/api/helpers";
 import { updateVerificationLevel } from "@/lib/data/marketplace-profile-store";
 import { getSupabase } from "@/lib/supabase/client";
 import { audit } from "@/lib/api/helpers";
@@ -86,7 +86,11 @@ async function _post(req: NextRequest) {
     return NextResponse.json({ profile: updated });
   } catch (e: any) {
     console.error("[admin.verify-partner]", e);
-    return NextResponse.json({ error: e.message || "Failed to update verification." }, { status: 500 });
+    // SEC-L4 — never leak raw e.message. The DB error from the
+    // verification-level update can include the `marketplace_profiles`
+    // table / column / constraint names. Sanitize the message before
+    // returning it to the caller.
+    return NextResponse.json({ error: sanitizeError(e) || "Failed to update verification." }, { status: 500 });
   }
 }
 

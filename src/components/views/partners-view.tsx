@@ -724,13 +724,17 @@ export function PartnersView() {
           {relatedCounts.data && relatedTotal > 0 && (
             <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 space-y-2 text-sm">
               <p className="font-medium text-destructive">
-                This will also orphan {relatedCounts.data.deals} deal(s), {relatedCounts.data.offers} offer(s), and {relatedCounts.data.invoices} invoice(s) linked to {deletePartnerName || "this partner"}.
+                {t("crm-delete-partner-orphan-warning")
+                  .replace("${deals}", String(relatedCounts.data.deals))
+                  .replace("${offers}", String(relatedCounts.data.offers))
+                  .replace("${invoices}", String(relatedCounts.data.invoices))
+                  .replace("${name}", deletePartnerName || t("crm-delete-partner-title").replace("?", "").toLowerCase())}
               </p>
               <p className="text-muted-foreground">
-                Those records will remain in the system but lose their partner reference. To proceed, type the partner name <span className="font-mono font-semibold">{deletePartnerName}</span> below.
+                {t("crm-delete-partner-type-confirm").replace("${name}", deletePartnerName)}
               </p>
               <Input
-                placeholder="Type the partner name to confirm"
+                placeholder={t("crm-delete-partner-type-confirm").replace("${name}", deletePartnerName)}
                 value={deleteConfirmText}
                 onChange={(e) => setDeleteConfirmText(e.target.value)}
                 aria-label="Type partner name to confirm delete"
@@ -738,7 +742,7 @@ export function PartnersView() {
             </div>
           )}
           {relatedCounts.isLoading && (
-            <p className="text-xs text-muted-foreground">Checking related records…</p>
+            <p className="text-xs text-muted-foreground">{t("crm-delete-partner-checking")}</p>
           )}
           <AlertDialogFooter>
             <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>

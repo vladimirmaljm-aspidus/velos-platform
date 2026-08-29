@@ -91,10 +91,21 @@ const SCRYPT_P = 1;
  */
 function getKey(salt: Buffer): Buffer {
   const passphrase =
-    process.env.FIELD_ENCRYPTION_KEY ||
-    process.env.SECRET_KEY ||
-    "fallback";
-  return scryptSync(passphrase, salt, KEY_LENGTH, {
+    process.env.FIELD_ENCRYPTION_KEY || process.env.SECRET_KEY;
+  // SEC-M4: in production we MUST NOT silently fall back to the literal
+  // string "fallback" — that would encrypt every PII column with a
+  // publicly-known, non-secret passphrase, defeating the entire point
+  // of field-level encryption. Throw so a misconfigured production
+  // deploy fails loudly on the first encrypt/decrypt instead of
+  // shipping a weak key. Dev/test (no NODE_ENV=production) keeps the
+  // "fallback" string so the seed/local flow still works without env.
+  if (!passphrase && process.env.NODE_ENV === "production") {
+    throw new Error(
+      "FIELD_ENCRYPTION_KEY or SECRET_KEY required in production for field-level encryption",
+    );
+  }
+  const finalPassphrase = passphrase || "fallback";
+  return scryptSync(finalPassphrase, salt, KEY_LENGTH, {
     N: SCRYPT_N,
     r: SCRYPT_R,
     p: SCRYPT_P,

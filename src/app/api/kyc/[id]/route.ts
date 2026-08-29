@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, audit } from "@/lib/api/helpers";
 import { listPortalUploads } from "@/lib/portal/uploads";
+import { validateStatusTransition } from "@/lib/api/status-validator";
 
 export const runtime = "nodejs";
 
@@ -69,6 +70,26 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+  }
+  // ADMIN-H11: enforce the KYC status state machine. Without this an
+  // admin could push a submission directly from `rejected` → `approved`
+  // (skipping the mandatory resubmit + re-review cycle) or move an
+  // `approved` record back to `draft` (silent reversal of a positive
+  // compliance decision). Super-admin bypasses — they need to be able
+  // to correct bad data (e.g. a mis-clicked `rejected` approval).
+  if (
+    !auth.isSuperAdmin &&
+    body.status &&
+    body.status !== existing.status
+  ) {
+    const transition = validateStatusTransition(
+      "kyc",
+      existing.status,
+      body.status,
+    );
+    if (!transition.valid) {
+      return NextResponse.json({ error: transition.error }, { status: 400 });
+    }
   }
   const updated = await auth.store.upsertKycSubmission({ ...body, id, tenant_id: existing.tenant_id });
   await audit(auth.store, auth.user, req, "kyc.update", "kyc_submission", id, { status: updated.status });

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Card,
   CardContent,
@@ -640,6 +640,9 @@ function KycWizard({
   onUnlockReset?: () => void;
 }) {
   const t = useT();
+  // PORTAL-M5 — QueryClient to invalidate cached KYC/profile queries on
+  // submit so navigating away+back reflects the new submitted status.
+  const qc = useQueryClient();
   // Build form state from initial submission (or empty defaults).
   const [form, setForm] = useState<FormState>(() => ({
     entity_type: initial?.entity_type,
@@ -791,6 +794,10 @@ function KycWizard({
       const result: KycSubmission = await r.json();
       setSubmitted(result);
       toast.success(t("portal-kyc-toast-submitted"));
+      // PORTAL-M5 — Invalidate cached queries so navigating away+back shows
+      // the new submitted status rather than the stale draft state.
+      qc.invalidateQueries({ queryKey: ["portal-kyc"] });
+      qc.invalidateQueries({ queryKey: ["portal-profile"] });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Submission failed");
     } finally {
@@ -1878,6 +1885,9 @@ function StepReview({
 
 function SuccessState({ submission }: { submission: KycSubmission }) {
   const t = useT();
+  // PORTAL-M5 — Use query refetch (not full page reload) so the user stays
+  // in the SPA and the new submitted status is fetched in-place.
+  const qc = useQueryClient();
   return (
     <div className="max-w-2xl mx-auto">
       <Card className="border-emerald-300/40 shadow-soft-lg overflow-hidden">
@@ -1906,7 +1916,10 @@ function SuccessState({ submission }: { submission: KycSubmission }) {
         </div>
       </Card>
       <div className="mt-4 text-center">
-        <Button variant="outline" onClick={() => window.location.reload()}>
+        <Button
+          variant="outline"
+          onClick={() => qc.refetchQueries({ queryKey: ["portal-kyc"] })}
+        >
           {t("portal-kyc-success-refresh")}
         </Button>
       </div>

@@ -30,6 +30,17 @@ export interface ListParams {
   limit?: number;
   offset?: number;
   filters?: Record<string, string | undefined>;
+  // ADMIN-H12: server-side audit log filters. Previously the audit
+  // endpoints fetched 5,000 rows and filtered in memory, which fails
+  // on tenants with more than 5k audit entries (silent truncation +
+  // wrong counts). These fields are honoured by SupabaseStore.listAudit
+  // (and the in-memory fallbacks in MockStore / PrismaStore). Other
+  // list methods ignore them — they only consume `search` + `filters`.
+  action?: string;
+  username?: string;
+  entity_type?: string;
+  date_from?: string;
+  date_to?: string;
 }
 
 export interface ListResult<T> {
@@ -326,6 +337,14 @@ export interface Store {
   // ---- notifications ----
   listNotifications(tenantId: string, userId?: string, unreadOnly?: boolean): Promise<Notification[]>;
   listNotificationsByPartner(tenantId: string, partnerId: string): Promise<Notification[]>;
+  /**
+   * AUDIT2-LOGIC-UX M1 — return the TOTAL unread count for a portal
+   * partner (no `limit` slice). The portal /notifications route computes
+   * `unread_count` from this instead of from the sliced items, so a
+   * partner with 50 unread + ?limit=20 sees "50" on the bell badge (not
+   * the slice-length 20).
+   */
+  getUnreadCountByPartner(tenantId: string, partnerId: string): Promise<number>;
   createNotification(n: Omit<Notification, "id" | "created_at" | "read" | "read_at">): Promise<Notification>;
   markNotificationRead(id: string, tenantId: string): Promise<void>;
   markAllNotificationsRead(tenantId: string, userId: string): Promise<void>;

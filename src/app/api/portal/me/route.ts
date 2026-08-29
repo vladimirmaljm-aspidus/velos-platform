@@ -11,7 +11,7 @@ export async function GET() {
     if (!session || session.role !== "portal_client") {
       return NextResponse.json({ access: null }, { status: 401 });
     }
-    const accessId = session.sub.replace("portal:", "");
+    const accessId = session.sub.slice("portal:".length);
     const { getStore } = await import("@/lib/data/store");
     const store = await getStore();
     const access = await store.getPortalAccessById(accessId);
@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
   try {
     const session = await getSessionFromCookie();
     if (session && session.role === "portal_client") {
-      const accessId = session.sub.replace("portal:", "");
+      const accessId = session.sub.slice("portal:".length);
       try {
         const { getStore } = await import("@/lib/data/store");
         const store = await getStore();
@@ -93,7 +93,7 @@ export async function PUT(req: NextRequest) {
     if (!session || session.role !== "portal_client") {
       return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
     }
-    const accessId = session.sub.replace("portal:", "");
+    const accessId = session.sub.slice("portal:".length);
     const body = await req.json();
 
     // Only allow locale update for now (whitelist fields).

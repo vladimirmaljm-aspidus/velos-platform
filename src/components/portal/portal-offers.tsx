@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -66,31 +66,42 @@ import { useT } from "@/lib/i18n/store";
 import { fmtMoney, fmtDate, fmtMoneyDetailed } from "@/lib/utils/format";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import type { Offer, OfferStatus, OfferLineItem, PortalTier } from "@/lib/supabase/types";
+import type { Offer, OfferLineItem, PortalTier } from "@/lib/supabase/types";
 import { useDebounced } from "@/lib/hooks/use-debounced";
 import { CURRENCIES as REF_CURRENCIES } from "@/lib/data/reference";
 
-const STATUS_STYLES: Record<OfferStatus, string> = {
+// PORTAL-L3 — widened from `Record<OfferStatus, string>` to
+// `Record<string, string>` so the runtime "viewed" status (set by
+// lib/portal/mark-viewed.ts when the partner first opens a sent offer)
+// gets a DISTINCT style instead of falling back to the default Badge
+// class. "viewed" was previously missing entirely, so the badge silently
+// rendered with no className — visually identical to a freshly-created
+// "draft" offer. The sky-tinted style now distinguishes "the partner has
+// seen this, awaiting their response" from "we're still drafting".
+const STATUS_STYLES: Record<string, string> = {
   draft: "bg-secondary text-secondary-foreground",
   sent: "border-transparent bg-chart-1 text-white",
+  viewed: "border-transparent bg-sky-500/15 text-sky-700 dark:text-sky-400",
   accepted: "border-transparent bg-emerald-600 text-white",
   rejected: "border-transparent bg-destructive text-destructive-foreground",
   expired: "bg-muted text-muted-foreground",
   countered: "border-transparent bg-amber-500 text-white",
 };
 
-const STATUS_LABEL_KEYS: Record<OfferStatus, string> = {
+const STATUS_LABEL_KEYS: Record<string, string> = {
   draft: "portal-status-draft",
   sent: "portal-status-sent",
+  viewed: "portal-status-viewed",
   accepted: "portal-status-accepted",
   rejected: "portal-status-rejected",
   expired: "portal-status-expired",
   countered: "portal-status-countered",
 };
 
-const STATUS_ICONS: Record<OfferStatus, React.ComponentType<{ className?: string }>> = {
+const STATUS_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   draft: FileText,
   sent: Clock,
+  viewed: Eye,
   accepted: CheckCircle2,
   rejected: XCircle,
   expired: Calendar,
@@ -342,6 +353,16 @@ function OfferDetail({
 }) {
   const StatusIcon = STATUS_ICONS[offer.status];
   const [responding, setResponding] = useState(false);
+
+  // PORTAL-M2 — Fire view-tracking endpoint once per detail open.
+  // Swallow errors (fire-and-forget). useEffect dep is offer.id so it
+  // only re-fires when the user opens a different offer detail.
+  useEffect(() => {
+    if (!offer.id) return;
+    fetch(`/api/portal/offers/${offer.id}/view`, { method: "POST" }).catch(
+      () => {},
+    );
+  }, [offer.id]);
 
   // FIX-MARKET-UI / FIX 3 — Dialog-driven accept / reject / counter.
   // `window.prompt` was jarring and provided no validation surface; we now

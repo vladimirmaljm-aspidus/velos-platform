@@ -17,7 +17,7 @@
 
 import { isSupabaseConfigured, getSupabase } from "@/lib/supabase/client";
 
-export type DocType = "offer" | "invoice" | "proforma" | "rfq" | "demand";
+export type DocType = "offer" | "invoice" | "proforma" | "rfq" | "demand" | "logistics";
 
 /**
  * Atomically reserve the next document number for the given type.
@@ -92,7 +92,9 @@ export function formatDocNumber(
           ? "PRO"
           : docType === "demand"
             ? "DM"
-            : "RFQ";
+            : docType === "logistics"
+              ? "LOG"
+              : "RFQ";
   return `${prefix}-${year}-${String(seq).padStart(4, "0")}`;
 }
 

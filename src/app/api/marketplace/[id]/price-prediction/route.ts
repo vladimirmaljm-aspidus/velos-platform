@@ -83,6 +83,12 @@ async function _get(req: NextRequest, ctx: { params: Promise<{ id: string }> }) 
   // only buckets into 30-day windows — anything older than 60 days is
   // dropped at the bucketing step, but having the extra data around
   // is cheap).
+  //
+  // MARKET-H30: order by created_at DESC so when postIds is sliced to
+  // 3000 below (PostgREST `in` cap), the MOST RECENT 3000 posts are
+  // kept — without an explicit order, the slice would silently take
+  // arbitrary posts, biasing the prediction toward whatever the DB
+  // happens to return first.
   const since90d = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
   let comparablePosts: any[] = [];
   try {
@@ -94,7 +100,8 @@ async function _get(req: NextRequest, ctx: { params: Promise<{ id: string }> }) 
       .eq("tenant_id", access.tenant_id)
       .eq("post_type", "sell")
       .ilike("product_name", `%${productName.replace(/[%_]/g, " ")}%`)
-      .gte("created_at", since90d);
+      .gte("created_at", since90d)
+      .order("created_at", { ascending: false });
     comparablePosts = (posts as any[]) || [];
   } catch (e) {
     console.error("[marketplace.price-prediction] posts fetch failed:", e);
@@ -106,10 +113,15 @@ async function _get(req: NextRequest, ctx: { params: Promise<{ id: string }> }) 
   let comparableResponses: any[] = [];
   if (postIds.length > 0) {
     try {
+      // MARKET-H30: PostgREST `in` filter caps at ~3k ids; slice
+      // defensively to avoid a 400 from PostgREST when the tenant has
+      // more than 3000 comparable sell posts in the last 90 days. The
+      // posts query above is ordered DESC, so this slice keeps the
+      // most recent 3000 posts' responses.
       const { data: responses } = await sb
         .from("marketplace_responses")
         .select("id, unit_price, currency, status, created_at")
-        .in("post_id", postIds)
+        .in("post_id", postIds.slice(0, 3000))
         .not("unit_price", "is", null);
       comparableResponses = (responses as any[]) || [];
     } catch (e) {

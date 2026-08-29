@@ -6,6 +6,8 @@ import { requireAuthOrApiKey, hasPermission, audit, sanitizeError } from "@/lib/
 import { redactPartnerFields } from "@/lib/api/redact";
 // FIX-ALL-2 / Fix 6 — XSS prevention on free-text fields.
 import { sanitizeFields } from "@/lib/security/sanitize-input";
+// SEC-M9 — partner mass-assignment whitelist (shared with POST handler).
+import { whitelistPartnerFields } from "@/app/api/partners/route";
 // P0-3 / Feature 2 — field-level encryption. The partner PII fields
 // contact_email, phone, tax_id, vat_number are encrypted at rest (enc:
 // prefix). This [id] route decrypts on GET and encrypts on PUT.
@@ -110,6 +112,17 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       "website",
       "notes",
     ]);
+    // SEC-M9 (mass-assignment) — apply the field whitelist BEFORE the
+    // encryption step. Strips client-supplied values for privileged
+    // columns (approved_by, kyc_status, verification_level, portal_token,
+    // *_hmac, …) so a partner:write caller cannot self-approve KYC or
+    // mint a portal token via a PUT. tenant_id is intentionally NOT in
+    // the whitelist — the upsert spread below overrides it with the
+    // existing row's tenant_id, so a tenant-move attempt is silently
+    // dropped. The encryption block then SETS the *_hmac columns
+    // server-side from the plaintext tax_id / vat_number the whitelist
+    // preserved.
+    body = whitelistPartnerFields(body);
     // ── P0-3 / Feature 2 — field-level encryption ──────────────────────────
     // Encrypt contact_email, phone, tax_id, vat_number at rest with
     // AES-256-GCM (enc: prefix). tax_id / vat_number ALSO get a
@@ -193,10 +206,20 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
     // Dependency check (H-5) — refuse delete if dependent records exist
     // (offers / invoices / proformas / KYC / portal access / trade
-    // calculations). Caller can pass ?force=1 to override (will leave
-    // orphans — admin recovery only).
+    // calculations / demands / deals / shared docs / portal rfqs + the 9
+    // marketplace tables — AUDIT2-LOGIC-UX H8). Caller can pass ?force=1 to
+    // override (will leave orphans — admin recovery only).
     const sb = (auth.store as any).sb();
-    const [offers, invoices, proformas, kyc, portal, tradeCalcs, demands, deals, sharedDocs, portalRfqs] = await Promise.all([
+    const [
+      offers, invoices, proformas, kyc, portal, tradeCalcs, demands, deals, sharedDocs, portalRfqs,
+      // AUDIT2-LOGIC-UX H8 — the 9 marketplace tables that reference the
+      // partner. Without these, a partner with marketplace activity could
+      // be hard-deleted, silently orphaning rows in marketplace_posts,
+      // marketplace_responses, marketplace_negotiations, marketplace_contracts,
+      // marketplace_auction_bids, marketplace_reviews, marketplace_questions,
+      // marketplace_financial_instruments, marketplace_logistics_requests.
+      mktPosts, mktResponses, mktNegotiations, mktContracts, mktBids, mktReviews, mktQuestions, mktFinInstruments, mktLogistics,
+    ] = await Promise.all([
       sb.from("offers").select("id", { count: "exact", head: true }).eq("partner_id", id),
       sb.from("invoices").select("id", { count: "exact", head: true }).eq("partner_id", id),
       sb.from("proformas").select("id", { count: "exact", head: true }).eq("partner_id", id),
@@ -209,6 +232,17 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       sb.from("deals").select("id", { count: "exact", head: true }).eq("partner_id", id),
       sb.from("shared_documents").select("id", { count: "exact", head: true }).eq("partner_id", id),
       sb.from("portal_rfqs").select("id", { count: "exact", head: true }).eq("partner_id", id),
+      // Marketplace tables — partner_id references.
+      sb.from("marketplace_posts").select("id", { count: "exact", head: true }).eq("partner_id", id),
+      sb.from("marketplace_responses").select("id", { count: "exact", head: true }).eq("partner_id", id),
+      // marketplace_negotiations stores BOTH partner_id_a AND partner_id_b.
+      sb.from("marketplace_negotiations").select("id", { count: "exact", head: true }).or(`partner_id_a.eq.${id},partner_id_b.eq.${id}`),
+      sb.from("marketplace_contracts").select("id", { count: "exact", head: true }).eq("partner_id", id),
+      sb.from("marketplace_auction_bids").select("id", { count: "exact", head: true }).eq("partner_id", id),
+      sb.from("marketplace_reviews").select("id", { count: "exact", head: true }).or(`reviewer_partner_id.eq.${id},reviewed_partner_id.eq.${id}`),
+      sb.from("marketplace_questions").select("id", { count: "exact", head: true }).eq("partner_id", id),
+      sb.from("marketplace_financial_instruments").select("id", { count: "exact", head: true }).eq("partner_id", id),
+      sb.from("marketplace_logistics_requests").select("id", { count: "exact", head: true }).eq("partner_id", id),
     ]);
     const depCount =
       (offers.count || 0) +
@@ -220,7 +254,16 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       (demands.count || 0) +
       (deals.count || 0) +
       (sharedDocs.count || 0) +
-      (portalRfqs.count || 0);
+      (portalRfqs.count || 0) +
+      (mktPosts.count || 0) +
+      (mktResponses.count || 0) +
+      (mktNegotiations.count || 0) +
+      (mktContracts.count || 0) +
+      (mktBids.count || 0) +
+      (mktReviews.count || 0) +
+      (mktQuestions.count || 0) +
+      (mktFinInstruments.count || 0) +
+      (mktLogistics.count || 0);
     const force = req.nextUrl.searchParams.get("force") === "1";
     if (depCount > 0 && !force) {
       return NextResponse.json({
@@ -236,6 +279,15 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
           deals: deals.count,
           shared_documents: sharedDocs.count,
           portal_rfqs: portalRfqs.count,
+          marketplace_posts: mktPosts.count,
+          marketplace_responses: mktResponses.count,
+          marketplace_negotiations: mktNegotiations.count,
+          marketplace_contracts: mktContracts.count,
+          marketplace_auction_bids: mktBids.count,
+          marketplace_reviews: mktReviews.count,
+          marketplace_questions: mktQuestions.count,
+          marketplace_financial_instruments: mktFinInstruments.count,
+          marketplace_logistics_requests: mktLogistics.count,
         },
         hint: "Pass ?force=1 to delete anyway (will leave orphans).",
       }, { status: 409 });

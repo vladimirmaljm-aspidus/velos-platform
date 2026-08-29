@@ -233,28 +233,10 @@ export async function validateFromEmailStrict(fromEmail: string): Promise<{ vali
  */
 export async function getEmailConfig(tenantId?: string): Promise<EmailConfig | null> {
   const store = await getStore();
-  // Tenant email config is STRICTLY separate from platform email config.
-  let comms: any = null;
-  if (tenantId) {
-    comms = await store.getSetting<any>("comms", tenantId);
-    if (!comms || (comms.email_provider === "none" && !comms.smtp_host)) return null;
-  } else {
-    comms = await store.getSetting<any>("comms", null);
-    if (!comms) return null;
-  }
-
-  // CRITICAL: decrypt sensitive fields (smtp_password, resend_api_key,
-  // postmark_server_token) before using them. The settings PUT route
-  // encrypts these at save time; the settings GET route decrypts on read
-  // for the UI. But getEmailConfig reads directly from the store (not via
-  // the GET route), so it gets the ENCRYPTED values (enc:...). Without
-  // this decrypt, Postmark gets "enc:eUq4..." instead of the real token.
-  try {
-    const { decryptSensitiveFields, COMMS_SENSITIVE_KEYS } = await import("@/lib/crypto/field-encryption");
-    comms = decryptSensitiveFields(comms, COMMS_SENSITIVE_KEYS as readonly string[]) as any;
-  } catch (e) {
-    console.error("[email] failed to decrypt sensitive comms fields:", e);
-  }
+  // Prefer the tenant's own comms config; fall back to platform-level (tenant_id NULL).
+  let comms = tenantId ? await store.getSetting<any>("comms", tenantId) : null;
+  if (!comms) comms = await store.getSetting<any>("comms", null);
+  if (!comms) return null;
 
   const provider: EmailProvider = comms.email_provider || (comms.smtp_host ? "smtp" : "none");
   const fromName = comms.from_name || "VELOS CRM";
@@ -336,11 +318,7 @@ export async function getEmailConfig(tenantId?: string): Promise<EmailConfig | n
 export async function sendEmail(opts: SendEmailOptions): Promise<{ success: boolean; error?: string; messageId?: string; provider?: EmailProvider }> {
   const config = await getEmailConfig(opts.tenantId);
 
-  // No provider configured — DON'T queue, just log and return.
-  // Previously this created a mail_queue entry with status='queued',
-  // which accumulated forever because there's no worker to send them.
-  // Now we just log and return success:false — the caller can handle
-  // the failure (e.g. show a toast) without polluting the queue.
+  // No provider configured — queue for later
   if (
     !config ||
     config.provider === "none" ||
@@ -348,8 +326,32 @@ export async function sendEmail(opts: SendEmailOptions): Promise<{ success: bool
     (config.provider === "resend" && !config.resend) ||
     (config.provider === "postmark" && !config.postmark)
   ) {
-    console.log(`[email] No provider configured for tenant ${opts.tenantId || "platform"} — email to ${opts.to} not sent.`);
-    return { success: false, error: "No email provider configured. Set up Postmark/SMTP in Settings → Communications.", provider: "none" };
+    console.log(`[email:dev] To: ${opts.to} | Subject: ${opts.subject}`);
+    const store = await getStore();
+    // P1 mail_queue orphan fix (task C-5 Fix 3): previously this insert
+    // omitted `tenant_id`, producing orphaned mail_queue rows that no
+    // tenant-scoped listMailQueue query could ever surface — they
+    // accumulated forever in the table with status='queued' and no
+    // visible owner. The `notifications` table has a NOT NULL constraint
+    // on tenant_id, so the in-app notification path (below in the catch
+    // block) already required a tenant_id and was silently skipped when
+    // it was missing — but the mail_queue insert itself was not gated,
+    // which is exactly how the orphans accumulated.
+    //
+    // Resolution: always set tenant_id. If the caller genuinely has no
+    // tenant context (e.g. a system-level cron job that emails a global
+    // admin address), fall back to the literal sentinel "SYSTEM" so the
+    // row is still visible in a super-admin "all mail queue" listing
+    // (filtered as `tenant_id = 'SYSTEM'`) rather than being a NULL
+    // orphan that no query surfaces.
+    await store.upsertMailQueueEntry({
+      to_email: opts.to,
+      subject: opts.subject,
+      body: opts.html,
+      status: "queued",
+      tenant_id: opts.tenantId || "SYSTEM",
+    } as any);
+    return { success: true, messageId: "dev-queued", provider: "none" };
   }
 
   try {
@@ -369,63 +371,31 @@ export async function sendEmail(opts: SendEmailOptions): Promise<{ success: bool
     return { success: true, messageId: result.messageId, provider: config.provider };
   } catch (e: any) {
     console.error("[email:error]", e.message);
-    // Queue for manual retry. But DON'T create duplicate entries —
-    // check if there's already a failed entry for the same to+subject
-    // within the last hour. If so, just update the error/attempts
-    // instead of creating a new row. This prevents the mail_queue
-    // from accumulating dozens of identical failed entries when an
-    // action retries (e.g. a cron fires, a user clicks retry, etc.).
+    // Queue for manual retry (Re-Audit-2 N9: previously the queue entry was
+    // terminal — no worker ever picked it up, no notification fired, no
+    // retry endpoint existed). We now keep the queue entry AND emit an
+    // in-app notification so the admin can see the failure and hit the
+    // Retry button in the Mail Queue view. NO auto-retry (per audit rule).
     const store = await getStore();
     let queueEntryId: string | undefined;
     try {
-      // Check for existing failed entry (same to_email + subject)
-      const sb = (store as any).sb?.() || null;
-      if (sb) {
-        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-        const { data: existing } = await sb
-          .from("mail_queue")
-          .select("id, attempts")
-          .eq("to_email", opts.to)
-          .eq("subject", opts.subject)
-          .eq("status", "failed")
-          .gte("created_at", oneHourAgo)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (existing) {
-          // Update existing entry — bump attempts, update error
-          await sb.from("mail_queue").update({
-            error: e.message,
-            attempts: (existing.attempts || 0) + 1,
-          }).eq("id", existing.id);
-          queueEntryId = existing.id;
-        } else {
-          // Create new failed entry
-          const entry = await store.upsertMailQueueEntry({
-            to_email: opts.to,
-            subject: opts.subject,
-            body: opts.html,
-            status: "failed",
-            attempts: 1,
-            error: e.message,
-            tenant_id: opts.tenantId || "SYSTEM",
-          } as any);
-          queueEntryId = (entry as any)?.id;
-        }
-      } else {
-        // No Supabase client — fallback to insert
-        const entry = await store.upsertMailQueueEntry({
-          to_email: opts.to,
-          subject: opts.subject,
-          body: opts.html,
-          status: "failed",
-          attempts: 1,
-          error: e.message,
-          tenant_id: opts.tenantId || "SYSTEM",
-        } as any);
-        queueEntryId = (entry as any)?.id;
-      }
+      const entry = await store.upsertMailQueueEntry({
+        to_email: opts.to,
+        subject: opts.subject,
+        body: opts.html,
+        status: "failed",
+        attempts: 1,
+        error: e.message,
+        // P1 mail_queue orphan fix (task C-5 Fix 3): same sentinel
+        // pattern as the no-provider branch above — a NULL tenant_id
+        // here would create an invisible orphan row. The notification
+        // broadcast below only fires when `opts.tenantId` is set (the
+        // notifications table has a NOT NULL constraint on tenant_id),
+        // but the mail_queue row should NOT silently depend on that
+        // same gate.
+        tenant_id: opts.tenantId || "SYSTEM",
+      } as any);
+      queueEntryId = (entry as any)?.id;
     } catch (queueErr) {
       console.error("[email] failed to persist mail_queue entry:", queueErr);
     }

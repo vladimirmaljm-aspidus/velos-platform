@@ -583,9 +583,32 @@ export async function updateMilestone(
     updates.paid_date = new Date().toISOString();
   }
 
-  // Status-transition guard: a paid milestone cannot revert to pending/due.
-  if (patch.status && m.status === "paid" && patch.status !== "paid" && patch.status !== "cancelled") {
-    throw new Error(`Cannot transition milestone status from "paid" to "${patch.status}".`);
+  // Status-transition guard — full milestone state machine:
+  //   pending  → any status (initial state, no restriction)
+  //   due      → any status (pending / paid / overdue / cancelled)
+  //   overdue  → paid | cancelled only (cannot revert to pending/due)
+  //   paid     → cancelled only (terminal-ish — paid is the success
+  //              state, the only legal exit is cancellation)
+  //   cancelled→ TERMINAL (no transitions out, ever)
+  // Without this guard, a paid milestone could be reverted to "pending"
+  // (washing a paid obligation off the books) or a cancelled milestone
+  // could be revived to "paid" (paying a debt that was written off).
+  if (patch.status && patch.status !== m.status) {
+    const from = m.status;
+    const to = patch.status;
+    const allowed: Record<string, Set<string>> = {
+      pending: new Set(["due", "paid", "overdue", "cancelled"]),
+      due: new Set(["pending", "paid", "overdue", "cancelled"]),
+      overdue: new Set(["paid", "cancelled"]),
+      paid: new Set(["cancelled"]),
+      cancelled: new Set(), // terminal
+    };
+    const transitions = allowed[from];
+    if (transitions && !transitions.has(to)) {
+      throw new Error(
+        `Cannot transition milestone status from "${from}" to "${to}".`,
+      );
+    }
   }
 
   const { data, error } = await sb
@@ -601,6 +624,27 @@ export async function updateMilestone(
 // ─── Escrow release ────────────────────────────────────────────────────────
 
 /**
+ * Result of an escrow release attempt.
+ *
+ *  • `instrument`                — the current instrument row (status is
+ *                                  "active" if pending, "released" if the
+ *                                  release completed).
+ *  • `needs_counterparty_confirm` — true when the instrument's release
+ *                                  condition is `both_parties_confirm` and
+ *                                  only one party has confirmed so far.
+ *                                  The caller should surface a "waiting on
+ *                                  counterparty" UX.
+ *  • `confirmed_partner_ids`      — the partner_ids that have confirmed
+ *                                  so far. Empty for single-party release
+ *                                  conditions.
+ */
+export interface EscrowReleaseResult {
+  instrument: FinancialInstrument;
+  needs_counterparty_confirm: boolean;
+  confirmed_partner_ids: string[];
+}
+
+/**
  * Release the funds held in an escrow instrument. The caller is the owning
  * partner (or, when `escrow_release_condition` is `both_parties_confirm`,
  * either party).
@@ -609,22 +653,78 @@ export async function updateMilestone(
  * transition active → released is permitted (which it always is for
  * escrows; the guard exists for symmetry with the lifecycle).
  *
- * Returns the updated instrument, or null when not found / not authorised.
+ * FIX-AUDIT2-CRIT / C4 — the previous implementation immediately flipped
+ * status="released" on a single call from EITHER party, defeating the
+ * safety guarantee of the `both_parties_confirm` condition (any single
+ * party could release the funds). The function now implements a real
+ * 2-phase commit:
+ *
+ *  • When `escrow_release_condition === "both_parties_confirm"`, the
+ *    caller's partner_id is appended to a JSONB array
+ *    (`release_confirmations`, added by migration
+ *    supabase/migrations/062_release_confirmations.sql). The status is
+ *    only flipped to "released" when BOTH the owning partner AND the
+ *    counterparty are present in the array. Until then, the instrument
+ *    stays "active" and the result carries
+ *    `needs_counterparty_confirm: true`.
+ *  • When the `release_confirmations` column does not exist (a pre-
+ *    migration-062 deploy), the function falls back to storing
+ *    confirmation entries in the existing `documents` JSONB array
+ *    (entries with `{ type: "release_confirmation", partner_id }`).
+ *  • Each confirmation call writes a `marketplace.escrow_release_confirmed`
+ *    audit log entry so the audit trail shows who confirmed and when,
+ *    even on the call that does NOT yet complete the release.
+ *  • For the other release conditions (`manual`, `delivery_confirmation`,
+ *    `inspection_pass`), the existing single-party release behaviour
+ *    is preserved.
+ *
+ * Returns the result object, or null when not found / not authorised.
  */
 export async function releaseEscrow(
   instrumentId: string,
   tenantId: string,
   partnerId: string,
-): Promise<FinancialInstrument | null> {
+): Promise<EscrowReleaseResult | null> {
   const sb = getSupabase();
 
-  const { data: row, error: err } = await sb
-    .from("marketplace_financial_instruments")
-    .select("id, instrument_type, status, tenant_id, partner_id, counterparty_partner_id")
-    .eq("id", instrumentId)
-    .eq("tenant_id", tenantId)
-    .maybeSingle();
-  if (err) throw err;
+  // Fetch the instrument. We try to select the new `release_confirmations`
+  // column first; if the column does not exist (pre-migration-062 deploy),
+  // PostgREST returns an error and we re-fetch using only the columns
+  // that exist, then use the `documents` JSONB array as a fallback store.
+  let useFallbackStore = false;
+  let row: unknown = null;
+  {
+    const { data, error } = await sb
+      .from("marketplace_financial_instruments")
+      .select(
+        "id, instrument_type, status, tenant_id, partner_id, counterparty_partner_id, escrow_release_condition, documents, release_confirmations",
+      )
+      .eq("id", instrumentId)
+      .eq("tenant_id", tenantId)
+      .maybeSingle();
+    if (error) {
+      // PGRST205 ("schemaCacheMiss") / "column does not exist" — re-fetch
+      // with the legacy-shape select and switch the write path to the
+      // `documents` JSONB fallback.
+      if (/\brelease_confirmations\b|could not find|does not exist|PGRST205/i.test(error.message || "")) {
+        useFallbackStore = true;
+        const { data: legacyData, error: legacyErr } = await sb
+          .from("marketplace_financial_instruments")
+          .select(
+            "id, instrument_type, status, tenant_id, partner_id, counterparty_partner_id, escrow_release_condition, documents",
+          )
+          .eq("id", instrumentId)
+          .eq("tenant_id", tenantId)
+          .maybeSingle();
+        if (legacyErr) throw legacyErr;
+        row = legacyData;
+      } else {
+        throw error;
+      }
+    } else {
+      row = data;
+    }
+  }
   if (!row) return null;
   const r = row as {
     id: string;
@@ -633,6 +733,9 @@ export async function releaseEscrow(
     tenant_id: string;
     partner_id: string;
     counterparty_partner_id: string | null;
+    escrow_release_condition: string | null;
+    documents: Record<string, unknown>[];
+    release_confirmations?: string[] | null;
   };
   if (r.instrument_type !== "escrow") {
     throw new Error("Instrument is not an escrow.");
@@ -650,14 +753,166 @@ export async function releaseEscrow(
     );
   }
 
+  // ── 2-phase commit for `both_parties_confirm` ──────────────────────────
+  if (r.escrow_release_condition === "both_parties_confirm") {
+    // Load existing confirmations.
+    let confirmations: string[] = [];
+    if (!useFallbackStore && Array.isArray(r.release_confirmations)) {
+      confirmations = r.release_confirmations.filter(
+        (x): x is string => typeof x === "string",
+      );
+    } else {
+      const docs = Array.isArray(r.documents) ? r.documents : [];
+      confirmations = docs
+        .filter(
+          (d) =>
+            d && typeof d === "object" && (d as { type?: unknown }).type === "release_confirmation",
+        )
+        .map((d) => String((d as { partner_id?: unknown }).partner_id ?? ""))
+        .filter((x) => x !== "");
+    }
+
+    // Idempotent: do not double-add if the caller has already confirmed.
+    if (!confirmations.includes(partnerId)) {
+      confirmations.push(partnerId);
+    }
+
+    // Per-confirmation audit log entry — every call is recorded so the
+    // audit trail shows who confirmed and when, including the call that
+    // does NOT yet release. Best-effort: failures are swallowed so a DB
+    // hiccup in the audit log never blocks the release flow.
+    const bothConfirmed =
+      !!r.counterparty_partner_id &&
+      confirmations.includes(r.partner_id) &&
+      confirmations.includes(r.counterparty_partner_id);
+    try {
+      await sb.from("audit_logs").insert({
+        user_id: null,
+        username: `partner:${partnerId}`,
+        tenant_id: tenantId,
+        action: "marketplace.escrow_release_confirmed",
+        entity_type: "marketplace_financial_instruments",
+        entity_id: instrumentId,
+        details: {
+          confirming_partner_id: partnerId,
+          is_owner: isOwner,
+          is_counterparty: isCounterparty,
+          confirmed_partner_ids: confirmations,
+          released: bothConfirmed,
+        },
+        ip: null,
+        user_agent: null,
+      });
+    } catch (e) {
+      console.warn("[marketplace.finance.release] confirmation audit log failed:", e);
+    }
+
+    if (!bothConfirmed) {
+      // Persist the confirmation list without changing status. If the
+      // release_confirmations column exists, update it directly;
+      // otherwise, append the confirmation entries to the documents
+      // JSONB array (the documented fallback store).
+      if (!useFallbackStore) {
+        const { error: updErr } = await sb
+          .from("marketplace_financial_instruments")
+          .update({ release_confirmations: confirmations })
+          .eq("id", instrumentId);
+        if (updErr) {
+          if (/\brelease_confirmations\b|could not find|does not exist|PGRST205/i.test(updErr.message || "")) {
+            useFallbackStore = true;
+          } else {
+            throw updErr;
+          }
+        }
+      }
+      if (useFallbackStore) {
+        const docs = Array.isArray(r.documents) ? r.documents : [];
+        // Preserve existing non-confirmation docs.
+        const otherDocs = docs.filter(
+          (d) =>
+            !d ||
+            typeof d !== "object" ||
+            (d as { type?: unknown }).type !== "release_confirmation",
+        );
+        const confirmationDocs = confirmations.map((pid) => ({
+          type: "release_confirmation",
+          partner_id: pid,
+          confirmed_at: new Date().toISOString(),
+        }));
+        const { error: updErr } = await sb
+          .from("marketplace_financial_instruments")
+          .update({ documents: [...otherDocs, ...confirmationDocs] })
+          .eq("id", instrumentId);
+        if (updErr) throw updErr;
+      }
+
+      // Re-fetch the instrument (status is unchanged) so the caller
+      // receives the current row, then return the pending result.
+      const { data: stillActive, error: refErr } = await sb
+        .from("marketplace_financial_instruments")
+        .select("*")
+        .eq("id", instrumentId)
+        .maybeSingle();
+      if (refErr) throw refErr;
+      return {
+        instrument: stillActive as FinancialInstrument,
+        needs_counterparty_confirm: true,
+        confirmed_partner_ids: confirmations,
+      };
+    }
+
+    // Both parties have confirmed — flip status to "released" and persist
+    // the full confirmation list (so the released row carries the audit
+    // trail of who confirmed).
+    const updatePayload: Record<string, unknown> = { status: "released" };
+    if (useFallbackStore) {
+      const docs = Array.isArray(r.documents) ? r.documents : [];
+      const otherDocs = docs.filter(
+        (d) =>
+          !d ||
+          typeof d !== "object" ||
+          (d as { type?: unknown }).type !== "release_confirmation",
+      );
+      const confirmationDocs = confirmations.map((pid) => ({
+        type: "release_confirmation",
+        partner_id: pid,
+        confirmed_at: new Date().toISOString(),
+      }));
+      updatePayload.documents = [...otherDocs, ...confirmationDocs];
+    } else {
+      updatePayload.release_confirmations = confirmations;
+    }
+    const { data: released, error: relErr } = await sb
+      .from("marketplace_financial_instruments")
+      .update(updatePayload)
+      .eq("id", instrumentId)
+      .select("*")
+      .maybeSingle();
+    if (relErr) throw relErr;
+    return {
+      instrument: released as FinancialInstrument,
+      needs_counterparty_confirm: false,
+      confirmed_partner_ids: confirmations,
+    };
+  }
+
+  // ── Non-`both_parties_confirm` release conditions ────────────────────
+  // Single-party release: the existing behaviour. The 2-phase commit
+  // above is the only path that requires both parties; the rest are
+  // single-call releases.
   const { data, error } = await sb
     .from("marketplace_financial_instruments")
     .update({ status: "released" })
     .eq("id", instrumentId)
-    .select()
+    .select("*")
     .maybeSingle();
   if (error) throw error;
-  return (data as FinancialInstrument) || null;
+  if (!data) return null;
+  return {
+    instrument: data as FinancialInstrument,
+    needs_counterparty_confirm: false,
+    confirmed_partner_ids: [],
+  };
 }
 
 // ─── Auth check: is the caller authorised to view this instrument? ────────

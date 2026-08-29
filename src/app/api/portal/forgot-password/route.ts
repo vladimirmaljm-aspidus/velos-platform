@@ -71,14 +71,19 @@ export async function POST(req: NextRequest) {
 
     const store = await getStore();
 
-    const tenants = await store.listTenants();
-    let access: any = null;
+    // SEC-M6 (PORTAL-H10): the previous implementation iterated every
+    // tenant (`for (const t of tenants) store.getPortalAccessByEmail(...)`)
+    // — an N+1 that fired one DB query per tenant on every forgot-
+    // password request. With ~10 tenants that's 10 sequential round
+    // trips per request; the loop also caught the FIRST matching tenant
+    // and silently ignored duplicate-email conflicts in later tenants.
+    // `getPortalAccessByEmailAnyTenant` is a single tenant-agnostic
+    // lookup (HMAC token + plaintext fallback) that returns the access
+    // row plus its tenant_id in one query.
+    const access = await store.getPortalAccessByEmailAnyTenant(email);
     let tenant: any = null;
-    for (const t of tenants) {
-      try {
-        const a = await store.getPortalAccessByEmail(t.id, email);
-        if (a) { access = a; tenant = t; break; }
-      } catch { /* skip */ }
+    if (access) {
+      tenant = (await store.getTenant(access.tenant_id)) || null;
     }
 
     // Always return the same message to prevent email enumeration.
@@ -110,7 +115,20 @@ export async function POST(req: NextRequest) {
       user_agent: ua,
     });
 
-    const baseUrl = process.env.APP_BASE_URL || "https://aspidus.onrender.com";
+    // SEC-L6 — prefer the Next.js public env var (required for
+    // client-side rendering, so always present in production) and fall
+    // back to APP_BASE_URL. Throw in production if NEITHER is set — the
+    // previous hardcoded fallback `https://aspidus.onrender.com` was a
+    // sandbox artifact that would have leaked into real customer
+    // password-reset emails if the env was misconfigured.
+    const baseUrl =
+      process.env.NEXT_PUBLIC_APP_URL ||
+      process.env.APP_BASE_URL ||
+      (process.env.NODE_ENV === "production"
+        ? (() => {
+            throw new Error("NEXT_PUBLIC_APP_URL or APP_BASE_URL required in production for portal password-reset emails");
+          })()
+        : "http://localhost:3000");
     const resetUrl = `${baseUrl}/portal/login?reset_token=${token}`;
 
     await sendEmail({

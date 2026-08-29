@@ -56,6 +56,14 @@ async function _get(req: NextRequest) {
   let posts: any[] = [];
   let responses: any[] = [];
   try {
+    // MARKET-H30 + MARKET-H31: order by created_at DESC so when the
+    // caller slices postIds to 3000 (line 100), the MOST RECENT 3000
+    // posts are taken — without an explicit order, the slice would
+    // silently take arbitrary posts. The `.in("status", ["active",
+    // "closed"])` filter (MARKET-H31) drops draft / cancelled posts
+    // that would otherwise pollute the trend with non-actionable
+    // prices (a draft post's target_price is often a placeholder
+    // the partner hasn't finalised yet).
     const { data: postRows } = await sb
       .from("marketplace_posts")
       .select(
@@ -63,8 +71,10 @@ async function _get(req: NextRequest) {
       )
       .eq("tenant_id", access.tenant_id)
       .eq("post_type", "sell")
+      .in("status", ["active", "closed"])
       .gte("created_at", since)
-      .not("target_price", "is", null);
+      .not("target_price", "is", null)
+      .order("created_at", { ascending: false });
     if (category) {
       // PostgREST eq is case-sensitive — product_category is stored
       // canonically (the create route stores exactly what the partner
@@ -76,9 +86,11 @@ async function _get(req: NextRequest) {
         )
         .eq("tenant_id", access.tenant_id)
         .eq("post_type", "sell")
+        .in("status", ["active", "closed"])
         .ilike("product_category", category)
         .gte("created_at", since)
-        .not("target_price", "is", null);
+        .not("target_price", "is", null)
+        .order("created_at", { ascending: false });
       posts = (catRows as any[]) || [];
     } else {
       posts = (postRows as any[]) || [];
@@ -93,7 +105,9 @@ async function _get(req: NextRequest) {
   if (postIds.length > 0) {
     try {
       // PostgREST `in` filter caps at ~3k ids; we slice defensively in
-      // case a busy tenant exceeds the cap.
+      // case a busy tenant exceeds the cap. The posts query above is
+      // ordered DESC by created_at, so the slice keeps the most recent
+      // 3000 posts' responses.
       const { data: responseRows } = await sb
         .from("marketplace_responses")
         .select("id, unit_price, currency, status, created_at")
@@ -109,7 +123,17 @@ async function _get(req: NextRequest) {
   return NextResponse.json({
     ...result,
     currency,
-    sampleSize: posts.length + responses.length,
+    // MARKET-M14 — `sampleSize` is the number of UNIQUE sell posts the
+    // trend was derived from. The previous `posts.length + responses.length`
+    // double-counted: every response (counter-offer) is attached to a
+    // post already in `posts`, so adding `responses.length` inflated the
+    // sample size by the number of counter-offers — a post with 5 counter-
+    // offers contributed 6 to `sampleSize` instead of 1. The UI uses
+    // sampleSize to label the chart ("based on N samples") and to gate
+    // `hasData` — inflated values misled users into thinking the trend
+    // was based on more independent observations than it actually was.
+    // `posts.length` is the honest count of distinct data sources.
+    sampleSize: posts.length,
   });
 }
 

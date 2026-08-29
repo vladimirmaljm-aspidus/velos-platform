@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, audit } from "@/lib/api/helpers";
+import { requireAuth, audit, sanitizeError } from "@/lib/api/helpers";
 import { notifyKycApproved } from "@/lib/notif/helper";
 import { onKycApproved } from "@/lib/kyc/automation";
 
@@ -64,7 +64,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     // Run the full automation chain (email + portal access + welcome email)
     const tenant = await auth.store.getTenant(submission.tenant_id);
-    const baseUrl = process.env.APP_BASE_URL || "https://aspidus.onrender.com";
+    // SEC-L6 — prefer the Next.js public env var (required for
+    // client-side rendering, so always present in production) and
+    // fall back to APP_BASE_URL. Throw in production if NEITHER is set
+    // — the previous hardcoded fallback `https://aspidus.onrender.com`
+    // was a sandbox artifact that would have leaked into real customer
+    // emails if the env was misconfigured.
+    const baseUrl =
+      process.env.NEXT_PUBLIC_APP_URL ||
+      process.env.APP_BASE_URL ||
+      (process.env.NODE_ENV === "production"
+        ? (() => {
+            throw new Error("NEXT_PUBLIC_APP_URL or APP_BASE_URL required in production for KYC approval emails");
+          })()
+        : "http://localhost:3000");
     const { access } = await onKycApproved({
       store: auth.store,
       submission,
@@ -83,6 +96,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     });
   } catch (e: any) {
     console.error("[kyc.approve]", e);
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    // SEC-L4 — never leak raw e.message. The KYC approval chain spans
+    // store + email + portal-access provisioning, any of which can
+    // raise a PostgrestError whose .message leaks the schema. Sanitize
+    // before returning to the caller.
+    return NextResponse.json({ error: sanitizeError(e) }, { status: 500 });
   }
 }

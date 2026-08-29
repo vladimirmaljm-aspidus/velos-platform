@@ -273,14 +273,31 @@ export function InvoicesView() {
     onError: (e: any) => toast.error(e.message || t("fin-failed-send-invoice")),
   });
 
+  // AUDIT2-LOGIC-UX C5 — `markPaidMut` previously PUT /api/invoices/[id]
+  // with { status: "paid", paid_at: now }, bypassing the record-payment
+  // flow (no bank transaction, no commission cascade, no journal entry,
+  // no payment method / reference). Rerouted to POST /api/invoices/[id]/
+  // record-payment with sensible defaults (full amount, bank_transfer) so
+  // the audit trail is captured. The detail sheet already exposes the
+  // proper RecordPaymentDialog for callers that want to set a custom
+  // amount/method/reference; this quick-action path is for the "I just
+  // got paid in full, mark it" use case.
   const markPaidMut = useMutation({
     mutationFn: async ({ id }: { id: string }) => {
-      const r = await fetch(api(`/api/invoices/${id}`), {
-        method: "PUT",
+      const inv = items.find((i) => i.id === id) || (detail.data && detail.data.id === id ? detail.data : null);
+      const amount = inv && inv.total != null ? Number(inv.total) : 0;
+      const r = await fetch(api(`/api/invoices/${id}/record-payment`), {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "paid", paid_at: new Date().toISOString() }),
+        body: JSON.stringify({
+          amount,
+          method: "bank_transfer",
+        }),
       });
-      if (!r.ok) throw new Error("Failed to mark as paid");
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error((e as { error?: string }).error || "Failed to mark as paid");
+      }
       return r.json();
     },
     onSuccess: () => {
@@ -289,7 +306,7 @@ export function InvoicesView() {
       if (detailId) qc.invalidateQueries({ queryKey: ["invoice", tenantKey, detailId] });
       qc.invalidateQueries({ queryKey: ["dashboard", tenantKey] });
     },
-    onError: () => toast.error(t("fin-could-not-update-invoice")),
+    onError: (e: any) => toast.error(e?.message || t("fin-could-not-update-invoice")),
   });
 
   const deleteMut = useMutation({
@@ -351,10 +368,15 @@ export function InvoicesView() {
   // All bulk invoice operations route through /api/invoices/bulk so the
   // loop runs server-side (one round-trip, one audit log entry, state
   // machine enforced by validateStatusTransition).
+  //
+  // AUDIT2-LOGIC-UX C5 — "mark_paid" was REMOVED from the bulk action
+  // union. The bulk /api/invoices/bulk endpoint refuses "mark_paid" (it
+  // would bypass the record-payment flow's bank transaction + commission
+  // cascade + journal entry). The frontend no longer offers it.
   const bulkInvoiceMut = useMutation({
     mutationFn: async ({ ids, action }: {
       ids: string[];
-      action: "mark_sent" | "mark_paid" | "cancel" | "delete";
+      action: "mark_sent" | "cancel" | "delete";
     }) => {
       const r = await fetch(api("/api/invoices/bulk"), {
         method: "POST",
@@ -370,12 +392,10 @@ export function InvoicesView() {
     onSuccess: (data, vars) => {
       const labelKey =
         vars.action === "mark_sent" ? "fin-bulk-mark-sent-success"
-        : vars.action === "mark_paid" ? "fin-bulk-mark-paid-success"
         : vars.action === "cancel" ? "fin-bulk-cancel-success"
         : "fin-bulk-delete-invoices-success";
       const partialKey =
         vars.action === "mark_sent" ? "fin-bulk-mark-sent-partial"
-        : vars.action === "mark_paid" ? "fin-bulk-mark-paid-partial"
         : vars.action === "cancel" ? "fin-bulk-cancel-partial"
         : "fin-bulk-delete-invoices-partial";
       if (data.failureCount === 0) {
@@ -394,7 +414,6 @@ export function InvoicesView() {
     onError: (e: any, vars) => {
       const labelKey =
         vars.action === "mark_sent" ? "fin-bulk-mark-sent-failed"
-        : vars.action === "mark_paid" ? "fin-bulk-mark-paid-failed"
         : vars.action === "cancel" ? "fin-bulk-cancel-failed"
         : "fin-bulk-delete-invoices-failed";
       toast.error(e?.message || t(labelKey));
@@ -785,15 +804,10 @@ export function InvoicesView() {
             confirm: t("fin-bulk-mark-sent-confirm").replace("${n}", String(rowSel.count)),
             onClick: () => bulkInvoiceMut.mutate({ ids: rowSel.ids, action: "mark_sent" }),
           },
-          {
-            key: "mark-paid",
-            label: t("fin-bulk-mark-paid-label"),
-            icon: <CheckCircle2 className="size-4" />,
-            variant: "outline",
-            disabled: bulkInvoiceMut.isPending,
-            confirm: t("fin-bulk-mark-paid-confirm").replace("${n}", String(rowSel.count)),
-            onClick: () => bulkInvoiceMut.mutate({ ids: rowSel.ids, action: "mark_paid" }),
-          },
+          // AUDIT2-LOGIC-UX C5 — bulk "mark_paid" button removed. Bulk
+          // mark_paid bypassed record-payment (no bank txn / commission
+          // cascade / journal entry / payment method). Use the per-row
+          // "Record payment" dialog instead.
           {
             key: "cancel",
             label: t("fin-bulk-cancel-label"),

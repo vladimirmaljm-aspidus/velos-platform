@@ -5,6 +5,7 @@ import { requireGpsVerified } from "@/lib/portal/require-gps";
 import { getSupabase } from "@/lib/supabase/client";
 import { getStore } from "@/lib/data/store";
 import { audit } from "@/lib/api/helpers";
+import { nextDocNumber, formatDocNumber } from "@/lib/api/doc-number";
 
 export const runtime = "nodejs";
 
@@ -13,7 +14,38 @@ export const runtime = "nodejs";
  * POST /api/portal/logistics       → create a new logistics request
  */
 
+/**
+ * PORTAL-L8 — Atomic logistics-number generation.
+ *
+ * The previous implementation read `count + 1` from the database, which is
+ * the classic non-atomic read-then-write pattern: two concurrent portal
+ * clients could each read the same count, produce the same `LOG-<year>-N`,
+ * and either collide on a unique constraint or persist a duplicate number.
+ *
+ * The fix is to use the canonical `nextDocNumber("logistics")` helper,
+ * which RPCs into the Postgres `get_next_doc_number('logistics')` function
+ * backed by a SEQUENCE (migration 061). `nextval()` is atomic at the DB
+ * level — concurrent callers always get distinct values.
+ *
+ * The helper returns null when:
+ *   • Supabase isn't configured (local dev / MockStore), or
+ *   • The migration hasn't been applied yet (RPC raises "Unknown doc_type"),
+ *   • The RPC errors for any other reason.
+ *
+ * In all those cases we fall back to the legacy `count + 1` pattern so the
+ * INSERT still gets a number. The legacy path remains race-prone, but only
+ * in environments where the atomic path is unavailable — production (which
+ * has Supabase configured and migrations applied) gets the atomic guarantee.
+ */
 async function nextNumber(tenantId: string): Promise<string> {
+  // 1. Atomic path: Postgres SEQUENCE via RPC.
+  const atomic = await nextDocNumber("logistics");
+  if (atomic) return atomic;
+
+  // 2. Legacy fallback: count + 1 (race-prone, but only used when the
+  //    atomic path is unavailable). Preserved verbatim from the previous
+  //    implementation so the visible number format is unchanged for
+  //    existing dev/CI tenants.
   const year = new Date().getFullYear();
   const sb = getSupabase();
   const { count } = await sb
@@ -21,7 +53,7 @@ async function nextNumber(tenantId: string): Promise<string> {
     .select("id", { count: "exact", head: true })
     .eq("tenant_id", tenantId)
     .gte("created_at", `${year}-01-01`);
-  return `LOG-${year}-${String((count || 0) + 1).padStart(4, "0")}`;
+  return formatDocNumber("logistics", year, (count || 0) + 1);
 }
 
 export async function GET() {

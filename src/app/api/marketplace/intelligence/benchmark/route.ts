@@ -49,13 +49,30 @@ async function _get(req: NextRequest) {
   const sb = getSupabase();
 
   const tenantId = access.tenant_id;
+  const callerPartnerId = access.partner_id;
   // Helper: list responses + their post's created_at so we can compute
   // response time (response.created_at - post.created_at). We also
   // fetch the response status to compute the success rate.
+  //
+  // MARKET-H28(a): the response time must be computed PER POST —
+  // (earliest response on that post) - (post.created_at) — and then
+  // the median taken across all posts where the caller is the
+  // responder. The previous implementation grouped by
+  // `post_partner_id` (the post OWNER), which conflated multiple
+  // posts owned by the same partner into one bucket and paired the
+  // earliest response with the earliest post — sometimes on
+  // completely different posts. We now select the post's `id` so
+  // the median function can group by `post_id` directly.
+  //
+  // MARKET-H28(b): the market baseline MUST exclude the user's own
+  // responses — otherwise the "market average" includes the user,
+  // which makes the comparison meaningless. `fetchResponses(null)`
+  // (the market path) now applies `.neq("partner_id", access.partner_id)`.
   async function fetchResponses(
     partnerId: string | null,
   ): Promise<
     Array<{
+      post_id: string;
       unit_price: number | null;
       status: string;
       created_at: string;
@@ -64,21 +81,28 @@ async function _get(req: NextRequest) {
     }>
   > {
     // The PostgREST join fetches the response + the parent post's
-    // created_at + partner_id in one query.
+    // id + created_at + partner_id in one query.
     let q = sb
       .from("marketplace_responses")
       .select(
-        "id, unit_price, status, created_at, post:marketplace_posts!inner(created_at, partner_id, product_category, tenant_id)",
+        "id, unit_price, status, created_at, post:marketplace_posts!inner(id, created_at, partner_id, product_category, tenant_id)",
       )
       .eq("tenant_id", tenantId)
       .gte("created_at", since);
-    if (partnerId) q = q.eq("partner_id", partnerId);
+    if (partnerId) {
+      q = q.eq("partner_id", partnerId);
+    } else {
+      // Market baseline — exclude the signed-in partner's own responses
+      // so the comparison is "user vs the REST of the tenant".
+      q = q.neq("partner_id", callerPartnerId);
+    }
     if (category) q = q.ilike("post.product_category", category);
     const { data, error } = await q.limit(5000);
     if (error) throw error;
     return ((data as any[]) || []).map((r) => {
       const post = r.post ?? {};
       return {
+        post_id: post.id,
         unit_price: r.unit_price,
         status: r.status,
         created_at: r.created_at,
@@ -107,39 +131,43 @@ async function _get(req: NextRequest) {
   // received on that post (median across all the user's / market's
   // posts). The "first response" is the earliest created_at among the
   // responses for a given post.
+  //
+  // MARKET-H28(a) fix: group by `post_id` (not `post_partner_id`).
+  // Each post contributes exactly one data point — (earliest response
+  // on that post) - (post.created_at) — and the median is taken across
+  // those per-post response times. The previous implementation grouped
+  // by the post owner's partner_id, which conflated every post the
+  // owner had into a single bucket and paired the earliest response
+  // with the earliest post (potentially on a DIFFERENT post), producing
+  // a meaningless "median".
   function medianResponseTimeHours(
     responses: Array<{
+      post_id: string;
       created_at: string;
       post_created_at: string;
       post_partner_id: string;
     }>,
   ): number {
-    // Group by post partner_id (the user's posts) and pick the earliest
-    // response per post.
-    const earliestPerPost = new Map<string, number>();
+    // For each post, find the earliest response time on that post.
+    const earliestResponsePerPost = new Map<string, number>();
+    const postCreatedAtPerPost = new Map<string, number>();
     for (const r of responses) {
       const postT = new Date(r.post_created_at).getTime();
       const respT = new Date(r.created_at).getTime();
       if (!Number.isFinite(postT) || !Number.isFinite(respT)) continue;
-      const key = r.post_partner_id;
-      const cur = earliestPerPost.get(key);
-      if (cur === undefined || respT < cur) earliestPerPost.set(key, respT);
+      const key = r.post_id;
+      const cur = earliestResponsePerPost.get(key);
+      if (cur === undefined || respT < cur) {
+        earliestResponsePerPost.set(key, respT);
+        postCreatedAtPerPost.set(key, postT);
+      }
     }
+    // Per-post response time = earliest_response - post.created_at.
     const times: number[] = [];
-    for (const [partnerId, earliestT] of earliestPerPost) {
-      // Find that partner's post created_at — we need the post created_at
-      // of the post the response is on. The earliest response per
-      // partner gives us the response time relative to that partner's
-      // post created_at. We approximate by pairing the earliest response
-      // with the earliest post created_at for that partner.
-      const partnerPosts = responses.filter(
-        (r) => r.post_partner_id === partnerId,
-      );
-      if (partnerPosts.length === 0) continue;
-      const earliestPostT = Math.min(
-        ...partnerPosts.map((r) => new Date(r.post_created_at).getTime()),
-      );
-      const hours = (earliestT - earliestPostT) / (1000 * 60 * 60);
+    for (const [postId, earliestT] of earliestResponsePerPost) {
+      const postT = postCreatedAtPerPost.get(postId);
+      if (postT === undefined) continue;
+      const hours = (earliestT - postT) / (1000 * 60 * 60);
       if (Number.isFinite(hours) && hours >= 0) times.push(hours);
     }
     if (times.length === 0) return 0;

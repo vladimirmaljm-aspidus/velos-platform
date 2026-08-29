@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requireKycApproved } from "@/lib/portal/kyc-gate";
 import { listNegotiations, createNegotiation } from "@/lib/data/marketplace-store";
 import { getSupabase } from "@/lib/supabase/client";
 import { audit } from "@/lib/api/helpers";
@@ -35,6 +36,9 @@ async function _post(req: NextRequest) {
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // AUDIT2-LOGIC-UX H7 — gate negotiation creation on KYC approval.
+  const _kycBlock = await requireKycApproved(access);
+  if (_kycBlock) return _kycBlock;
 
   let body;
   try {
@@ -66,6 +70,17 @@ async function _post(req: NextRequest) {
   const p = post as { id: string; tenant_id: string; partner_id: string; status: string };
   const callerIsOwner = p.partner_id === access.partner_id;
 
+  // FIX-MARKET-2 / fix #5: a negotiation room cannot be opened on a post
+  // that is no longer active. Block closed/cancelled/flagged/expired posts
+  // — partners who missed the window can ask the owner to repost instead
+  // of resurrecting a dead thread. We do NOT honour the "expired with
+  // 7-day grace" option because the store's response-creation gate already
+  // hard-blocks expired posts, so opening a negotiation would be a no-op
+  // anyway (no new responses could be added).
+  if (p.status !== "active") {
+    return NextResponse.json({ error: "Post is no longer active." }, { status: 400 });
+  }
+
   let partnerIdB: string;
   let tenantIdB: string;
   if (callerIsOwner) {
@@ -75,6 +90,33 @@ async function _post(req: NextRequest) {
     }
     partnerIdB = String(body.partner_id_b);
     tenantIdB = access.tenant_id;
+
+    // FIX-MARKET-2 / fix #4: the owner may only open a negotiation with a
+    // partner who has ACTUALLY responded to this post. Without this guard,
+    // a post owner could open a negotiation with ANY partner_id in the
+    // tenant (including partners who never expressed interest), which
+    // would leak the negotiation-thread / message surface to arbitrary
+    // partners and bypass the "response-first" gate the marketplace UI
+    // assumes.
+    const { data: responderRows, error: respErr } = await sb
+      .from("marketplace_responses")
+      .select("partner_id")
+      .eq("post_id", body.post_id);
+    if (respErr) {
+      console.error("[marketplace.negotiations.create] responder lookup failed:", respErr);
+      return NextResponse.json({ error: "Failed to verify responder." }, { status: 500 });
+    }
+    const responderIds = new Set(
+      ((responderRows as Array<{ partner_id: string }> | null) ?? []).map(
+        (r) => r.partner_id,
+      ),
+    );
+    if (!responderIds.has(partnerIdB)) {
+      return NextResponse.json(
+        { error: "You can only open a negotiation with a partner who has responded to this post." },
+        { status: 400 },
+      );
+    }
   } else {
     // Responder → the OTHER party is the post owner.
     partnerIdB = p.partner_id;

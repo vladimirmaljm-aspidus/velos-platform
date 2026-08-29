@@ -18,7 +18,7 @@
  * `const err = validateStatusTransition(...); if (err) return 409;`.
  */
 
-export type DocType = "offer" | "invoice" | "proforma" | "deal";
+export type DocType = "offer" | "invoice" | "proforma" | "deal" | "kyc";
 
 const VALID_TRANSITIONS: Record<DocType, Record<string, string[]>> = {
   offer: {
@@ -44,12 +44,18 @@ const VALID_TRANSITIONS: Record<DocType, Record<string, string[]>> = {
     cancelled: [],
   },
   proforma: {
-    draft: ["sent", "cancelled", "viewed"],
-    sent: ["accepted", "expired", "cancelled", "viewed"],
-    viewed: ["accepted", "expired", "cancelled", "sent"],
+    draft: ["sent", "cancelled", "viewed", "rejected"],
+    // AUDIT2-LOGIC-UX H1 — add "rejected" to the allowed transitions from
+    // "sent" + "viewed" so a portal client's "Reject" decision (POST
+    // /api/portal/proformas/[id]/respond with decision="reject") is a
+    // valid state transition. Previously the route set the status to
+    // "expired" instead, conflating an active rejection with a timeout.
+    sent: ["accepted", "expired", "cancelled", "viewed", "rejected"],
+    viewed: ["accepted", "expired", "cancelled", "sent", "rejected"],
     accepted: ["paid", "cancelled"],
     paid: [],
     expired: [],
+    rejected: [],
     cancelled: [],
   },
   deal: {
@@ -60,6 +66,24 @@ const VALID_TRANSITIONS: Record<DocType, Record<string, string[]>> = {
     won: [],
     lost: [],
     cancelled: [],
+  },
+  // ADMIN-H11 — KYC submissions state machine. Without this, an admin
+  // could push a submission directly from `rejected` → `approved`
+  // (skipping the mandatory resubmit + re-review cycle), or move an
+  // `approved` record back to `draft` (silent reversal of a positive
+  // compliance decision). The matrix mirrors the lifecycle the KYC
+  // UI documents: a partner submits → ops reviews → ops approves or
+  // rejects. A rejected partner must resubmit (which moves them back
+  // through `submitted` for a fresh review). `approved` is a final
+  // state — re-opening requires either a brand new submission (the
+  // partner re-files) or a super-admin override.
+  kyc: {
+    submitted: ["under_review", "draft"],
+    under_review: ["submitted", "approved", "rejected", "resubmit", "draft"],
+    approved: [],
+    rejected: ["resubmit"],
+    resubmit: ["submitted", "draft"],
+    draft: ["submitted"],
   },
 };
 

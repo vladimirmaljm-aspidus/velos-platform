@@ -8,8 +8,11 @@ import { redactListForPortal } from "@/lib/portal/redact";
 export const runtime = "nodejs";
 
 // Portal clients must never see draft proformas. Allowed:
-// sent | viewed | accepted | paid | expired
-const PORTAL_PROFORMA_STATUSES = new Set(["sent", "viewed", "accepted", "paid", "expired"]);
+// sent | viewed | accepted | paid | expired | rejected
+// AUDIT2-LOGIC-UX H1 — added "rejected" so a client sees their own
+// rejection in the portal list (was previously collapsed to "expired",
+// conflating an active rejection with a timeout).
+const PORTAL_PROFORMA_STATUSES = new Set(["sent", "viewed", "accepted", "paid", "expired", "rejected"]);
 
 /**
  * GET /api/portal/proformas

@@ -11,6 +11,7 @@ import {
 import { withApm } from "@/lib/monitoring/apm";
 import { audit } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
+import { checkRateLimit } from "@/lib/security/rate-limiter";
 
 export const runtime = "nodejs";
 
@@ -83,6 +84,22 @@ async function _post(req: NextRequest) {
   const access = await getPortalSessionAccess();
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+  }
+
+  // MARKET-H23: per-partner rate limit — the VLM call is expensive (each
+  // parse charges a credit on the AI vision provider). Without a cap, a
+  // single partner could exhaust the tenant's monthly AI budget by
+  // hammering this endpoint. 10 parses/min/partner is well above any
+  // legitimate use pattern (a human takes ~30s to scan + review one
+  // document), so this gate only trips on abuse. The limiter fails open
+  // if the RPC is unavailable (defense-in-depth, not the primary gate).
+  const rl = await checkRateLimit(`mkt:parse:${access.partner_id}`, 10, 60_000);
+  if (!rl.allowed) {
+    const retryAfter = Math.ceil((rl.retryAfter ?? 60_000) / 1000);
+    return NextResponse.json(
+      { error: "Too many document-parse requests. Please slow down and try again shortly." },
+      { status: 429, headers: { "Retry-After": String(retryAfter) } },
+    );
   }
 
   let body: unknown;

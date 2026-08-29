@@ -6,6 +6,71 @@ import { validateStatusTransition } from "@/lib/api/status-validator";
 
 export const runtime = "nodejs";
 
+/**
+ * SEC-M10 (mass-assignment on invoices PUT) — the previous PUT handler
+ * spread `...body` raw into `upsertInvoice`, so an invoices:write caller
+ * could forge audit-trail columns (approved_by, approved_at, paid_at,
+ * sent_by, verified_at, verified_by, created_by, created_at) by sending
+ * them in the PUT body. The server's smartUpsert already strips
+ * created_at/created_by/updated_at on UPDATE, but paid_at / sent_at /
+ * approved_at etc. were going straight through to the DB.
+ *
+ * Allow only the business-level editable fields. Audit-trail + lifecycle
+ * timestamp columns are intentionally NOT in this list — they are set
+ * exclusively by their dedicated endpoints (record-payment, send, etc.).
+ *
+ * NOTE: status is in the allow list because the route still runs
+ * `validateStatusTransition` on it (line ~88) before the upsert — the
+ * whitelist is a column-shape filter, NOT a value validator.
+ *
+ * NOTE: `_changeNote` is intentionally NOT in the allow list (it is a
+ * per-request meta field used by `recordRevision`, not a DB column).
+ * The route captures it into a local var BEFORE the whitelist runs.
+ */
+function whitelistInvoiceFields(
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  const allowed = new Set([
+    "subject",
+    "partner_id",
+    "items",
+    "currency",
+    "status",
+    "due_date",
+    "issue_date",
+    "notes",
+    "payment_terms",
+    "subtotal",
+    "discount_total",
+    "tax_total",
+    "total",
+    "offer_id",
+    "number",
+    "incoterm",
+    "pol",
+    "pol_country",
+    "pod",
+    "pod_country",
+    "vessel",
+    "container_no",
+    "lead_time",
+    "packaging",
+    "delivery_address",
+    "delivery_city",
+    "delivery_country",
+    "specification",
+    "origin_country",
+    "exchange_rate",
+    "exchange_rate_date",
+    "exchange_rate_note",
+  ]);
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(body)) {
+    if (allowed.has(key)) result[key] = value;
+  }
+  return result;
+}
+
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const auth = await requireAuthOrApiKey(_req);
@@ -62,6 +127,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: "Not found." }, { status: 404 });
     }
     const body = await req.json();
+    // SEC-M10 — capture the per-request `_changeNote` meta field BEFORE
+    // the whitelist strips it. It's not a DB column — it's a transient
+    // note attached to the audit-trail revision record below.
+    const changeNote = (body as any)?._changeNote || null;
     // CRITICAL FIX (audit F-2): lock financial fields on paid/partial invoices.
     // A user with invoices.update permission should NOT be able to change total,
     // items, partner_id, or currency on a document that's already been paid.
@@ -91,6 +160,19 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         return NextResponse.json({ error: transition.error }, { status: 400 });
       }
     }
+    // AUDIT2-LOGIC-UX C5 — refuse `status: "paid"` on the generic PUT.
+    // Setting an invoice to "paid" must go through POST /api/invoices/[id]/
+    // record-payment, which writes the bank transaction, runs the
+    // commission cascade, posts the journal entry, and captures the
+    // payment method + reference. A generic PUT bypasses all of that,
+    // leaving a financial audit-trail hole. Super-admins bypass so they
+    // can correct bad data.
+    if (body.status === "paid" && existing.status !== "paid" && !isSuperAdmin) {
+      return NextResponse.json(
+        { error: "Use the record-payment endpoint to mark invoices as paid (records bank transaction + commission cascade)." },
+        { status: 400 },
+      );
+    }
     // FIX-P1-LOGIC Fix 5: recompute totals from line items — never trust
     // client-supplied totals (parity with offers PUT). Always overwrite.
     if (Array.isArray(body.items) && body.items.length > 0) {
@@ -110,7 +192,16 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       body.tax_total = Math.round(taxTotal * 100) / 100;
       body.total = Math.round((subtotal - discountTotal + taxTotal) * 100) / 100;
     }
-    const updated = await auth.store.upsertInvoice({ ...body, id, tenant_id: existing.tenant_id });
+    // SEC-M10 (mass-assignment) — apply the field whitelist AFTER the
+    // total recompute (which writes back subtotal/discount_total/tax_total/
+    // total — all in the allow list) and BEFORE the upsert. Strips
+    // client-supplied values for audit-trail + lifecycle columns
+    // (approved_by, approved_at, paid_at, sent_by, sent_at, verified_at,
+    // verified_by, created_by, created_at) so an invoices:write caller
+    // cannot forge the payment/approval/verification audit trail by
+    // sending those keys in the PUT body.
+    const safeBody = whitelistInvoiceFields(body);
+    const updated = await auth.store.upsertInvoice({ ...safeBody, id, tenant_id: existing.tenant_id });
 
     // CRITICAL FIX (audit I-1/I-2): when an invoice is cancelled, reverse
     // the financial side effects that were created when it was paid:
@@ -188,19 +279,51 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           }
         }
 
-        // 4. Void commissions that were marked 'approved' by the invoice payment
+        // 4. Void commissions that were marked 'approved' by the invoice payment.
+        //
+        // FIX-AUDIT2-CRIT / C5 — the previous implementation used
+        // `existing.offer_id` directly as the `deal_id` FK. `offer_id`
+        // is the OFFER UUID, NOT the deal UUID — they are different
+        // tables with different PKs (offers.id ≠ deals.id). The query
+        // silently matched 0 rows, so cancelling a paid invoice never
+        // actually voided the linked commissions.
+        //
+        // Correct path: look up the offer to get its `deal_id` (the
+        // FK from offers → deals), then void commissions by THAT id.
+        // Handle nulls gracefully:
+        //   • `existing.offer_id` is null → invoice is not linked to an
+        //     offer → no commissions to void.
+        //   • offer row exists but `offer.deal_id` is null → the offer
+        //     was never converted into a deal → no commissions to void.
         try {
-          const { data: commissions } = await sb
-            .from("deal_commissions")
-            .select("id, status")
-            .eq("tenant_id", tid)
-            .eq("deal_id", existing.offer_id) // commissions are linked via deal
-            .eq("status", "approved");
-          if (commissions) {
-            for (const c of commissions) {
-              await sb.from("deal_commissions")
-                .update({ status: "cancelled", notes: `Voided: invoice ${existing.number} cancelled` })
-                .eq("id", c.id);
+          let dealId: string | null = null;
+          if (existing.offer_id) {
+            const { data: offer, error: offerErr } = await sb
+              .from("offers")
+              .select("deal_id")
+              .eq("id", existing.offer_id)
+              .maybeSingle();
+            if (offerErr) {
+              console.warn("[invoice.cancel] offer lookup failed:", offerErr);
+            } else if (offer) {
+              dealId = offer.deal_id ?? null;
+            }
+          }
+          if (dealId) {
+            const { data: commissions, error: commErr } = await sb
+              .from("deal_commissions")
+              .select("id, status")
+              .eq("tenant_id", tid)
+              .eq("deal_id", dealId)
+              .eq("status", "approved");
+            if (commErr) {
+              console.warn("[invoice.cancel] commission lookup failed:", commErr);
+            } else if (commissions && commissions.length > 0) {
+              for (const c of commissions) {
+                await sb.from("deal_commissions")
+                  .update({ status: "cancelled", notes: `Voided: invoice ${existing.number} cancelled` })
+                  .eq("id", c.id);
+              }
             }
           }
         } catch (e) {
@@ -218,7 +341,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         docType: "invoice", documentId: id, tenantId: existing.tenant_id,
         before: existing as any, after: updated as any,
         userId: auditUser.id, username: auditUser.username,
-        changeNote: (body as any)?._changeNote || null,
+        changeNote,
       });
     } catch (e) { console.warn("[invoice.update] revision failed:", e); }
     await audit(auth.store, auditUser, req, "invoice.update", "invoice", id, { status: updated.status });

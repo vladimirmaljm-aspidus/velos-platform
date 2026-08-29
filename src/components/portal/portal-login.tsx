@@ -74,6 +74,13 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
   const [newPassword, setNewPassword] = useState("");
   const [setupLoading, setSetupLoading] = useState(false);
   const [setupError, setSetupError] = useState<string | null>(null);
+  // FIX-ACCESSID-REDO — Mode B state for the "no token in URL" branch of
+  // the setup dialog. When the user manually opens the dialog (no
+  // ?setup_token / ?access_id), we ask for an email instead of the
+  // impossible-to-find Access ID and POST to /api/portal/forgot-password
+  // to (re)send the single-use setup link.
+  const [setupEmail, setSetupEmail] = useState("");
+  const [setupEmailSent, setSetupEmailSent] = useState(false);
 
   // Forgot password state
   const [forgotOpen, setForgotOpen] = useState(false);
@@ -228,13 +235,61 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
     }
   }
 
+  // FIX-ACCESSID-REDO — dialog open/close handler. When the dialog closes
+  // (either via the cancel button, the X, the escape key, or a successful
+  // Mode A setup that navigates away), clear ALL setup state so reopening
+  // the dialog doesn't show stale values. Without this the email-sent
+  // banner could persist into a fresh open of Mode A.
+  function handleSetupOpenChange(open: boolean) {
+    setSetupOpen(open);
+    if (!open) {
+      setSetupError(null);
+      setSetupEmailSent(false);
+      setSetupEmail("");
+      setNewPassword("");
+    }
+  }
+
   async function setupPassword(e: React.FormEvent) {
     e.preventDefault();
     setSetupError(null);
-    if (!accessId && !setupToken) {
-      setSetupError(t("portal-login-toast-missing-access-id"));
+
+    // FIX-ACCESSID-REDO — two modes:
+    //  • Mode A (URL had ?setup_token or ?access_id): set password now.
+    //    Existing flow — validate password, POST /api/portal/setup-password
+    //    with the token, auto-login on success, redirect to dashboard.
+    //  • Mode B (manual open, no token): the user can't know the Access ID
+    //    (invite emails ship ?setup_token now, not the access_id), so we
+    //    ask for their email and POST /api/portal/forgot-password to
+    //    (re)send a single-use setup link. forgot-password always returns
+    //    ok to avoid account enumeration, so we just flip the banner.
+    if (!setupToken && !accessId) {
+      // ── Mode B: email → send setup link ──────────────────────────────
+      const trimmedEmail = setupEmail.trim();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+        setSetupError(t("portal-login-setup-email-invalid"));
+        return;
+      }
+      setSetupLoading(true);
+      try {
+        await fetch("/api/portal/forgot-password", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: trimmedEmail }),
+        });
+        // forgot-password returns ok regardless of whether the account
+        // exists (anti-enumeration). Always show the "check your inbox"
+        // banner so the user knows the request was processed.
+        setSetupEmailSent(true);
+      } catch {
+        setSetupError(t("portal-login-toast-network"));
+      } finally {
+        setSetupLoading(false);
+      }
       return;
     }
+
+    // ── Mode A: token from URL → set password immediately ───────────────
     if (!newPassword) {
       setSetupError(t("portal-login-toast-enter-password"));
       return;
@@ -272,6 +327,9 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
       setAccessId("");
       setSetupToken("");
       setNewPassword("");
+      setSetupEmail("");
+      setSetupEmailSent(false);
+      setSetupError(null);
       if (data.access) {
         setPortalAccess(data.access);
         setAppMode("portal");
@@ -442,7 +500,7 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
                   )}
                 </Button>
 
-                <Dialog open={setupOpen} onOpenChange={setSetupOpen}>
+                <Dialog open={setupOpen} onOpenChange={handleSetupOpenChange}>
                   <DialogTrigger asChild>
                     <button
                       type="button"
@@ -463,46 +521,86 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
                     </DialogHeader>
                     <form onSubmit={setupPassword} className="flex-1 min-h-0 flex flex-col">
                       <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
-                      {/* Access ID field — HIDDEN when setup_token is present
-                          (token is auto-filled from the email link URL param).
-                          Only show when user manually opens setup dialog
-                          without a token (legacy fallback). */}
-                      {!setupToken && (
-                      <div className="space-y-2">
-                        <Label htmlFor="access_id">{t("portal-login-access-id")}</Label>
-                        <Input
-                          id="access_id"
-                          value={accessId}
-                          onChange={(e) => setAccessId(e.target.value)}
-                          placeholder="pa_..."
-                          disabled={setupLoading}
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          You can find your Access ID in the invite email. Click the
-                          "Set up your password" button in the email to open this form
-                          with the ID pre-filled.
-                        </p>
-                      </div>
+                      {/*
+                        FIX-ACCESSID-REDO — three render modes for the dialog
+                        body. The presence of a ?setup_token or ?access_id in
+                        the URL (Mode A) shows the new-password field; the
+                        absence (Mode B) asks for an email and POSTs to
+                        /api/portal/forgot-password to (re)send the setup
+                        link. After Mode B submits, show a "Check your inbox"
+                        banner instead of the email field. The hidden inputs
+                        preserve the token across re-renders (Radix may
+                        remount the content on focus changes).
+                      */}
+                      {setupToken || accessId ? (
+                        <>
+                          {/* Mode A — preserve the token from the URL so it
+                              is submitted with the form. */}
+                          {setupToken && (
+                            <input type="hidden" name="setup_token" value={setupToken} />
+                          )}
+                          {accessId && !setupToken && (
+                            <input type="hidden" name="access_id" value={accessId} />
+                          )}
+                          <div className="space-y-2">
+                            <Label htmlFor="new_password">{t("portal-login-new-password")}</Label>
+                            <Input
+                              id="new_password"
+                              type="password"
+                              value={newPassword}
+                              onChange={(e) => { setNewPassword(e.target.value); setSetupError(null); }}
+                              placeholder={t("portal-login-at-least-8")}
+                              minLength={8}
+                              autoComplete="new-password"
+                              disabled={setupLoading}
+                              autoFocus
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              {t("portal-login-new-password-hint")}
+                            </p>
+                          </div>
+                        </>
+                      ) : setupEmailSent ? (
+                        // Mode B — post-submit confirmation banner. The
+                        // forgot-password endpoint never confirms account
+                        // existence, so we keep the language conditional.
+                        <div className="flex items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200">
+                          <Mail className="size-5 shrink-0 mt-0.5" aria-hidden />
+                          <div className="space-y-1">
+                            <p className="text-sm font-semibold">
+                              {t("portal-login-setup-email-sent-title")}
+                            </p>
+                            <p className="text-xs leading-relaxed">
+                              {t("portal-login-setup-email-sent-desc")}
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        // Mode B — pre-submit: email entry.
+                        <div className="space-y-2">
+                          <Label htmlFor="setup_email">
+                            {t("portal-login-setup-email-label")}
+                          </Label>
+                          <div className="relative group">
+                            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground transition-colors group-focus-within:text-primary" />
+                            <Input
+                              id="setup_email"
+                              type="email"
+                              autoComplete="email"
+                              value={setupEmail}
+                              onChange={(e) => { setSetupEmail(e.target.value); setSetupError(null); }}
+                              placeholder={t("portal-login-setup-email-placeholder")}
+                              disabled={setupLoading}
+                              autoFocus
+                              aria-required="true"
+                              className="pl-10"
+                            />
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            {t("portal-login-setup-no-token-hint")}
+                          </p>
+                        </div>
                       )}
-                      {setupToken && (
-                        <input type="hidden" value={setupToken} name="setup_token" />
-                      )}
-                      <div className="space-y-2">
-                        <Label htmlFor="new_password">{t("portal-login-new-password")}</Label>
-                        <Input
-                          id="new_password"
-                          type="password"
-                          value={newPassword}
-                          onChange={(e) => { setNewPassword(e.target.value); setSetupError(null); }}
-                          placeholder={t("portal-login-at-least-8")}
-                          minLength={8}
-                          autoComplete="new-password"
-                          disabled={setupLoading}
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          {t("portal-login-new-password-hint")}
-                        </p>
-                      </div>
                       {setupError && (
                         <div className="p-3 rounded-lg text-sm bg-destructive/10 text-destructive border border-destructive/30">
                           {setupError}
@@ -513,17 +611,27 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
                         <Button
                           type="button"
                           variant="outline"
-                          onClick={() => setSetupOpen(false)}
+                          onClick={() => handleSetupOpenChange(false)}
                           disabled={setupLoading}
                         >
                           {t("portal-action-cancel")}
                         </Button>
-                        <Button type="submit" disabled={setupLoading}>
-                          {setupLoading ? (
-                            <Loader2 className="size-4 animate-spin mr-1" />
-                          ) : null}
-                          {t("portal-login-set-password")}
-                        </Button>
+                        {/*
+                          Hide the submit button once Mode B has sent the
+                          email — there's nothing left to submit and a
+                          second click would only re-trigger the request.
+                          Mode A always shows it (password entry).
+                        */}
+                        {!setupEmailSent && (
+                          <Button type="submit" disabled={setupLoading}>
+                            {setupLoading ? (
+                              <Loader2 className="size-4 animate-spin mr-1" />
+                            ) : null}
+                            {setupToken || accessId
+                              ? t("portal-login-set-password")
+                              : t("portal-login-setup-send-link")}
+                          </Button>
+                        )}
                       </DialogFooter>
                     </form>
                   </DialogContent>

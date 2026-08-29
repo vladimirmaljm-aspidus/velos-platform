@@ -144,7 +144,14 @@ export function AuditView() {
     }));
     const escape = (v: unknown) => {
       const s = v === null || v === undefined ? "" : String(v);
-      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      // PORTAL-M13 / ADMIN-C5 — CSV-injection protection. Prefix cells that
+      // start with a formula trigger (=, +, -, @, tab, CR) with a single
+      // quote so Excel/Sheets/LibreOffice render them as text, not formulas.
+      let out = s;
+      if (/^[=+\-@\t\r]/.test(out)) {
+        out = `'${out}`;
+      }
+      return /[",\n\r]/.test(out) ? `"${out.replace(/"/g, '""')}"` : out;
     };
     try {
       const csv = `${cols.join(",")}\n${rows.map((r) => cols.map((c) => escape((r as any)[c])).join(",")).join("\n")}`;

@@ -8,6 +8,10 @@ import {
   type AuthContext,
   type ApiKeyAuthContext,
 } from "@/lib/api/helpers";
+// SEC-M11 — partner mass-assignment whitelist (mirrors the POST/PUT
+// partner routes). Reused so the import path can never desync from the
+// interactive create/update paths.
+import { whitelistPartnerFields } from "@/app/api/partners/route";
 
 export const runtime = "nodejs";
 
@@ -35,6 +39,62 @@ interface ImportResultRow {
   success: boolean;
   id?: string;
   error?: string;
+}
+
+/**
+ * SEC-M11 — product field whitelist for the CSV import path. Mirrors the
+ * shape of `whitelistPartnerFields` (which is shared with the partners
+ * POST/PUT routes). The previous `coerceRow` only stripped `tenant_id`
+ * — every other CSV column flowed through to `upsertProduct`, so a CSV
+ * importer could set audit / lifecycle columns (`created_at`, `created_by`,
+ * `updated_at`) or non-existent columns that PostgREST would 500 on.
+ *
+ * Allowed: business-level product fields only. `active` is allowed
+ * because the import is admin-initiated (partners:write / products.create
+ * holder) — the admin is explicitly setting the active flag during a
+ * bulk load, which the spec considers an authorized explicit set.
+ *
+ * FIX-AUDIT2-CRIT / C2 — `id` is in the allow-list. The CSV import
+ * docs promise update-in-place ("`id` is honoured if present
+ * (update-in-place); otherwise a new row is created"), but the previous
+ * whitelist stripped `id` so every import row created a NEW product
+ * instead of updating the existing one. Re-attaching `id` here lets the
+ * upsert path match on the PK and update the existing row.
+ */
+function whitelistProductFields(
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  const allowed = new Set([
+    "id",          // update-in-place: upsert matches on PK
+    "sku",
+    "name",
+    "description",
+    "category",
+    "unit",
+    "price",
+    "currency",
+    "cost",
+    "stock",
+    "reorder_level",
+    "active",
+    "attributes",
+    "brand",
+    "hs_code",
+    "image_url",
+    "show_in_catalog",
+    "origin_country",
+    "shelf_life",
+    "tags",
+    "detailed_spec",
+    "coa_params",
+    "logistics",
+    "inventory",
+  ]);
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(body)) {
+    if (allowed.has(key)) result[key] = value;
+  }
+  return result;
 }
 
 /**
@@ -316,5 +376,21 @@ function coerceRow(
     }
   }
 
-  return out;
+  // SEC-M11 (CSV import mass-assignment) — apply the field whitelist
+  // AFTER coercion but BEFORE the row reaches upsertProduct / upsertPartner.
+  // The previous implementation only filtered out `tenant_id`, so every
+  // other CSV column (including `approved_by`, `kyc_status`,
+  // `verification_level`, `portal_token`, `*_hmac`, `created_at`, …)
+  // flowed through to the upsert and landed in the DB. This gates each
+  // imported row through the same allow-list the interactive POST/PUT
+  // routes use, so an attacker who crafts a malicious CSV can no longer
+  // self-approve KYC / mint portal tokens / forge audit columns via the
+  // import path. (Admin explicit `active` is preserved because `active`
+  // is in both whitelists — admins importing CSV are partners:write /
+  // products.create holders, so the spec's "admin explicitly sets it"
+  // exception applies.)
+  if (type === "partners") {
+    return whitelistPartnerFields(out);
+  }
+  return whitelistProductFields(out);
 }

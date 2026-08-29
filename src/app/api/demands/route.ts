@@ -60,6 +60,20 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
+    // ADMIN-H5: validate that the supplied partner_id actually belongs
+    // to the caller's tenant. Without this check, a tenant admin could
+    // create a demand tied to another tenant's partner (the FK to
+    // partners(id) passes, but the row-level visibility is broken and
+    // the demand would show up under the WRONG tenant's pipeline).
+    // Super-admin with no tenant context (tid null) bypasses — they
+    // can legitimately cross-link (already gated by the permission
+    // matrix + audit log).
+    if (tid) {
+      const partner = await auth.store.getPartner(body.partner_id);
+      if (!partner || partner.tenant_id !== tid) {
+        return NextResponse.json({ error: "Not found." }, { status: 404 });
+      }
+    }
     // FIX-FUNC-4: `demands.number` is NOT NULL with no DB-level default.
     // If the caller didn't supply one, mint a per-tenant sequence in
     // the format `DEM-<YEAR>-<NNN>` (e.g. `DEM-2026-001`). See

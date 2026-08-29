@@ -11,10 +11,28 @@ import { notifyDocumentSigned } from "@/lib/notif/helper";
 
 export const runtime = "nodejs";
 
-// POST /api/marketplace/documents/[id]/sign — apply a digital signature
-// to a trade document. The signature is a SHA-256 over the canonicalised
-// `document_data` JSONB + the signer's partner_id (so the same payload
-// signed by two different partners produces two different signatures).
+// POST /api/marketplace/documents/[id]/sign — apply a tamper-detection
+// fingerprint to a trade document. The "fingerprint" (currently named
+// `digital_signature` in the DB column for backward compatibility, but
+// surfaced as `document_fingerprint` in the API response) is a SHA-256
+// over the canonicalised `document_data` JSONB + the signer's partner_id
+// (so the same payload signed by two different partners produces two
+// different fingerprints).
+//
+// ⚠️ MARKET-H24 — IMPORTANT SEMANTIC NOTE:
+// This value is NOT a cryptographic digital signature in the
+// non-repudiation sense. It is a tamper-detection FINGERPRINT. Anyone
+// with the document_data + the partner_id can recompute it (the
+// "private key" is just the partner_id, which is not secret). It can
+// prove the document_data has not changed since the fingerprint was
+// recorded, but it cannot prove WHO recorded it — anyone could have
+// computed the same hash. A real digital signature (one that holds up
+// in court as a non-repudiation proof) requires per-partner asymmetric
+// key pairs (private key signs, public key verifies) — a future
+// iteration. Until then this column is named `document_fingerprint` in
+// the API response to avoid implying a stronger guarantee than the
+// system actually provides. The DB column stays `digital_signature`
+// so existing migrations / RLS / audit joins keep working.
 //
 // Auth: the issuing partner only (the store filters by tenant_id +
 // partner_id). The signer must be the issuer — a counterparty cannot
@@ -22,8 +40,8 @@ export const runtime = "nodejs";
 // issuing their own counter-document (e.g. a counter-invoice).
 //
 // SIGNED DOCUMENTS ARE IMMUTABLE: once signed, the document_data cannot
-// be modified (the store refuses any PUT to a signed row). The signature
-// + signed_at + signed_by columns are committed atomically.
+// be modified (the store refuses any PUT to a signed row). The
+// fingerprint + signed_at + signed_by columns are committed atomically.
 async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const access = await getPortalSessionAccess();
   if (!access) {
@@ -60,16 +78,31 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
       );
     }
     if (doc.digital_signature) {
-      // Already signed — idempotent return of the current state.
-      return NextResponse.json({ document: doc, already_signed: true });
+      // Already signed — idempotent return of the current state. Surface
+      // the existing fingerprint under the `document_fingerprint` name
+      // (see the MARKET-H24 note above for the rationale).
+      const { digital_signature, ...restDoc } = doc;
+      return NextResponse.json({
+        document: { ...restDoc, document_fingerprint: digital_signature },
+        already_signed: true,
+      });
     }
 
-    const signature = computeDocumentFingerprint(
+    // Compute the tamper-detection fingerprint (NOT a cryptographic
+    // signature — see the MARKET-H24 block comment at the top of this
+    // file). Renamed from `signature` to `documentFingerprint` in the
+    // local scope so future readers don't mistake it for non-repudiation.
+    const documentFingerprint = computeDocumentFingerprint(
       doc.document_data as Record<string, any>,
       access.partner_id,
     );
 
-    const signed = await signDocument(id, access.tenant_id, access.partner_id, signature);
+    const signed = await signDocument(
+      id,
+      access.tenant_id,
+      access.partner_id,
+      documentFingerprint,
+    );
     if (!signed) {
       return NextResponse.json(
         { error: "Failed to sign document." },
@@ -89,7 +122,7 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
         {
           document_type: signed.document_type,
           reference_number: signed.reference_number,
-          signature_prefix: signature.slice(0, 12),
+          fingerprint_prefix: documentFingerprint.slice(0, 12),
           notes: body.notes ?? null,
         },
       );
@@ -103,7 +136,7 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
         reference_number: signed.reference_number,
         signed_by: access.partner_id,
         signed_at: signed.signed_at,
-        signature_prefix: signature.slice(0, 12),
+        fingerprint_prefix: documentFingerprint.slice(0, 12),
       }).catch(() => {});
     } catch (e) {
       console.error("[marketplace.documents.sign] audit failed:", e);
@@ -193,7 +226,17 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
     } catch (e) {
       console.error("[marketplace.documents.sign] notify failed:", e);
     }
-    return NextResponse.json({ document: signed, already_signed: false });
+    // Surface the fingerprint under the `document_fingerprint` name in
+    // the response (see the MARKET-H24 note at the top of this file).
+    // Strip the DB-column name `digital_signature` so the API contract
+    // doesn't promise a stronger guarantee than the system actually
+    // provides (it's a tamper-detection hash, not a non-repudiation
+    // signature).
+    const { digital_signature: _strippedDbSig, ...restSigned } = signed;
+    return NextResponse.json({
+      document: { ...restSigned, document_fingerprint: signed.digital_signature },
+      already_signed: false,
+    });
   } catch (e: any) {
     console.error("[marketplace.documents.sign]", e);
     const msg = e?.message || "Failed to sign document.";

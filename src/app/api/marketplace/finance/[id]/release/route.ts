@@ -20,6 +20,15 @@ export const runtime = "nodejs";
 // released → released as a no-op that isn't in the transition map — but
 // `from === to` returns true so the store actually allows it; the second
 // call is a no-op that re-stamps `released`).
+//
+// FIX-AUDIT2-CRIT / C4 — when `escrow_release_condition` is
+// `both_parties_confirm`, the store now implements a real 2-phase commit:
+// the first party's call records the confirmation but does NOT release;
+// it returns the instrument with `needs_counterparty_confirm: true` so the
+// caller surfaces the "waiting on counterparty" UX. The release only fires
+// when the second party confirms. The "released" audit log entry + the
+// counterparty notification are deferred to the actual release call, so
+// this route branches on `result.needs_counterparty_confirm`.
 async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const access = await getPortalSessionAccess();
   if (!access) {
@@ -28,10 +37,26 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
   const { id } = await ctx.params;
 
   try {
-    const released = await releaseEscrow(id, access.tenant_id, access.partner_id);
-    if (!released) {
+    const result = await releaseEscrow(id, access.tenant_id, access.partner_id);
+    if (!result) {
       return NextResponse.json({ error: "Not found or not authorised." }, { status: 404 });
     }
+    const { instrument, needs_counterparty_confirm, confirmed_partner_ids } = result;
+
+    if (needs_counterparty_confirm) {
+      // 2-phase commit pending — the store has already added a
+      // `marketplace.escrow_release_confirmed` audit log entry. The
+      // "released" audit log entry + counterparty notification are
+      // deferred until the second party confirms and the store actually
+      // flips the status. Return the instrument with the pending flag so
+      // the frontend can surface the "waiting on counterparty" UX.
+      return NextResponse.json({
+        ...instrument,
+        needs_counterparty_confirm: true,
+        confirmed_partner_ids,
+      });
+    }
+
     try {
       const store = await getStore();
       await audit(
@@ -40,8 +65,8 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
         req,
         "marketplace.escrow_released",
         "marketplace_financial_instruments",
-        released.id,
-        { amount: released.amount, currency: released.currency, escrow_release_condition: released.escrow_release_condition },
+        instrument.id,
+        { amount: instrument.amount, currency: instrument.currency, escrow_release_condition: instrument.escrow_release_condition },
       );
     } catch (e) {
       console.error("[marketplace.finance.release] audit failed:", e);
@@ -57,20 +82,20 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
     // confirm where the counterparty initiated), skip silently.
     // Best-effort — failures are caught inside notifyEscrowReleased.
     try {
-      const counterpartyPartnerId = released.counterparty_partner_id;
+      const counterpartyPartnerId = instrument.counterparty_partner_id;
       if (counterpartyPartnerId && counterpartyPartnerId !== access.partner_id) {
         void notifyEscrowReleased(
           access.tenant_id,
           counterpartyPartnerId,
-          released.id,
-          released.amount,
-          released.currency,
+          instrument.id,
+          instrument.amount,
+          instrument.currency,
         );
       }
     } catch (e) {
       console.error("[marketplace.finance.release] notify failed:", e);
     }
-    return NextResponse.json(released);
+    return NextResponse.json(instrument);
   } catch (e: any) {
     console.error("[marketplace.finance.release]", e);
     const msg = e?.message || "Failed to release escrow.";

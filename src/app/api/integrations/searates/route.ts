@@ -1,7 +1,7 @@
 // DEPRECATED: This route has no active UI consumers. Kept for potential future use.
 // If you're building a new feature, consider whether this integration is still needed.
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth } from "@/lib/api/helpers";
+import { requireAuth, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 
 export const runtime = "nodejs";
@@ -112,6 +112,10 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ ...tracking, cached: false });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 502 });
+    // SEC-L4 — never leak raw e.message to the client. SeaRates error
+    // bodies include API key / endpoint hints. The sanitizeError
+    // helper strips schema/table/column leaks and constraint names.
+    console.error("[searates]", e);
+    return NextResponse.json({ error: sanitizeError(e) }, { status: 502 });
   }
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -49,17 +49,15 @@ import { cn } from "@/lib/utils";
 import type { Invoice, InvoiceStatus, OfferLineItem, PortalTier } from "@/lib/supabase/types";
 import { useDebounced } from "@/lib/hooks/use-debounced";
 
-const STATUS_STYLES: Record<string, string> = {
+const STATUS_STYLES: Record<InvoiceStatus, string> = {
   draft: "bg-secondary text-secondary-foreground",
   sent: "border-transparent bg-chart-1 text-white",
   paid: "border-transparent bg-emerald-600 text-white",
   overdue: "border-transparent bg-destructive text-destructive-foreground",
   cancelled: "bg-muted text-muted-foreground",
-  partial: "border-transparent bg-amber-500 text-white",
-  viewed: "bg-secondary text-secondary-foreground",
 };
 
-const STATUS_LABEL_KEYS: Record<string, string> = {
+const STATUS_LABEL_KEYS: Record<InvoiceStatus, string> = {
   draft: "portal-status-draft",
   sent: "portal-status-sent",
   paid: "portal-status-paid",
@@ -67,14 +65,12 @@ const STATUS_LABEL_KEYS: Record<string, string> = {
   cancelled: "portal-status-cancelled",
 };
 
-const STATUS_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+const STATUS_ICONS: Record<InvoiceStatus, React.ComponentType<{ className?: string }>> = {
   draft: FileText,
   sent: Clock,
   paid: CheckCircle2,
   overdue: AlertTriangle,
   cancelled: XCircle,
-  partial: AlertTriangle, // 'partial' is a runtime status not in InvoiceStatus type
-  viewed: Eye,
 };
 
 export function PortalInvoices() {
@@ -321,6 +317,15 @@ function InvoiceDetail({
   t: (k: string) => string;
 }) {
   const StatusIcon = STATUS_ICONS[invoice.status];
+
+  // PORTAL-M2 — Fire view-tracking endpoint once per detail open.
+  useEffect(() => {
+    if (!invoice.id) return;
+    fetch(`/api/portal/invoices/${invoice.id}/view`, {
+      method: "POST",
+    }).catch(() => {});
+  }, [invoice.id]);
+
   return (
     <>
       <SheetHeader>

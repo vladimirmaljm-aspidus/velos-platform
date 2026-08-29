@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, audit, getIp } from "@/lib/api/helpers";
+import { requireAuth, audit, getIp, sanitizeError } from "@/lib/api/helpers";
 import { sendEmail, welcomePortalEmail } from "@/lib/email/service";
 import { createPasswordReset } from "@/lib/auth/password-reset";
 // P0-3 / Feature 2 — field-level encryption. portal_email is encrypted at
@@ -92,7 +92,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       try {
         const tenant = await auth.store.getTenant(access.tenant_id);
         const partner = access.partner_id ? await auth.store.getPartner(access.partner_id) : null;
-        const baseUrl = process.env.APP_BASE_URL || "https://aspidus.onrender.com";
+        // SEC-L6 — prefer the Next.js public env var (required for
+        // client-side rendering, so always present in production) and
+        // fall back to APP_BASE_URL. Throw in production if NEITHER is
+        // set — the previous hardcoded fallback `https://aspidus.onrender.com`
+        // was a sandbox artifact that would have leaked into real
+        // customer emails if the env was misconfigured.
+        const baseUrl =
+          process.env.NEXT_PUBLIC_APP_URL ||
+          process.env.APP_BASE_URL ||
+          (process.env.NODE_ENV === "production"
+            ? (() => {
+                throw new Error("NEXT_PUBLIC_APP_URL or APP_BASE_URL required in production for portal change-email notifications");
+              })()
+            : "http://localhost:3000");
         // Audit F-6/P1-3: mint a single-use, 7-day-expiring setup token for
         // the NEW email address (the old invite token, if any, was tied to
         // the old email and is invalidated by createPasswordReset). Best-
@@ -137,6 +150,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ ok: true, updated: safeUpdated, email_sent });
   } catch (e: any) {
     console.error("[portal-access.change-email.POST]", e);
-    return NextResponse.json({ error: e?.message || "Internal server error." }, { status: 500 });
+    // SEC-L4 — never leak raw e?.message. The change-email chain spans
+    // store + email + token-mint + HMAC recompute; a PostgrestError
+    // .message would leak the portal_email / portal_email_hmac column
+    // names + constraint names to the admin client. Sanitize first.
+    return NextResponse.json({ error: sanitizeError(e) || "Internal server error." }, { status: 500 });
   }
 }

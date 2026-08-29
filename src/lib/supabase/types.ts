@@ -537,11 +537,17 @@ export interface Invoice {
 }
 
 // ---------- Proformas ----------
-// Status flow: draft → sent → accepted → paid (or expired at any point).
+// Status flow: draft → sent → accepted → paid (or expired/rejected at any point).
 // "accepted" is the client's confirmation of the proforma; it unlocks
 // invoice creation. Existing proformas with status "sent" remain valid —
 // the create-invoice automation accepts either "accepted" or "sent".
-export type ProformaStatus = "draft" | "sent" | "viewed" | "accepted" | "paid" | "expired";
+//
+// AUDIT2-LOGIC-UX H1 — "rejected" added as a proper terminal status. The
+// portal respond route sets this when a client actively rejects a
+// proforma (was previously collapsed into "expired", conflating an active
+// rejection with a timeout). The state machine in status-validator.ts
+// allows sent|viewed → rejected.
+export type ProformaStatus = "draft" | "sent" | "viewed" | "accepted" | "paid" | "expired" | "rejected";
 
 export interface Proforma {
   id: string;

@@ -10,13 +10,15 @@ import { nextDocNumber } from "@/lib/api/doc-number";
 export const runtime = "nodejs";
 
 // Portal: list partner's RFQs
+// AUDIT2-LOGIC-UX H9 — the GET handler no longer requires can_submit_rfq.
+// A portal client whose tier was downgraded (can_submit_rfq=false) must
+// still be able to view their past RFQs. The can_submit_rfq gate stays
+// on POST only. KYC remains gated on both (unapproved-KYC callers can
+// neither list nor submit).
 export async function GET() {
   const access = await getPortalSessionAccess();
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
-  }
-  if (!access.can_submit_rfq) {
-    return NextResponse.json({ error: "Not permitted." }, { status: 403 });
   }
   const _kycBlock = await requireKycApproved(access);
   if (_kycBlock) return _kycBlock;

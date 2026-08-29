@@ -21,7 +21,17 @@ export async function GET(req: NextRequest) {
   const tid = resolveTenantId(auth, req);
   if (!tid) return NextResponse.json({ error: "Tenant context required." }, { status: 400 });
   const items = await auth.store.listWebhooks(tid);
-  return NextResponse.json({ items });
+  // AUDIT2-LOGIC-UX H3 — redact the webhook secret in the GET response.
+  // listWebhooks returns full rows including the secret column; a
+  // `webhooks:read` caller can list webhooks but should NOT see the
+  // shared-secret value (anyone who lists them could then forge
+  // webhook deliveries). The secret is shown ONCE in the POST response
+  // at creation time; here we strip it from every row.
+  const safeItems = items.map((row) => {
+    const { secret, ...rest } = row as unknown as { secret?: string } & Record<string, unknown>;
+    return rest;
+  });
+  return NextResponse.json({ items: safeItems });
 }
 
 export async function POST(req: NextRequest) {

@@ -37,7 +37,7 @@ import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
 import { KpiCard } from "@/components/common/kpi-card";
 import { EmptyState } from "@/components/common/empty-state";
 import { fmtRelative, fmtDateTime } from "@/lib/utils/format";
-import { useAppStore, isAdmin, isSuperAdmin } from "@/lib/store/app-store";
+import { useAppStore, isSuperAdmin } from "@/lib/store/app-store";
 import type { MailQueueEntry, MailStatus } from "@/lib/supabase/types";
 import { useApiUrl, useTenantKey } from "@/lib/hooks/use-api-url";
 import { useDebounced } from "@/lib/hooks/use-debounced";
@@ -73,11 +73,16 @@ export function MailQueueView() {
   const t = useT();
 
   const user = useAppStore((s) => s.user);
-  // Admin (tenant or super) can see the mail queue. Super-admin without
-  // a tenant sees ALL entries across ALL tenants (cross-tenant mode).
-  // Tenant admins see only their own tenant's emails.
-  const admin = isAdmin(user);
+  // SUPER-ADMIN ONLY — the mail queue is a PLATFORM-level concern
+  // (cross-tenant delivery observability, system-wide bounce/retry
+  // surface). Tenant admins — including trial tenants whose
+  // `isAdmin()` returns true via the role check — must not see it.
   const superAdmin = isSuperAdmin(user);
+  // When a super_admin has NO active tenant selected, the mail-queue API
+  // returns ALL entries across ALL tenants (cross-tenant observability).
+  // When a tenant IS selected (or the caller is a tenant admin), the API
+  // scopes to that tenant. We surface a tenant column + "all tenants"
+  // banner only when the view is genuinely cross-tenant.
   const activeTenantId = useAppStore((s) => s.activeTenantId);
   const crossTenantMode = superAdmin && !activeTenantId;
   const qc = useQueryClient();
@@ -149,7 +154,7 @@ export function MailQueueView() {
     onError: () => toast.error(t("admin-mail-delete-failed-toast")),
   });
 
-  if (!admin) {
+  if (!superAdmin) {
     return (
       <div>
         <PageHeader title={t("admin-mail-title")} description={t("admin-mail-desc")} />
@@ -175,32 +180,9 @@ export function MailQueueView() {
         title={t("admin-mail-title")}
         description={t("admin-mail-desc")}
         actions={
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              onClick={async () => {
-                if (!confirm("Delete ALL failed and pending emails? This cannot be undone.")) return;
-                try {
-                  const r = await fetch(api("/api/mail-queue/bulk-delete"), {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({}),
-                  });
-                  const d = await r.json();
-                  if (!r.ok) throw new Error(d.error || "Failed");
-                  toast.success(`Deleted ${d.deleted} email(s)`);
-                  qc.invalidateQueries({ queryKey: ["mail-queue", tenantKey] });
-                } catch (e: any) {
-                  toast.error(e.message || "Failed to delete");
-                }
-              }}
-            >
-              <Trash2 className="size-4 mr-1" /> Bulk Delete
-            </Button>
-            <Button onClick={() => setShowCompose(true)}>
-              <Plus className="size-4 mr-1" /> {t("admin-mail-compose")}
-            </Button>
-          </div>
+          <Button onClick={() => setShowCompose(true)}>
+            <Plus className="size-4 mr-1" /> {t("admin-mail-compose")}
+          </Button>
         }
       />
       <ModuleInfoTooltip

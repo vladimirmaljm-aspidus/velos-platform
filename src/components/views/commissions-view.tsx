@@ -48,19 +48,19 @@ import { useApiUrl, useTenantKey } from "@/lib/hooks/use-api-url";
 import { useT } from "@/lib/i18n/store";
 import { PartnerPicker } from "@/components/common/partner-picker";
 
-const COMMISSION_TYPE_LABELS: Record<CommissionType, string> = {
-  profit_percent: "% of Profit",
-  revenue_percent: "% of Revenue",
-  fixed: "Fixed Amount",
-  per_unit: "Per Unit",
-  custom: "Custom Formula",
+const COMMISSION_TYPE_LABEL_KEYS: Record<CommissionType, string> = {
+  profit_percent: "fin-commission-type-profit-percent",
+  revenue_percent: "fin-commission-type-revenue-percent",
+  fixed: "fin-commission-type-fixed",
+  per_unit: "fin-commission-type-per-unit",
+  custom: "fin-commission-type-custom",
 };
 
-const COMMISSION_STATUS_LABELS: Record<CommissionStatus, string> = {
-  pending: "Pending",
-  approved: "Approved",
-  paid: "Paid",
-  cancelled: "Cancelled",
+const COMMISSION_STATUS_LABEL_KEYS: Record<CommissionStatus, string> = {
+  pending: "fin-commission-status-pending",
+  approved: "fin-commission-status-approved",
+  paid: "fin-commission-status-paid",
+  cancelled: "fin-commission-status-cancelled",
 };
 
 const STATUS_BADGE_VARIANT: Record<CommissionStatus, "default" | "secondary" | "destructive" | "outline"> = {
@@ -84,12 +84,12 @@ function useLocale() {
   return "en" as const;
 }
 
-function typeLabel(type: CommissionType) {
-  return COMMISSION_TYPE_LABELS[type] ?? type;
+function typeLabel(t: (k: string) => string, type: CommissionType) {
+  return t(COMMISSION_TYPE_LABEL_KEYS[type] ?? "") || type;
 }
 
-function statusLabel(status: CommissionStatus) {
-  return COMMISSION_STATUS_LABELS[status] ?? status;
+function statusLabel(t: (k: string) => string, status: CommissionStatus) {
+  return t(COMMISSION_STATUS_LABEL_KEYS[status] ?? "") || status;
 }
 
 /* ─── Main Component ──────────────────────────────────────────────────────── */
@@ -301,6 +301,7 @@ function AgentsTab({
 }) {
   const api = useApiUrl();
   const tenantKey = useTenantKey();
+  const t = useT();
 
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -375,7 +376,7 @@ function AgentsTab({
                         <div className="font-medium">{partnerMap.get(a.partner_id) || "—"}</div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline">{typeLabel(a.commission_type)}</Badge>
+                        <Badge variant="outline">{typeLabel(t, a.commission_type)}</Badge>
                       </TableCell>
                       <TableCell className="hidden md:table-cell tabular">
                         {a.commission_type === "profit_percent" || a.commission_type === "revenue_percent"
@@ -475,6 +476,7 @@ function AgentFormDialog({
 }) {
   const api = useApiUrl();
   const tenantKey = useTenantKey();
+  const t = useT();
 
   const [form, setForm] = useState<Partial<CommissionAgent>>({});
   const [saving, setSaving] = useState(false);
@@ -558,8 +560,8 @@ function AgentFormDialog({
             <Select value={form.commission_type || "profit_percent"} onValueChange={(v) => set("commission_type", v as CommissionType)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {(Object.keys(COMMISSION_TYPE_LABELS) as CommissionType[]).map((t) => (
-                  <SelectItem key={t} value={t}>{typeLabel(t)}</SelectItem>
+                {(Object.keys(COMMISSION_TYPE_LABEL_KEYS) as CommissionType[]).map((tp) => (
+                  <SelectItem key={tp} value={tp}>{typeLabel(t, tp)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -676,6 +678,7 @@ function DealCommissionsTab({
 }) {
   const api = useApiUrl();
   const tenantKey = useTenantKey();
+  const t = useT();
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -721,8 +724,8 @@ function DealCommissionsTab({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">{"All statuses"}</SelectItem>
-              {(Object.keys(COMMISSION_STATUS_LABELS) as CommissionStatus[]).map((s) => (
-                <SelectItem key={s} value={s}>{statusLabel(s)}</SelectItem>
+              {(Object.keys(COMMISSION_STATUS_LABEL_KEYS) as CommissionStatus[]).map((s) => (
+                <SelectItem key={s} value={s}>{statusLabel(t, s)}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -777,7 +780,7 @@ function DealCommissionsTab({
                         <div className="text-sm">{partnerMap.get(c.partner_id) || "—"}</div>
                       </TableCell>
                       <TableCell className="hidden md:table-cell">
-                        <Badge variant="outline" className="text-xs">{typeLabel(c.commission_type)}</Badge>
+                        <Badge variant="outline" className="text-xs">{typeLabel(t, c.commission_type)}</Badge>
                       </TableCell>
                       <TableCell className="hidden lg:table-cell tabular">
                         {c.commission_type === "profit_percent" || c.commission_type === "revenue_percent"
@@ -861,6 +864,7 @@ function DealCommissionsTab({
 /* ── Status Badge ─────────────────────────────────────────────────────────── */
 
 function StatusBadge({ status }: { status: CommissionStatus }) {
+  const t = useT();
   const iconMap: Record<CommissionStatus, React.ReactNode> = {
     pending: <Clock className="size-3" />,
     approved: <CheckCircle2 className="size-3" />,
@@ -870,7 +874,7 @@ function StatusBadge({ status }: { status: CommissionStatus }) {
   return (
     <Badge variant={STATUS_BADGE_VARIANT[status]} className="gap-1">
       {iconMap[status]}
-      {statusLabel(status)}
+      {statusLabel(t, status)}
     </Badge>
   );
 }
@@ -884,15 +888,16 @@ function CommissionDetail({
   partnerMap: Map<string, string>;
   locale?: string;
 }) {
+  const t = useT();
   const rows = [
     { label: "Agent", value: partnerMap.get(commission.partner_id) || "—" },
-    { label: "Commission Type", value: typeLabel(commission.commission_type) },
+    { label: "Commission Type", value: typeLabel(t, commission.commission_type) },
     { label: "Rate", value: `${commission.commission_rate}` },
     { label: "Deal Value", value: fmtMoney(commission.deal_value, commission.commission_currency) },
     { label: "Deal Profit", value: fmtMoney(commission.deal_profit, commission.commission_currency) },
     { label: "Quantity", value: `${commission.deal_quantity} ${commission.deal_unit}` },
     { label: "Calculated Commission", value: fmtMoney(commission.calculated_commission, commission.commission_currency) },
-    { label: "Status", value: statusLabel(commission.status) },
+    { label: "Status", value: statusLabel(t, commission.status) },
     { label: "Approved By", value: commission.approved_by || "—" },
     { label: "Approved At", value: commission.approved_at ? fmtDate(commission.approved_at) : "—" },
     { label: "Paid At", value: commission.paid_at ? fmtDate(commission.paid_at) : "—" },
@@ -943,6 +948,7 @@ function AddCommissionDialog({
 }) {
   const api = useApiUrl();
   const tenantKey = useTenantKey();
+  const t = useT();
 
   const [form, setForm] = useState<Partial<DealCommission>>({});
   const [saving, setSaving] = useState(false);
@@ -1094,8 +1100,8 @@ function AddCommissionDialog({
             <Select value={form.commission_type || "profit_percent"} onValueChange={(v) => set("commission_type", v as CommissionType)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {(Object.keys(COMMISSION_TYPE_LABELS) as CommissionType[]).map((t) => (
-                  <SelectItem key={t} value={t}>{typeLabel(t)}</SelectItem>
+                {(Object.keys(COMMISSION_TYPE_LABEL_KEYS) as CommissionType[]).map((tp) => (
+                  <SelectItem key={tp} value={tp}>{typeLabel(t, tp)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -1235,6 +1241,7 @@ function PayoutsTab({
   isLoading: boolean;
   onRefresh: () => void;
 }) {
+  const t = useT();
   const [showForm, setShowForm] = useState(false);
 
   return (
@@ -1357,6 +1364,7 @@ function CreatePayoutDialog({
 }) {
   const api = useApiUrl();
   const tenantKey = useTenantKey();
+  const t = useT();
 
   const [selectedAgentId, setSelectedAgentId] = useState("");
   const [selectedCommissionIds, setSelectedCommissionIds] = useState<Set<string>>(new Set());
@@ -1516,7 +1524,7 @@ function CreatePayoutDialog({
                           </span>
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          {typeLabel(c.commission_type)} · {fmtMoney(c.deal_value, c.commission_currency)}
+                          {typeLabel(t, c.commission_type)} · {fmtMoney(c.deal_value, c.commission_currency)}
                         </p>
                       </div>
                     </label>

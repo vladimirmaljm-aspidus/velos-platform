@@ -43,3 +43,14 @@ bun.lock
 # ── Z.AI SDK config file (contains API token — NEVER commit) ──────────────────
 .z-ai-config
 tool-results/
+
+# ── Vercel local config + pulled env (contains production secrets) ───────────
+.env.vercel
+.vercel/
+
+# ── Dev server PID + zscripts runtime artifacts ─────────────────────────────
+.zscripts/
+
+# ── Temporary agent worklogs / notes ─────────────────────────────────────────
+*.agent.md
+tmp/

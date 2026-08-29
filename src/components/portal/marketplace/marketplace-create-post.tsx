@@ -828,7 +828,7 @@ export function MarketplaceCreatePost({
               onClick={reset}
               className="hover:text-foreground smooth underline-offset-2 hover:underline"
             >
-              Reset form
+              {t("marketplace-wizard-reset-form")}
             </button>
           </p>
         )}

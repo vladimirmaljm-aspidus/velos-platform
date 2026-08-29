@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth } from "@/lib/api/helpers";
+import { requireAuth, sanitizeError } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
 
@@ -76,6 +76,9 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ predictions });
   } catch (e: any) {
-    return NextResponse.json({ predictions: [], error: e.message });
+    // SEC-L4 — never leak raw e.message. Nominatim fetch errors can
+    // include URL/query context. Sanitize before returning to client.
+    console.error("[geocode]", e);
+    return NextResponse.json({ predictions: [], error: sanitizeError(e) });
   }
 }

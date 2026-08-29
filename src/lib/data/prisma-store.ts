@@ -916,6 +916,14 @@ export class PrismaStore implements Store {
         { username: { contains: params.search } },
       ];
     }
+    // ADMIN-H12: server-side filters (Prisma mirror of the Supabase
+    // .ilike / .gte / .lte filters). Case-insensitive contains matches
+    // the previous in-memory semantics.
+    if (params?.action) where.action = { contains: params.action };
+    if (params?.username) where.username = { contains: params.username };
+    if (params?.entity_type) where.entity_type = { contains: params.entity_type };
+    if (params?.date_from) where.created_at = { ...(where.created_at || {}), gte: new Date(params.date_from) };
+    if (params?.date_to) where.created_at = { ...(where.created_at || {}), lte: new Date(params.date_to) };
     const total = await db.auditLog.count({ where });
     const rows = await db.auditLog.findMany({
       where,
@@ -2435,6 +2443,18 @@ export class PrismaStore implements Store {
   async getUnreadCount(tenantId: string, userId: string): Promise<number> {
     return db.notification.count({
       where: { tenant_id: tenantId, OR: [{ user_id: userId }, { user_id: null }], read: false },
+    });
+  }
+  /**
+   * AUDIT2-LOGIC-UX M1 — TOTAL unread count for a portal partner.
+   * Prisma implementation: count where tenant + partner + unread. The
+   * portal-safe-type filter is approximated (Prisma store doesn't carry
+   * the list — only the Supabase store does); the partner_id filter
+   * already scopes correctly.
+   */
+  async getUnreadCountByPartner(tenantId: string, partnerId: string): Promise<number> {
+    return db.notification.count({
+      where: { tenant_id: tenantId, partner_id: partnerId, read: false },
     });
   }
   async getNotificationById(id: string): Promise<Notification | null> {

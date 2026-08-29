@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requireKycApproved } from "@/lib/portal/kyc-gate";
 import {
   createInstrument,
   listInstruments,
@@ -72,6 +73,9 @@ async function _post(req: NextRequest) {
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // AUDIT2-LOGIC-UX H7 — gate finance instrument creation on KYC approval.
+  const _kycBlock = await requireKycApproved(access);
+  if (_kycBlock) return _kycBlock;
 
   let body;
   try {
@@ -84,9 +88,21 @@ async function _post(req: NextRequest) {
   if (!VALID_INSTRUMENT_TYPES.includes(body.instrument_type)) {
     return NextResponse.json({ error: "Invalid or missing instrument_type." }, { status: 400 });
   }
-  // Validate amount.
+  // Validate amount — must be positive AND bounded. Without an upper
+  // bound, a caller could create a $1 quadrillion instrument, which would
+  // break downstream financial rollups (and could be used to inflate the
+  // tenant's "total deal value" KPI displayed on the dashboard). The cap
+  // is set at $1 trillion (1e12), comfortably above any real-world
+  // trade-finance instrument while still catching absurd values.
+  const MAX_AMOUNT = 1_000_000_000_000; // $1T
   if (typeof body.amount !== "number" || !Number.isFinite(body.amount) || body.amount <= 0) {
     return NextResponse.json({ error: "amount must be a positive number." }, { status: 400 });
+  }
+  if (body.amount > MAX_AMOUNT) {
+    return NextResponse.json(
+      { error: `amount must not exceed ${MAX_AMOUNT.toLocaleString()} (the per-instrument cap).` },
+      { status: 400 },
+    );
   }
   // Validate optional status.
   if (body.status && !VALID_STATUSES.includes(body.status)) {
@@ -100,6 +116,36 @@ async function _post(req: NextRequest) {
   if (body.instrument_type === "letter_of_credit") {
     if (!VALID_LC_TYPES.includes(body.lc_type)) {
       return NextResponse.json({ error: "Invalid or missing lc_type." }, { status: 400 });
+    }
+    // A Letter of Credit is meaningless without the issuing bank
+    // (the bank that holds the funds + guarantees payment to the
+    // beneficiary) and an expiry date (the last day the beneficiary
+    // can present complying documents for payment). Both are required
+    // for a real LC; without them, the row is just a placeholder.
+    if (typeof body.lc_issuing_bank !== "string" || body.lc_issuing_bank.trim().length === 0) {
+      return NextResponse.json(
+        { error: "letter_of_credit requires lc_issuing_bank." },
+        { status: 400 },
+      );
+    }
+    if (body.lc_issuing_bank.length > 200) {
+      return NextResponse.json(
+        { error: "lc_issuing_bank is too long (max 200 chars)." },
+        { status: 400 },
+      );
+    }
+    if (typeof body.lc_expiry_date !== "string" || !Number.isFinite(Date.parse(body.lc_expiry_date))) {
+      return NextResponse.json(
+        { error: "letter_of_credit requires a valid lc_expiry_date (ISO date)." },
+        { status: 400 },
+      );
+    }
+    const expiryMs = Date.parse(body.lc_expiry_date);
+    if (expiryMs <= Date.now()) {
+      return NextResponse.json(
+        { error: "lc_expiry_date must be a future date." },
+        { status: 400 },
+      );
     }
   }
   if (body.instrument_type === "escrow") {

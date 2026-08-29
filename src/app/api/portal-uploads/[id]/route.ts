@@ -45,7 +45,14 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       const _d = requirePermission(auth, "portal-uploads.delete"); if (_d) return _d; }
 
     const { id } = await params;
-    const upload = await getPortalUpload(id, auth.tenantId || "");
+    // ADMIN-H4: use the same super-admin fallback as GET — `getPortalUpload`
+    // adds `.eq("tenant_id", tenantId)` to its query, so a super-admin
+    // with no tenant context (or whose tenant_id is set to something
+    // other than the upload's owning tenant) would 404 even though they
+    // legitimately should be able to see + delete any tenant's upload.
+    const upload = auth.isSuperAdmin
+      ? await findAnyUpload(id)
+      : await getPortalUpload(id, auth.tenantId || "");
     if (!upload) return NextResponse.json({ error: "Not found." }, { status: 404 });
     if (!auth.isSuperAdmin && upload.tenant_id !== auth.tenantId) {
       return NextResponse.json({ error: "Not found." }, { status: 404 });

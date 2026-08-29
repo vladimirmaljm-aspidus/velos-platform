@@ -65,7 +65,14 @@ async function _get(req: NextRequest) {
       .gte("created_at", since)
       .not("target_price", "is", null);
     if (category) postQ = postQ.ilike("product_category", category);
-    const { data: postRows, error: postErr } = await postQ.limit(5000);
+    // MARKET-H30: order by created_at DESC before the cap so the most
+    // recent N posts are taken — without an explicit order, the 5000-
+    // row cap would sample arbitrary rows. Recent posts are more
+    // relevant for the seasonal pattern (the 2-year window still
+    // covers multiple months per bucket).
+    const { data: postRows, error: postErr } = await postQ
+      .order("created_at", { ascending: false })
+      .limit(5000);
     if (postErr) throw postErr;
     rows = rows.concat((postRows as any[]) || []);
   } catch (e) {
@@ -87,7 +94,11 @@ async function _get(req: NextRequest) {
     if (category) {
       respQ = respQ.ilike("post.product_category", category);
     }
-    const { data: respRows, error: respErr } = await respQ.limit(5000);
+    // MARKET-H30: same fix as the posts query above — order DESC before
+    // the cap so the most recent responses are kept.
+    const { data: respRows, error: respErr } = await respQ
+      .order("created_at", { ascending: false })
+      .limit(5000);
     if (respErr) throw respErr;
     rows = rows.concat((respRows as any[]) || []);
   } catch (e) {

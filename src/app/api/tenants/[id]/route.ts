@@ -151,8 +151,19 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
             try { return JSON.parse(plan.included_modules || "[]"); } catch { return []; }
           })();
 
-          await auth.store.upsertFeatureFlags({
-            tenant_id: id,
+          // ADMIN-M16: snapshot the OLD feature flags BEFORE the
+          // upsert so we can compute a diff and write a SECOND audit
+          // entry (`feature_flag.bulk_sync_from_plan`) listing exactly
+          // which flags changed. The first `tenant.update` audit entry
+          // above records the plan change itself but says nothing about
+          // the feature flags the plan sync silently overwrote — ops
+          // had no trail to answer "who turned off the trade module
+          // for tenant X?" when the answer was "the system, because
+          // someone moved them to Starter". Mirrors the audit pattern
+          // in admin/platform-config/route.ts:161.
+          const oldFlags = await auth.store.getFeatureFlags(id);
+
+          const newFlags = {
             max_users: plan.max_users,
             max_partners: plan.max_partners,
             max_monthly_documents: plan.max_monthly_documents,
@@ -170,7 +181,53 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
             module_kyc: includedModules.includes("portal"),
             module_inventory: includedModules.includes("trade"),
             updated_by: auth.user.id,
+          } as Record<string, unknown>;
+
+          await auth.store.upsertFeatureFlags({
+            tenant_id: id,
+            ...newFlags,
           } as any);
+
+          // Compute the diff of feature-flag values that actually
+          // changed (old vs new), so the audit log records exactly which
+          // toggles flipped (and to what). Avoids cluttering the audit
+          // entry with flags that stayed the same.
+          const changed: Record<string, { from: unknown; to: unknown }> = {};
+          if (oldFlags) {
+            for (const [k, v] of Object.entries(newFlags)) {
+              if (k === "updated_by") continue;
+              const oldV = (oldFlags as unknown as Record<string, unknown>)[k];
+              if (oldV !== v) {
+                changed[k] = { from: oldV, to: v };
+              }
+            }
+          } else {
+            // No prior flags — every flag is "added".
+            for (const [k, v] of Object.entries(newFlags)) {
+              if (k === "updated_by") continue;
+              changed[k] = { from: null, to: v };
+            }
+          }
+
+          if (Object.keys(changed).length > 0) {
+            try {
+              await audit(
+                auth.store,
+                auth.user,
+                req,
+                "feature_flag.bulk_sync_from_plan",
+                "feature_flags",
+                id,
+                {
+                  from_plan: oldPlan || null,
+                  to_plan: body.plan,
+                  changed,
+                },
+              );
+            } catch (e) {
+              console.error("[tenants.update feature_flag audit]", e);
+            }
+          }
 
           if (plan.max_users && (!body.max_users || body.max_users !== plan.max_users)) {
             await auth.store.upsertTenant({ id, max_users: plan.max_users } as any);

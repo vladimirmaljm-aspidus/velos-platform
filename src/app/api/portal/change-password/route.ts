@@ -4,6 +4,15 @@ import { getStore } from "@/lib/data/store";
 import { verifyPassword, hashPassword } from "@/lib/auth/password";
 import { validatePasswordWithPlatformPolicy } from "@/lib/auth/password-policy";
 import { getIp } from "@/lib/api/helpers";
+// FIX-AUDIT2-CRIT / C6 — after bumping token_version, the user's existing
+// cookie is now stale (the next getPortalSessionAccess() check rejects
+// sessions whose token_version does not match the DB). The previous
+// implementation bumped the version and returned ok, but did NOT mint a
+// fresh cookie carrying the new version — so every portal client who
+// changed their password was logged out on the next API call. Mirror the
+// setup-password route's post-upsert pattern: create a new session with
+// the new token_version and set the cookie so the user stays signed in.
+import { createSession, setSessionCookie } from "@/lib/auth/session";
 
 export const runtime = "nodejs";
 
@@ -84,6 +93,12 @@ export async function POST(req: NextRequest) {
     // Hash the new password
     const newPasswordHash = await hashPassword(new_password);
 
+    // Compute the bumped token_version ONCE so the value written to the DB
+    // is the SAME value baked into the freshly-minted session cookie below.
+    // (If we re-computed in two places, a stale `access.token_version` read
+    // after the upsert could mismatch the cookie → another force-logout.)
+    const nextTokenVersion = (access.token_version || 0) + 1;
+
     // Update the portal access record. Bump token_version so any other
     // outstanding sessions for this account (e.g. a stolen cookie) stop
     // working immediately instead of remaining valid for up to 7 more days.
@@ -92,8 +107,31 @@ export async function POST(req: NextRequest) {
       id: access.id,
       password_hash: newPasswordHash,
       must_set_password: false,
-      token_version: (access.token_version || 0) + 1,
+      token_version: nextTokenVersion,
     });
+
+    // FIX-AUDIT2-CRIT / C6 — mint a fresh session cookie carrying the
+    // bumped token_version. The user's existing cookie is now stale
+    // (it carries the old token_version, which getPortalSessionAccess
+    // will reject on the next call) — without re-minting here, the user
+    // is silently logged out the moment they change their password.
+    // Mirror the pattern from /api/portal/setup-password/route.ts
+    // (lines 196-203). Best-effort: if cookie-minting fails (e.g. JWT
+    // secret missing), warn but don't fail the whole request — the
+    // password has already been changed, so failing here would leave
+    // the user without a working password AND without a session.
+    try {
+      const token = await createSession({
+        sub: `portal:${access.id}`,
+        username: access.portal_email || "",
+        role: "portal_client",
+        token_version: nextTokenVersion,
+        tenant_id: access.tenant_id,
+      });
+      await setSessionCookie(token);
+    } catch (e) {
+      console.warn("[portal.change-password] auto-relogin failed:", e);
+    }
 
     // Audit log the password change
     await store.appendAudit({

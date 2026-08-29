@@ -38,9 +38,23 @@ async function _get(req: NextRequest) {
   const days = Math.max(7, Math.min(365, Math.floor(daysRaw)));
 
   const sb = getSupabase();
+  const nowIso = new Date().toISOString();
   const since = new Date(
     Date.now() - days * 24 * 60 * 60 * 1000,
   ).toISOString();
+  // MARKET-H29: the trend is "last 7 days" vs "previous 7 days" — two
+  // NON-OVERLAPPING 7-day windows. The previous implementation computed
+  // the "last 7 days" as `buyNow - buyPrev` where `buyNow` was the
+  // full `days` window and `buyPrev` was the `days` window shifted back
+  // by 7 days. Those two windows OVERLAP in the middle (each covers
+  // `[now-days, now-7]`), so the subtraction double-counted and the
+  // resulting "last 7 days" was wrong. We now fetch each of the four
+  // 7-day-only counts directly:
+  //   • buyLast7  / sellLast7  = posts created in [now-7d, now)
+  //   • buyPrev7  / sellPrev7  = posts created in [now-14d, now-7d)
+  // The `sincePrev` (now-14d) + `sincePrevEnd` (now-7d) bounds are kept
+  // for the previous window; the new `nowIso` is the upper bound for the
+  // last-7-days window.
   const sincePrev = new Date(
     Date.now() - (days + 7) * 24 * 60 * 60 * 1000,
   ).toISOString();
@@ -68,12 +82,18 @@ async function _get(req: NextRequest) {
 
   let buyNow = 0;
   let sellNow = 0;
-  let buyPrev = 0;
-  let sellPrev = 0;
+  let buyLast7 = 0;
+  let sellLast7 = 0;
+  let buyPrev7 = 0;
+  let sellPrev7 = 0;
   try {
-    [buyNow, sellNow, buyPrev, sellPrev] = await Promise.all([
+    [buyNow, sellNow, buyLast7, sellLast7, buyPrev7, sellPrev7] = await Promise.all([
       countPosts("buy", since),
       countPosts("sell", since),
+      // Last 7 days only — non-overlapping with the previous-7 window.
+      countPosts("buy", sincePrevEnd, nowIso),
+      countPosts("sell", sincePrevEnd, nowIso),
+      // Previous 7 days only (the 7 days before the last 7 days).
       countPosts("buy", sincePrev, sincePrevEnd),
       countPosts("sell", sincePrev, sincePrevEnd),
     ]);
@@ -87,12 +107,11 @@ async function _get(req: NextRequest) {
 
   const result = calculateSupplyDemandIndex(buyNow, sellNow);
 
-  // Trend: the previous 7-day index vs the last 7-day index. The caller
-  // can compute this from the per-window buy/sell counts above. The
-  // "previous" window is the 7 days before the last 7 days — both
-  // inside the `days` window.
-  const lastIdx = calculateSupplyDemandIndex(buyNow - buyPrev, sellNow - sellPrev).index;
-  const prevIdx = calculateSupplyDemandIndex(buyPrev, sellPrev).index;
+  // Trend: the last-7-day supply/demand index vs the previous-7-day
+  // index. Both windows are 7 days wide and non-overlapping, so the
+  // delta reflects a true week-over-week change.
+  const lastIdx = calculateSupplyDemandIndex(buyLast7, sellLast7).index;
+  const prevIdx = calculateSupplyDemandIndex(buyPrev7, sellPrev7).index;
   let trend: "rising" | "falling" | "flat" = "flat";
   if (lastIdx - prevIdx > 5) trend = "rising";
   else if (lastIdx - prevIdx < -5) trend = "falling";

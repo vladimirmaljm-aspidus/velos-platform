@@ -1110,7 +1110,12 @@ function PostQAQuestionItem({
         <div className="min-w-0 space-y-1">
           <p className="text-sm font-medium leading-snug">{question.title}</p>
           <p className="text-xs text-muted-foreground">
-            {t("marketplace-detail-qa-by").replace("{author}", `${question.partner_id.slice(0, 8)}…`)}
+            {/* FIX-MARKET-2 / fix #7: the byline previously leaked the question
+                author's partner_id (first 8 chars). Even an 8-char prefix is
+                a stable cross-reference key into marketplace_responses /
+                negotiations / audit logs, so a determined viewer could deanonymise
+                question authors. Replace with a generic localized label. */}
+            {t("marketplace-community-member")}
             {" · "}
             {new Date(question.created_at).toLocaleDateString()}
             {" · "}
@@ -1178,7 +1183,10 @@ function PostQAAnswers({
             <div key={a.id} className="rounded-md border border-border/40 bg-card p-2.5 space-y-1">
               <p className="text-sm leading-relaxed whitespace-pre-wrap">{a.body}</p>
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span>{a.partner_id.slice(0, 8)}…</span>
+                {/* FIX-MARKET-2 / fix #7: don't leak the answer author's
+                    partner_id (was `a.partner_id.slice(0, 8)`). Show a
+                    generic localized label instead. */}
+                <span>{t("marketplace-community-member")}</span>
                 <span>·</span>
                 <span>{new Date(a.created_at).toLocaleDateString()}</span>
                 {a.is_accepted && (

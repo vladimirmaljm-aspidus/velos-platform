@@ -103,6 +103,33 @@ async function _put(req: NextRequest, ctx: { params: Promise<{ id: string }> }) 
     "description",
   ]);
 
+  // FIX-MARKET-2 / fix #2: if the post already has bids (auction_bids table
+  // rows for this post_id), the owner may NOT change auction-defining fields.
+  // Mutating post_type / auction_ends_at / auction_start_price /
+  // auction_reserve_price / auction_min_increment after bids are placed
+  // would retroactively change the rules of an active auction and let an
+  // owner manipulate the outcome. Reject with 400.
+  const auctionParamsPresent =
+    body.post_type !== undefined ||
+    body.auction_ends_at !== undefined ||
+    body.auction_start_price !== undefined ||
+    body.auction_reserve_price !== undefined ||
+    body.auction_min_increment !== undefined;
+  if (auctionParamsPresent) {
+    const { data: existingBid } = await sb
+      .from("marketplace_auction_bids")
+      .select("id")
+      .eq("post_id", id)
+      .limit(1)
+      .maybeSingle();
+    if (existingBid) {
+      return NextResponse.json(
+        { error: "Cannot change auction parameters after bids are placed." },
+        { status: 400 },
+      );
+    }
+  }
+
   try {
     const updated = await updateMarketplacePost(id, access.tenant_id, body);
     try {

@@ -204,11 +204,24 @@ async function _post(req: NextRequest) {
     // The single line item is derived from the post's product / quantity /
     // unit_price (from the post's target_price OR the negotiation's
     // agreed_terms).
+    //
+    // MARKET-H22 (forge fix): the caller-supplied body.currency /
+    // body.incoterm / body.paymentTerms are IGNORED for these three fields
+    // — a partner that auto-generates a document from a settled
+    // negotiation must not be able to forge the agreed price's currency or
+    // the agreed incoterm / payment terms. When a negotiation_id is
+    // supplied AND the negotiation carries `agreed_terms`, the agreed
+    // terms are the SOLE source of truth. When there is no negotiation
+    // (or the negotiation has no agreed_terms yet), the post's own
+    // currency / incoterm / payment_terms are used. body.* is no longer
+    // honoured on this path — callers that need to override must edit
+    // the post / re-negotiate.
     const agreedTerms = (negotiation?.agreed_terms ?? null) as MarketplaceOfferTerms | null;
     const unitPrice = agreedTerms?.unit_price ?? agreedTerms?.price ?? post?.target_price ?? null;
     const quantity = agreedTerms?.quantity ?? post?.quantity ?? null;
     const unit = agreedTerms?.unit ?? post?.unit ?? null;
-    const currency = body?.currency ?? agreedTerms?.currency ?? post?.currency ?? "USD";
+    const currency =
+      (agreedTerms?.currency ?? post?.currency ?? "USD") as string;
 
     const lineItem: TradeDocumentLineItem = {
       description: post?.product_name ?? "Goods",
@@ -225,6 +238,11 @@ async function _post(req: NextRequest) {
     };
 
     // ── Build the AutoGenerateContext ───────────────────────────────────
+    // incoterm + paymentTerms resolution: agreedTerms take precedence
+    // over the post, and the body's incoterm / paymentTerms are IGNORED
+    // (see MARKET-H22 note above). goodsDescription / originCountry remain
+    // caller-overridable — those are descriptive metadata, not commercial
+    // terms, so the caller may set them freely (e.g. BoL notes).
     const ctx: AutoGenerateContext = {
       tenantId: access.tenant_id,
       seller: partnerToParty(sellerPartner, isSellSide ? "seller" : "buyer"),
@@ -237,8 +255,8 @@ async function _post(req: NextRequest) {
       items: [lineItem],
       products: [lineItem],
       currency,
-      incoterm: body?.incoterm ?? agreedTerms?.incoterm ?? post?.incoterm ?? undefined,
-      paymentTerms: body?.paymentTerms ?? post?.payment_terms ?? undefined,
+      incoterm: agreedTerms?.incoterm ?? post?.incoterm ?? undefined,
+      paymentTerms: agreedTerms?.payment_terms ?? post?.payment_terms ?? undefined,
       containerNumber: shipment?.container_number ?? undefined,
       totalPackages: shipment?.packages_count ?? undefined,
       totalGrossWeight: shipment?.gross_weight ?? undefined,
