@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -63,6 +63,88 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
   // toast. A toast that vanishes after 3s was the root cause of the original
   // "nothing happens" reports — the user missed it and clicked again.
   const [loginError, setLoginError] = useState<string | null>(null);
+
+  // FIX-AUDIT3 #8 — 429 / 423 lockout countdown. When the API returns
+  // a `Retry-After` (HTTP header, seconds) OR `retry_after` (JSON,
+  // seconds) OR `locked_until` (JSON, ISO timestamp for 423), we
+  // start a 1-second interval that decrements `lockCountdown` until
+  // it reaches 0. While `lockCountdown > 0`, the inline error alert
+  // shows a live "Try again in 2m 15s" message (re-computed every
+  // tick) and the submit button is disabled. The user can still
+  // click "Forgot your password?" below to reset.
+  // `lockIsAccount` distinguishes the 423 (account temporarily
+  // locked) message from the 429 (per-IP / per-user rate limit)
+  // message — both flow through the same countdown UI.
+  const [lockCountdown, setLockCountdown] = useState<number | null>(null);
+  const [lockIsAccount, setLockIsAccount] = useState(false);
+  // useRef holds the interval id so the cleanup function can clear
+  // it on unmount / on a fresh lockout starting before the previous
+  // one finished. (Not strictly required — the useEffect cleanup
+  // already tears down the timer it scheduled — but kept for
+  // defensive clarity in case the effect is restructured later.)
+  const lockIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Re-render the inline error every second while locked out so the
+  // user sees the countdown tick down (e.g. "2m 15s" → "2m 14s" → …).
+  // The interval is restarted whenever `lockCountdown` changes; when
+  // it hits 0 the effect early-returns (no new timer scheduled), the
+  // submit button re-enables, and the alert is cleared.
+  useEffect(() => {
+    if (lockCountdown === null || lockCountdown <= 0) {
+      if (lockIntervalRef.current) {
+        clearTimeout(lockIntervalRef.current);
+        lockIntervalRef.current = null;
+      }
+      // Auto-clear the lockout error when the countdown reaches 0 so
+      // the inline alert doesn't stay stuck on a frozen "0s" message.
+      if (lockCountdown === 0) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setLoginError(null);
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setLockCountdown(null);
+      }
+      return;
+    }
+    lockIntervalRef.current = setTimeout(() => {
+      setLockCountdown((s) => (s ?? 0) - 1);
+    }, 1000);
+    return () => {
+      if (lockIntervalRef.current) {
+        clearTimeout(lockIntervalRef.current);
+        lockIntervalRef.current = null;
+      }
+    };
+  }, [lockCountdown]);
+
+  /**
+   * Format a remaining-seconds value as "2m 15s" (or just "15s" when
+   * under a minute) using the locale-appropriate template + abbreviations.
+   * Returns an empty string for non-positive inputs so callers can
+   * fall back to the raw error string.
+   */
+  function formatLockCountdown(seconds: number): string {
+    const s = Math.max(0, Math.floor(seconds));
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    if (m >= 1) {
+      return t("portal-login-locked-countdown-h")
+        .replace("${m}", String(m))
+        .replace("${s}", String(r));
+    }
+    return t("portal-login-locked-countdown-s").replace("${s}", String(r));
+  }
+
+  // Live "Try again in ${time}" message, re-computed every render.
+  // When `lockCountdown` is null / 0 this is null and the inline alert
+  // falls back to `loginError` (the original behaviour for 401/403/etc).
+  const liveLockMessage =
+    lockCountdown !== null && lockCountdown > 0
+      ? (lockIsAccount
+          ? t("portal-login-locked-account")
+          : t("portal-login-locked-too-many")
+        ).replace("${time}", formatLockCountdown(lockCountdown))
+      : null;
+  const displayError = liveLockMessage ?? loginError;
 
   // Setup-password dialog state
   const [setupOpen, setSetupOpen] = useState(false);
@@ -190,6 +272,14 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
     // Client-side validation with inline errors — surfaces missing fields
     // instantly without a round-trip. The server repeats every check.
     setLoginError(null);
+    // FIX-AUDIT3 #8 — clear any previous lockout countdown when the
+    // user submits fresh credentials. (If they're still locked out the
+    // API will return 429/423 again and we'll re-arm the countdown.)
+    if (lockIntervalRef.current) {
+      clearTimeout(lockIntervalRef.current);
+      lockIntervalRef.current = null;
+    }
+    setLockCountdown(null);
     if (!email.trim()) {
       setLoginError(t("portal-login-error-enter-email"));
       return;
@@ -207,6 +297,41 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
       });
       const data = await res.json();
       if (!res.ok) {
+        // FIX-AUDIT3 #8 — surface 429 (too-many-attempts) and 423
+        // (account-locked) with a live countdown. Both responses
+        // carry a `Retry-After` HTTP header (seconds) and a
+        // `retry_after` JSON field; 423 also carries `locked_until`
+        // (ISO timestamp). The 423 response shape is preferred for
+        // the initial countdown because the server computes it from
+        // `locked_until` (more accurate than the per-IP retry-after
+        // for an account lockout). Falls back to the header when the
+        // JSON field is missing.
+        if (res.status === 429 || res.status === 423) {
+          const retryAfterJson = Number(data?.retry_after);
+          const retryAfterHeader = Number(res.headers.get("Retry-After"));
+          const lockedUntil = data?.locked_until;
+          let secs = Number.isFinite(retryAfterJson) && retryAfterJson > 0
+            ? retryAfterJson
+            : Number.isFinite(retryAfterHeader) && retryAfterHeader > 0
+              ? retryAfterHeader
+              : 0;
+          if (secs <= 0 && lockedUntil) {
+            const ms = new Date(lockedUntil).getTime() - Date.now();
+            if (ms > 0) secs = Math.ceil(ms / 1000);
+          }
+          const isAccount = res.status === 423 || !!lockedUntil;
+          setLockIsAccount(isAccount);
+          if (secs > 0) {
+            setLockCountdown(secs);
+          }
+          const template = isAccount
+            ? t("portal-login-locked-account")
+            : t("portal-login-locked-too-many");
+          const msg = template.replace("${time}", formatLockCountdown(secs));
+          setLoginError(msg);
+          toast.error(msg);
+          return;
+        }
         // Inline error is the primary surface — toast is kept as a
         // secondary signal so a user who scrolled away still sees it.
         const msg =
@@ -421,8 +546,14 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
 
               {/* Inline error — surfaces ABOVE the form fields so the user
                   sees the failure reason without having to scroll, and it
-                  stays visible until the user starts typing again. */}
-              {loginError && (
+                  stays visible until the user starts typing again.
+                  FIX-AUDIT3 #8 — when a 429 / 423 lockout countdown is
+                  running, `displayError` carries the live "Try again in
+                  2m 15s" message (re-computed every tick by the
+                  `lockCountdown` state). When the countdown reaches 0,
+                  the effect above clears `loginError` + `lockCountdown`,
+                  so this alert naturally disappears too. */}
+              {displayError && (
                 <Alert
                   variant="destructive"
                   className="mb-5"
@@ -430,9 +561,21 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
                   aria-live="assertive"
                 >
                   <AlertDescription className="text-sm font-medium">
-                    {loginError}
+                    {displayError}
                   </AlertDescription>
                 </Alert>
+              )}
+
+              {/* FIX-AUDIT3 #8 — when locked out, surface a "use the
+                  Forgot password link below" hint right under the alert
+                  so the user has an actionable escape without waiting
+                  for the countdown to expire. The link itself is the
+                  existing "Forgot your password?" button below the
+                  form (unchanged). */}
+              {lockCountdown !== null && lockCountdown > 0 && (
+                <p className="mb-5 text-xs text-muted-foreground leading-relaxed">
+                  {t("portal-login-locked-forgot-help")}
+                </p>
               )}
 
               <form onSubmit={submit} className="space-y-5">
@@ -498,7 +641,11 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
                 <Button
                   type="submit"
                   className="w-full h-11 text-sm font-medium shadow-soft hover:shadow-soft-md smooth"
-                  disabled={loading}
+                  // FIX-AUDIT3 #8 — keep the button disabled while the
+                  // 429 / 423 lockout countdown is running so a frustrated
+                  // user can't keep re-submitting (which would just
+                  // re-receive 429 / 423 and reset the countdown).
+                  disabled={loading || (lockCountdown !== null && lockCountdown > 0)}
                 >
                   {loading ? (
                     <Loader2 className="size-4 animate-spin" />

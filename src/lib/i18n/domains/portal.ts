@@ -699,6 +699,17 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     "portal-login-contact-us": "Contact your account manager",
     "portal-login-error-enter-email": "Please enter your email address.",
     "portal-login-error-enter-password": "Please enter your password.",
+    // FIX-AUDIT3 #8 — portal login surfaces 429 / 423 with a live
+    // countdown. The API returns `Retry-After` (header) + `retry_after`
+    // (JSON, seconds) and `locked_until` (JSON, ISO). These strings
+    // compose the in-form message that replaces the generic
+    // "Too many login attempts…" text. The `${time}` placeholder is
+    // replaced client-side with a "2m 15s"-style countdown.
+    "portal-login-locked-too-many": "Too many login attempts. Try again in ${time}.",
+    "portal-login-locked-account": "Your account is temporarily locked. Try again in ${time}.",
+    "portal-login-locked-countdown-h": "${m}m ${s}s",
+    "portal-login-locked-countdown-s": "${s}s",
+    "portal-login-locked-forgot-help": "Locked out? Use \"Forgot your password?\" below to reset, or contact your account manager.",
 
     // ─── Messages ────────────────────────────────────────────────────────
     "portal-messages-support": "VELOS Support",
@@ -4020,6 +4031,12 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     "portal-shell-expand": "Proširi sidebar",
     "portal-shell-collapse": "Sakri sidebar",
     "portal-login-error-enter-password": "Unesi svoju lozinku.",
+    // FIX-AUDIT3 #8
+    "portal-login-locked-too-many": "Previše pokušaja prijave. Pokušaj ponovo za ${time}.",
+    "portal-login-locked-account": "Tvoj nalog je privremeno zaključan. Pokušaj ponovo za ${time}.",
+    "portal-login-locked-countdown-h": "${m}m ${s}s",
+    "portal-login-locked-countdown-s": "${s}s",
+    "portal-login-locked-forgot-help": "Zaključan? Koristi „Zaboravljena lozinka?” ispod za resetovanje, ili kontaktiraj svog account menadžera.",
     "portal-login-error-enter-email": "Unesi svoju email adresu.",
     "portal-login-contact-us": "Kontaktiraj svog account menadžera",
     "portal-login-need-account": "Nemaš portalni nalog?",
@@ -6019,6 +6036,12 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     "portal-shell-expand": "Yan çubuğu genişlet",
     "portal-shell-collapse": "Yan çubuğu daralt",
     "portal-login-error-enter-password": "Lütfen şifrenizi girin.",
+    // FIX-AUDIT3 #8
+    "portal-login-locked-too-many": "Çok fazla giriş denemesi. ${time} sonra tekrar deneyin.",
+    "portal-login-locked-account": "Hesabınız geçici olarak kilitli. ${time} sonra tekrar deneyin.",
+    "portal-login-locked-countdown-h": "${m}dk ${s}sn",
+    "portal-login-locked-countdown-s": "${s}sn",
+    "portal-login-locked-forgot-help": "Kilitli mi? Sıfırlamak için aşağıdaki „Şifrenizi mi unuttunuz?” bağlantısını kullanın veya hesap yöneticinize başvurun.",
     "portal-login-error-enter-email": "Lütfen e-posta adresinizi girin.",
     "portal-login-contact-us": "Hesap yöneticinizle iletişime geçin",
     "portal-login-need-account": "Portal hesabınız yok mu?",
@@ -8015,6 +8038,12 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     "portal-shell-expand": "Seitenleiste ausklappen",
     "portal-shell-collapse": "Seitenleiste einklappen",
     "portal-login-error-enter-password": "Bitte geben Sie Ihr Passwort ein.",
+    // FIX-AUDIT3 #8
+    "portal-login-locked-too-many": "Zu viele Anmeldeversuche. Versuchen Sie es in ${time} erneut.",
+    "portal-login-locked-account": "Ihr Konto ist vorübergehend gesperrt. Versuchen Sie es in ${time} erneut.",
+    "portal-login-locked-countdown-h": "${m}m ${s}s",
+    "portal-login-locked-countdown-s": "${s}s",
+    "portal-login-locked-forgot-help": "Gesperrt? Nutzen Sie unten „Passwort vergessen?” zum Zurücksetzen oder wenden Sie sich an Ihren Account-Manager.",
     "portal-login-error-enter-email": "Bitte geben Sie Ihre E-Mail-Adresse ein.",
     "portal-login-contact-us": "Kontaktieren Sie Ihren Account-Manager",
     "portal-login-need-account": "Kein Portal-Konto?",
@@ -10011,6 +10040,12 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     "portal-shell-expand": "Развернуть боковую панель",
     "portal-shell-collapse": "Свернуть боковую панель",
     "portal-login-error-enter-password": "Пожалуйста, введите ваш пароль.",
+    // FIX-AUDIT3 #8
+    "portal-login-locked-too-many": "Слишком много попыток входа. Повторите через ${time}.",
+    "portal-login-locked-account": "Ваш аккаунт временно заблокирован. Повторите через ${time}.",
+    "portal-login-locked-countdown-h": "${m}м ${s}с",
+    "portal-login-locked-countdown-s": "${s}с",
+    "portal-login-locked-forgot-help": "Заблокированы? Используйте ссылку «Забыли пароль?» ниже для сброса или обратитесь к аккаунт-менеджеру.",
     "portal-login-error-enter-email": "Пожалуйста, введите ваш email.",
     "portal-login-contact-us": "Связаться с аккаунт-менеджером",
     "portal-login-need-account": "Нет портального аккаунта?",

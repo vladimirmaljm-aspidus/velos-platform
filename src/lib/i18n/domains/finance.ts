@@ -390,6 +390,10 @@ export const FINANCE: Record<Locale, Record<string, string>> = {
     "fin-status-draft": "Draft",
     "fin-status-cancelled": "Cancelled",
     "fin-status-rejected": "Rejected",
+    // FIX-AUDIT3 #1 — admin proformas-view uses `fin-status-viewed` for the
+    // "viewed" proforma status badge. The key was missing in every locale,
+    // so admins saw the literal string "fin-status-viewed".
+    "fin-status-viewed": "Viewed",
     "fin-invoice-label": "Invoice",
     "fin-invoice-details": "Invoice details",
     "fin-showing-range": "Showing ${from}–${to} of ${total}",
@@ -878,6 +882,8 @@ export const FINANCE: Record<Locale, Record<string, string>> = {
     "fin-status-draft": "Nacrt",
     "fin-status-cancelled": "Otkazano",
     "fin-status-rejected": "Odbijeno",
+    // FIX-AUDIT3 #1
+    "fin-status-viewed": "Pogledano",
     "fin-invoice-label": "Faktura",
     "fin-invoice-details": "Detalji fakture",
     "fin-showing-range": "Prikazano ${from}–${to} od ${total}",
@@ -1379,6 +1385,8 @@ export const FINANCE: Record<Locale, Record<string, string>> = {
     "fin-status-draft": "Taslak",
     "fin-status-cancelled": "İptal edildi",
     "fin-status-rejected": "Reddedildi",
+    // FIX-AUDIT3 #1
+    "fin-status-viewed": "Görüntülendi",
     "fin-invoice-label": "Fatura",
     "fin-invoice-details": "Fatura detayları",
     "fin-showing-range": "${total} kayıttan ${from}–${to} gösteriliyor",
@@ -1880,6 +1888,8 @@ export const FINANCE: Record<Locale, Record<string, string>> = {
     "fin-status-draft": "Entwurf",
     "fin-status-cancelled": "Storniert",
     "fin-status-rejected": "Abgelehnt",
+    // FIX-AUDIT3 #1
+    "fin-status-viewed": "Angesehen",
     "fin-invoice-label": "Rechnung",
     "fin-invoice-details": "Rechnungsdetails",
     "fin-showing-range": "Zeige ${from}–${to} von ${total}",
@@ -2381,6 +2391,8 @@ export const FINANCE: Record<Locale, Record<string, string>> = {
     "fin-status-draft": "Черновик",
     "fin-status-cancelled": "Отменено",
     "fin-status-rejected": "Отклонено",
+    // FIX-AUDIT3 #1
+    "fin-status-viewed": "Просмотрено",
     "fin-invoice-label": "Счёт",
     "fin-invoice-details": "Детали счёта",
     "fin-showing-range": "Показано ${from}–${to} из ${total}",

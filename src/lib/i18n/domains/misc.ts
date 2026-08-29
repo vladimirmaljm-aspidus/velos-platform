@@ -910,6 +910,17 @@ export const MISC: Record<Locale, Record<string, string>> = {
     "login-error-password": "Please enter your password.",
     "login-error-network": "Network error. Please check your connection and try again.",
     "login-error-generic": "Something went wrong. Please try again.",
+    // FIX-AUDIT3 #8 — admin login-view surfaces 429 / 423 with a live
+    // countdown. The API returns `Retry-After` (header) + `retry_after`
+    // (JSON, seconds) and `locked_until` (JSON, ISO). These strings
+    // compose the in-form message that replaces the generic
+    // "Too many login attempts…" text. The `${time}` placeholder is
+    // replaced client-side with a "2m 15s"-style countdown.
+    "login-locked-too-many": "Too many login attempts. Try again in ${time}.",
+    "login-locked-account": "Account temporarily locked. Try again in ${time}.",
+    "login-locked-countdown-h": "${m}m ${s}s",
+    "login-locked-countdown-s": "${s}s",
+    "login-locked-forgot-help": "Locked out? Use \"Forgot password?\" to reset, or contact your workspace admin.",
 
     // ── Register page (UI-1) ─────────────────────────────────────────────
     "register-title": "Start your VELOS workspace",
@@ -2056,6 +2067,12 @@ export const MISC: Record<Locale, Record<string, string>> = {
     "register-desc": "14-dnevna besplatna proba · Pun pristup · Kreditna kartica nije potrebna",
     "register-title": "Pokreni svoj VELOS workspace",
     "login-error-generic": "Nešto je pošlo po zlu. Pokušaj ponovo.",
+    // FIX-AUDIT3 #8
+    "login-locked-too-many": "Previše pokušaja prijave. Pokušaj ponovo za ${time}.",
+    "login-locked-account": "Nalog je privremeno zaključan. Pokušaj ponovo za ${time}.",
+    "login-locked-countdown-h": "${m}m ${s}s",
+    "login-locked-countdown-s": "${s}s",
+    "login-locked-forgot-help": "Zaključan? Koristi „Zaboravljena lozinka?” za resetovanje, ili kontaktiraj admina workspace-a.",
     "login-error-network": "Mrežna greška. Proveri svoju konekciju i pokušaj ponovo.",
     "login-error-password": "Unesi svoju lozinku.",
     "login-error-username": "Unesi svoje korisničko ime.",
@@ -3138,6 +3155,12 @@ export const MISC: Record<Locale, Record<string, string>> = {
     "register-desc": "14 günlük ücretsiz deneme · Tam erişim · Kredi kartı gerekmez",
     "register-title": "VELOS çalışma alanınızı başlatın",
     "login-error-generic": "Bir şeyler ters gitti. Lütfen tekrar deneyin.",
+    // FIX-AUDIT3 #8
+    "login-locked-too-many": "Çok fazla giriş denemesi. ${time} sonra tekrar deneyin.",
+    "login-locked-account": "Hesap geçici olarak kilitli. ${time} sonra tekrar deneyin.",
+    "login-locked-countdown-h": "${m}dk ${s}sn",
+    "login-locked-countdown-s": "${s}sn",
+    "login-locked-forgot-help": "Kilitli mi? Sıfırlamak için „Şifrenizi mi unuttunuz?” kullanın veya workspace yöneticinize başvurun.",
     "login-error-network": "Ağ hatası. Bağlantınızı kontrol edip tekrar deneyin.",
     "login-error-password": "Lütfen şifrenizi girin.",
     "login-error-username": "Lütfen kullanıcı adınızı girin.",
@@ -4220,6 +4243,12 @@ export const MISC: Record<Locale, Record<string, string>> = {
     "register-desc": "14-tägige kostenlose Testphase · Vollzugriff · Keine Kreditkarte erforderlich",
     "register-title": "Starten Sie Ihren VELOS-Arbeitsbereich",
     "login-error-generic": "Etwas ist schiefgelaufen. Bitte versuchen Sie es erneut.",
+    // FIX-AUDIT3 #8
+    "login-locked-too-many": "Zu viele Anmeldeversuche. Versuchen Sie es in ${time} erneut.",
+    "login-locked-account": "Konto vorübergehend gesperrt. Versuchen Sie es in ${time} erneut.",
+    "login-locked-countdown-h": "${m}m ${s}s",
+    "login-locked-countdown-s": "${s}s",
+    "login-locked-forgot-help": "Gesperrt? Nutzen Sie „Passwort vergessen?” zum Zurücksetzen oder wenden Sie sich an Ihren Workspace-Administrator.",
     "login-error-network": "Netzwerkfehler. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
     "login-error-password": "Bitte geben Sie Ihr Passwort ein.",
     "login-error-username": "Bitte geben Sie Ihren Benutzernamen ein.",
@@ -5302,6 +5331,12 @@ export const MISC: Record<Locale, Record<string, string>> = {
     "register-desc": "14-дн. бесплатный пробный период · Полный доступ · Без карты",
     "register-title": "Запустите ваше VELOS-пространство",
     "login-error-generic": "Что-то пошло не так. Повторите попытку.",
+    // FIX-AUDIT3 #8
+    "login-locked-too-many": "Слишком много попыток входа. Повторите через ${time}.",
+    "login-locked-account": "Аккаунт временно заблокирован. Повторите через ${time}.",
+    "login-locked-countdown-h": "${m}м ${s}с",
+    "login-locked-countdown-s": "${s}с",
+    "login-locked-forgot-help": "Заблокированы? Используйте «Забыли пароль?» для сброса или обратитесь к администратору workspace.",
     "login-error-network": "Сетевая ошибка. Проверьте подключение и повторите.",
     "login-error-password": "Пожалуйста, введите ваш пароль.",
     "login-error-username": "Пожалуйста, введите имя пользователя.",

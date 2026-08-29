@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import {
@@ -47,9 +47,81 @@ export function LoginView({ onSwitchToRegister }: LoginViewProps) {
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
+  // FIX-AUDIT3 #8 — 429 / 423 lockout countdown. When the API returns
+  // a `Retry-After` (HTTP header, seconds) OR `retry_after` (JSON,
+  // seconds) OR `locked_until` (JSON, ISO timestamp for 423), we
+  // start a 1-second interval that decrements `lockCountdown` until
+  // it reaches 0. While `lockCountdown > 0`, the inline error alert
+  // shows a live "Try again in 2m 15s" message (re-computed every
+  // tick) and the submit button is disabled. The user can still
+  // click the existing "Forgot password?" link to reset.
+  // `lockIsAccount` distinguishes the 423 (account temporarily
+  // locked) message from the 429 (per-IP / per-user rate limit)
+  // message — both flow through the same countdown UI.
+  const [lockCountdown, setLockCountdown] = useState<number | null>(null);
+  const [lockIsAccount, setLockIsAccount] = useState(false);
+  const lockIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (lockCountdown === null || lockCountdown <= 0) {
+      if (lockIntervalRef.current) {
+        clearTimeout(lockIntervalRef.current);
+        lockIntervalRef.current = null;
+      }
+      if (lockCountdown === 0) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setError("");
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setLockCountdown(null);
+      }
+      return;
+    }
+    lockIntervalRef.current = setTimeout(() => {
+      setLockCountdown((s) => (s ?? 0) - 1);
+    }, 1000);
+    return () => {
+      if (lockIntervalRef.current) {
+        clearTimeout(lockIntervalRef.current);
+        lockIntervalRef.current = null;
+      }
+    };
+  }, [lockCountdown]);
+
+  function formatLockCountdown(seconds: number): string {
+    const s = Math.max(0, Math.floor(seconds));
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    if (m >= 1) {
+      return t("login-locked-countdown-h")
+        .replace("${m}", String(m))
+        .replace("${s}", String(r));
+    }
+    return t("login-locked-countdown-s").replace("${s}", String(r));
+  }
+
+  // Live "Try again in ${time}" message, re-computed every render.
+  // When `lockCountdown` is null / 0 this is null and the inline alert
+  // falls back to `error` (the original behaviour for 401/403/etc).
+  const liveLockMessage =
+    lockCountdown !== null && lockCountdown > 0
+      ? (lockIsAccount
+          ? t("login-locked-account")
+          : t("login-locked-too-many")
+        ).replace("${time}", formatLockCountdown(lockCountdown))
+      : null;
+  const displayError = liveLockMessage ?? error;
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    // FIX-AUDIT3 #8 — clear any previous lockout countdown when the
+    // user submits fresh credentials. (If they're still locked out the
+    // API will return 429/423 again and we'll re-arm the countdown.)
+    if (lockIntervalRef.current) {
+      clearTimeout(lockIntervalRef.current);
+      lockIntervalRef.current = null;
+    }
+    setLockCountdown(null);
 
     if (!username.trim()) {
       setError(t("login-error-username"));
@@ -69,6 +141,38 @@ export function LoginView({ onSwitchToRegister }: LoginViewProps) {
       });
       const data = await res.json();
       if (!res.ok) {
+        // FIX-AUDIT3 #8 — surface 429 (too-many-attempts) and 423
+        // (account-locked) with a live countdown. Both responses
+        // carry a `Retry-After` HTTP header (seconds) and a
+        // `retry_after` JSON field; 423 also carries `locked_until`
+        // (ISO timestamp). Falls back to the header when the JSON
+        // field is missing, and to `locked_until` when both are
+        // missing (the auth/login route always sets one of the two).
+        if (res.status === 429 || res.status === 423) {
+          const retryAfterJson = Number(data?.retry_after);
+          const retryAfterHeader = Number(res.headers.get("Retry-After"));
+          const lockedUntil = data?.locked_until;
+          let secs = Number.isFinite(retryAfterJson) && retryAfterJson > 0
+            ? retryAfterJson
+            : Number.isFinite(retryAfterHeader) && retryAfterHeader > 0
+              ? retryAfterHeader
+              : 0;
+          if (secs <= 0 && lockedUntil) {
+            const ms = new Date(lockedUntil).getTime() - Date.now();
+            if (ms > 0) secs = Math.ceil(ms / 1000);
+          }
+          const isAccount = res.status === 423 || !!lockedUntil;
+          setLockIsAccount(isAccount);
+          if (secs > 0) {
+            setLockCountdown(secs);
+          }
+          const template = isAccount
+            ? t("login-locked-account")
+            : t("login-locked-too-many");
+          const msg = template.replace("${time}", formatLockCountdown(secs));
+          setError(msg);
+          return;
+        }
         setError(data.error || t("login-signin-failed"));
         return;
       }
@@ -240,8 +344,13 @@ export function LoginView({ onSwitchToRegister }: LoginViewProps) {
             </CardHeader>
 
             <CardContent className="px-6 pb-6">
-              {/* Error alert */}
-              {error && (
+              {/* Error alert — FIX-AUDIT3 #8: when a 429 / 423 lockout
+                  countdown is running, `displayError` carries the live
+                  "Try again in 2m 15s" message (re-computed every tick
+                  by the `lockCountdown` state). When the countdown
+                  reaches 0, the effect above clears `error` +
+                  `lockCountdown`, so this alert naturally disappears too. */}
+              {displayError && (
                 <Alert
                   variant="destructive"
                   className="mb-5"
@@ -249,9 +358,19 @@ export function LoginView({ onSwitchToRegister }: LoginViewProps) {
                   aria-live="assertive"
                 >
                   <AlertDescription className="text-sm font-medium">
-                    {error}
+                    {displayError}
                   </AlertDescription>
                 </Alert>
+              )}
+
+              {/* FIX-AUDIT3 #8 — when locked out, surface a hint about
+                  the existing "Forgot password?" link in the form row
+                  below so the user has an actionable escape without
+                  waiting for the countdown to expire. */}
+              {lockCountdown !== null && lockCountdown > 0 && (
+                <p className="mb-5 text-xs text-muted-foreground leading-relaxed">
+                  {t("login-locked-forgot-help")}
+                </p>
               )}
 
               {/* Form */}
@@ -353,7 +472,12 @@ export function LoginView({ onSwitchToRegister }: LoginViewProps) {
                 <Button
                   type="submit"
                   className="h-11 w-full text-sm font-medium"
-                  disabled={loading}
+                  // FIX-AUDIT3 #8 — keep the button disabled while the
+                  // 429 / 423 lockout countdown is running so a
+                  // frustrated user can't keep re-submitting (which
+                  // would just re-receive 429 / 423 and reset the
+                  // countdown).
+                  disabled={loading || (lockCountdown !== null && lockCountdown > 0)}
                   aria-label={t("login-signin-aria")}
                 >
                   {loading ? (

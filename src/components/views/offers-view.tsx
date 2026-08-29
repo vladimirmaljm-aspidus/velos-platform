@@ -838,6 +838,12 @@ export function OffersView() {
               <SelectItem value="accepted">{t("crm-accepted")}</SelectItem>
               <SelectItem value="rejected">{t("crm-rejected")}</SelectItem>
               <SelectItem value="expired">{t("crm-expired")}</SelectItem>
+              {/* FIX-AUDIT3 #4 — admin offers filter was missing the
+                  `countered` status. The status exists (set by the
+                  portal-client counter-offer flow) and shows up as a
+                  "Countered" badge on rows, but admins had no way to
+                  filter for it. */}
+              <SelectItem value="countered">{t("marketplace-response-status-countered")}</SelectItem>
             </SelectContent>
           </Select>
           <PartnerPicker

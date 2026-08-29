@@ -666,6 +666,19 @@ export async function listContractDeliveries(
  * Side effect: if all deliveries are 'delivered' or 'partial' AND the
  * total delivered_quantity ≥ total_quantity, flip the contract status to
  * 'completed'. (Missed deliveries do not auto-complete the contract.)
+ *
+ * FIX-AUDIT3 #7 / HIGH state-machine gap — there was previously NO path
+ * to `breached` even when deliveries are marked `missed`. The contract
+ * widget renders a "breached" badge class but no API or UI ever set it,
+ * so a contract with missed deliveries stayed `active` forever. Now:
+ * if ANY delivery is `missed` AND that delivery's scheduled_date is in
+ * the past, the contract auto-transitions to `breached` — UNLESS the
+ * "completed" branch already fired (a contract that delivered its full
+ * quantity on schedule and then had a later milestone marked missed
+ * stays completed; "completed" wins when totalDelivered ≥ total_quantity
+ * AND no delivery was missed-before-now). The contract can still be
+ * moved out of `breached` later by the manual contract-status endpoint
+ * once the parties resolve the dispute.
  */
 export async function recalculateContractProgress(
   contractId: string,
@@ -680,12 +693,16 @@ export async function recalculateContractProgress(
   const c = contractRow as { id: string; total_quantity: number; status: string } | null;
   if (!c) throw new Error("Contract not found.");
 
+  // FIX-AUDIT3 #7 — also pull `scheduled_date` so we can tell a
+  // `missed` delivery whose deadline has passed (a real breach) from
+  // one that was pre-marked missed ahead of its scheduled_date (an
+  // early admin override — we don't auto-breach on those).
   const { data: deliveries, error: dErr } = await sb
     .from("marketplace_contract_deliveries")
-    .select("delivered_quantity, status")
+    .select("delivered_quantity, status, scheduled_date")
     .eq("contract_id", contractId);
   if (dErr) throw dErr;
-  const rows = (deliveries as Array<{ delivered_quantity: number; status: string }>) || [];
+  const rows = (deliveries as Array<{ delivered_quantity: number; status: string; scheduled_date: string | null }>) || [];
   const totalDelivered = rows.reduce((sum, r) => sum + Number(r.delivered_quantity || 0), 0);
 
   let nextStatus = c.status;
@@ -693,6 +710,27 @@ export async function recalculateContractProgress(
     const allDeliveredOrPartial = rows.every((r) => r.status === "delivered" || r.status === "partial");
     if (allDeliveredOrPartial && totalDelivered >= Number(c.total_quantity)) {
       nextStatus = "completed";
+    }
+
+    // FIX-AUDIT3 #7 — `breached` branch. A `missed` delivery whose
+    // scheduled_date is in the past is a real breach of the contract
+    // schedule. We only flip to `breached` when `completed` did NOT
+    // already fire (the `completed` branch above is the success path;
+    // it wins when the full quantity was delivered on schedule). A
+    // contract that is already terminal (`completed`, `breached`,
+    // `cancelled`, ...) stays in that terminal state — the only
+    // non-terminal status we promote FROM is `active`.
+    if (nextStatus !== "completed") {
+      const nowMs = Date.now();
+      const anyMissedPastDeadline = rows.some(
+        (r) =>
+          r.status === "missed" &&
+          r.scheduled_date != null &&
+          new Date(r.scheduled_date).getTime() < nowMs,
+      );
+      if (anyMissedPastDeadline && c.status === "active") {
+        nextStatus = "breached";
+      }
     }
   }
 

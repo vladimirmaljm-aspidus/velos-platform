@@ -591,7 +591,15 @@ function PostsTab() {
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className={`text-xs ${POST_STATUS_TONE[p.status] ?? ""}`}>
-                          {p.status}
+                          {/* FIX-AUDIT3 #2 — admin posts tab showed the raw
+                              `p.status` string ("flagged", "active", ...) while
+                              the portal post-detail view translated the same
+                              status via `marketplace-status-*`. Now both
+                              surfaces show the same translated label. The
+                              `|| p.status` fallback guards against an unknown
+                              status value (keeps the badge readable instead
+                              of showing the missing-key literal). */}
+                          {t(`marketplace-status-${p.status}`) || p.status}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-xs text-right tabular">{p.views_count}</TableCell>
@@ -662,7 +670,7 @@ function PostsTab() {
               <DetailRow label={t("pf-ma-col-country")}   value={detailPost.delivery_country ?? "—"} />
               <DetailRow label={t("pf-ma-col-price")}      value={detailPost.target_price != null ? formatPrice(detailPost.target_price, detailPost.currency) : "—"} />
               <DetailRow label={t("pf-ma-col-quantity")}   value={`${detailPost.quantity} ${detailPost.unit}`} />
-              <DetailRow label="Status"                    value={<Badge variant="outline" className={POST_STATUS_TONE[detailPost.status] ?? ""}>{detailPost.status}</Badge>} />
+              <DetailRow label="Status"                    value={<Badge variant="outline" className={POST_STATUS_TONE[detailPost.status] ?? ""}>{t(`marketplace-status-${detailPost.status}`) || detailPost.status}</Badge>} />
               <DetailRow label={t("pf-ma-col-views")}      value={detailPost.views_count} />
               <DetailRow label={t("pf-ma-col-responses")}  value={detailPost.responses_count} />
               <DetailRow label={t("pf-ma-col-created")}    value={formatDate(detailPost.created_at)} />

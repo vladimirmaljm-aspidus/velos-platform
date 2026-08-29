@@ -481,6 +481,10 @@ export const CRM: Record<Locale, Record<string, string>> = {
     "crm-portal-status-revoked": "Revoked",
     "crm-portal-status-active": "Active",
     "crm-portal-status-approved": "Approved",
+    // FIX-AUDIT3 #5 — partner-360 portal-access card had a hardcoded
+    // English `label="Tier"` DefRow. Add the label key in every locale
+    // so the label translates with the rest of the UI.
+    "crm-portal-tier-label": "Tier",
     "crm-commission-agent-badge": "Commission Agent",
     "crm-kyc-approved": "KYC approved",
     "crm-risk": "Risk",
@@ -1359,6 +1363,8 @@ export const CRM: Record<Locale, Record<string, string>> = {
     "crm-portal-status-revoked": "Opozvan",
     "crm-portal-status-active": "Aktivan",
     "crm-portal-status-approved": "Odobren",
+    // FIX-AUDIT3 #5
+    "crm-portal-tier-label": "Nivo",
     "crm-commission-agent-badge": "Komisioni agent",
     "crm-kyc-approved": "KYC odobren",
     "crm-risk": "Rizik",
@@ -2244,6 +2250,8 @@ export const CRM: Record<Locale, Record<string, string>> = {
     "crm-portal-status-revoked": "İptal Edildi",
     "crm-portal-status-active": "Aktif",
     "crm-portal-status-approved": "Onaylandı",
+    // FIX-AUDIT3 #5
+    "crm-portal-tier-label": "Seviye",
     "crm-commission-agent-badge": "Komisyon Acentesi",
     "crm-kyc-approved": "KYC onaylandı",
     "crm-risk": "Risk",
@@ -3121,6 +3129,8 @@ export const CRM: Record<Locale, Record<string, string>> = {
     "crm-portal-status-revoked": "Widerrufen",
     "crm-portal-status-active": "Aktiv",
     "crm-portal-status-approved": "Genehmigt",
+    // FIX-AUDIT3 #5
+    "crm-portal-tier-label": "Stufe",
     "crm-commission-agent-badge": "Provisionsvertreter",
     "crm-kyc-approved": "KYC genehmigt",
     "crm-risk": "Risiko",
@@ -3998,6 +4008,8 @@ export const CRM: Record<Locale, Record<string, string>> = {
     "crm-portal-status-revoked": "Отозван",
     "crm-portal-status-active": "Активен",
     "crm-portal-status-approved": "Одобрен",
+    // FIX-AUDIT3 #5
+    "crm-portal-tier-label": "Уровень",
     "crm-commission-agent-badge": "Комиссионный агент",
     "crm-kyc-approved": "KYC одобрен",
     "crm-risk": "Риск",

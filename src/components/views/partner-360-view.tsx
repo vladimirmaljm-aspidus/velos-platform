@@ -1604,7 +1604,15 @@ function PortalTab({
             </div>
             {portalAccess && (
               <Badge className={`${portalStatusClass(portalAccess.status)} capitalize`}>
-                {portalAccess.status.replace("_", " ")}
+                {/* FIX-AUDIT3 #5 — portal-access badge showed the raw
+                    `portalAccess.status` string with underscores
+                    replaced by spaces ("pending_approval", "invited",
+                    ...). Now translate via the `crm-portal-status-*`
+                    keys (added for every portal-access status in every
+                    locale). The `|| portalAccess.status` fallback keeps
+                    the badge readable if a new status is added to the
+                    enum before its i18n key ships. */}
+                {t(`crm-portal-status-${portalAccess.status}`) || portalAccess.status}
               </Badge>
             )}
           </div>
@@ -1614,7 +1622,7 @@ function PortalTab({
             <>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 <DefRow label={t("crm-portal-email")} value={portalAccess.portal_email} icon={Mail} />
-                <DefRow label="Tier" value={t(PORTAL_TIER_LABEL_KEYS[portalAccess.tier]) || portalAccess.tier} />
+                <DefRow label={t("crm-portal-tier-label")} value={t(PORTAL_TIER_LABEL_KEYS[portalAccess.tier]) || portalAccess.tier} />
                 <DefRow label={t("crm-invite-sent")} value={portalAccess.invited_at ? fmtDateTime(portalAccess.invited_at) : "—"} icon={Calendar} />
                 <DefRow label={t("crm-last-login")} value={portalAccess.last_login_at ? fmtRelative(portalAccess.last_login_at) : t("crm-never")} icon={Clock} />
                 <DefRow label={t("crm-last-login-ip")} value={portalAccess.last_login_ip} mono />

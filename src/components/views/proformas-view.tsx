@@ -387,9 +387,16 @@ export function ProformasView() {
               <SelectItem value="all">{t("fin-all-statuses")}</SelectItem>
               <SelectItem value="draft">{t("fin-status-draft")}</SelectItem>
               <SelectItem value="sent">{t("fin-status-sent")}</SelectItem>
+              <SelectItem value="viewed">{t("fin-status-viewed")}</SelectItem>
               <SelectItem value="accepted">{t("fin-status-accepted")}</SelectItem>
               <SelectItem value="paid">{t("fin-status-paid")}</SelectItem>
               <SelectItem value="expired">{t("fin-status-expired")}</SelectItem>
+              {/* FIX-AUDIT3 #3 — admin proformas filter was missing the two
+                  statuses that AUDIT2-LOGIC-UX H1 added to the badge row
+                  (`rejected`) and that FIX-AUDIT3 #1 added (`viewed`).
+                  Without these entries the admin could see a "Rejected"
+                  badge on a row but had no way to filter for it. */}
+              <SelectItem value="rejected">{t("fin-status-rejected")}</SelectItem>
             </SelectContent>
           </Select>
           <PartnerPicker
