@@ -113,7 +113,7 @@ CREATE POLICY "lois_tenant_delete"
 
 -- ── Grant ────────────────────────────────────────────────────────────────
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.lois TO service_role;
-GRANT USAGE, SELECT ON public.lois TO anon, authenticated;
+GRANT SELECT ON public.lois TO anon, authenticated;
 
 -- ── updated_at trigger ──────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION public.touch_updated_at()

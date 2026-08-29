@@ -110,6 +110,7 @@ BEGIN
     WHEN 'demand'   THEN 'DEM'
     WHEN 'rfq'      THEN 'RFQ'
     WHEN 'logistics' THEN 'LOG'
+    WHEN 'loi'      THEN 'LOI'
     ELSE upper(left(p_doc_type, 3))
   END;
 
@@ -164,6 +165,7 @@ BEGIN
     WHEN 'demand'   THEN 'demands'
     WHEN 'rfq'      THEN 'portal_rfqs'
     WHEN 'logistics' THEN 'logistics_requests'
+    WHEN 'loi'      THEN 'lois'
     ELSE NULL
   END;
 

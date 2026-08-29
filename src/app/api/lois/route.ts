@@ -50,7 +50,18 @@ export async function POST(req: NextRequest) {
   try {
     const auth = await requireAuth(req);
     if (auth instanceof NextResponse) return auth;
-    const tid = auth.tenantId || "";
+    // Super-admin can specify tenant_id in the body; regular users use their
+    // own tenant. This lets the super-admin create LOIs for any tenant.
+    let tid = auth.tenantId || "";
+    if (!tid && auth.isSuperAdmin) {
+      // Parse body early to read tenant_id (re-read later for the full body).
+      // We use a peek approach: clone the request body.
+      const cloned = req.clone();
+      try {
+        const peek = await cloned.json().catch(() => ({}));
+        if (peek.tenant_id) tid = peek.tenant_id;
+      } catch { /* ignore — full parse below will fail with 400 if invalid */ }
+    }
     if (!tid) return NextResponse.json({ error: "No tenant." }, { status: 400 });
 
     // Permission gate
