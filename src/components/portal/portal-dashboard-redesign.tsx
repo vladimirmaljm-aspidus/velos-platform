@@ -281,6 +281,14 @@ export function PortalDashboardRedesign() {
   ];
 
   // Quick actions
+  // AUDIT2-LOW #5: previously the "View offers" quick action routed to
+  // portal-marketplace when !can_view_offers, which was misleading
+  // because the button label said "View offers". Now the "View offers"
+  // quick action is only shown when the user can actually view offers.
+  // When !can_view_offers we substitute a permission-appropriate
+  // replacement: "Request a Quote" if can_submit_rfq, else "Browse
+  // catalog" if can_view_catalog. If neither is allowed the slot is
+  // omitted entirely.
   const quickActions = [
     {
       label: t("portal-dashboard-redesign-create-post"),
@@ -294,14 +302,29 @@ export function PortalDashboardRedesign() {
       onClick: () => setView("portal-marketplace" as ViewKey),
       primary: false,
     },
-    {
-      label: t("portal-dashboard-redesign-view-offers"),
-      icon: FileText,
-      onClick: () =>
-        setView((portalAccess.can_view_offers ? "portal-offers" : "portal-marketplace") as ViewKey),
-      primary: false,
-    },
-  ];
+    portalAccess.can_view_offers
+      ? {
+          label: t("portal-dashboard-redesign-view-offers"),
+          icon: FileText,
+          onClick: () => setView("portal-offers" as ViewKey),
+          primary: false,
+        }
+      : portalAccess.can_submit_rfq
+        ? {
+            label: t("portal-nav-request-quote"),
+            icon: FileText,
+            onClick: () => setView("portal-rfq" as ViewKey),
+            primary: false,
+          }
+        : portalAccess.can_view_catalog
+          ? {
+              label: t("portal-dashboard-redesign-browse-catalog"),
+              icon: FileText,
+              onClick: () => setView("portal-catalog" as ViewKey),
+              primary: false,
+            }
+          : null,
+  ].filter((qa): qa is NonNullable<typeof qa> => qa !== null);
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">

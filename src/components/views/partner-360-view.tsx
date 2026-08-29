@@ -1570,7 +1570,7 @@ function PortalTab({
         body: JSON.stringify({
           partner_id: partnerId,
           tier: "standard",
-          status: "approved",
+          status: "invited",
         }),
       });
       if (!r.ok) {
@@ -1658,7 +1658,7 @@ function PortalTab({
                       }}
                       disabled={inviteSending || inviteMut.isPending || portalAccess.status === "active"}
                     >
-                      <Send className="size-4 mr-1.5" /> {t("crm-send-invite")}
+                      <Send className="size-4 mr-1.5" /> {t(portalAccess.invited_at ? "crm-resend-invite" : "crm-send-invite")}
                     </Button>
                   )}
                   {canChangeEmail && (

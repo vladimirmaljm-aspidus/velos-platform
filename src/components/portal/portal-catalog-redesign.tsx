@@ -40,6 +40,7 @@ import {
   Sparkles,
   PackageCheck,
   Inbox,
+  Lock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fmtDate } from "@/lib/utils/format";
@@ -48,6 +49,11 @@ import { RfqFormDialog } from "./rfq-form-dialog";
 import { useT } from "@/lib/i18n/store";
 import { useAppStore } from "@/lib/store/app-store";
 import { useDebounced } from "@/lib/hooks/use-debounced";
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/components/ui/tooltip";
 
 // ─── Category color tokens ─────────────────────────────────────────────────
 // Same convention as the rest of the portal so badges stay brand-consistent:
@@ -155,6 +161,12 @@ export function PortalCatalogRedesign() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [rfqProduct, setRfqProduct] = useState<ProductCatalogEntry | null>(null);
   const setView = useAppStore((s) => s.setView);
+  // AUDIT2-LOW #4: gate the "Request Quote" button on the user's portal
+  // tier. Read portalAccess from useAppStore (same pattern as
+  // portal-offers / portal-invoices) so the RFQ button is hidden for
+  // tiers that don't allow RFQ submission.
+  const portalAccess = useAppStore((s) => s.portalAccess) as any;
+  const canSubmitRfq = !!portalAccess?.can_submit_rfq;
 
   // Debounce search so large catalogs (1000+ items) don't re-filter on every
   // keystroke — keeps typing smooth even on low-end devices.
@@ -298,6 +310,7 @@ export function PortalCatalogRedesign() {
             <ProductCard
               key={p.id}
               product={p}
+              canSubmitRfq={canSubmitRfq}
               onViewSpecs={() => setDetailId(p.id)}
               onRequestQuote={() => openRfq(p)}
             />
@@ -314,6 +327,7 @@ export function PortalCatalogRedesign() {
           {selected ? (
             <ProductDetailDrawer
               product={selected}
+              canSubmitRfq={canSubmitRfq}
               onRequestQuote={() => {
                 setDetailId(null);
                 openRfq(selected);
@@ -356,10 +370,12 @@ function EmptyCatalog({ query, hasCategory }: { query: string; hasCategory: bool
 // ─── Product card ───────────────────────────────────────────────────────────
 function ProductCard({
   product,
+  canSubmitRfq,
   onViewSpecs,
   onRequestQuote,
 }: {
   product: ProductCatalogEntry;
+  canSubmitRfq: boolean;
   onViewSpecs: () => void;
   onRequestQuote: () => void;
 }) {
@@ -469,15 +485,35 @@ function ProductCard({
           <FileText className="size-3.5" />
           {t("portal-catalog-specs")}
         </Button>
-        <Button
-          size="sm"
-          className="flex-1 gap-1.5"
-          onClick={onRequestQuote}
-          aria-label={t("portal-catalog-request-quote")}
-        >
-          <ShoppingCart className="size-3.5" />
-          {t("portal-catalog-quote")}
-        </Button>
+        {canSubmitRfq ? (
+          <Button
+            size="sm"
+            className="flex-1 gap-1.5"
+            onClick={onRequestQuote}
+            aria-label={t("portal-catalog-request-quote")}
+          >
+            <ShoppingCart className="size-3.5" />
+            {t("portal-catalog-quote")}
+          </Button>
+        ) : (
+          // AUDIT2-LOW #4: user's tier does not allow RFQ submission —
+          // render a disabled button wrapped in a tooltip explaining the
+          // restriction instead of opening the RFQ dialog.
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="sm"
+                className="flex-1 gap-1.5 opacity-60 cursor-not-allowed"
+                disabled
+                aria-label={t("portal-catalog-quote-locked")}
+              >
+                <Lock className="size-3.5" />
+                {t("portal-catalog-quote")}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t("portal-catalog-quote-locked")}</TooltipContent>
+          </Tooltip>
+        )}
       </div>
     </div>
   );
@@ -486,9 +522,11 @@ function ProductCard({
 // ─── Detail drawer ─────────────────────────────────────────────────────────
 function ProductDetailDrawer({
   product,
+  canSubmitRfq,
   onRequestQuote,
 }: {
   product: ProductCatalogEntry;
+  canSubmitRfq: boolean;
   onRequestQuote: () => void;
 }) {
   const t = useT();
@@ -658,10 +696,24 @@ function ProductDetailDrawer({
 
         {/* ─── CTA: Request Quote ──────────────────────────────────────── */}
         <div className="border-t border-border/60 pt-4">
-          <Button onClick={onRequestQuote} className="w-full gap-2" size="lg">
-            <ShoppingCart className="size-4" />
-            {t("portal-catalog-request-quote")}
-          </Button>
+          {canSubmitRfq ? (
+            <Button onClick={onRequestQuote} className="w-full gap-2" size="lg">
+              <ShoppingCart className="size-4" />
+              {t("portal-catalog-request-quote")}
+            </Button>
+          ) : (
+            // AUDIT2-LOW #4: tier doesn't allow RFQ — show a disabled
+            // CTA wrapped in a tooltip so users know why it's unavailable.
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button className="w-full gap-2 opacity-60 cursor-not-allowed" size="lg" disabled>
+                  <Lock className="size-4" />
+                  {t("portal-catalog-request-quote")}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t("portal-catalog-quote-locked")}</TooltipContent>
+            </Tooltip>
+          )}
           <p className="text-xs text-muted-foreground text-center mt-2">
             {t("portal-catalog-request-quote-desc")}
           </p>

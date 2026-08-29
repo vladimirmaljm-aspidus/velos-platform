@@ -250,6 +250,16 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
     }
   }
 
+  // Mirror handleSetupOpenChange: clear forgot-password state on close
+  // so reopening the dialog doesn't show a stale email or result banner.
+  function handleForgotOpenChange(open: boolean) {
+    setForgotOpen(open);
+    if (!open) {
+      setForgotEmail("");
+      setForgotResult(null);
+    }
+  }
+
   async function setupPassword(e: React.FormEvent) {
     e.preventDefault();
     setSetupError(null);
@@ -650,7 +660,7 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
               </div>
 
               {/* Forgot password dialog */}
-              <Dialog open={forgotOpen} onOpenChange={setForgotOpen}>
+              <Dialog open={forgotOpen} onOpenChange={handleForgotOpenChange}>
                 <DialogContent className="w-[95vw] sm:max-w-lg max-h-[88vh] flex flex-col gap-0 overflow-hidden p-0">
                   <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
                     <DialogTitle className="flex items-center gap-2">
@@ -680,7 +690,7 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
                       </div>
                     )}
                     <DialogFooter>
-                      <Button type="button" variant="outline" onClick={() => setForgotOpen(false)}>{t("portal-action-close")}</Button>
+                      <Button type="button" variant="outline" onClick={() => handleForgotOpenChange(false)}>{t("portal-action-close")}</Button>
                       <Button type="submit" disabled={forgotLoading || !forgotEmail}>
                         {forgotLoading ? <Loader2 className="size-4 animate-spin" /> : t("portal-login-send-reset-link")}
                       </Button>

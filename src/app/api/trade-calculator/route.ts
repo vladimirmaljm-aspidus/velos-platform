@@ -173,6 +173,33 @@ export async function POST(req: NextRequest) {
   // Without this, every commission computes to $0 (switch falls through to default).
   body.commission_type = normalizeCommissionType(body.commission_type);
 
+  // AUDIT2-LOW #6: enforce an UPPER BOUND on commission_rate. The earlier
+  // check (above) only rejects negative values, so a 10000% commission
+  // or a $1e12 fixed commission would sail through and produce absurd
+  // totals. After normalization we know the canonical type, so:
+  //   - percent-based types (profit_percent / revenue_percent) → cap at 100%
+  //   - fixed total amount ("fixed") → cap at 1e9 (1 billion)
+  // `per_unit` is intentionally not capped here (it represents a per-unit
+  // amount, so the effective total scales with quantity — a per-unit
+  // cap would need to also consider `quantity`, which is out of scope
+  // for this LOW finding).
+  if (body.commission_rate !== undefined && body.commission_rate !== null) {
+    const cr = Number(body.commission_rate);
+    const ct = (body.commission_type as string | null | undefined) ?? "";
+    if (ct.includes("percent") && cr > 100) {
+      return NextResponse.json(
+        { error: "Commission rate must be between 0 and 100 for percent-based types." },
+        { status: 400 },
+      );
+    }
+    if (ct === "fixed" && cr > 1e9) {
+      return NextResponse.json(
+        { error: "Commission amount too large." },
+        { status: 400 },
+      );
+    }
+  }
+
   // Compute totals from cost lines
   // NOTE: `qty`, `buyPrice`, `sellPrice` were already validated and coerced
   // above (P2-5). Reuse them here instead of re-reading body fields.
