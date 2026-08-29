@@ -206,6 +206,9 @@ export function KycReviewView() {
       underReview: all.filter((k) => asStatus(k.status) === "under_review").length,
       approved: all.filter((k) => asStatus(k.status) === "approved").length,
       rejected: all.filter((k) => asStatus(k.status) === "rejected").length,
+      // FIX-AUDIT3-MED-1 #4 — added a `resubmit` count so admins can see how
+      // many clients have been asked to update + resubmit their KYC.
+      resubmit: all.filter((k) => asStatus(k.status) === "resubmit").length,
     };
   }, [items]);
 
@@ -228,7 +231,7 @@ export function KycReviewView() {
       />
 
       {/* KPI grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
         <KpiCard
           label={t("admin-kyc-kpi-pending")}
           value={kpis.pending}
@@ -241,6 +244,17 @@ export function KycReviewView() {
           value={kpis.underReview}
           sub={t("admin-kyc-kpi-under-review-sub")}
           icon={ClipboardCheck}
+        />
+        {/* FIX-AUDIT3-MED-1 #4 — new resubmit KPI tile. Inserted between
+            under_review and approved so the "action required" statuses
+            (pending, under_review, resubmit) sit together on the left and
+            the terminal statuses (approved, rejected) on the right. */}
+        <KpiCard
+          label={t("admin-kyc-kpi-resubmit")}
+          value={kpis.resubmit}
+          sub={t("admin-kyc-kpi-resubmit-sub")}
+          icon={AlertTriangle}
+          iconClassName={kpis.resubmit > 0 ? "text-amber-600 dark:text-amber-400" : undefined}
         />
         <KpiCard
           label={t("admin-kyc-kpi-approved")}
@@ -420,6 +434,16 @@ function StatusFlow({ status, rejectionReason }: { status: KycSubmissionStatus; 
   const t = useT();
   // For rejected state, show first 3 steps + a rejected terminal
   const rejected = status === "rejected";
+  // FIX-AUDIT3-MED-1 #4 — when status is "resubmit", the admin has reviewed
+  // the submission and asked the client to update + resubmit. The submission
+  // is effectively back at the "under_review" stage of the flow, so we
+  // render the normal 4-step flow but treat `under_review` as the current
+  // step and add an amber "Update required" indicator next to it. This
+  // keeps the visual flow intuitive (draft -> submitted -> under_review ->
+  // approved) while still surfacing the action-required state, which the
+  // previous implementation missed entirely (currentIndex was -1 for
+  // "resubmit" so nothing rendered as current/done).
+  const resubmit = status === "resubmit";
   const steps = rejected
     ? [
         { key: "draft" as KycSubmissionStatus, labelKey: "admin-kyc-status-draft" },
@@ -429,12 +453,16 @@ function StatusFlow({ status, rejectionReason }: { status: KycSubmissionStatus; 
       ]
     : FLOW_STEPS;
 
-  const currentIndex = steps.findIndex((s) => s.key === status);
+  // For resubmit, treat `under_review` as the current step (the client has
+  // been kicked back to update + resubmit, so under_review is the active
+  // stage the admin is waiting on).
+  const effectiveStatus: KycSubmissionStatus = resubmit ? "under_review" : status;
+  const currentIndex = steps.findIndex((s) => s.key === effectiveStatus);
   // For under_review, also light up submitted + draft as done
   // For approved, light up everything
   // For draft, light up draft only (current)
   // For submitted, light up draft + submitted
-  const doneIndex = rejected ? currentIndex : currentIndex;
+  const doneIndex = currentIndex;
 
   return (
     <div className="flex items-center w-full overflow-x-auto custom-scroll pb-1">
@@ -443,15 +471,21 @@ function StatusFlow({ status, rejectionReason }: { status: KycSubmissionStatus; 
         const isCurrent = i === doneIndex;
         const isRejected = s.key === "rejected";
         const isApproved = s.key === "approved";
+        // When resubmit is active, the under_review step gets an amber
+        // "update required" tone instead of the primary "current" tone,
+        // plus a small badge below the label so the state is obvious.
+        const isUpdateRequired = resubmit && isCurrent && s.key === "under_review";
         const dotClass = isRejected
           ? "bg-destructive text-white border-destructive"
           : isApproved && (isDone || isCurrent)
             ? "bg-emerald-600 text-white border-emerald-600"
-            : isCurrent && !isApproved
-              ? "bg-primary text-primary-foreground border-primary"
-              : isDone
-                ? "bg-primary/15 text-primary border-primary/30"
-                : "bg-muted text-muted-foreground border-border";
+            : isUpdateRequired
+              ? "bg-amber-500 text-white border-amber-500"
+              : isCurrent && !isApproved
+                ? "bg-primary text-primary-foreground border-primary"
+                : isDone
+                  ? "bg-primary/15 text-primary border-primary/30"
+                  : "bg-muted text-muted-foreground border-border";
 
         return (
           <div key={s.key} className="flex items-center min-w-fit">
@@ -462,6 +496,11 @@ function StatusFlow({ status, rejectionReason }: { status: KycSubmissionStatus; 
               <span className={`text-xs uppercase tracking-wide font-medium whitespace-nowrap ${isCurrent ? "text-foreground" : "text-muted-foreground"}`}>
                 {t(s.labelKey)}
               </span>
+              {isUpdateRequired && (
+                <span className="text-[10px] uppercase tracking-wide font-semibold whitespace-nowrap text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/40 border border-amber-300/70 dark:border-amber-700/40 rounded px-1.5 py-0.5">
+                  {t("admin-kyc-update-required")}
+                </span>
+              )}
             </div>
             {i < steps.length - 1 && (
               <div

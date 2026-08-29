@@ -38,6 +38,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
+// FIX-AUDIT3-MED-2 #1 — Dialog import for the cancel-negotiation
+// confirmation prompt.
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import {
   Tabs,
   TabsList,
@@ -67,6 +77,7 @@ import {
   Paperclip,
   MessageSquare,
   Inbox,
+  Ban,
 } from "lucide-react";
 import { useT } from "@/lib/i18n/store";
 import { useAppStore } from "@/lib/store/app-store";
@@ -223,6 +234,11 @@ export function NegotiationRoom({ negotiationId }: { negotiationId: string }) {
     incoterm: "",
     payment_terms: "",
   });
+  // FIX-AUDIT3-MED-2 #1 — controls the cancel-negotiation confirmation
+  // dialog. The dialog is opened by the "Cancel negotiation" button in
+  // the room header and closed either by the confirm button (which fires
+  // the cancel mutation) or by the cancel button / backdrop / Escape key.
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
 
   // ── Auto-scroll the message thread to the bottom on new messages ──────
   const threadEndRef = useRef<HTMLDivElement | null>(null);
@@ -366,6 +382,38 @@ export function NegotiationRoom({ negotiationId }: { negotiationId: string }) {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // ── Mutation: cancel the negotiation (FIX-AUDIT3-MED-2 #1) ────────────
+  // Either party can proactively close a negotiation that has gone stale.
+  // The backend route gates on accepted-offer / terminal-status and inserts
+  // a system message + audit log entry. On success we invalidate the
+  // negotiation detail + messages + the negotiations LIST queries so the
+  // caller's inbox updates immediately (the cancelled negotiation moves
+  // from the "active" tab to the "rejected" tab, since the UI collapses
+  // the cancelled + rejected display statuses).
+  const cancelNegotiation = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/marketplace/negotiations/${negotiationId}/cancel`, {
+        method: "POST",
+      });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.error || "Failed to cancel negotiation.");
+      }
+      return r.json();
+    },
+    onSuccess: () => {
+      toast.success(t("marketplace-negotiation-cancel-success"));
+      setCancelDialogOpen(false);
+      qc.invalidateQueries({ queryKey: ["marketplace-negotiation", negotiationId] });
+      qc.invalidateQueries({ queryKey: ["marketplace-negotiation-messages", negotiationId] });
+      // Invalidate the negotiations LIST query too so the inbox tab
+      // (active / accepted / rejected / expired) re-fetches and the
+      // cancelled negotiation moves to the right tab.
+      qc.invalidateQueries({ queryKey: ["marketplace-negotiations"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   // ── Derived state ────────────────────────────────────────────────────────
   const negotiation = detailQ.data?.negotiation;
   const counterparty = detailQ.data?.counterparty;
@@ -435,12 +483,30 @@ export function NegotiationRoom({ negotiationId }: { negotiationId: string }) {
 
   return (
     <div className="space-y-4">
-      {/* Back button */}
+      {/* Back button + Cancel negotiation action (FIX-AUDIT3-MED-2 #1) */}
       <div className="flex items-center justify-between gap-2">
         <Button variant="ghost" size="sm" onClick={() => setSelectedNegotiationId(null)}>
           <ArrowLeft className="h-4 w-4 mr-1" />
           {t("marketplace-negotiation-back")}
         </Button>
+        {/* The cancel button only shows for non-terminal negotiations —
+            `inputDisabled` covers expired / accepted / rejected (and
+            cancelled, which the status helper collapses into rejected).
+            When the negotiation has an accepted offer, the backend will
+            refuse the cancel with a 409 anyway (defence-in-depth), but the
+            UI hides the button entirely in that case so the user isn't
+            offered an action that will fail. */}
+        {!inputDisabled && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-rose-700 dark:text-rose-400 border-rose-500/40 hover:bg-rose-500/10"
+            onClick={() => setCancelDialogOpen(true)}
+          >
+            <Ban className="h-4 w-4 mr-1" />
+            {t("marketplace-negotiation-cancel")}
+          </Button>
+        )}
       </div>
 
       {/* Header — counterparty + status + expiry */}
@@ -730,6 +796,46 @@ export function NegotiationRoom({ negotiationId }: { negotiationId: string }) {
           )}
         </CardContent>
       </Card>
+
+      {/* Cancel-negotiation confirmation dialog (FIX-AUDIT3-MED-2 #1).
+          Opens when the user clicks the "Cancel negotiation" button in the
+          header. The dialog uses the standard shadcn Dialog pattern. The
+          confirm button is destructive-styled + shows a spinner while the
+          cancel mutation is in flight. */}
+      <Dialog open={cancelDialogOpen} onOpenChange={(o) => {
+        if (!o && !cancelNegotiation.isPending) setCancelDialogOpen(false);
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Ban className="h-4 w-4 text-rose-600" />
+              {t("marketplace-negotiation-cancel-confirm-title")}
+            </DialogTitle>
+            <DialogDescription>
+              {t("marketplace-negotiation-cancel-confirm-desc")}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setCancelDialogOpen(false)}
+              disabled={cancelNegotiation.isPending}
+            >
+              {t("portal-action-cancel")}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => cancelNegotiation.mutate()}
+              disabled={cancelNegotiation.isPending}
+            >
+              {cancelNegotiation.isPending
+                ? <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                : <Ban className="h-4 w-4 mr-1" />}
+              {t("marketplace-negotiation-cancel")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

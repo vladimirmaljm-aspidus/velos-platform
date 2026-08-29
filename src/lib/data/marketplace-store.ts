@@ -120,16 +120,42 @@ export async function listMarketplacePosts(
   const limit = Math.min(Math.max(filters.limit ?? 24, 1), 100);
   const offset = Math.max(filters.offset ?? 0, 0);
 
+  // FIX-AUDIT3-MED-2 #3 — public list previously used `select("*")`, which
+  // pulled every column on marketplace_posts (including the heavy
+  // free-text / JSONB columns `description`, `specifications`,
+  // `quality_specs`, `packaging`, `payment_terms` and the owner-only
+  // `portal_access_id`) only to then strip `tenant_id` / `partner_id` /
+  // `portal_access_id` via sanitisePublicPost(). The expensive columns
+  // are never needed by the listing cards — only by the post-detail
+  // route (getMarketplacePost + getPublicMarketplacePost), which keeps
+  // `select("*")` because the detail view DOES render description / specs
+  // / quality / packaging. Replaced with the explicit column list
+  // below containing only the fields the public listing UI renders.
+  // `count: "exact"` is preserved so the listing's pagination total
+  // stays correct.
+  const PUBLIC_POST_COLUMNS =
+    "id, post_type, product_name, product_category, quantity, unit, " +
+    "target_price, price_max, currency, price_type, delivery_location, " +
+    "delivery_country, incoterm, origin_country, is_verified, " +
+    "verification_level, views_count, responses_count, expires_at, " +
+    "created_at, updated_at";
   let q = sb
     .from("marketplace_posts")
-    .select("*", { count: "exact" })
+    .select(PUBLIC_POST_COLUMNS, { count: "exact" })
     .eq("tenant_id", tenantId);
 
   // Visibility filter:
   //   • Public path: status='active' AND visibility='public' (private posts
   //     are hidden from everyone except the owner).
   //   • My-posts path (filters.partnerId set): show the caller's own posts
-  //     regardless of status / visibility — they are the owner.
+  //     regardless of status / visibility — they are the owner. The
+  //     explicit column list above does NOT include `status` or
+  //     `visibility` (they aren't rendered in the listing card); the
+  //     filters below still run on the DB side so the row set is correct,
+  //     the returned JSON just omits those two fields. The My-Posts UI
+  //     consumes `listMyPosts()` directly (which still uses `select("*")`)
+  //     so this partner-filter branch is only a defence-in-depth fallback
+  //     for callers that pass `filters.partnerId` to this function.
   if (filters.partnerId) {
     q = q.eq("partner_id", filters.partnerId);
   } else {
@@ -173,7 +199,16 @@ export async function listMarketplacePosts(
   const { data, error, count } = await q.range(offset, offset + limit - 1);
   if (error) throw error;
 
-  const rows = (data as MarketplacePost[]) || [];
+  // FIX-AUDIT3-MED-2 #3 — when the query uses an explicit column list
+  // (rather than `select("*")`), Supabase returns the rows as
+  // `GenericStringError[]` instead of the inferred full-row shape. The
+  // double-cast through `unknown` is intentional: the explicit column
+  // list omits heavy / owner-only columns, so the row shape is a
+  // PARTIAL `MarketplacePost`. `sanitisePublicPost()` only destructures
+  // `tenant_id` / `partner_id` / `portal_access_id` (all absent from the
+  // explicit list) — they'll be `undefined` at runtime, which is fine
+  // because the function just drops them via rest-spread.
+  const rows = (data as unknown as MarketplacePost[]) || [];
   return {
     items: rows.map(sanitisePublicPost),
     total: count ?? 0,

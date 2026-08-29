@@ -20,7 +20,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import * as React from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Card, CardContent, CardHeader, CardTitle, CardDescription,
 } from "@/components/ui/card";
@@ -47,7 +47,7 @@ import {
   LayoutDashboard, Package, Building2, Star, FolderTree, Ban,
   BarChart3, RefreshCw, Eye, Flag, Trash2, Sparkles, CheckCircle2,
   XCircle, ShieldCheck, ShieldAlert, Loader2, Search, Plus,
-  MessageSquare, Users, TrendingUp, Activity,
+  MessageSquare, Users, TrendingUp, Activity, Gavel,
 } from "lucide-react";
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
@@ -86,6 +86,19 @@ const POST_STATUS_TONE: Record<string, string> = {
   closed:   "border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300",
   expired: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400",
   flagged: "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-400",
+};
+
+// FIX-AUDIT3-MED-2 #2 — negotiation status badge tones. The raw
+// marketplace_negotiations.status column has 5 values (active / accepted /
+// rejected / expired / cancelled); the admin Negotiations tab renders
+// the raw value (not the UI-collapsed display status the portal room
+// uses), so we need a tone per raw status.
+const NEGOTIATION_STATUS_TONE: Record<string, string> = {
+  active:    "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+  accepted:  "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-400",
+  rejected:  "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400",
+  expired:   "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+  cancelled: "border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300",
 };
 
 const VERIFICATION_TONE: Record<string, string> = {
@@ -152,6 +165,12 @@ export function MarketplaceAdminView() {
           <TabTrigger value="posts"        icon={Package}          label={t("pf-ma-tab-posts")} />
           <TabTrigger value="verification" icon={Building2}        label={t("pf-ma-tab-verification")} />
           <TabTrigger value="reviews"      icon={Star}             label={t("pf-ma-tab-reviews")} />
+          {/* FIX-AUDIT3-MED-2 #2 — admin Negotiations tab for cross-tenant
+              intervention. Placed between the user-content tabs
+              (posts / verification / reviews) and the metadata tabs
+              (categories / blacklist / stats) because negotiations are
+              user-generated content like posts + reviews. */}
+          <TabTrigger value="negotiations" icon={MessageSquare}    label={t("pf-ma-tab-negotiations")} />
           <TabTrigger value="categories"  icon={FolderTree}        label={t("pf-ma-tab-categories")} />
           <TabTrigger value="blacklist"   icon={Ban}               label={t("pf-ma-tab-blacklist")} />
           <TabTrigger value="stats"       icon={BarChart3}        label={t("pf-ma-tab-stats")} />
@@ -161,6 +180,7 @@ export function MarketplaceAdminView() {
         <TabsContent value="posts"        className="mt-0"><PostsTab /></TabsContent>
         <TabsContent value="verification" className="mt-0"><VerificationTab /></TabsContent>
         <TabsContent value="reviews"      className="mt-0"><ReviewsTab /></TabsContent>
+        <TabsContent value="negotiations" className="mt-0"><NegotiationsTab /></TabsContent>
         <TabsContent value="categories"  className="mt-0"><CategoriesTab /></TabsContent>
         <TabsContent value="blacklist"   className="mt-0"><BlacklistTab /></TabsContent>
         <TabsContent value="stats"       className="mt-0"><StatsTab /></TabsContent>
@@ -436,10 +456,20 @@ function PostsTab() {
     return () => clearTimeout(id);
   }, [search]);
 
-  const postsQ = useQuery<{ items: AdminPost[]; total: number }>({
+  // FIX-AUDIT3-MED-1 #5 — admin posts tab previously fetched limit=100 with
+  // no pagination UI, so a tenant with >100 posts had no way to see the
+  // overflow. Switched to useInfiniteQuery with limit=50 + an offset page
+  // param. The queryKey embeds the filters so a filter change resets the
+  // accumulated pages automatically (no manual page-state reset needed).
+  // The API at /api/admin/marketplace/posts already returns
+  // { items, total, limit, offset }, so getNextPageParam just compares the
+  // running item count against `total`.
+  const POSTS_PAGE_SIZE = 50;
+  const postsQ = useInfiniteQuery<{ items: AdminPost[]; total: number; limit: number; offset: number }>({
     queryKey: ["admin-marketplace-posts", statusFilter, typeFilter, featuredFilter, debouncedSearch],
-    queryFn: async () => {
-      const params = new URLSearchParams({ limit: "100" });
+    queryFn: async ({ pageParam }) => {
+      const offset = Number(pageParam) || 0;
+      const params = new URLSearchParams({ limit: String(POSTS_PAGE_SIZE), offset: String(offset) });
       if (statusFilter !== "all") params.set("status", statusFilter);
       if (typeFilter !== "all") params.set("post_type", typeFilter);
       if (featuredFilter !== "all") params.set("featured", featuredFilter);
@@ -450,6 +480,13 @@ function PostsTab() {
         throw new Error(e.error || "Failed to load posts.");
       }
       return r.json();
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      const fetched = allPages.reduce((sum, p) => sum + (p.items?.length ?? 0), 0);
+      if (fetched >= (lastPage.total ?? 0)) return undefined;
+      if ((lastPage.items?.length ?? 0) < POSTS_PAGE_SIZE) return undefined;
+      return lastPage.offset + lastPage.items.length;
     },
   });
 
@@ -481,7 +518,10 @@ function PostsTab() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const posts = postsQ.data?.items ?? [];
+  // Flatten every fetched page into a single items array (FIX-AUDIT3-MED-1 #5).
+  const posts = postsQ.data?.pages.flatMap((p) => p.items) ?? [];
+  const postsTotal = postsQ.data?.pages?.[0]?.total ?? 0;
+  const postsHasMore = posts.length < postsTotal;
 
   return (
     <div className="space-y-3">
@@ -501,7 +541,12 @@ function PostsTab() {
             <SelectTrigger className="w-[150px]"><SelectValue placeholder={t("pf-ma-filter-status")} /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">{t("all")}</SelectItem>
-              <SelectItem value="active">{t("active")}</SelectItem>
+              {/* FIX-AUDIT3-MED-1 #1 — the posts status filter mixed translation
+                  key families: every other option uses a `pf-ma-status-*`
+                  key from the platform domain, but `active` used the generic
+                  UI-dict `t("active")`. Added `pf-ma-status-active` to all 5
+                  locales and switch to it here so the family is consistent. */}
+              <SelectItem value="active">{t("pf-ma-status-active")}</SelectItem>
               <SelectItem value="flagged">{t("pf-ma-status-flagged")}</SelectItem>
               <SelectItem value="expired">{t("pf-ma-status-expired")}</SelectItem>
               <SelectItem value="draft">{t("pf-ma-status-draft")}</SelectItem>
@@ -607,23 +652,23 @@ function PostsTab() {
                       <TableCell className="text-xs whitespace-nowrap">{formatDate(p.created_at)}</TableCell>
                       <TableCell>
                         <div className="flex items-center justify-end gap-1">
-                          <Button size="icon" variant="ghost" className="size-7" title={t("view")} onClick={() => setDetailPost(p)}>
+                          <Button size="icon" variant="ghost" className="size-7" title={t("view")} aria-label={t("view")} onClick={() => setDetailPost(p)}>
                             <Eye className="size-3.5" />
                           </Button>
                           {p.status === "flagged" ? (
-                            <Button size="icon" variant="ghost" className="size-7" title={t("pf-ma-action-unflag")}
+                            <Button size="icon" variant="ghost" className="size-7" title={t("pf-ma-action-unflag")} aria-label={t("pf-ma-action-unflag")}
                               onClick={() => actionMut.mutate({ postId: p.id, action: "unflag" })}
                               disabled={actionMut.isPending}>
                               <CheckCircle2 className="size-3.5 text-emerald-600" />
                             </Button>
                           ) : (
-                            <Button size="icon" variant="ghost" className="size-7" title={t("pf-ma-action-flag")}
+                            <Button size="icon" variant="ghost" className="size-7" title={t("pf-ma-action-flag")} aria-label={t("pf-ma-action-flag")}
                               onClick={() => actionMut.mutate({ postId: p.id, action: "flag" })}
                               disabled={actionMut.isPending}>
                               <Flag className="size-3.5 text-amber-600" />
                             </Button>
                           )}
-                          <Button size="icon" variant="ghost" className="size-7" title={t("pf-ma-action-remove")}
+                          <Button size="icon" variant="ghost" className="size-7" title={t("pf-ma-action-remove")} aria-label={t("pf-ma-action-remove")}
                             onClick={() => {
                               if (typeof window !== "undefined" && window.confirm(t("pf-ma-confirm-remove"))) {
                                 actionMut.mutate({ postId: p.id, action: "remove" });
@@ -633,13 +678,13 @@ function PostsTab() {
                             <Trash2 className="size-3.5 text-red-600" />
                           </Button>
                           {p.is_featured ? (
-                            <Button size="icon" variant="ghost" className="size-7" title={t("pf-ma-action-unfeature")}
+                            <Button size="icon" variant="ghost" className="size-7" title={t("pf-ma-action-unfeature")} aria-label={t("pf-ma-action-unfeature")}
                               onClick={() => actionMut.mutate({ postId: p.id, action: "unfeature" })}
                               disabled={actionMut.isPending}>
                               <Sparkles className="size-3.5 text-primary" />
                             </Button>
                           ) : (
-                            <Button size="icon" variant="ghost" className="size-7" title={t("pf-ma-action-feature")}
+                            <Button size="icon" variant="ghost" className="size-7" title={t("pf-ma-action-feature")} aria-label={t("pf-ma-action-feature")}
                               onClick={() => actionMut.mutate({ postId: p.id, action: "feature" })}
                               disabled={actionMut.isPending}>
                               <Sparkles className="size-3.5 opacity-50" />
@@ -654,6 +699,33 @@ function PostsTab() {
             </Table>
           </div>
         </CardContent>
+        {/* FIX-AUDIT3-MED-1 #5 — Load more footer. Shows "Showing X of Y" and
+            a button to fetch the next page when items.length < total. The
+            button is hidden once everything has loaded. */}
+        {posts.length > 0 && (
+          <div className="flex flex-col items-center gap-2 py-3 border-t border-border/60">
+            <span className="text-xs text-muted-foreground tabular">
+              {t("pf-ma-showing-of")
+                .replace("{shown}", String(posts.length))
+                .replace("{total}", String(postsTotal))}
+            </span>
+            {postsHasMore && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => postsQ.fetchNextPage()}
+                disabled={postsQ.isFetchingNextPage}
+              >
+                {postsQ.isFetchingNextPage ? (
+                  <Loader2 className="size-3.5 mr-1 animate-spin" />
+                ) : (
+                  <RefreshCw className="size-3.5 mr-1" />
+                )}
+                {t("show_more")}
+              </Button>
+            )}
+          </div>
+        )}
       </Card>
 
       {/* Detail Sheet */}
@@ -670,7 +742,7 @@ function PostsTab() {
               <DetailRow label={t("pf-ma-col-country")}   value={detailPost.delivery_country ?? "—"} />
               <DetailRow label={t("pf-ma-col-price")}      value={detailPost.target_price != null ? formatPrice(detailPost.target_price, detailPost.currency) : "—"} />
               <DetailRow label={t("pf-ma-col-quantity")}   value={`${detailPost.quantity} ${detailPost.unit}`} />
-              <DetailRow label="Status"                    value={<Badge variant="outline" className={POST_STATUS_TONE[detailPost.status] ?? ""}>{t(`marketplace-status-${detailPost.status}`) || detailPost.status}</Badge>} />
+              <DetailRow label={t("status")}                    value={<Badge variant="outline" className={POST_STATUS_TONE[detailPost.status] ?? ""}>{t(`marketplace-status-${detailPost.status}`) || detailPost.status}</Badge>} />
               <DetailRow label={t("pf-ma-col-views")}      value={detailPost.views_count} />
               <DetailRow label={t("pf-ma-col-responses")}  value={detailPost.responses_count} />
               <DetailRow label={t("pf-ma-col-created")}    value={formatDate(detailPost.created_at)} />
@@ -996,10 +1068,17 @@ function ReviewsTab() {
   const qc = useQueryClient();
   const [flaggedFilter, setFlaggedFilter] = React.useState<string>("true");
 
-  const listQ = useQuery<{ items: AdminReview[]; total: number }>({
+  // FIX-AUDIT3-MED-1 #5 — admin reviews tab previously fetched limit=100 with
+  // no pagination UI, so a tenant with >100 flagged reviews had no way to
+  // see the overflow. Switched to useInfiniteQuery with limit=50 + an offset
+  // page param. The queryKey embeds `flaggedFilter` so a filter change resets
+  // the accumulated pages automatically.
+  const REVIEWS_PAGE_SIZE = 50;
+  const listQ = useInfiniteQuery<{ items: AdminReview[]; total: number; limit: number; offset: number }>({
     queryKey: ["admin-marketplace-reviews", flaggedFilter],
-    queryFn: async () => {
-      const params = new URLSearchParams({ limit: "100" });
+    queryFn: async ({ pageParam }) => {
+      const offset = Number(pageParam) || 0;
+      const params = new URLSearchParams({ limit: String(REVIEWS_PAGE_SIZE), offset: String(offset) });
       if (flaggedFilter !== "all") params.set("flagged", flaggedFilter);
       const r = await fetch(`/api/admin/marketplace/reviews?${params}`);
       if (!r.ok) {
@@ -1007,6 +1086,13 @@ function ReviewsTab() {
         throw new Error(e.error || "Failed to load reviews.");
       }
       return r.json();
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      const fetched = allPages.reduce((sum, p) => sum + (p.items?.length ?? 0), 0);
+      if (fetched >= (lastPage.total ?? 0)) return undefined;
+      if ((lastPage.items?.length ?? 0) < REVIEWS_PAGE_SIZE) return undefined;
+      return lastPage.offset + lastPage.items.length;
     },
   });
 
@@ -1054,7 +1140,10 @@ function ReviewsTab() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const reviews = listQ.data?.items ?? [];
+  // Flatten every fetched page into a single items array (FIX-AUDIT3-MED-1 #5).
+  const reviews = listQ.data?.pages.flatMap((p) => p.items) ?? [];
+  const reviewsTotal = listQ.data?.pages?.[0]?.total ?? 0;
+  const reviewsHasMore = reviews.length < reviewsTotal;
 
   return (
     <div className="space-y-3">
@@ -1145,32 +1234,32 @@ function ReviewsTab() {
                       <TableCell>
                         <div className="flex items-center justify-end gap-1">
                           {r.is_flagged ? (
-                            <Button size="icon" variant="ghost" className="size-7" title={t("pf-ma-action-unflag")}
+                            <Button size="icon" variant="ghost" className="size-7" title={t("pf-ma-action-unflag")} aria-label={t("pf-ma-action-unflag")}
                               onClick={() => actionMut.mutate({ reviewId: r.id, action: "unflag" })}
                               disabled={actionMut.isPending}>
                               <CheckCircle2 className="size-3.5 text-emerald-600" />
                             </Button>
                           ) : (
-                            <Button size="icon" variant="ghost" className="size-7" title={t("pf-ma-action-flag")}
+                            <Button size="icon" variant="ghost" className="size-7" title={t("pf-ma-action-flag")} aria-label={t("pf-ma-action-flag")}
                               onClick={() => actionMut.mutate({ reviewId: r.id, action: "flag" })}
                               disabled={actionMut.isPending}>
                               <Flag className="size-3.5 text-amber-600" />
                             </Button>
                           )}
                           {r.is_public ? (
-                            <Button size="icon" variant="ghost" className="size-7" title={t("pf-ma-action-hide")}
+                            <Button size="icon" variant="ghost" className="size-7" title={t("pf-ma-action-hide")} aria-label={t("pf-ma-action-hide")}
                               onClick={() => actionMut.mutate({ reviewId: r.id, action: "hide" })}
                               disabled={actionMut.isPending}>
                               <XCircle className="size-3.5 text-amber-600" />
                             </Button>
                           ) : (
-                            <Button size="icon" variant="ghost" className="size-7" title={t("pf-ma-action-show")}
+                            <Button size="icon" variant="ghost" className="size-7" title={t("pf-ma-action-show")} aria-label={t("pf-ma-action-show")}
                               onClick={() => actionMut.mutate({ reviewId: r.id, action: "show" })}
                               disabled={actionMut.isPending}>
                               <CheckCircle2 className="size-3.5 text-emerald-600" />
                             </Button>
                           )}
-                          <Button size="icon" variant="ghost" className="size-7" title={t("delete")}
+                          <Button size="icon" variant="ghost" className="size-7" title={t("delete")} aria-label={t("delete")}
                             onClick={() => {
                               if (typeof window !== "undefined" && window.confirm(t("confirm_delete"))) {
                                 deleteMut.mutate(r.id);
@@ -1187,6 +1276,351 @@ function ReviewsTab() {
               </TableBody>
             </Table>
           </div>
+        </CardContent>
+        {/* FIX-AUDIT3-MED-1 #5 — Load more footer for the reviews tab. Same
+            shape as the posts tab: "Showing X of Y" + a Load more button when
+            items.length < total. Hidden once everything has loaded. */}
+        {reviews.length > 0 && (
+          <div className="flex flex-col items-center gap-2 py-3 border-t border-border/60">
+            <span className="text-xs text-muted-foreground tabular">
+              {t("pf-ma-showing-of")
+                .replace("{shown}", String(reviews.length))
+                .replace("{total}", String(reviewsTotal))}
+            </span>
+            {reviewsHasMore && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => listQ.fetchNextPage()}
+                disabled={listQ.isFetchingNextPage}
+              >
+                {listQ.isFetchingNextPage ? (
+                  <Loader2 className="size-3.5 mr-1 animate-spin" />
+                ) : (
+                  <RefreshCw className="size-3.5 mr-1" />
+                )}
+                {t("show_more")}
+              </Button>
+            )}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 4b. NEGOTIATIONS TAB (FIX-AUDIT3-MED-2 #2)
+// ═══════════════════════════════════════════════════════════════════════════
+interface AdminNegotiation {
+  id: string;
+  post_id: string;
+  post_title: string | null;
+  partner_id_a: string;
+  partner_id_b: string;
+  partner_a_name: string | null;
+  partner_b_name: string | null;
+  tenant_id_a: string;
+  tenant_id_b: string;
+  status: string;
+  last_message_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+function NegotiationsTab() {
+  const t = useT();
+  const qc = useQueryClient();
+  const [statusFilter, setStatusFilter] = React.useState<string>("all");
+  const [tenantFilter, setTenantFilter] = React.useState("");
+
+  // FIX-AUDIT3-MED-2 #2 — admin negotiations tab uses the same
+  // useInfiniteQuery + "Load more" footer pattern the posts + reviews
+  // tabs were switched to in FIX-AUDIT3-MED-1 #5. The queryKey embeds
+  // the status + tenant filters so a filter change resets the
+  // accumulated pages automatically.
+  const NEGOTIATIONS_PAGE_SIZE = 50;
+  const negQ = useInfiniteQuery<{
+    items: AdminNegotiation[];
+    total: number;
+    limit: number;
+    offset: number;
+  }>({
+    queryKey: ["admin-marketplace-negotiations", statusFilter, tenantFilter],
+    queryFn: async ({ pageParam }) => {
+      const offset = Number(pageParam) || 0;
+      const params = new URLSearchParams({
+        limit: String(NEGOTIATIONS_PAGE_SIZE),
+        offset: String(offset),
+      });
+      if (statusFilter !== "all") params.set("status", statusFilter);
+      if (tenantFilter) params.set("tenant_id", tenantFilter);
+      const r = await fetch(`/api/admin/marketplace/negotiations?${params}`);
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({ error: r.statusText }));
+        throw new Error(e.error || "Failed to load negotiations.");
+      }
+      return r.json();
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      const fetched = allPages.reduce((sum, p) => sum + (p.items?.length ?? 0), 0);
+      if (fetched >= (lastPage.total ?? 0)) return undefined;
+      if ((lastPage.items?.length ?? 0) < NEGOTIATIONS_PAGE_SIZE) return undefined;
+      return lastPage.offset + lastPage.items.length;
+    },
+  });
+
+  // Force-close mutation. Body: { negotiation_id, action }. The action
+  // is either "disputed" or "cancelled" — both flip status to
+  // "cancelled" on the row; the audit log distinguishes the admin's
+  // intent. The dialog (a simple window.confirm) blocks the action
+  // until the admin confirms.
+  const forceCloseMut = useMutation({
+    mutationFn: async ({
+      negotiationId,
+      action,
+    }: {
+      negotiationId: string;
+      action: "disputed" | "cancelled";
+    }) => {
+      const r = await fetch("/api/admin/marketplace/negotiations", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ negotiation_id: negotiationId, action }),
+      });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({ error: r.statusText }));
+        throw new Error(e.error || "Action failed.");
+      }
+      return r.json();
+    },
+    onSuccess: (_d, vars) => {
+      toast.success(
+        vars.action === "disputed"
+          ? t("pf-ma-toast-negotiation-disputed")
+          : t("pf-ma-toast-negotiation-cancelled"),
+      );
+      qc.invalidateQueries({ queryKey: ["admin-marketplace-negotiations"] });
+      qc.invalidateQueries({ queryKey: ["admin-marketplace-stats"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Flatten every fetched page into a single items array.
+  const negotiations = negQ.data?.pages.flatMap((p) => p.items) ?? [];
+  const negTotal = negQ.data?.pages?.[0]?.total ?? 0;
+  const negHasMore = negotiations.length < negTotal;
+
+  return (
+    <div className="space-y-3">
+      {/* Filters */}
+      <Card>
+        <CardContent className="p-3 flex flex-wrap items-center gap-2">
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[170px]">
+              <SelectValue placeholder={t("pf-ma-filter-status")} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t("all")}</SelectItem>
+              <SelectItem value="active">{t("pf-ma-neg-status-active")}</SelectItem>
+              <SelectItem value="accepted">{t("pf-ma-neg-status-accepted")}</SelectItem>
+              <SelectItem value="rejected">{t("pf-ma-neg-status-rejected")}</SelectItem>
+              <SelectItem value="expired">{t("pf-ma-neg-status-expired")}</SelectItem>
+              <SelectItem value="cancelled">{t("pf-ma-neg-status-cancelled")}</SelectItem>
+            </SelectContent>
+          </Select>
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+            <Input
+              placeholder={`${t("pf-ma-filter-tenant")} UUID`}
+              value={tenantFilter}
+              onChange={(e) => setTenantFilter(e.target.value)}
+              className="pl-8 h-9 font-mono text-xs"
+            />
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => negQ.refetch()}
+            disabled={negQ.isFetching}
+          >
+            <RefreshCw className={`size-3.5 mr-1 ${negQ.isFetching ? "animate-spin" : ""}`} />
+            {t("refresh")}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Table */}
+      <Card>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-xs">ID</TableHead>
+                  <TableHead className="text-xs">{t("pf-ma-col-post-title")}</TableHead>
+                  <TableHead className="text-xs">{t("pf-ma-col-partner-a")}</TableHead>
+                  <TableHead className="text-xs">{t("pf-ma-col-partner-b")}</TableHead>
+                  <TableHead className="text-xs">{t("status")}</TableHead>
+                  <TableHead className="text-xs">{t("pf-ma-col-created")}</TableHead>
+                  <TableHead className="text-xs">{t("pf-ma-col-last-message")}</TableHead>
+                  <TableHead className="text-xs text-right">{t("actions")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {negQ.isLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center text-xs text-muted-foreground py-8">
+                      <Loader2 className="size-4 animate-spin inline mr-2" />
+                      {t("pf-ma-loading")}
+                    </TableCell>
+                  </TableRow>
+                ) : negotiations.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center text-xs text-muted-foreground py-8">
+                      {t("no_results")}
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  negotiations.map((n) => (
+                    <TableRow key={n.id} className="hover:bg-muted/40">
+                      <TableCell
+                        className="text-xs font-mono max-w-[120px] truncate"
+                        title={n.id}
+                      >
+                        {n.id.slice(0, 8)}…
+                      </TableCell>
+                      <TableCell
+                        className="text-xs font-medium max-w-[200px] truncate"
+                        title={n.post_title ?? ""}
+                      >
+                        {n.post_title ?? "—"}
+                      </TableCell>
+                      <TableCell
+                        className="text-xs max-w-[160px] truncate"
+                        title={n.partner_a_name ?? ""}
+                      >
+                        {n.partner_a_name ?? "—"}
+                      </TableCell>
+                      <TableCell
+                        className="text-xs max-w-[160px] truncate"
+                        title={n.partner_b_name ?? ""}
+                      >
+                        {n.partner_b_name ?? "—"}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="outline"
+                          className={`text-xs ${NEGOTIATION_STATUS_TONE[n.status] ?? ""}`}
+                        >
+                          {t(`pf-ma-neg-status-${n.status}`) || n.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-xs whitespace-nowrap">
+                        {formatDate(n.created_at)}
+                      </TableCell>
+                      <TableCell className="text-xs whitespace-nowrap">
+                        {formatDate(n.last_message_at)}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center justify-end gap-1">
+                          {/* Force-close: marks the negotiation as cancelled.
+                              Both icon-only buttons carry an aria-label that
+                              mirrors the title (FIX-AUDIT3-MED-2 #4 — same
+                              accessibility rule as the rest of the admin
+                              view's icon buttons). */}
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="size-7"
+                            title={t("pf-ma-action-force-close")}
+                            aria-label={t("pf-ma-action-force-close")}
+                            onClick={() => {
+                              if (
+                                typeof window !== "undefined" &&
+                                window.confirm(t("pf-ma-confirm-force-close"))
+                              ) {
+                                forceCloseMut.mutate({
+                                  negotiationId: n.id,
+                                  action: "cancelled",
+                                });
+                              }
+                            }}
+                            disabled={
+                              forceCloseMut.isPending ||
+                              n.status === "cancelled" ||
+                              n.status === "rejected" ||
+                              n.status === "expired"
+                            }
+                          >
+                            <Ban className="size-3.5 text-red-600" />
+                          </Button>
+                          {/* Mark disputed: same row update (status=cancelled)
+                              but the audit log records `disputed` so admins
+                              can distinguish a routine force-close from a
+                              dispute-tagged one when reviewing the trail. */}
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="size-7"
+                            title={t("pf-ma-action-dispute")}
+                            aria-label={t("pf-ma-action-dispute")}
+                            onClick={() => {
+                              if (
+                                typeof window !== "undefined" &&
+                                window.confirm(t("pf-ma-confirm-dispute"))
+                              ) {
+                                forceCloseMut.mutate({
+                                  negotiationId: n.id,
+                                  action: "disputed",
+                                });
+                              }
+                            }}
+                            disabled={
+                              forceCloseMut.isPending ||
+                              n.status === "cancelled" ||
+                              n.status === "rejected" ||
+                              n.status === "expired"
+                            }
+                          >
+                            <Gavel className="size-3.5 text-amber-600" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+          {/* Load-more footer — same shape as the posts + reviews tabs
+              (FIX-AUDIT3-MED-1 #5): "Showing X of Y" + Load more button
+              when items.length < total. Hidden once everything is loaded. */}
+          {negotiations.length > 0 && (
+            <div className="flex flex-col items-center gap-2 py-3 border-t border-border/60">
+              <span className="text-xs text-muted-foreground tabular">
+                {t("pf-ma-showing-of")
+                  .replace("{shown}", String(negotiations.length))
+                  .replace("{total}", String(negTotal))}
+              </span>
+              {negHasMore && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => negQ.fetchNextPage()}
+                  disabled={negQ.isFetchingNextPage}
+                >
+                  {negQ.isFetchingNextPage ? (
+                    <Loader2 className="size-3.5 mr-1 animate-spin" />
+                  ) : (
+                    <RefreshCw className="size-3.5 mr-1" />
+                  )}
+                  {t("show_more")}
+                </Button>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
@@ -1314,8 +1748,8 @@ function CategoriesTab() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="text-xs">{t("name")}</TableHead>
-                  <TableHead className="text-xs">Slug</TableHead>
-                  <TableHead className="text-xs">Icon</TableHead>
+                  <TableHead className="text-xs">{t("pf-ma-col-slug")}</TableHead>
+                  <TableHead className="text-xs">{t("pf-ma-col-icon")}</TableHead>
                   <TableHead className="text-xs text-right">{t("pf-ma-col-sort")}</TableHead>
                   <TableHead className="text-xs">{t("pf-ma-col-featured")}</TableHead>
                   <TableHead className="text-xs">{t("status")}</TableHead>
@@ -1362,7 +1796,7 @@ function CategoriesTab() {
                           <Button size="sm" variant="ghost" onClick={() => setEditing(c)} title={t("edit")}>
                             {t("edit")}
                           </Button>
-                          <Button size="icon" variant="ghost" className="size-7" title={t("delete")}
+                          <Button size="icon" variant="ghost" className="size-7" title={t("delete")} aria-label={t("delete")}
                             onClick={() => {
                               if (typeof window !== "undefined" && window.confirm(`${t("pf-ma-confirm-delete-category")} ${c.name}?`)) {
                                 deleteMut.mutate(c.id);
@@ -1440,11 +1874,11 @@ function CategoryDialog({
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Metals" />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">Slug</Label>
+            <Label className="text-xs">{t("pf-ma-col-slug")}</Label>
             <Input value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="metals (auto-derived if blank)" />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">Icon (lucide name)</Label>
+            <Label className="text-xs">{t("pf-ma-col-icon-hint")}</Label>
             <Input value={icon} onChange={(e) => setIcon(e.target.value)} placeholder="Package" />
           </div>
           <div className="grid grid-cols-2 gap-3">

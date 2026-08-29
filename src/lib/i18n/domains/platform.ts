@@ -695,6 +695,9 @@ export const PLATFORM: Record<Locale, Record<string, string>> = {
     "pf-ma-tab-categories": "Categories",
     "pf-ma-tab-blacklist": "Blacklist",
     "pf-ma-tab-stats": "Statistics",
+    // FIX-AUDIT3-MED-2 #2 — admin Negotiations tab + tenant filter.
+    "pf-ma-tab-negotiations": "Negotiations",
+    "pf-ma-filter-tenant": "Tenant",
     "pf-ma-kpi-posts": "Total Posts",
     "pf-ma-kpi-responses": "Responses",
     "pf-ma-kpi-negotiations": "Negotiations",
@@ -721,9 +724,25 @@ export const PLATFORM: Record<Locale, Record<string, string>> = {
     "pf-ma-flagged-only": "Flagged only",
     "pf-ma-unflagged-only": "Unflagged only",
     "pf-ma-status-draft": "Draft",
+    "pf-ma-status-active": "Active",
     "pf-ma-status-flagged": "Flagged",
     "pf-ma-status-expired": "Expired",
     "pf-ma-status-closed": "Closed",
+    // FIX-AUDIT3-MED-2 #2 — negotiation lifecycle statuses (raw
+    // marketplace_negotiations.status column, not the UI-collapsed
+    // display status the portal negotiation room uses). Admins see
+    // `cancelled` as its own row; the portal room collapses it into
+    // `rejected` for end-users.
+    "pf-ma-neg-status-active": "Active",
+    "pf-ma-neg-status-accepted": "Accepted",
+    "pf-ma-neg-status-rejected": "Rejected",
+    "pf-ma-neg-status-expired": "Expired",
+    "pf-ma-neg-status-cancelled": "Cancelled",
+    // FIX-AUDIT3-MED-1 #2 — categories tab previously rendered hardcoded
+    // English column headers ("Slug", "Icon"). Now translated for all 5 locales.
+    "pf-ma-col-slug": "Slug",
+    "pf-ma-col-icon": "Icon",
+    "pf-ma-col-icon-hint": "Icon (lucide name)",
     "pf-ma-type-buy": "Buy",
     "pf-ma-type-sell": "Sell",
     "pf-ma-type-auction": "Auction",
@@ -759,6 +778,15 @@ export const PLATFORM: Record<Locale, Record<string, string>> = {
     "pf-ma-col-reason": "Reason",
     "pf-ma-col-blocked-by": "Blocked by",
     "pf-ma-col-blocked-at": "Blocked at",
+    // FIX-AUDIT3-MED-2 #2 — admin Negotiations tab column headers.
+    "pf-ma-col-post-title": "Post",
+    "pf-ma-col-partner-a": "Partner A",
+    "pf-ma-col-partner-b": "Partner B",
+    "pf-ma-col-last-message": "Last message",
+    // FIX-AUDIT3-MED-1 #5 — admin posts/reviews tabs previously fetched
+    // limit=100 with no pagination UI. Now show "Showing X of Y" + Load more
+    // button. {shown} and {total} are replaced at the call site.
+    "pf-ma-showing-of": "Showing {shown} of {total}",
     "pf-ma-action-flag": "Flag post",
     "pf-ma-action-unflag": "Unflag post",
     "pf-ma-action-remove": "Remove post",
@@ -771,6 +799,18 @@ export const PLATFORM: Record<Locale, Record<string, string>> = {
     "pf-ma-action-new-category": "New Category",
     "pf-ma-action-add-to-blacklist": "Add to blacklist",
     "pf-ma-action-unblock": "Unblock",
+    // FIX-AUDIT3-MED-2 #2 — admin Force-close action on the Negotiations
+    // tab. The action posts { negotiation_id, action } where action is
+    // either `disputed` or `cancelled`; both result in status=cancelled
+    // on the row (the DB has no `disputed` enum) but the audit log
+    // records the admin's intent so a dispute can be distinguished from
+    // a routine cancel.
+    "pf-ma-action-force-close": "Force close",
+    "pf-ma-action-dispute": "Mark disputed",
+    "pf-ma-confirm-force-close": "Force close this negotiation? The action is recorded in the audit log.",
+    "pf-ma-confirm-dispute": "Mark this negotiation as disputed? The action is recorded in the audit log.",
+    "pf-ma-toast-negotiation-cancelled": "Negotiation force-closed.",
+    "pf-ma-toast-negotiation-disputed": "Negotiation marked as disputed.",
     "pf-ma-confirm-remove": "Remove this post? It will be hidden from the public marketplace.",
     "pf-ma-confirm-delete-category": "Delete category",
     "pf-ma-sheet-post-detail": "Post detail",
@@ -1415,6 +1455,9 @@ export const PLATFORM: Record<Locale, Record<string, string>> = {
     "pf-ma-tab-categories": "Kategorije",
     "pf-ma-tab-blacklist": "Crna lista",
     "pf-ma-tab-stats": "Statistika",
+    // FIX-AUDIT3-MED-2 #2 — admin tab za Pregovore + filter po zakupcu.
+    "pf-ma-tab-negotiations": "Pregovori",
+    "pf-ma-filter-tenant": "Zakupac",
     "pf-ma-kpi-posts": "Ukupno objava",
     "pf-ma-kpi-responses": "Odgovori",
     "pf-ma-kpi-negotiations": "Pregovori",
@@ -1441,9 +1484,22 @@ export const PLATFORM: Record<Locale, Record<string, string>> = {
     "pf-ma-flagged-only": "Samo obeležene",
     "pf-ma-unflagged-only": "Samo neobeležene",
     "pf-ma-status-draft": "Nacrt",
+    "pf-ma-status-active": "Aktivno",
     "pf-ma-status-flagged": "Obeleženo",
     "pf-ma-status-expired": "Isteklo",
     "pf-ma-status-closed": "Zatvoreno",
+    // FIX-AUDIT3-MED-2 #2 — statusi pregovora (sirova kolona
+    // marketplace_negotiations.status). Administratori vide
+    // `cancelled` kao poseban red; portalska soba ga sažima u
+    // `rejected` za krajnje korisnike.
+    "pf-ma-neg-status-active": "Aktivno",
+    "pf-ma-neg-status-accepted": "Prihvaćeno",
+    "pf-ma-neg-status-rejected": "Odbijeno",
+    "pf-ma-neg-status-expired": "Isteklo",
+    "pf-ma-neg-status-cancelled": "Otkazano",
+    "pf-ma-col-slug": "Slug",
+    "pf-ma-col-icon": "Ikona",
+    "pf-ma-col-icon-hint": "Ikona (lucide ime)",
     "pf-ma-type-buy": "Kupovina",
     "pf-ma-type-sell": "Prodaja",
     "pf-ma-type-auction": "Aukcija",
@@ -1479,6 +1535,12 @@ export const PLATFORM: Record<Locale, Record<string, string>> = {
     "pf-ma-col-reason": "Razlog",
     "pf-ma-col-blocked-by": "Blokirao",
     "pf-ma-col-blocked-at": "Blokirano",
+    // FIX-AUDIT3-MED-2 #2 — zaglavlja kolona taba Pregovori.
+    "pf-ma-col-post-title": "Objava",
+    "pf-ma-col-partner-a": "Partner A",
+    "pf-ma-col-partner-b": "Partner B",
+    "pf-ma-col-last-message": "Poslednja poruka",
+    "pf-ma-showing-of": "Prikazano {shown} od {total}",
     "pf-ma-action-flag": "Obeleži objavu",
     "pf-ma-action-unflag": "Ukloni oznaku",
     "pf-ma-action-remove": "Ukloni objavu",
@@ -1491,6 +1553,13 @@ export const PLATFORM: Record<Locale, Record<string, string>> = {
     "pf-ma-action-new-category": "Nova kategorija",
     "pf-ma-action-add-to-blacklist": "Dodaj na crnu listu",
     "pf-ma-action-unblock": "Deblokiraj",
+    // FIX-AUDIT3-MED-2 #2 — admin Force-close akcija na tabu Pregovori.
+    "pf-ma-action-force-close": "Prisilno zatvori",
+    "pf-ma-action-dispute": "Obeleži kao spor",
+    "pf-ma-confirm-force-close": "Prisilno zatvoriti ovaj pregovor? Akcija se upisuje u dnevnik audita.",
+    "pf-ma-confirm-dispute": "Obeležiti ovaj pregovor kao spor? Akcija se upisuje u dnevnik audita.",
+    "pf-ma-toast-negotiation-cancelled": "Pregovor prisilno zatvoren.",
+    "pf-ma-toast-negotiation-disputed": "Pregovor obeležen kao spor.",
     "pf-ma-confirm-remove": "Ukloniti ovu objavu? Biće sakrivena sa javne berze.",
     "pf-ma-confirm-delete-category": "Obrisati kategoriju",
     "pf-ma-sheet-post-detail": "Detalji objave",
@@ -2210,6 +2279,9 @@ export const PLATFORM: Record<Locale, Record<string, string>> = {
     "pf-ma-tab-categories": "Kategoriler",
     "pf-ma-tab-blacklist": "Kara Liste",
     "pf-ma-tab-stats": "İstatistikler",
+    // FIX-AUDIT3-MED-2 #2 — admin Müzakereler sekmesi + kiracı filtresi.
+    "pf-ma-tab-negotiations": "Müzakereler",
+    "pf-ma-filter-tenant": "Kiracı",
     "pf-ma-kpi-posts": "Toplam Gönderi",
     "pf-ma-kpi-responses": "Yanıtlar",
     "pf-ma-kpi-negotiations": "Müzakereler",
@@ -2236,9 +2308,22 @@ export const PLATFORM: Record<Locale, Record<string, string>> = {
     "pf-ma-flagged-only": "Sadece işaretli",
     "pf-ma-unflagged-only": "Sadece işaretsiz",
     "pf-ma-status-draft": "Taslak",
+    "pf-ma-status-active": "Aktif",
     "pf-ma-status-flagged": "İşaretli",
     "pf-ma-status-expired": "Süresi dolmuş",
     "pf-ma-status-closed": "Kapalı",
+    // FIX-AUDIT3-MED-2 #2 — müzakere durumları (ham
+    // marketplace_negotiations.status kolonu). Yöneticiler `cancelled`
+    // değerini ayrı bir satır olarak görür; portal odası son kullanıcı
+    // için `rejected` ile birleştirir.
+    "pf-ma-neg-status-active": "Aktif",
+    "pf-ma-neg-status-accepted": "Kabul edildi",
+    "pf-ma-neg-status-rejected": "Reddedildi",
+    "pf-ma-neg-status-expired": "Süre doldu",
+    "pf-ma-neg-status-cancelled": "İptal edildi",
+    "pf-ma-col-slug": "Slug",
+    "pf-ma-col-icon": "Simge",
+    "pf-ma-col-icon-hint": "Simge (lucide adı)",
     "pf-ma-type-buy": "Alış",
     "pf-ma-type-sell": "Satış",
     "pf-ma-type-auction": "Açık artırma",
@@ -2274,6 +2359,12 @@ export const PLATFORM: Record<Locale, Record<string, string>> = {
     "pf-ma-col-reason": "Sebep",
     "pf-ma-col-blocked-by": "Engelleyen",
     "pf-ma-col-blocked-at": "Engellendi",
+    // FIX-AUDIT3-MED-2 #2 — Müzakereler sekmesi sütun başlıkları.
+    "pf-ma-col-post-title": "Gönderi",
+    "pf-ma-col-partner-a": "Partner A",
+    "pf-ma-col-partner-b": "Partner B",
+    "pf-ma-col-last-message": "Son mesaj",
+    "pf-ma-showing-of": "{total} / {shown} gösteriliyor",
     "pf-ma-action-flag": "Gönderiyi işaretle",
     "pf-ma-action-unflag": "İşareti kaldır",
     "pf-ma-action-remove": "Gönderiyi kaldır",
@@ -2286,6 +2377,14 @@ export const PLATFORM: Record<Locale, Record<string, string>> = {
     "pf-ma-action-new-category": "Yeni Kategori",
     "pf-ma-action-add-to-blacklist": "Kara listeye ekle",
     "pf-ma-action-unblock": "Engeli kaldır",
+    // FIX-AUDIT3-MED-2 #2 — admin Müzakereler sekmesinde Force-close
+    // aksiyonu.
+    "pf-ma-action-force-close": "Zorla kapat",
+    "pf-ma-action-dispute": "Anlaşmazlık olarak işaretle",
+    "pf-ma-confirm-force-close": "Bu müzakere zorla kapatılsın mı? Eylem denetim günlüğüne kaydedilir.",
+    "pf-ma-confirm-dispute": "Bu müzakere anlaşmazlık olarak işaretlensin mi? Eylem denetim günlüğüne kaydedilir.",
+    "pf-ma-toast-negotiation-cancelled": "Müzakere zorla kapatıldı.",
+    "pf-ma-toast-negotiation-disputed": "Müzakere anlaşmazlık olarak işaretlendi.",
     "pf-ma-confirm-remove": "Bu gönderi kaldırılsın mı? Herkese açık pazardan gizlenecek.",
     "pf-ma-confirm-delete-category": "Kategoriyi sil",
     "pf-ma-sheet-post-detail": "Gönderi detayı",
@@ -3005,6 +3104,9 @@ export const PLATFORM: Record<Locale, Record<string, string>> = {
     "pf-ma-tab-categories": "Kategorien",
     "pf-ma-tab-blacklist": "Sperrliste",
     "pf-ma-tab-stats": "Statistiken",
+    // FIX-AUDIT3-MED-2 #2 — admin Verhandlungen Tab + Mandantenfilter.
+    "pf-ma-tab-negotiations": "Verhandlungen",
+    "pf-ma-filter-tenant": "Mandant",
     "pf-ma-kpi-posts": "Beiträge gesamt",
     "pf-ma-kpi-responses": "Antworten",
     "pf-ma-kpi-negotiations": "Verhandlungen",
@@ -3031,9 +3133,22 @@ export const PLATFORM: Record<Locale, Record<string, string>> = {
     "pf-ma-flagged-only": "Nur markiert",
     "pf-ma-unflagged-only": "Nur unmarkiert",
     "pf-ma-status-draft": "Entwurf",
+    "pf-ma-status-active": "Aktiv",
     "pf-ma-status-flagged": "Markiert",
     "pf-ma-status-expired": "Abgelaufen",
     "pf-ma-status-closed": "Geschlossen",
+    // FIX-AUDIT3-MED-2 #2 — Verhandlungsstatus (rohe Spalte
+    // marketplace_negotiations.status). Administratoren sehen
+    // `cancelled` als eigene Zeile; das Portal reduziert es für
+    // Endbenutzer auf `rejected`.
+    "pf-ma-neg-status-active": "Aktiv",
+    "pf-ma-neg-status-accepted": "Angenommen",
+    "pf-ma-neg-status-rejected": "Abgelehnt",
+    "pf-ma-neg-status-expired": "Abgelaufen",
+    "pf-ma-neg-status-cancelled": "Abgebrochen",
+    "pf-ma-col-slug": "Slug",
+    "pf-ma-col-icon": "Symbol",
+    "pf-ma-col-icon-hint": "Symbol (lucide-Name)",
     "pf-ma-type-buy": "Kauf",
     "pf-ma-type-sell": "Verkauf",
     "pf-ma-type-auction": "Auktion",
@@ -3069,6 +3184,12 @@ export const PLATFORM: Record<Locale, Record<string, string>> = {
     "pf-ma-col-reason": "Grund",
     "pf-ma-col-blocked-by": "Gesperrt von",
     "pf-ma-col-blocked-at": "Gesperrt am",
+    // FIX-AUDIT3-MED-2 #2 — Spaltenüberschriften des Verhandlungen-Tabs.
+    "pf-ma-col-post-title": "Beitrag",
+    "pf-ma-col-partner-a": "Partner A",
+    "pf-ma-col-partner-b": "Partner B",
+    "pf-ma-col-last-message": "Letzte Nachricht",
+    "pf-ma-showing-of": "Zeige {shown} von {total}",
     "pf-ma-action-flag": "Beitrag markieren",
     "pf-ma-action-unflag": "Markierung entfernen",
     "pf-ma-action-remove": "Beitrag entfernen",
@@ -3081,6 +3202,13 @@ export const PLATFORM: Record<Locale, Record<string, string>> = {
     "pf-ma-action-new-category": "Neue Kategorie",
     "pf-ma-action-add-to-blacklist": "Zur Sperrliste hinzufügen",
     "pf-ma-action-unblock": "Sperre aufheben",
+    // FIX-AUDIT3-MED-2 #2 — admin Force-close-Aktion im Verhandlungen-Tab.
+    "pf-ma-action-force-close": "Erzwungen schließen",
+    "pf-ma-action-dispute": "Als strittig markieren",
+    "pf-ma-confirm-force-close": "Diese Verhandlung erzwungen schließen? Die Aktion wird im Audit-Protokoll erfasst.",
+    "pf-ma-confirm-dispute": "Diese Verhandlung als strittig markieren? Die Aktion wird im Audit-Protokoll erfasst.",
+    "pf-ma-toast-negotiation-cancelled": "Verhandlung erzwungen geschlossen.",
+    "pf-ma-toast-negotiation-disputed": "Verhandlung als strittig markiert.",
     "pf-ma-confirm-remove": "Diesen Beitrag entfernen? Er wird vom öffentlichen Marktplatz ausgeblendet.",
     "pf-ma-confirm-delete-category": "Kategorie löschen",
     "pf-ma-sheet-post-detail": "Beitragsdetail",
@@ -3800,6 +3928,9 @@ export const PLATFORM: Record<Locale, Record<string, string>> = {
     "pf-ma-tab-categories": "Категории",
     "pf-ma-tab-blacklist": "Чёрный список",
     "pf-ma-tab-stats": "Статистика",
+    // FIX-AUDIT3-MED-2 #2 — admin вкладка Переговоры + фильтр по арендатору.
+    "pf-ma-tab-negotiations": "Переговоры",
+    "pf-ma-filter-tenant": "Арендатор",
     "pf-ma-kpi-posts": "Всего объявлений",
     "pf-ma-kpi-responses": "Ответы",
     "pf-ma-kpi-negotiations": "Переговоры",
@@ -3826,9 +3957,22 @@ export const PLATFORM: Record<Locale, Record<string, string>> = {
     "pf-ma-flagged-only": "Только помеченные",
     "pf-ma-unflagged-only": "Только непомеченные",
     "pf-ma-status-draft": "Черновик",
+    "pf-ma-status-active": "Активно",
     "pf-ma-status-flagged": "Помечено",
     "pf-ma-status-expired": "Просрочено",
     "pf-ma-status-closed": "Закрыто",
+    // FIX-AUDIT3-MED-2 #2 — статусы переговоров (сырой столбец
+    // marketplace_negotiations.status). Администраторы видят `cancelled`
+    // как отдельную строку; портал объединяет его с `rejected` для
+    // конечных пользователей.
+    "pf-ma-neg-status-active": "Активен",
+    "pf-ma-neg-status-accepted": "Принят",
+    "pf-ma-neg-status-rejected": "Отклонён",
+    "pf-ma-neg-status-expired": "Истёк",
+    "pf-ma-neg-status-cancelled": "Отменён",
+    "pf-ma-col-slug": "Slug",
+    "pf-ma-col-icon": "Иконка",
+    "pf-ma-col-icon-hint": "Иконка (имя lucide)",
     "pf-ma-type-buy": "Покупка",
     "pf-ma-type-sell": "Продажа",
     "pf-ma-type-auction": "Аукцион",
@@ -3864,6 +4008,12 @@ export const PLATFORM: Record<Locale, Record<string, string>> = {
     "pf-ma-col-reason": "Причина",
     "pf-ma-col-blocked-by": "Заблокировал",
     "pf-ma-col-blocked-at": "Заблокировано",
+    // FIX-AUDIT3-MED-2 #2 — заголовки столбцов вкладки Переговоры.
+    "pf-ma-col-post-title": "Объявление",
+    "pf-ma-col-partner-a": "Партнёр A",
+    "pf-ma-col-partner-b": "Партнёр B",
+    "pf-ma-col-last-message": "Последнее сообщение",
+    "pf-ma-showing-of": "Показано {shown} из {total}",
     "pf-ma-action-flag": "Пометить объявление",
     "pf-ma-action-unflag": "Снять метку",
     "pf-ma-action-remove": "Удалить объявление",
@@ -3876,6 +4026,13 @@ export const PLATFORM: Record<Locale, Record<string, string>> = {
     "pf-ma-action-new-category": "Новая категория",
     "pf-ma-action-add-to-blacklist": "В чёрный список",
     "pf-ma-action-unblock": "Разблокировать",
+    // FIX-AUDIT3-MED-2 #2 — admin Force-close действие на вкладке Переговоры.
+    "pf-ma-action-force-close": "Принудительно закрыть",
+    "pf-ma-action-dispute": "Отметить как спор",
+    "pf-ma-confirm-force-close": "Принудительно закрыть эти переговоры? Действие фиксируется в журнале аудита.",
+    "pf-ma-confirm-dispute": "Отметить эти переговоры как спор? Действие фиксируется в журнале аудита.",
+    "pf-ma-toast-negotiation-cancelled": "Переговоры принудительно закрыты.",
+    "pf-ma-toast-negotiation-disputed": "Переговоры отмечены как спор.",
     "pf-ma-confirm-remove": "Удалить это объявление? Оно будет скрыто с публичной биржи.",
     "pf-ma-confirm-delete-category": "Удалить категорию",
     "pf-ma-sheet-post-detail": "Детали объявления",

@@ -1148,6 +1148,14 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     "marketplace-negotiation-both-accepted": "Both parties accepted — contact details are now visible.",
     "marketplace-negotiation-message-sent": "Message sent.",
     "marketplace-negotiation-offer-sent-toast": "Your offer has been sent to the counterparty.",
+    // FIX-AUDIT3-MED-2 #1 — Cancel negotiation action. Both parties can
+    // proactively close a negotiation; the backend route gates on
+    // accepted-offer / terminal-status and inserts a system message +
+    // audit log entry.
+    "marketplace-negotiation-cancel": "Cancel negotiation",
+    "marketplace-negotiation-cancel-confirm-title": "Cancel this negotiation?",
+    "marketplace-negotiation-cancel-confirm-desc": "This cannot be undone. The negotiation will be closed and no further messages can be sent.",
+    "marketplace-negotiation-cancel-success": "Negotiation cancelled.",
 
     // ─── Marketplace Phase 4: auctions, contracts, smart pricing ──────────
     "marketplace-auction-title": "Live auction",
@@ -3160,6 +3168,11 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     "marketplace-negotiation-both-accepted": "Obe strane su prihvatile — kontakt podaci su sada vidljivi.",
     "marketplace-negotiation-message-sent": "Poruka poslata.",
     "marketplace-negotiation-offer-sent-toast": "Vaša ponuda je poslata sagovorniku.",
+    // FIX-AUDIT3-MED-2 #1 — dugme za otkazivanje pregovora.
+    "marketplace-negotiation-cancel": "Otkaži pregovor",
+    "marketplace-negotiation-cancel-confirm-title": "Otkaži ovaj pregovor?",
+    "marketplace-negotiation-cancel-confirm-desc": "Ovo se ne može opozvati. Pregovor će biti zatvoren i dalje poruke ne mogu biti poslate.",
+    "marketplace-negotiation-cancel-success": "Pregovor otkazan.",
 
     // ─── Marketplace Phase 4: aukcije, ugovori, pametno određivanje cena ─
     "marketplace-auction-title": "Aukcija uživo",
@@ -5165,6 +5178,11 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     "marketplace-negotiation-both-accepted": "Her iki taraf da kabul etti — iletişim bilgileri artık görüntülenebilir.",
     "marketplace-negotiation-message-sent": "Mesaj gönderildi.",
     "marketplace-negotiation-offer-sent-toast": "Teklifiniz karşı tarafa gönderildi.",
+    // FIX-AUDIT3-MED-2 #1 — müzakereyi iptal et düğmesi.
+    "marketplace-negotiation-cancel": "Müzakerayı iptal et",
+    "marketplace-negotiation-cancel-confirm-title": "Bu müzakere iptal edilsin mi?",
+    "marketplace-negotiation-cancel-confirm-desc": "Bu geri alınamaz. Müzakere kapanacak ve yeni mesaj gönderilemeyecek.",
+    "marketplace-negotiation-cancel-success": "Müzakere iptal edildi.",
 
     // ─── Marketplace Phase 4: açık artırmalar, sözleşmeler, akıllı fiyatlandırma ─
     "marketplace-auction-title": "Canlı açık artırma",
@@ -7167,6 +7185,11 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     "marketplace-negotiation-both-accepted": "Beide Parteien haben angenommen — Kontaktdaten sind nun sichtbar.",
     "marketplace-negotiation-message-sent": "Nachricht gesendet.",
     "marketplace-negotiation-offer-sent-toast": "Ihr Angebot wurde an den Verhandlungspartner gesendet.",
+    // FIX-AUDIT3-MED-2 #1 — Verhandlung abbrechen Schaltfläche.
+    "marketplace-negotiation-cancel": "Verhandlung abbrechen",
+    "marketplace-negotiation-cancel-confirm-title": "Diese Verhandlung abbrechen?",
+    "marketplace-negotiation-cancel-confirm-desc": "Dies kann nicht rückgängig gemacht werden. Die Verhandlung wird geschlossen und es können keine weiteren Nachrichten gesendet werden.",
+    "marketplace-negotiation-cancel-success": "Verhandlung abgebrochen.",
 
     // ─── Marketplace Phase 4: Auktionen, Verträge, smarte Preisfindung ────
     "marketplace-auction-title": "Live-Auktion",
@@ -9169,6 +9192,11 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     "marketplace-negotiation-both-accepted": "Обе стороны приняли — контактные данные теперь видны.",
     "marketplace-negotiation-message-sent": "Сообщение отправлено.",
     "marketplace-negotiation-offer-sent-toast": "Ваше предложение отправлено контрагенту.",
+    // FIX-AUDIT3-MED-2 #1 — кнопка отмены переговоров.
+    "marketplace-negotiation-cancel": "Отменить переговоры",
+    "marketplace-negotiation-cancel-confirm-title": "Отменить эти переговоры?",
+    "marketplace-negotiation-cancel-confirm-desc": "Это действие нельзя отменить. Переговоры будут закрыты, и новые сообщения будет отправить нельзя.",
+    "marketplace-negotiation-cancel-success": "Переговоры отменены.",
 
     // ─── Marketplace Phase 4: аукционы, договоры, умное ценообразование ──
     "marketplace-auction-title": "Аукцион в реальном времени",
