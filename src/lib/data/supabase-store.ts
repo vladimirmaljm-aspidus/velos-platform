@@ -161,6 +161,8 @@ export class SupabaseStore implements Store {
       "services", "specifications", "payment_dates", "bank_accounts",
       "social", "metadata", "notif_prefs", "supplier_bank_details",
       "comms", "permissions", "data",
+      // LOI-specific JSONB columns (migration 066)
+      "coa_params",
     ]);
     const out: SupaRow = {};
     for (const [k, v] of Object.entries(row)) {
