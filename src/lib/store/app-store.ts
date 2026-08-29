@@ -23,6 +23,7 @@ export type ViewKey =
   // Finance
   | "invoices"
   | "proformas"
+  | "lois"
   | "document-register"
   // Inventory
   | "inventory"

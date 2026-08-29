@@ -104,8 +104,12 @@ export async function POST(req: NextRequest) {
     // 4. Auto-generate invoice number (atomic via Postgres SEQUENCE; falls
     //    back to legacy `listInvoices().total + 1` if the RPC is unavailable).
     //    Format: INV-<year>-<NNNN>  (4-digit sequence)
+    //    FIX-PRODUCTS-DOCS / Fix 3 — pass `tid` so nextDocNumber uses the
+    //    per-tenant RPC (migration 063). Previously called without a
+    //    tenantId → fell through to the GLOBAL sequence → cross-tenant
+    //    number leak risk + EU VAT compliance issue.
     const year = new Date().getFullYear();
-    const seqNum = await nextDocNumber("invoice");
+    const seqNum = await nextDocNumber("invoice", tid);
     let invoiceNumber: string;
     if (seqNum) {
       invoiceNumber = seqNum;

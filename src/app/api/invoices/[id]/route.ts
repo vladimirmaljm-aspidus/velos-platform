@@ -127,6 +127,19 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: "Not found." }, { status: 404 });
     }
     const body = await req.json();
+    // FIX-PRODUCTS-DOCS / Fix 6 — ISO 4217 currency validation (PUT). A
+    // direct API caller could set body.currency to any string; reject
+    // unknown codes before we mutate the invoice. Skip when currency is
+    // absent (the route preserves the existing value).
+    if (body.currency !== undefined && body.currency !== null && body.currency !== "") {
+      const { CURRENCY_CODES } = await import("@/lib/data/reference");
+      if (!CURRENCY_CODES.includes(body.currency)) {
+        return NextResponse.json(
+          { error: `Invalid currency code: ${body.currency}. Must be one of: ${CURRENCY_CODES.join(", ")}.` },
+          { status: 400 },
+        );
+      }
+    }
     // SEC-M10 — capture the per-request `_changeNote` meta field BEFORE
     // the whitelist strips it. It's not a DB column — it's a transient
     // note attached to the audit-trail revision record below.

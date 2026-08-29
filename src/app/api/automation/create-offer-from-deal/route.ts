@@ -73,8 +73,12 @@ export async function POST(req: NextRequest) {
     // 3. Auto-generate offer number (atomic via Postgres SEQUENCE; falls
     //    back to legacy `listOffers().total + 1` if the RPC is unavailable).
     //    Format: OF-<year>-<NNNN>  (4-digit sequence)
+    //    FIX-PRODUCTS-DOCS / Fix 3 — pass `tid` so nextDocNumber uses the
+    //    per-tenant RPC (migration 063). Previously called without a
+    //    tenantId → fell through to the GLOBAL sequence → cross-tenant
+    //    number leak risk + EU VAT compliance issue.
     const year = new Date().getFullYear();
-    const seqNum = await nextDocNumber("offer");
+    const seqNum = await nextDocNumber("offer", tid);
     let offerNumber: string;
     if (seqNum) {
       offerNumber = seqNum;

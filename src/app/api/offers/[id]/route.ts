@@ -12,6 +12,79 @@ import { notifyOfferUpdate } from "@/lib/realtime/notify";
 
 export const runtime = "nodejs";
 
+/**
+ * SEC-M10 mirror for offers PUT (FIX-PRODUCTS-DOCS / Fix 1).
+ *
+ * The previous PUT handler spread `...sanitizedBody` raw into `upsertOffer`,
+ * so an offers:write caller could forge audit-trail + lifecycle columns
+ * (sent_at, responded_at, client_accepted_at, client_signature,
+ * counter_offers, pdf_file_url, approved_by, approved_at, paid_at,
+ * verified_at, verified_by, created_by, created_at) by sending them in
+ * the PUT body. The "locked fields" check (line ~98) only triggers when
+ * status === "accepted", so for non-accepted offers there was NO
+ * column-shape guard at all.
+ *
+ * Allow only the business-level editable fields. Audit-trail + lifecycle
+ * timestamp columns are intentionally NOT in this list — they are set
+ * exclusively by their dedicated endpoints (send, respond, accept, etc.).
+ *
+ * NOTE: `status` is in the allow list because the route still runs
+ * `validateStatusTransition` on it (line ~137) before the upsert — the
+ * whitelist is a column-shape filter, NOT a value validator.
+ *
+ * NOTE: `_changeNote` is intentionally NOT in the allow list (it is a
+ * per-request meta field used by `recordRevision`, not a DB column).
+ * The route captures it into a local var BEFORE the whitelist runs.
+ */
+function whitelistOfferFields(
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  const allowed = new Set([
+    "subject",
+    "partner_id",
+    "deal_id",
+    "items",
+    "currency",
+    "status",
+    "due_date",
+    "notes",
+    "terms",
+    "valid_until",
+    "payment_terms",
+    "bank_details",
+    "pol",
+    "pol_country",
+    "pod",
+    "pod_country",
+    "vessel",
+    "container_no",
+    "lead_time",
+    "packaging",
+    "tax_clause",
+    "offer_no",
+    "owner_id",
+    "incoterm",
+    "selling_price",
+    "delivery_address",
+    "delivery_city",
+    "delivery_country",
+    "specification",
+    "origin_country",
+    "exchange_rate",
+    "exchange_rate_date",
+    "exchange_rate_note",
+    "subtotal",
+    "discount_total",
+    "tax_total",
+    "total",
+  ]);
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(body)) {
+    if (allowed.has(key)) result[key] = value;
+  }
+  return result;
+}
+
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const auth = await requireAuthOrApiKey(_req);
@@ -67,6 +140,31 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: "Not found." }, { status: 404 });
     }
     const body = await req.json();
+    // FIX-PRODUCTS-DOCS / Fix 6 — ISO 4217 currency validation (PUT). A
+    // direct API caller could set body.currency to any string; reject
+    // unknown codes before we mutate the offer. Skip when currency is
+    // absent (the route preserves the existing value).
+    if (body.currency !== undefined && body.currency !== null && body.currency !== "") {
+      const { CURRENCY_CODES } = await import("@/lib/data/reference");
+      if (!CURRENCY_CODES.includes(body.currency)) {
+        return NextResponse.json(
+          { error: `Invalid currency code: ${body.currency}. Must be one of: ${CURRENCY_CODES.join(", ")}.` },
+          { status: 400 },
+        );
+      }
+    }
+    // FIX-PRODUCTS-DOCS / Fix 8 — when body.deal_id is provided, verify
+    // it belongs to the caller's tenant. Without this an offers:write
+    // caller could attach their offer to another tenant's deal and pollute
+    // the commission pipeline via cascadeCommissionOnStatusChange /
+    // createCommissionOnOfferAccepted downstream. Allow null/empty
+    // (clearing the link) without a lookup.
+    if (body.deal_id) {
+      const deal = await auth.store.getDeal(body.deal_id);
+      if (!deal || deal.tenant_id !== tid) {
+        return NextResponse.json({ error: "Deal not found." }, { status: 404 });
+      }
+    }
     // FIX-ALL-2 / Fix 6 — XSS prevention on free-text fields (parity with POST).
     const sanitizedBody = sanitizeFields(body, [
       "subject",
@@ -164,7 +262,21 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       sanitizedBody.tax_total = Math.round(taxTotal * 100) / 100;
       sanitizedBody.total = Math.round((subtotal - discountTotal + taxTotal) * 100) / 100;
     }
-    const updated = await auth.store.upsertOffer({ ...sanitizedBody, id });
+    // SEC-M10 mirror (FIX-PRODUCTS-DOCS / Fix 1) — apply the field
+    // whitelist AFTER the totals recompute (which writes back
+    // subtotal/discount_total/tax_total/total — all in the allow list)
+    // and BEFORE the upsert. Strips client-supplied values for
+    // audit-trail + lifecycle columns (sent_at, responded_at,
+    // client_accepted_at, client_signature, counter_offers,
+    // pdf_file_url, approved_by, approved_at, paid_at, verified_at,
+    // verified_by, created_by, created_at) so an offers:write caller
+    // cannot forge the audit-trail by sending those keys in the PUT body.
+    // Capture the per-request `_changeNote` meta field BEFORE the
+    // whitelist strips it — it's not a DB column, it's a transient note
+    // attached to the audit-trail revision record below.
+    const changeNote = (sanitizedBody as any)?._changeNote || null;
+    const safeBody = whitelistOfferFields(sanitizedBody as Record<string, unknown>);
+    const updated = await auth.store.upsertOffer({ ...safeBody, id, tenant_id: existing.tenant_id } as any);
     // FIX-ALL-2 / Fix 3 — audit identity for API-key callers.
     const auditUser = "user" in auth ? auth.user : { id: `api:${auth.apiKeyId}`, username: auth.apiKeyName, tenant_id: auth.tenantId };
     // Record revision with per-field diff so we always know WHO changed WHAT.
@@ -174,7 +286,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         docType: "offer", documentId: id, tenantId: existing.tenant_id,
         before: existing as any, after: updated as any,
         userId: auditUser.id, username: auditUser.username,
-        changeNote: (sanitizedBody as any)?._changeNote || null,
+        changeNote,
       });
     } catch (e) { console.warn("[offer.update] revision failed:", e); }
     // If this update transitioned the offer to a cancelling status, void

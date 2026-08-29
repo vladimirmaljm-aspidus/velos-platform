@@ -54,15 +54,20 @@ const TYPE_LABEL_KEY: Record<DocumentType, string> = {
   proforma: "fin-doc-type-proforma",
   contract: "fin-doc-type-contract",
   spec: "fin-doc-type-spec",
+  // BUILD-LOI — LOI entries are registered in document_register by the
+  // LOI send route (type='loi'). Reuse the LOI title i18n key (translated
+  // as "Letters of Intent") for the badge label so the document register
+  // surfaces LOIs by the same label the admin sidebar uses.
+  loi: "loi-title",
   other: "fin-doc-type-other",
 };
 
 const TYPE_PREFIX: Record<DocumentType, string> = {
-  offer: "OF", invoice: "INV", proforma: "PR", contract: "CT", spec: "SP", other: "OT",
+  offer: "OF", invoice: "INV", proforma: "PR", contract: "CT", spec: "SP", loi: "LOI", other: "OT",
 };
 
 const TYPE_ICON: Record<DocumentType, typeof FileText> = {
-  offer: FileText, invoice: Receipt, proforma: FileCheck, contract: ScrollText, spec: ClipboardList, other: File,
+  offer: FileText, invoice: Receipt, proforma: FileCheck, contract: ScrollText, spec: ClipboardList, loi: ScrollText, other: File,
 };
 
 function TypeBadge({ type }: { type: DocumentType }) {
@@ -73,6 +78,10 @@ function TypeBadge({ type }: { type: DocumentType }) {
     proforma: "border-transparent bg-[var(--chart-2)] text-white",
     contract: "border-transparent bg-emerald-600 text-white",
     spec: "border-transparent bg-[var(--chart-3)] text-black",
+    // BUILD-LOI — amber-tinted badge so LOI rows visually match the LOI
+    // list view's "expired" badge color family without colliding with the
+    // green contract / blue offer badges.
+    loi: "border-transparent bg-amber-500 text-white",
     other: "border-transparent bg-muted text-muted-foreground",
   };
   const Icon = TYPE_ICON[type];

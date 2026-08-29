@@ -16,6 +16,14 @@ export const runtime = "nodejs";
  * brand, coa_params, detailed_spec, logistics, shelf_life, …) so a separate
  * product_catalog table is no longer needed.
  *
+ * FIX-PRODUCTS-DOCS / Fix 9 — the legacy `product_catalog` table + the
+ * /api/product-catalog routes + the product-catalog-view.tsx admin UI are
+ * deprecated. They are kept for backward compatibility with existing
+ * catalog entries that have not yet been migrated to Products, but they
+ * have NO effect on what the portal catalog returns. Admins curate
+ * portal visibility via the per-row `show_in_catalog` toggle on the
+ * Products view (PUT /api/products/[id] with { show_in_catalog: bool }).
+ *
  * No cost / price / margin is exposed — redactListForPortal strips it.
  */
 function productToCatalogShape(p: Product): ProductCatalogEntry {

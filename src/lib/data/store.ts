@@ -7,7 +7,7 @@ import {
   User, Partner, Product, Deal, Offer, Demand, SharedDocument,
   AuditLog, Setting, UserTask, InventoryMovement, EntityNote,
   DashboardInsights, DashboardCharts,
-  Invoice, Proforma, DocumentRegisterEntry, DocumentRevision,
+  Invoice, Proforma, LetterOfIntent, DocumentRegisterEntry, DocumentRevision,
   VaultSecret, ApiKey, Webhook, WebhookDelivery, WebhookPayload,
   SecuritySession, LoginHistoryEntry, KnownIp, TrustedDevice,
   MailQueueEntry,
@@ -107,6 +107,12 @@ export interface Store {
   getProforma(id: string): Promise<Proforma | null>;
   upsertProforma(p: Partial<Proforma> & { id?: string }): Promise<Proforma>;
   deleteProforma(id: string): Promise<void>;
+
+  // letters of intent (LOI)
+  listLois(tenantId: string, params?: ListParams): Promise<ListResult<LetterOfIntent>>;
+  getLoi(id: string): Promise<LetterOfIntent | null>;
+  upsertLoi(l: Partial<LetterOfIntent> & { id?: string }): Promise<LetterOfIntent>;
+  deleteLoi(id: string): Promise<void>;
 
   // shared documents
   listDocuments(tenantId: string, params?: ListParams): Promise<ListResult<SharedDocument>>;

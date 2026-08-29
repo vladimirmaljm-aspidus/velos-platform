@@ -214,7 +214,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // call minted `OF-2025-0001` → unique-constraint 500 on the second call.
     // Fixed to filter on the actual `OF-${year}-` prefix.
     const year = new Date().getFullYear();
-    const seqNum = await nextDocNumber("offer");
+    // FIX-PRODUCTS-DOCS / Fix 3 — pass `tenantId` so nextDocNumber uses
+    // the per-tenant RPC (migration 063). Previously called without a
+    // tenantId → fell through to the GLOBAL sequence → cross-tenant
+    // number leak risk + EU VAT compliance issue.
+    const seqNum = await nextDocNumber("offer", tenantId);
     let offerNumber: string;
     if (seqNum) {
       offerNumber = seqNum;

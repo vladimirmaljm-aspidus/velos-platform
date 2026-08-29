@@ -36,6 +36,10 @@ const UsersView = dynamic(() => import("@/components/views/users-view").then((m)
 const SettingsView = dynamic(() => import("@/components/views/settings-view").then((m) => m.SettingsView), { ssr: false });
 const InvoicesView = dynamic(() => import("@/components/views/invoices-view").then((m) => m.InvoicesView), { ssr: false });
 const ProformasView = dynamic(() => import("@/components/views/proformas-view").then((m) => m.ProformasView), { ssr: false });
+// BUILD-LOI — admin Letters of Intent view (mirrors proformas-view pattern).
+// Dynamic + ssr:false so the heavy table + dialog stays out of the initial
+// bundle.
+const LoisView = dynamic(() => import("@/components/views/lois-view").then((m) => m.LoisView), { ssr: false });
 const DocumentRegisterView = dynamic(() => import("@/components/views/document-register-view").then((m) => m.DocumentRegisterView), { ssr: false });
 const InventoryView = dynamic(() => import("@/components/views/inventory-view").then((m) => m.InventoryView), { ssr: false });
 const SecurityView = dynamic(() => import("@/components/views/security-view").then((m) => m.SecurityView), { ssr: false });
@@ -105,6 +109,7 @@ function ViewContent({ view }: { view: string }) {
     case "settings":             return <SettingsView />;
     case "invoices":             return <InvoicesView />;
     case "proformas":            return <ProformasView />;
+    case "lois":                 return <LoisView />;
     case "document-register":    return <DocumentRegisterView />;
     case "inventory":            return <InventoryView />;
     case "security":             return <SecurityView />;

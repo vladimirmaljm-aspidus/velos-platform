@@ -138,7 +138,11 @@ export async function POST(req: NextRequest) {
     //    listInvoices(limit:1).total — the year-aware count also keeps the
     //    reset-at-year-boundary behaviour from audit P2-20.
     const year = new Date().getFullYear();
-    const seqNum = await nextDocNumber("invoice");
+    // FIX-PRODUCTS-DOCS / Fix 3 — pass `tid` so nextDocNumber uses the
+    // per-tenant RPC (migration 063). Previously called without a
+    // tenantId → fell through to the GLOBAL sequence → cross-tenant
+    // number leak risk + EU VAT compliance issue.
+    const seqNum = await nextDocNumber("invoice", tid);
     let invoiceNumber: string;
     if (seqNum) {
       invoiceNumber = seqNum;

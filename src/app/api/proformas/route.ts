@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuthOrApiKey, resolveTenantId, hasPermission, audit, sanitizeError, type AuthContext, type ApiKeyAuthContext } from "@/lib/api/helpers";
 import { getSupabase } from "@/lib/supabase/client";
+// FIX-PRODUCTS-DOCS / Fix 4 — XSS prevention on free-text fields (parity
+// with offers POST). Proforma PDFs render subject/notes/payment_terms via
+// dangerouslySetInnerHTML, so escape <, >, ", ' here.
+import { sanitizeFields } from "@/lib/security/sanitize-input";
 
 export const runtime = "nodejs";
 
@@ -69,7 +73,84 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Insufficient permissions." }, { status: 403 });
     }
 
-    const body = await req.json();
+    // FIX-PRODUCTS-DOCS / Fix 4 (a) — JSON body try/catch. `await req.json()`
+    // throws on malformed JSON → previously surfaced as a 500. Wrap it so
+    // a syntactically-invalid body surfaces as a clean 400 (parity with
+    // offers POST lines 84-89).
+    let body;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+    }
+
+    // FIX-PRODUCTS-DOCS / Fix 4 (b) — required-fields check. partner_id
+    // and items[] are NOT NULL on the proformas table; surface a clean
+    // 400 listing the missing fields BEFORE we hit the DB. Skip when
+    // body.id is present (this is an UPDATE-style upsert, not a create).
+    if (!body.id) {
+      const missing: string[] = [];
+      if (!body.partner_id) missing.push("partner_id");
+      if (!Array.isArray(body.items) || body.items.length === 0) missing.push("items");
+      if (missing.length > 0) {
+        return NextResponse.json(
+          { error: `Missing required field(s): ${missing.join(", ")}.` },
+          { status: 400 },
+        );
+      }
+      // FIX-PRODUCTS-DOCS / Fix 4 (c) — per-line validation. Each item
+      // must have non-negative quantity + unit_price; a negative price
+      // would pass the NOT NULL check but distort the totals.
+      for (let i = 0; i < body.items.length; i++) {
+        const it = body.items[i];
+        const qty = Number(it.quantity);
+        const price = Number(it.unit_price);
+        if (!Number.isFinite(qty) || qty < 0) {
+          return NextResponse.json(
+            { error: `items[${i}].quantity must be a non-negative number.` },
+            { status: 400 },
+          );
+        }
+        if (!Number.isFinite(price) || price < 0) {
+          return NextResponse.json(
+            { error: `items[${i}].unit_price must be a non-negative number.` },
+            { status: 400 },
+          );
+        }
+      }
+    }
+
+    // FIX-PRODUCTS-DOCS / Fix 4 (d) / Fix 6 — ISO 4217 currency validation.
+    // Reject unknown codes BEFORE the upsert. Skip when currency is
+    // absent (the caller is updating a row that already has a currency,
+    // or the DB default surface handles the NOT NULL constraint).
+    if (body.currency !== undefined && body.currency !== null && body.currency !== "") {
+      const { CURRENCY_CODES } = await import("@/lib/data/reference");
+      if (!CURRENCY_CODES.includes(body.currency)) {
+        return NextResponse.json(
+          { error: `Invalid currency code: ${body.currency}. Must be one of: ${CURRENCY_CODES.join(", ")}.` },
+          { status: 400 },
+        );
+      }
+    }
+
+    // FIX-PRODUCTS-DOCS / Fix 4 (e) — XSS prevention on free-text fields.
+    // Proforma PDFs render subject/notes/terms/payment_terms/bank_details
+    // via dangerouslySetInnerHTML, so escape <, >, ", ' here.
+    body = sanitizeFields(body, [
+      "subject",
+      "notes",
+      "terms",
+      "payment_terms",
+      "bank_details",
+    ]);
+    if (Array.isArray(body.items)) {
+      body.items = body.items.map((it: any) => sanitizeFields(it, [
+        "description", "detailed_spec", "brand", "sku", "hs_code",
+        "origin_country", "notes", "subject", "unit",
+      ]));
+    }
+
     body.tenant_id = tid!;
     if (!body.id) {
       const isSA = !("apiKeyId" in auth) && auth.isSuperAdmin;
@@ -86,6 +167,19 @@ export async function POST(req: NextRequest) {
       const partner = await auth.store.getPartner(body.partner_id);
       if (partner && partner.tenant_id !== tid) {
         return NextResponse.json({ error: "Partner not found." }, { status: 404 });
+      }
+    }
+
+    // FIX-PRODUCTS-DOCS / Fix 7 — when body.offer_id is provided, verify
+    // it belongs to the caller's tenant. The /api/automation route DOES
+    // check (create-proforma-from-offer:49-52), but the direct POST route
+    // did NOT — an admin could attach a proforma to another tenant's offer
+    // via the API. Allow null/empty (proforma not linked to an offer)
+    // without a lookup.
+    if (body.offer_id) {
+      const offer = await auth.store.getOffer(body.offer_id);
+      if (!offer || offer.tenant_id !== tid) {
+        return NextResponse.json({ error: "Offer not found." }, { status: 404 });
       }
     }
 

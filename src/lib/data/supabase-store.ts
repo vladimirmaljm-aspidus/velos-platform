@@ -13,7 +13,7 @@ import {
   DashboardMarginByCategory, DashboardPaymentPoint,
   OfferStatus,
   DealStage,
-  Invoice, Proforma, DocumentRegisterEntry, DocumentRevision,
+  Invoice, Proforma, LetterOfIntent, DocumentRegisterEntry, DocumentRevision,
   VaultSecret, ApiKey, Webhook, WebhookDelivery, WebhookPayload,
   SecuritySession, LoginHistoryEntry, KnownIp, TrustedDevice,
   MailQueueEntry,
@@ -669,7 +669,15 @@ export class SupabaseStore implements Store {
     payload: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
     const { nextDocNumber, formatDocNumber } = await import("@/lib/api/doc-number");
-    let seqNum = await nextDocNumber(docType);
+    // FIX-PRODUCTS-DOCS / Fix 3 — pass the payload's tenant_id so
+    // nextDocNumber uses the per-tenant RPC (migration 063). Previously
+    // called without a tenantId → fell through to the GLOBAL sequence →
+    // cross-tenant number leak risk + EU VAT compliance issue. When the
+    // payload has no tenant_id (shouldn't happen for this path, but
+    // defense-in-depth), fall back to undefined to preserve the legacy
+    // global-RPC behaviour.
+    const tenantId = (payload as any).tenant_id as string | undefined;
+    let seqNum = await nextDocNumber(docType, tenantId);
     // F-FINAL / P0: defensive fallback — if the atomic RPC returned null
     // (Supabase unreachable, migration 011 not applied, or PGRST arg-name
     // mismatch regression), fall back to the legacy `listX().total + 1`
@@ -679,22 +687,21 @@ export class SupabaseStore implements Store {
     // design described in the doc-number.ts header comment and the
     // createDocWithNumber docstring above.
     if (!seqNum) {
-      const tid = (payload as any).tenant_id as string | undefined;
-      if (tid) {
+      if (tenantId) {
         try {
           let total = 0;
           switch (docType) {
-            case "offer":    total = (await this.listOffers(tid)).total; break;
-            case "invoice":  total = (await this.listInvoices(tid)).total; break;
-            case "proforma": total = (await this.listProformas(tid)).total; break;
-            case "demand":   total = (await this.listDemands(tid)).total; break;
-            case "rfq":      total = (await this.listPortalRfqs(tid)).total; break;
+            case "offer":    total = (await this.listOffers(tenantId)).total; break;
+            case "invoice":  total = (await this.listInvoices(tenantId)).total; break;
+            case "proforma": total = (await this.listProformas(tenantId)).total; break;
+            case "demand":   total = (await this.listDemands(tenantId)).total; break;
+            case "rfq":      total = (await this.listPortalRfqs(tenantId)).total; break;
           }
           const year = new Date().getFullYear();
           seqNum = formatDocNumber(docType, year, total + 1);
           console.warn(
             `[createDocWithNumberLegacy] RPC returned null for '${docType}', ` +
-            `falling back to listX().total + 1 = ${seqNum} (tenant ${tid}).`,
+            `falling back to listX().total + 1 = ${seqNum} (tenant ${tenantId}).`,
           );
         } catch (fallbackErr: any) {
           console.error(
@@ -1348,6 +1355,33 @@ export class SupabaseStore implements Store {
   }
   async deleteProforma(id: string): Promise<void> {
     const { error } = await this.sb().from("proformas").delete().eq("id", id);
+    if (error) throw error;
+  }
+
+  // ---- letters of intent (LOI) ----
+  async listLois(tenantId: string, params?: ListParams): Promise<ListResult<LetterOfIntent>> {
+    let q = this.sb().from("lois").select("*", { count: "exact" }).eq("tenant_id", tenantId);
+    if (params?.search) q = q.or(`number.ilike.%${safeSearch(params.search)}%,subject.ilike.%${safeSearch(params.search)}%,buyer_name.ilike.%${safeSearch(params.search)}%,product_name.ilike.%${safeSearch(params.search)}%`);
+    if (params?.filters?.partner_id) q = q.eq("partner_id", params.filters.partner_id);
+    if (params?.filters?.status) q = q.eq("status", params.filters.status);
+    if (params?.filters?.deal_id) q = q.eq("deal_id", params.filters.deal_id);
+    q = q.order("created_at", { ascending: false });
+    return paginateQuery<LetterOfIntent>(q, params);
+  }
+  async getLoi(id: string): Promise<LetterOfIntent | null> {
+    const { data, error } = await this.sb().from("lois").select("*").eq("id", id).maybeSingle();
+    if (error) throw error;
+    return (data as LetterOfIntent) || null;
+  }
+  async upsertLoi(l: Partial<LetterOfIntent> & { id?: string }): Promise<LetterOfIntent> {
+    // Server-side total_value recompute — never trust client-supplied totals.
+    if (l.quantity != null && l.unit_price != null) {
+      l.total_value = Number(l.quantity) * Number(l.unit_price);
+    }
+    return this.smartUpsert<LetterOfIntent>("lois", l, l.tenant_id ?? undefined);
+  }
+  async deleteLoi(id: string): Promise<void> {
+    const { error } = await this.sb().from("lois").delete().eq("id", id);
     if (error) throw error;
   }
 

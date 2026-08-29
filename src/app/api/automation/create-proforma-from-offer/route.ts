@@ -111,8 +111,12 @@ export async function POST(req: NextRequest) {
     // 3. Auto-generate proforma number (atomic via Postgres SEQUENCE; falls
     //    back to legacy `listProformas().total + 1` if the RPC is unavailable).
     //    Format: PRO-<year>-<NNNN>  (4-digit sequence)
+    //    FIX-PRODUCTS-DOCS / Fix 3 — pass `tid` so nextDocNumber uses the
+    //    per-tenant RPC (migration 063). Previously called without a
+    //    tenantId → fell through to the GLOBAL sequence → cross-tenant
+    //    number leak risk + EU VAT compliance issue.
     const year = new Date().getFullYear();
-    const seqNum = await nextDocNumber("proforma");
+    const seqNum = await nextDocNumber("proforma", tid);
     let proformaNumber: string;
     if (seqNum) {
       proformaNumber = seqNum;

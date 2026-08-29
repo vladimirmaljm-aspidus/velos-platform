@@ -4,8 +4,27 @@ import { sendEmail, documentEmail } from "@/lib/email/service";
 import { generatePdf } from "@/lib/pdf/generator";
 import { notify } from "@/lib/notif/helper";
 import { validateStatusTransition } from "@/lib/api/status-validator";
+// FIX-PRODUCTS-DOCS / Fix 5 — parity with offers send route: terminal-
+// state guard + sent_at first-send guard + 5/15min rate limit. The
+// previous proforma send route had NONE of these — a paid/expired/
+// rejected proforma could be re-sent, sent_at was overwritten on every
+// re-send (audit-trail corruption), and there was no backstop against
+// a runaway re-send loop.
+import { checkRateLimit } from "@/lib/security/rate-limiter";
 
 export const runtime = "nodejs";
+
+// 60s minimum interval between sends to the SAME proforma. Matches the
+// pattern from /api/offers/[id]/send/route.ts.
+const PROFORMA_RESEND_MIN_INTERVAL_MS = 60 * 1000;
+
+// Final / non-sendable proforma states. Sending a proforma in any of
+// these would email a stale document (e.g. a paid proforma the client
+// already settled, a cancelled/rejected proforma the client already
+// saw rejected). Send is only meaningful from draft | sent | viewed.
+const TERMINAL_PROFORMA_STATES = new Set([
+  "cancelled", "expired", "rejected", "accepted", "paid",
+]);
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireAuth(req);
@@ -39,6 +58,57 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // Tenant ownership check
     if (!auth.isSuperAdmin && proforma.tenant_id !== auth.tenantId) {
       return NextResponse.json({ error: "Proforma not found." }, { status: 404 });
+    }
+
+    // FIX-PRODUCTS-DOCS / Fix 5 (a) — terminal-state guard. Refuse to
+    // send a proforma that's in a terminal / non-sendable state. Without
+    // this an admin could re-send a paid proforma (which the client
+    // already settled) or a cancelled / rejected / expired proforma —
+    // the status stayed put but the PDF was still emailed, spamming
+    // the recipient with a stale document. Super-admin bypasses so
+    // they can correct bad data. Mirror /api/offers/[id]/send:82-87.
+    if (!auth.isSuperAdmin && proforma.status && TERMINAL_PROFORMA_STATES.has(proforma.status)) {
+      return NextResponse.json(
+        { error: `Cannot send a ${proforma.status} proforma.` },
+        { status: 400 },
+      );
+    }
+
+    // FIX-PRODUCTS-DOCS / Fix 5 (b) — idempotency guard. If this proforma
+    // was sent within the last PROFORMA_RESEND_MIN_INTERVAL_MS, refuse
+    // to re-send (prevents the "spam re-send" bug where a double-click
+    // or a stale UI effect fires the send twice in seconds). Super-admin
+    // bypasses. Mirror /api/offers/[id]/send:96-110.
+    if (!auth.isSuperAdmin && proforma.sent_at) {
+      const lastSendMs = new Date(proforma.sent_at).getTime();
+      const elapsedMs = Date.now() - lastSendMs;
+      if (Number.isFinite(lastSendMs) && elapsedMs < PROFORMA_RESEND_MIN_INTERVAL_MS) {
+        const retryAfterSec = Math.ceil((PROFORMA_RESEND_MIN_INTERVAL_MS - elapsedMs) / 1000);
+        return NextResponse.json(
+          {
+            error: `This proforma was sent ${elapsedMs < 60_000 ? "just now" : Math.floor(elapsedMs / 1000) + "s ago"}. Please wait ${retryAfterSec}s before re-sending to avoid spamming the recipient.`,
+            retry_after: retryAfterSec,
+            already_sent: true,
+          },
+          { status: 429, headers: { "Retry-After": String(retryAfterSec) } },
+        );
+      }
+    }
+
+    // FIX-PRODUCTS-DOCS / Fix 5 (c) — per-proforma-id rate limit (5 per
+    // 15 min, defense-in-depth against runaway re-send loops). The
+    // idempotency guard above is the primary defense; this is the
+    // backstop (clock skew, concurrent races on sent_at). Super-admin
+    // bypasses. Mirror /api/offers/[id]/send:118-127.
+    if (!auth.isSuperAdmin) {
+      const rl = await checkRateLimit(`proforma-send:${id}`, 5, 15 * 60 * 1000);
+      if (!rl.allowed) {
+        const retryAfterSec = Math.ceil((rl.retryAfter ?? 60_000) / 1000);
+        return NextResponse.json(
+          { error: "Too many sends for this proforma recently. Please try again later.", retry_after: retryAfterSec },
+          { status: 429, headers: { "Retry-After": String(retryAfterSec) } },
+        );
+      }
     }
 
     // Fetch partner for email info / portal notification
@@ -94,7 +164,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             return NextResponse.json({ error: t.error }, { status: 400 });
           }
         }
-        await auth.store.upsertProforma({ id, status: newStatus, sent_at: new Date().toISOString() } as any);
+        // FIX-PRODUCTS-DOCS / Fix 5 (b) — only set sent_at on FIRST send.
+        // Previously the route wrote `sent_at: new Date().toISOString()`
+        // unconditionally, overwriting the original send timestamp on
+        // every re-send (audit-trail corruption). Mirror
+        // /api/offers/[id]/send:187-189.
+        const updateFields: any = { status: newStatus };
+        if (!proforma.sent_at) {
+          updateFields.sent_at = new Date().toISOString();
+        }
+        await auth.store.upsertProforma({ id, ...updateFields } as any);
       } catch (e) { console.warn("[proforma.send] status bump failed:", e); }
     }
 

@@ -2407,7 +2407,15 @@ export class MockStore implements Store {
     payload: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
     const { nextDocNumber, formatDocNumber } = await import("@/lib/api/doc-number");
-    let number = await nextDocNumber(docType);
+    // FIX-PRODUCTS-DOCS / Fix 3 — pass the payload's tenant_id so
+    // nextDocNumber uses the per-tenant RPC (migration 063). MockStore is
+    // dev/preview only, but we keep the per-tenant shape consistent with
+    // SupabaseStore. The tenantId is optional — undefined falls back to
+    // the global RPC path (which is fine for MockStore since there is no
+    // SEQUENCE; nextDocNumber returns null and we drop to the fallback
+    // below).
+    const tenantId = (payload as any).tenant_id as string | undefined;
+    let number = await nextDocNumber(docType, tenantId);
     if (!number) {
       // MockStore fallback: derive a simple sequential number from the
       // existing mock data length. Matches the legacy `listX().total + 1`

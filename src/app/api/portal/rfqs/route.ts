@@ -102,7 +102,11 @@ export async function POST(req: NextRequest) {
   //   Note: the previous 3-digit format (RFQ-YYYY-NNN) is preserved for
   //   legacy rows; new RFQs minted through the RPC will be 4-digit padded.
   const year = new Date().getFullYear();
-  const seqNum = await nextDocNumber("rfq");
+  // FIX-PRODUCTS-DOCS / Fix 3 — pass `access.tenant_id` so nextDocNumber
+  // uses the per-tenant RPC (migration 063). Previously called without a
+  // tenantId → fell through to the GLOBAL sequence → cross-tenant
+  // number leak risk + EU VAT compliance issue.
+  const seqNum = await nextDocNumber("rfq", access.tenant_id);
   if (seqNum) {
     body.number = seqNum;
   } else {

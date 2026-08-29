@@ -76,6 +76,17 @@ export const PROFORMAS = {
   SEND: "proformas.send",
 } as const;
 
+// ─── Letters of Intent (LOI) — pre-contract document expressing buyer intent ──
+// Registered in document_register with type='loi' (migration 064). The admin
+// view under Finance lets tenant admins draft, send, and track LOIs.
+export const LOIS = {
+  READ: "lois.read",
+  CREATE: "lois.create",
+  UPDATE: "lois.update",
+  DELETE: "lois.delete",
+  SEND: "lois.send",
+} as const;
+
 export const DOCUMENTS = {
   READ: "documents.read",
   CREATE: "documents.create",
@@ -355,6 +366,7 @@ export const ALL_PERMISSIONS = [
   ...Object.values(DEMANDS),
   ...Object.values(INVOICES),
   ...Object.values(PROFORMAS),
+  ...Object.values(LOIS),
   ...Object.values(DOCUMENTS),
   ...Object.values(DOCUMENT_REGISTER),
   ...Object.values(DOCUMENT_TEMPLATES),

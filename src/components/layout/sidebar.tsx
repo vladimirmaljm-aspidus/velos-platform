@@ -108,6 +108,14 @@ const SECTIONS: NavSection[] = [
     items: [
       { key: "invoices", i18nKey: "invoices", i18nSection: "finance", icon: Receipt, permission: "invoices.read", featureFlag: "module_finance" },
       { key: "proformas", i18nKey: "proformas", i18nSection: "finance", icon: FileSignature, permission: "proformas.read", featureFlag: "module_finance" },
+      // BUILD-LOI — admin Letters of Intent surface. Lives in the Finance
+      // section alongside Invoices/Proformas/Document Register because LOIs
+      // are pre-contract financial documents (a buyer's formal intent to
+      // purchase). Uses the ScrollText icon (already imported above) to
+      // distinguish it visually from offers (FileText). Permission gate is
+      // lois.read — granted implicitly to tenant admins, surfaced explicitly
+      // in the permission catalog (LOIS.READ).
+      { key: "lois", i18nKey: "lois", i18nSection: "finance", icon: ScrollText, permission: "lois.read", featureFlag: "module_finance" },
       { key: "document-register", i18nKey: "document-register", i18nSection: "finance", icon: FolderOpen, permission: "document-register.read", featureFlag: "module_finance" },
       { key: "erp", i18nKey: "erp", i18nSection: "finance", icon: BookMarked, permission: "erp.read", featureFlag: "module_finance" },
     ],

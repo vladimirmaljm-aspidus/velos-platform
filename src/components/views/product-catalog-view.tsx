@@ -35,13 +35,14 @@ import {
 } from "@/components/ui/pagination";
 import {
   Plus, Search, Pencil, Trash2, Eye, Package, X, Boxes, Hash, Globe, Tag,
-  ChevronDown, ChevronRight,
+  ChevronDown, ChevronRight, AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
 import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
 
 import { EmptyState } from "@/components/common/empty-state";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { fmtMoney, fmtDate } from "@/lib/utils/format";
 import { ProductCatalogEntry, SupplierOffer, Partner } from "@/lib/supabase/types";
 import {
@@ -214,10 +215,32 @@ export function ProductCatalogView() {
           </Button>
         }
       />
+      {/* FIX-PRODUCTS-DOCS / Fix 9 — Product Catalog split-brain deprecation
+          banner. The portal catalog endpoint (/api/portal/catalog) reads
+          from the `products` table filtered by `show_in_catalog && active`,
+          NOT from the legacy `product_catalog` table this view manages.
+          The two can drift silently: an admin editing entries here thinks
+          they're curating what the portal sees, but the portal actually
+          reads from Products. Use the Products view (per-row
+          `show_in_catalog` toggle) to control portal visibility. This
+          view is preserved for backward compatibility with existing
+          catalog entries that have not yet been migrated to Products. */}
+      <Alert variant="destructive" className="mb-4">
+        <AlertTriangle className="size-4" />
+        <AlertTitle>Legacy view — portal reads from Products, not this catalog</AlertTitle>
+        <AlertDescription>
+          The client portal catalog is curated via the <strong>show_in_catalog</strong> flag
+          on the <strong>Products</strong> table (per-row toggle in the Products view), NOT
+          this <code>product_catalog</code> table. Edits made here do NOT affect what portal
+          clients see. Use the Products view to control portal visibility. This view is
+          preserved for backward compatibility with legacy entries that have not yet been
+          migrated to Products.
+        </AlertDescription>
+      </Alert>
       <ModuleInfoTooltip
-        title="Product Catalog"
-        description="Detailed product specifications, COA parameters, logistics capacities, and certifications. Used by the portal catalog and supplier offers."
-        howToUse={["Add products with full specifications (HS code, COA params, logistics)", "Products with specs appear in the client portal", "Link supplier offers to catalog entries"]}
+        title="Product Catalog (Legacy)"
+        description="Legacy product_catalog table — the portal catalog now reads from the Products table (show_in_catalog flag). Kept for backward compatibility with legacy entries that have not yet been migrated to Products."
+        howToUse={["Add legacy catalog entries (deprecated — use the Products view instead)", "Curate portal visibility via the show_in_catalog toggle on the Products view", "Link supplier offers to catalog entries"]}
       />
 
       <Card className="mb-4 border-border/60 shadow-soft rounded-xl">

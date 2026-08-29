@@ -25,7 +25,8 @@ export type DocType =
   | "deal"
   | "kyc"
   | "marketplace_post"
-  | "marketplace_response";
+  | "marketplace_response"
+  | "loi";
 
 const VALID_TRANSITIONS: Record<DocType, Record<string, string[]>> = {
   offer: {
@@ -134,6 +135,23 @@ const VALID_TRANSITIONS: Record<DocType, Record<string, string[]>> = {
     accepted: [],
     rejected: [],
     expired: [],
+  },
+  // BUILD-LOI — Letters of Intent (LOI) state machine. Mirrors the lifecycle
+  // the admin UI documents: a tenant admin drafts an LOI, emails it to the
+  // seller partner (sent), the partner accepts or rejects (or it expires,
+  // or the admin cancels). "draft" is the only editable state; "sent" can
+  // be re-sent but the underlying data is locked once sent (the PUT route
+  // enforces the field whitelist). accepted/rejected/expired/cancelled are
+  // terminal — reviving would silently undo the partner's decision or the
+  // admin's cancellation. Super-admin bypasses (general policy in this
+  // module's header).
+  loi: {
+    draft: ["sent", "cancelled"],
+    sent: ["accepted", "rejected", "expired", "cancelled", "draft"],
+    accepted: ["cancelled"],
+    rejected: [],
+    expired: [],
+    cancelled: [],
   },
 };
 

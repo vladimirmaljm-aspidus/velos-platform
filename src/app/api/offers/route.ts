@@ -148,6 +148,24 @@ async function _post(req: NextRequest) {
     ]));
   }
 
+  // FIX-PRODUCTS-DOCS / Fix 6 — ISO 4217 currency validation. CURRENCY_CODES
+  // is exported from @/lib/data/reference but no API route previously
+  // imported it for server-side validation; a direct API caller could set
+  // body.currency to any string ("FOO", "XXX", even an XSS payload that
+  // later lands in a dangerouslySetInnerHTML PDF template) and it would
+  // reach the DB. Reject unknown codes BEFORE the upsert. Skip when the
+  // caller omits currency (the DB default / NOT NULL constraint surface
+  // handles that path — both offers POST and PUT enforce a currency).
+  if (body.currency !== undefined && body.currency !== null && body.currency !== "") {
+    const { CURRENCY_CODES } = await import("@/lib/data/reference");
+    if (!CURRENCY_CODES.includes(body.currency)) {
+      return NextResponse.json(
+        { error: `Invalid currency code: ${body.currency}. Must be one of: ${CURRENCY_CODES.join(", ")}.` },
+        { status: 400 },
+      );
+    }
+  }
+
   body.tenant_id = tid!;
   if (!body.owner_id && "user" in auth) body.owner_id = auth.user.id;
 
@@ -158,6 +176,21 @@ async function _post(req: NextRequest) {
     const partner = await auth.store.getPartner(body.partner_id);
     if (partner && partner.tenant_id !== tid) {
       return NextResponse.json({ error: "Partner not found." }, { status: 404 });
+    }
+  }
+
+  // FIX-PRODUCTS-DOCS / Fix 8 — when body.deal_id is provided, verify it
+  // belongs to the caller's tenant. The auto-track-commission block
+  // below uses `(created as any).deal_id` to insert a deal_commissions
+  // row — if the caller supplied another tenant's deal_id, the
+  // commission row would be created against that foreign deal. Skip
+  // when deal_id is null/empty (offer is intentionally not linked to a
+  // deal yet — the auto-track block below will create one when trade
+  // calc metadata is present).
+  if (body.deal_id) {
+    const deal = await auth.store.getDeal(body.deal_id);
+    if (!deal || deal.tenant_id !== tid) {
+      return NextResponse.json({ error: "Deal not found." }, { status: 404 });
     }
   }
   // ── Strip `_` prefixed metadata fields BEFORE upserting ──────────────

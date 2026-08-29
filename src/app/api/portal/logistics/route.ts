@@ -39,7 +39,11 @@ export const runtime = "nodejs";
  */
 async function nextNumber(tenantId: string): Promise<string> {
   // 1. Atomic path: Postgres SEQUENCE via RPC.
-  const atomic = await nextDocNumber("logistics");
+  // FIX-PRODUCTS-DOCS / Fix 3 — pass `tenantId` so nextDocNumber uses
+  // the per-tenant RPC (migration 063). Previously called without a
+  // tenantId → fell through to the GLOBAL sequence → cross-tenant
+  // number leak risk + EU VAT compliance issue.
+  const atomic = await nextDocNumber("logistics", tenantId);
   if (atomic) return atomic;
 
   // 2. Legacy fallback: count + 1 (race-prone, but only used when the

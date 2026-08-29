@@ -586,8 +586,45 @@ export interface Proforma {
   updated_at: string;
 }
 
+// ---------- Letter of Intent (LOI) ----------
+export type LoiStatus = "draft" | "sent" | "accepted" | "rejected" | "expired" | "cancelled";
+
+export interface LetterOfIntent {
+  id: string;
+  tenant_id: string;
+  number: string;                    // e.g. LOI-2026-001
+  partner_id: string;                // the seller partner (recipient of the LOI)
+  buyer_name: string;                 // the buyer's legal name (issuing party)
+  buyer_address: string | null;
+  buyer_contact: string | null;       // contact person + email/phone
+  subject: string;
+  product_name: string;
+  product_description: string | null;
+  hs_code: string | null;
+  origin_country: string | null;      // ISO alpha-2
+  quantity: number;                   // quantity to purchase
+  unit: string;                       // MT, KG, L, etc.
+  unit_price: number;                 // price per unit
+  currency: string;
+  total_value: number;                // quantity * unit_price (server-computed)
+  delivery_terms: string | null;      // incoterm + delivery location
+  delivery_date: string | null;       // ISO date
+  payment_terms: string | null;
+  validity_until: string;             // ISO date — LOI is valid until this date
+  status: LoiStatus;
+  notes: string | null;
+  terms_text: string | null;           // the full LOI body text (legal paragraphs)
+  sent_at: string | null;
+  responded_at: string | null;
+  created_by: string | null;
+  deal_id: string | null;              // optional link to a deal
+  offer_id: string | null;             // optional link to an offer
+  created_at: string;
+  updated_at: string;
+}
+
 // ---------- Document Register (V1/V2/V3 versioning) ----------
-export type DocumentType = "offer" | "invoice" | "proforma" | "contract" | "spec" | "other";
+export type DocumentType = "offer" | "invoice" | "proforma" | "contract" | "spec" | "loi" | "other";
 
 export interface DocumentRegisterEntry {
   id: string;
@@ -1539,6 +1576,13 @@ export type NotificationType =
   | "proforma_sent"
   | "proforma_accepted"
   | "proforma_rejected"
+  // BUILD-LOI — Letter of Intent lifecycle events. Mirrors the
+  // offer_sent / proforma_sent / invoice_sent pattern so the partner's
+  // portal bell surfaces LOI send/accept/reject the same way it does for
+  // other outbound documents.
+  | "loi_sent"
+  | "loi_accepted"
+  | "loi_rejected"
   | "document_shared"
   | "portal_access_requested"
   | "portal_access_approved"
