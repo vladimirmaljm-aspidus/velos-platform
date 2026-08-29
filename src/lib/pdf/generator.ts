@@ -4,10 +4,10 @@ import { buildPdfDocument } from "./templates";
 import { generateQrCodeDataUrl, generateVerificationCode, computePdfHash } from "./qr";
 import { getStore } from "@/lib/data/store";
 import { getSupabase, isSupabaseConfigured } from "@/lib/supabase/client";
-import type { Offer, Invoice, Proforma, Partner, Tenant, MemorandumSettings, TenantSeal } from "@/lib/supabase/types";
+import type { Offer, Invoice, Proforma, LetterOfIntent, Partner, Tenant, MemorandumSettings, TenantSeal } from "@/lib/supabase/types";
 
 export interface GeneratePdfOptions {
-  docType: "offer" | "invoice" | "proforma";
+  docType: "offer" | "invoice" | "proforma" | "loi";
   docId: string;
   tenantId: string;
   createVerification?: boolean; // if true, creates a verification record with QR + hash
@@ -185,10 +185,11 @@ export async function generatePdf(opts: GeneratePdfOptions): Promise<GeneratePdf
   const store = await getStore();
 
   // Fetch the document
-  let doc: Offer | Invoice | Proforma | null = null;
+  let doc: Offer | Invoice | Proforma | LetterOfIntent | null = null;
   if (opts.docType === "offer") doc = await store.getOffer(opts.docId);
   else if (opts.docType === "invoice") doc = await store.getInvoice(opts.docId);
   else if (opts.docType === "proforma") doc = await store.getProforma(opts.docId);
+  else if (opts.docType === "loi") doc = await store.getLoi(opts.docId);
 
   if (!doc) throw new Error(`${opts.docType} not found`);
 
@@ -264,7 +265,10 @@ export async function generatePdf(opts: GeneratePdfOptions): Promise<GeneratePdf
   const sealImageUrl = seal ? await resolveLogoUrl(seal.image_url) : null;
 
   // Build PDF metadata (visible in the PDF document properties dialog)
-  const docTitleLabel = opts.docType === "offer" ? "Offer" : opts.docType === "invoice" ? "Invoice" : "Proforma";
+  // LOI doesn't have a `total` field — it has `total_value` (quantity × unit_price).
+  // For the document register metadata we normalise to a single `total` value
+  // so the audit-trail JSON is consistent across doc types.
+  const docTitleLabel = opts.docType === "offer" ? "Offer" : opts.docType === "invoice" ? "Invoice" : opts.docType === "proforma" ? "Proforma" : "Letter of Intent";
   const pdfMeta = {
     title: `${docTitleLabel} ${doc.number} — ${tenant?.name || "VELOS"}`,
     author: tenant?.name || "VELOS CRM",
@@ -344,7 +348,11 @@ export async function generatePdf(opts: GeneratePdfOptions): Promise<GeneratePdf
           pdf_hash: pdfHash,
           pdf_size: buffer.length,
           currency: doc.currency,
-          total: doc.total,
+          // LOI stores the document value as `total_value` (quantity × unit_price),
+          // not `total`. Normalise so the register's metadata.total is consistent
+          // across doc types — offer/invoice/proforma use `.total`, LOI uses
+          // `.total_value`.
+          total: (doc as any).total ?? (doc as any).total_value ?? 0,
           partner_name: partner?.name,
           generated_at: new Date().toISOString(),
         },

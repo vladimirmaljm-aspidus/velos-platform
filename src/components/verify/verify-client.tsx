@@ -27,6 +27,24 @@ interface VerifyClientProps {
   cipheredRecipient?: string;
 }
 
+// Friendly labels for each document_type stored in document_verifications.
+// The API route is type-agnostic — it just returns the raw document_type
+// string ("offer" | "invoice" | "proforma" | "loi") — so the verify page
+// renders this map's value instead of capitalising the raw string. Without
+// it, "loi" would render as "Loi" rather than the more descriptive
+// "Letter of Intent".
+const DOC_TYPE_LABELS: Record<string, string> = {
+  offer: "Offer",
+  invoice: "Commercial Invoice",
+  proforma: "Proforma Invoice",
+  loi: "Letter of Intent",
+};
+
+function docTypeLabel(t: (k: string) => string, raw?: string | null): string {
+  if (!raw) return t("misc-verify-doc-fallback");
+  return DOC_TYPE_LABELS[raw] || raw.charAt(0).toUpperCase() + raw.slice(1);
+}
+
 export function VerifyClient({ exists, documentType, code, cipheredRecipient = "—" }: VerifyClientProps) {
   const t = useT();
   const [phase, setPhase] = React.useState<"requesting" | "denied" | "ready">("requesting");
@@ -282,7 +300,7 @@ export function VerifyClient({ exists, documentType, code, cipheredRecipient = "
                     <FileText className="size-3.5" />
                   </div>
                   <span className="verify-detail-label">{t("misc-verify-doc-type")}</span>
-                  <span className="verify-detail-value capitalize">{v.document_type || t("misc-verify-doc-fallback")}</span>
+                  <span className="verify-detail-value">{docTypeLabel(t, v.document_type)}</span>
                 </div>
 
                 {/* Document number */}

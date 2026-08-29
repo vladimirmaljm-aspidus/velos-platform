@@ -1,6 +1,6 @@
 import React from "react";
 import { Document, Page, Text, View, StyleSheet, Image, Font } from "@react-pdf/renderer";
-import type { Offer, Invoice, Proforma, OfferLineItem, Partner, Tenant, MemorandumSettings, TenantSeal } from "@/lib/supabase/types";
+import type { Offer, Invoice, Proforma, LetterOfIntent, OfferLineItem, Partner, Tenant, MemorandumSettings, TenantSeal } from "@/lib/supabase/types";
 
 // Allow very long "words" (SKUs, HS codes like 1006.30.10.00, IBANs) to break
 // across lines. Short words are kept intact so normal prose still looks clean.
@@ -13,8 +13,8 @@ Font.registerHyphenationCallback((word) => {
 });
 
 interface PdfDocData {
-  doc: Offer | Invoice | Proforma;
-  docType: "offer" | "invoice" | "proforma";
+  doc: Offer | Invoice | Proforma | LetterOfIntent;
+  docType: "offer" | "invoice" | "proforma" | "loi";
   partner: Partner | null;
   tenant: Tenant | null;
   /** Per-tenant header/footer/body configuration. Replaces the legacy
@@ -635,8 +635,12 @@ export function buildPdfDocument({
     offer: "Offer",
     invoice: "Commercial Invoice",
     proforma: "Proforma Invoice",
+    loi: "LETTER OF INTENT",
   } as const;
-  const items = (doc.items || []) as OfferLineItem[];
+  // LOI has no `items` array (it carries a single product inline on the
+  // doc row), so we normalise to an empty array for the line-items-driven
+  // branch below. The cast through `any` keeps TS happy across the union.
+  const items = ((doc as any).items || []) as OfferLineItem[];
   const currency = doc.currency || "USD";
 
   // ── Pull trade / shipping fields off the doc ───────────────────────
@@ -838,6 +842,8 @@ export function buildPdfDocument({
       ? "This is a computer-generated commercial invoice and is valid without signature."
       : docType === "proforma"
       ? "This proforma invoice is issued for customs/bank purposes only and is not a tax invoice."
+      : docType === "loi"
+      ? "This Letter of Intent is a non-binding expression of intent to purchase. It does not constitute a legally binding contract until a definitive purchase agreement is executed by both parties."
       : "This offer is valid until the date specified above. Prices are subject to confirmation at time of order.";
 
   // Format an ISO date as "06 Aug 2026"
@@ -887,6 +893,14 @@ export function buildPdfDocument({
                 </Text>
               </View>
             )}
+            {docType === "loi" && (doc as LetterOfIntent).validity_until && (
+              <View style={styles.docMetaRow}>
+                <Text style={styles.docMetaLabel}>Valid Until:</Text>
+                <Text style={styles.docMetaValue}>
+                  {fmtDate((doc as LetterOfIntent).validity_until as string)}
+                </Text>
+              </View>
+            )}
             {(docType === "invoice" || docType === "proforma") && (doc as any).due_date && (
               <View style={styles.docMetaRow}>
                 <Text style={styles.docMetaLabel}>Due Date:</Text>
@@ -909,10 +923,14 @@ export function buildPdfDocument({
           </View>
         )}
 
-        {/* FROM (Seller) / TO (Buyer) — full legal details */}
+        {/* FROM / TO party boxes — for offers/invoices/proformas the
+            tenant (issuer) is the SELLER and the partner is the BUYER.
+            For LOIs the roles are reversed: the tenant (issuer) is the
+            BUYER and the partner is the SELLER. The box titles branch
+            on docType so the labels stay correct in both cases. */}
         <View style={styles.partiesSection}>
           <PartyBox
-            title="FROM (SELLER)"
+            title={docType === "loi" ? "FROM (BUYER)" : "FROM (SELLER)"}
             name={tenant?.legal_name || tenant?.name || "Company"}
             addressLine={tenant?.address_line}
             city={tenant?.city}
@@ -926,7 +944,7 @@ export function buildPdfDocument({
             website={tenant?.website}
           />
           <PartyBox
-            title="TO (BUYER)"
+            title={docType === "loi" ? "TO (SELLER)" : "TO (BUYER)"}
             name={partner?.name || "—"}
             addressLine={partner?.address_line}
             city={partner?.city}
@@ -940,6 +958,13 @@ export function buildPdfDocument({
             website={partner?.website}
           />
         </View>
+
+        {/* ── OFFER / INVOICE / PROFORMA BODY ──────────────────────────
+            LOI uses a separate body branch (intro text + product specs
+            + delivery terms + validity + notes) and skips this whole
+            trade terms / line items / totals block — see the LOI branch
+            further below. */}
+        {docType !== "loi" && (<>
 
         {/* TRADE TERMS (Incoterm, Origin, POL, POD, Payment, Lead time, Packaging, Vessel, Container) */}
         <Text style={styles.sectionHeader}>Trade Terms</Text>
@@ -1071,27 +1096,27 @@ export function buildPdfDocument({
         <View style={styles.totals} wrap={false}>
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Subtotal:</Text>
-            <Text style={styles.totalValue}>{fmtMoney(doc.subtotal, currency)}</Text>
+            <Text style={styles.totalValue}>{fmtMoney((doc as any).subtotal, currency)}</Text>
           </View>
-          {doc.discount_total > 0 && (
+          {(doc as any).discount_total > 0 && (
             <View style={styles.totalRow}>
               <Text style={styles.totalLabel}>Discount:</Text>
-              <Text style={styles.totalValue}>-{fmtMoney(doc.discount_total, currency)}</Text>
+              <Text style={styles.totalValue}>-{fmtMoney((doc as any).discount_total, currency)}</Text>
             </View>
           )}
-          {doc.tax_total > 0 && (
+          {(doc as any).tax_total > 0 && (
             <View style={styles.totalRow}>
               <Text style={styles.totalLabel}>{docType === "offer" ? "Tax / VAT:" : "VAT:"}</Text>
-              <Text style={styles.totalValue}>{fmtMoney(doc.tax_total, currency)}</Text>
+              <Text style={styles.totalValue}>{fmtMoney((doc as any).tax_total, currency)}</Text>
             </View>
           )}
           <View style={styles.grandTotal}>
             <Text style={styles.grandTotalLabel}>GRAND TOTAL:</Text>
-            <Text style={styles.grandTotalValue}>{fmtMoney(doc.total, currency)}</Text>
+            <Text style={styles.grandTotalValue}>{fmtMoney((doc as any).total, currency)}</Text>
           </View>
           <View style={styles.amountInWords}>
             <Text style={styles.amountInWordsLabel}>Amount in Words</Text>
-            <Text style={styles.amountInWordsValue}>{amountInWords(doc.total, currency)}</Text>
+            <Text style={styles.amountInWordsValue}>{amountInWords((doc as any).total, currency)}</Text>
           </View>
         </View>
 
@@ -1166,6 +1191,113 @@ export function buildPdfDocument({
             )}
           </View>
         )}
+
+        </>)}
+
+        {/* ── LOI BODY ─────────────────────────────────────────────────────
+            LOI is a single-product intent document. The body is:
+             1. Introductory paragraph (default or the LOI's terms_text
+                when the issuer has provided a custom one)
+             2. Product Specifications table (single product, key/value rows)
+             3. Delivery & Payment Terms table (incoterm + delivery date +
+                payment terms + valid until)
+             4. Optional Notes
+            LOI does NOT render the line items table, the subtotal/discount/
+            tax/total breakdown, or the bank details block — it carries a
+            single product + total_value and the legal body is the intro /
+            terms_text. */}
+        {docType === "loi" && (() => {
+          const loi = doc as LetterOfIntent;
+          const buyerName = loi.buyer_name || tenant?.legal_name || tenant?.name || "the Buyer";
+          const sellerName = partner?.name || "the Seller";
+          const validUntilStr = fmtDate(loi.validity_until);
+          // Default LOI intro paragraph — used when the issuer hasn't
+          // provided a custom terms_text. The custom terms_text (when set)
+          // replaces this entirely; it's the full legal body.
+          const defaultIntro =
+            `Dear ${sellerName},\n\n` +
+            `We, ${buyerName}, hereby express our firm intention to purchase the following goods under the terms and conditions stated in this Letter of Intent. This LOI is non-binding and serves as a formal expression of our intent to proceed with the purchase, subject to the execution of a definitive purchase agreement.\n\n` +
+            `We look forward to your response by ${validUntilStr}.`;
+          return (
+            <>
+              {/* Introductory paragraph / full LOI body */}
+              <View style={styles.termsBox}>
+                <Text style={styles.sectionHeader} wrap={false}>Letter of Intent</Text>
+                <Text style={styles.termsText}>{loi.terms_text || defaultIntro}</Text>
+              </View>
+
+              {/* Product Specifications — single product, key/value rows */}
+              <Text style={styles.sectionHeader}>Product Specifications</Text>
+              <View style={styles.specTable} wrap={false}>
+                <View style={styles.specRow}>
+                  <Text style={styles.specName}>Product Name</Text>
+                  <Text style={styles.specValue}>{loi.product_name}</Text>
+                </View>
+                {loi.product_description && (
+                  <View style={styles.specRow}>
+                    <Text style={styles.specName}>Description</Text>
+                    <Text style={styles.specValue}>{loi.product_description}</Text>
+                  </View>
+                )}
+                {loi.hs_code && (
+                  <View style={styles.specRow}>
+                    <Text style={styles.specName}>HS Code</Text>
+                    <Text style={styles.specValue}>{loi.hs_code}</Text>
+                  </View>
+                )}
+                {loi.origin_country && (
+                  <View style={styles.specRow}>
+                    <Text style={styles.specName}>Origin Country</Text>
+                    <Text style={styles.specValue}>{loi.origin_country}</Text>
+                  </View>
+                )}
+                <View style={styles.specRow}>
+                  <Text style={styles.specName}>Quantity</Text>
+                  <Text style={styles.specValue}>{loi.quantity} {loi.unit}</Text>
+                </View>
+                <View style={styles.specRow}>
+                  <Text style={styles.specName}>Unit Price</Text>
+                  <Text style={styles.specValue}>{fmtMoney(loi.unit_price, currency)}</Text>
+                </View>
+                <View style={styles.specRow}>
+                  <Text style={styles.specName}>Total Value</Text>
+                  <Text style={[styles.specValue, { fontFamily: headingFontFamily }]}>
+                    {fmtMoney(loi.total_value, currency)}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Delivery & Payment Terms */}
+              <Text style={styles.sectionHeader}>Delivery &amp; Payment Terms</Text>
+              <View style={styles.specTable} wrap={false}>
+                <View style={styles.specRow}>
+                  <Text style={styles.specName}>Delivery Terms</Text>
+                  <Text style={styles.specValue}>{loi.delivery_terms || "—"}</Text>
+                </View>
+                <View style={styles.specRow}>
+                  <Text style={styles.specName}>Delivery Date</Text>
+                  <Text style={styles.specValue}>{fmtDate(loi.delivery_date)}</Text>
+                </View>
+                <View style={styles.specRow}>
+                  <Text style={styles.specName}>Payment Terms</Text>
+                  <Text style={styles.specValue}>{loi.payment_terms || "—"}</Text>
+                </View>
+                <View style={styles.specRow}>
+                  <Text style={styles.specName}>Valid Until</Text>
+                  <Text style={styles.specValue}>{validUntilStr}</Text>
+                </View>
+              </View>
+
+              {/* Optional Notes */}
+              {loi.notes && (
+                <View style={styles.termsBox}>
+                  <Text style={styles.sectionHeader} wrap={false}>Notes</Text>
+                  <Text style={styles.termsText}>{loi.notes}</Text>
+                </View>
+              )}
+            </>
+          );
+        })()}
 
         {/* AUTHORIZED SIGNATURES — seller + buyer/acceptholder */}
         {/* Wrapped in a relative-positioned container so the company seal

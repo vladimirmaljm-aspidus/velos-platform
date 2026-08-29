@@ -1330,7 +1330,7 @@ export interface TenantSeal {
 export interface DocumentVerification {
   id: string;
   tenant_id: string;
-  document_type: "offer" | "invoice" | "proforma";
+  document_type: "offer" | "invoice" | "proforma" | "loi";
   document_id: string;
   document_number: string;
   verification_code: string; // unique, embedded in QR
