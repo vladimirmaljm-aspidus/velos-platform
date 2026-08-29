@@ -78,20 +78,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
     }
 
-    // Required fields
+    // Required: partner_id (the seller)
     if (!body.partner_id) return NextResponse.json({ error: "Partner is required." }, { status: 400 });
-    if (!body.buyer_name?.trim()) return NextResponse.json({ error: "Buyer name is required." }, { status: 400 });
     if (!body.subject?.trim()) return NextResponse.json({ error: "Subject is required." }, { status: 400 });
-    if (!body.product_name?.trim()) return NextResponse.json({ error: "Product name is required." }, { status: 400 });
-    if (!body.unit?.trim()) return NextResponse.json({ error: "Unit is required." }, { status: 400 });
 
     const quantity = Number(body.quantity);
-    const unitPrice = Number(body.unit_price);
     if (!Number.isFinite(quantity) || quantity <= 0) {
       return NextResponse.json({ error: "Quantity must be a positive number." }, { status: 400 });
-    }
-    if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
-      return NextResponse.json({ error: "Unit price must be a positive number." }, { status: 400 });
     }
 
     // Currency validation (ISO 4217)
@@ -112,19 +105,74 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Validity date must be in the future." }, { status: 400 });
     }
 
-    // Partner tenant ownership check
+    // Partner tenant ownership check (partner = SELLER)
     const store = await getStore();
     const partner = await store.getPartner(body.partner_id);
     if (!partner || partner.tenant_id !== tid) {
       return NextResponse.json({ error: "Partner not found." }, { status: 404 });
     }
 
-    // Optional deal_id ownership check
+    // ── BUYER = TENANT (always) ─────────────────────────────────────────
+    // The LOI logic: the tenant (the logged-in company) IS the buyer — they
+    // issue the LOI to express intent to purchase goods from one of their
+    // partners (the seller). The buyer_name / buyer_address / buyer_contact
+    // fields are auto-populated from the tenant record and CANNOT be
+    // overridden by the caller (defence in depth — a tenant can't issue an
+    // LOI pretending to be a different buyer).
+    const tenant = await store.getTenant(tid);
+    if (!tenant) {
+      return NextResponse.json({ error: "Tenant not found." }, { status: 400 });
+    }
+    const buyerName = tenant.legal_name || tenant.name;
+    const buyerAddressParts = [
+      tenant.address_line,
+      tenant.postal_code,
+      tenant.city,
+      tenant.country,
+    ].filter(Boolean);
+    const buyerAddress = buyerAddressParts.length > 0 ? buyerAddressParts.join(", ") : null;
+    const buyerContact = [tenant.email, tenant.phone].filter(Boolean).join(" — ") || null;
+
+    // ── Optional deal_id ownership check ──────────────────────────────
     if (body.deal_id) {
       const deal = await store.getDeal(body.deal_id);
       if (!deal || deal.tenant_id !== tid) {
         return NextResponse.json({ error: "Deal not found." }, { status: 404 });
       }
+    }
+
+    // ── Optional product_id: auto-populate product details from DB ───
+    // If the caller passes product_id AND we have the product in our
+    // catalog, we auto-fill product_name, product_description, hs_code,
+    // origin_country, unit, and unit_price from the product record. The
+    // caller can override quantity + unit_price + currency + delivery terms
+    // (the LOI-specific fields the buyer negotiates). If the caller also
+    // passes explicit product_name etc., those take precedence over the
+    // DB values (lets the buyer tweak the description without editing the
+    // product catalog).
+    let productName = body.product_name?.trim() || "";
+    let productDescription = body.product_description?.trim() || null;
+    let hsCode = body.hs_code?.trim() || null;
+    let originCountry = body.origin_country?.trim() || null;
+    let unit = body.unit?.trim() || "";
+    let unitPrice = Number(body.unit_price);
+    if (body.product_id) {
+      const product = await store.getProduct(body.product_id);
+      if (product && product.tenant_id === tid) {
+        if (!productName) productName = product.name;
+        if (!productDescription) productDescription = product.description || null;
+        if (!hsCode) hsCode = product.hs_code || null;
+        if (!originCountry) originCountry = product.origin_country || (product.attributes as any)?.origin_country || null;
+        if (!unit) unit = product.unit;
+        if (!Number.isFinite(unitPrice) || unitPrice <= 0) unitPrice = product.price;
+      }
+    }
+
+    // Re-validate after potential product auto-fill
+    if (!productName) return NextResponse.json({ error: "Product name is required (select a product or enter manually)." }, { status: 400 });
+    if (!unit) return NextResponse.json({ error: "Unit is required." }, { status: 400 });
+    if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
+      return NextResponse.json({ error: "Unit price must be a positive number." }, { status: 400 });
     }
 
     // Generate LOI number atomically (per-tenant, migration 063)
@@ -144,16 +192,18 @@ export async function POST(req: NextRequest) {
       tenant_id: tid,
       number,
       partner_id: body.partner_id,
-      buyer_name: String(body.buyer_name).trim(),
-      buyer_address: body.buyer_address?.trim() || null,
-      buyer_contact: body.buyer_contact?.trim() || null,
+      // ── BUYER = TENANT (auto-populated, never from body) ───────────
+      buyer_name: buyerName,
+      buyer_address: buyerAddress,
+      buyer_contact: buyerContact,
+      // ── Product (auto-filled from product_id or manually entered) ──
       subject: String(body.subject).trim(),
-      product_name: String(body.product_name).trim(),
-      product_description: body.product_description?.trim() || null,
-      hs_code: body.hs_code?.trim() || null,
-      origin_country: body.origin_country?.trim() || null,
+      product_name: productName,
+      product_description: productDescription,
+      hs_code: hsCode,
+      origin_country: originCountry,
       quantity,
-      unit: String(body.unit).trim(),
+      unit: unit,
       unit_price: unitPrice,
       currency,
       total_value: totalValue,
@@ -167,6 +217,7 @@ export async function POST(req: NextRequest) {
       created_by: auth.user.id,
       deal_id: body.deal_id || null,
       offer_id: body.offer_id || null,
+      product_id: body.product_id || null,
     } as Partial<LetterOfIntent> & { id?: string });
 
     await audit(auth.store, auth.user, req, "loi.create", "loi", created.id, {

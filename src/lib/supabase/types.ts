@@ -619,6 +619,10 @@ export interface LetterOfIntent {
   created_by: string | null;
   deal_id: string | null;              // optional link to a deal
   offer_id: string | null;             // optional link to an offer
+  /** Optional link to a product in the tenant's catalog. When set, the LOI
+   *  product_name/description/hs_code/origin_country/unit/unit_price were
+   *  auto-populated from this product at creation time. */
+  product_id?: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -45,19 +45,22 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import {
   Plus, Search, Pencil, Trash2, Eye, Send, Download, FileText, Loader2, ScrollText,
+  X, Package, Building2, Info,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
 import { EmptyState } from "@/components/common/empty-state";
 import { fmtMoney, fmtDate, fmtNumber } from "@/lib/utils/format";
-import type { LetterOfIntent, LoiStatus, Partner } from "@/lib/supabase/types";
+import type { LetterOfIntent, LoiStatus, Partner, Product, Tenant } from "@/lib/supabase/types";
 import { CURRENCIES } from "@/lib/data/reference";
 import { UnitSelect } from "@/components/common/unit-select";
 import { PartnerPicker } from "@/components/common/partner-picker";
+import { ProductPicker } from "@/components/common/product-picker";
 import { CountrySelect } from "@/components/common/country-select";
 import { useApiUrl, useTenantKey } from "@/lib/hooks/use-api-url";
 import { useT } from "@/lib/i18n/store";
 import { useDebounced } from "@/lib/hooks/use-debounced";
+import { useEffectiveTenantId, useAppStore } from "@/lib/store/app-store";
 
 // ─── Status styling ────────────────────────────────────────────────────────
 // draft=gray, sent=blue, accepted=green, rejected=red, expired=amber,
@@ -88,13 +91,16 @@ function StatusBadge({ status }: { status: LoiStatus }) {
 }
 
 // ─── Form state shape ─────────────────────────────────────────────────────
+// NOTE (FIX-LOI-UI-LOGIC): buyer_name / buyer_address / buyer_contact are
+// intentionally absent — the backend auto-populates them from the caller's
+// tenant record (the tenant IS the buyer; the LOI is issued BY the tenant
+// TO the seller partner). The form therefore does not collect buyer info
+// and the payload does not send it.
 type LoiForm = {
   id?: string;
   partner_id: string;
-  buyer_name: string;
-  buyer_address: string;
-  buyer_contact: string;
   subject: string;
+  product_id: string | null;       // optional link to a catalog product
   product_name: string;
   product_description: string;
   hs_code: string;
@@ -114,10 +120,8 @@ type LoiForm = {
 function emptyForm(): LoiForm {
   return {
     partner_id: "",
-    buyer_name: "",
-    buyer_address: "",
-    buyer_contact: "",
     subject: "",
+    product_id: null,
     product_name: "",
     product_description: "",
     hs_code: "",
@@ -139,10 +143,8 @@ function loiToForm(l: LetterOfIntent): LoiForm {
   return {
     id: l.id,
     partner_id: l.partner_id || "",
-    buyer_name: l.buyer_name || "",
-    buyer_address: l.buyer_address || "",
-    buyer_contact: l.buyer_contact || "",
     subject: l.subject || "",
+    product_id: l.product_id ?? null,
     product_name: l.product_name || "",
     product_description: l.product_description || "",
     hs_code: l.hs_code || "",
@@ -161,11 +163,13 @@ function loiToForm(l: LetterOfIntent): LoiForm {
 }
 
 function formToPayload(f: LoiForm): Record<string, unknown> {
+  // NOTE (FIX-LOI-UI-LOGIC): buyer_name / buyer_address / buyer_contact are
+  // NOT sent — the API auto-fills them from the caller's tenant record. We
+  // also keep the form's explicit product_* / unit / unit_price values,
+  // even when product_id is set: the API respects explicit values over the
+  // product auto-fill, so a user-tweaked unit_price survives a save.
   const payload: Record<string, unknown> = {
     partner_id: f.partner_id,
-    buyer_name: f.buyer_name,
-    buyer_address: f.buyer_address || null,
-    buyer_contact: f.buyer_contact || null,
     subject: f.subject,
     product_name: f.product_name,
     product_description: f.product_description || null,
@@ -182,13 +186,14 @@ function formToPayload(f: LoiForm): Record<string, unknown> {
     notes: f.notes || null,
     terms_text: f.terms_text || null,
   };
+  if (f.product_id) payload.product_id = f.product_id;
+  else payload.product_id = null;
   if (f.id) payload.id = f.id;
   return payload;
 }
 
 function validateForm(f: LoiForm): string | null {
   if (!f.partner_id) return "partner_id is required.";
-  if (!f.buyer_name.trim()) return "buyer_name is required.";
   if (!f.subject.trim()) return "subject is required.";
   if (!f.product_name.trim()) return "product_name is required.";
   const q = Number(f.quantity);
@@ -206,6 +211,8 @@ export function LoisView() {
   const tenantKey = useTenantKey();
   const t = useT();
   const qc = useQueryClient();
+  const effectiveTenantId = useEffectiveTenantId();
+  const setView = useAppStore((s) => s.setView);
 
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounced(search, 300);
@@ -215,10 +222,33 @@ export function LoisView() {
   const [editing, setEditing] = useState<LetterOfIntent | null>(null);
   useNewShortcut(() => { setEditing(null); setShowForm(true); });
   const [form, setForm] = useState<LoiForm>(emptyForm());
+  // Holds the Product object selected via the ProductPicker (for display in
+  // the form's "Product selected" badge). `null` means manual entry.
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [sendId, setSendId] = useState<string | null>(null);
   const [sendEmail, setSendEmail] = useState<string>("");
+
+  // ─── Tenant (the buyer = the company issuing the LOI) ────────────────
+  // For regular users `/api/tenants` returns just their own tenant; for
+  // super-admins it returns every tenant, so we filter by the effective
+  // tenant id (activeTenantId for super-admins, user.tenant_id otherwise).
+  // Mirrors the pattern used in offers-view.tsx for the completeness checker.
+  const tenantQuery = useQuery({
+    queryKey: ["tenant", tenantKey, effectiveTenantId, "loi-buyer"],
+    queryFn: async () => {
+      const r = await fetch(api("/api/tenants"));
+      if (!r.ok) throw new Error("Failed to load tenant");
+      const data = (await r.json()) as { items: Tenant[] };
+      const list = data.items || [];
+      const match = effectiveTenantId
+        ? list.find((tt) => tt.id === effectiveTenantId)
+        : null;
+      return (match || list[0] || null) as Tenant | null;
+    },
+  });
+  const tenant = tenantQuery.data ?? null;
 
   // ─── List query ────────────────────────────────────────────────────────
   const { data, isLoading } = useQuery({
@@ -258,6 +288,24 @@ export function LoisView() {
       return r.json() as Promise<LetterOfIntent>;
     },
     enabled: !!detailId,
+  });
+
+  // ─── Products (catalog) for the ProductPicker ─────────────────────────
+  // NOTE: this shares the same queryKey as the ProductPicker's internal
+  // query (["products", tenantKey, "picker", "1000"]), so react-query will
+  // reuse the cache — no double fetch. We only need this so that:
+  //   1. openEdit() can resolve the selectedProduct object for the form's
+  //      "Product selected" badge (without re-implementing a fetch in
+  //      openEdit); and
+  //   2. the detail panel can render the product name + SKU link.
+  const productsQuery = useQuery({
+    queryKey: ["products", tenantKey, "picker", "1000"],
+    queryFn: async () => {
+      const r = await fetch(api(`/api/products`, { limit: 1000 }));
+      if (!r.ok) throw new Error("Failed to load products");
+      return r.json() as Promise<{ items: Product[]; total: number }>;
+    },
+    staleTime: 60_000,
   });
 
   // ─── Create / Update mutation ──────────────────────────────────────────
@@ -358,16 +406,71 @@ export function LoisView() {
   const openCreate = () => {
     setEditing(null);
     setForm(emptyForm());
+    setSelectedProduct(null);
     setShowForm(true);
   };
   const openEdit = (loi: LetterOfIntent) => {
     setEditing(loi);
     setForm(loiToForm(loi));
+    // Resolve the Product object from the cached catalog so the form's
+    // "Product selected" badge shows the right name/SKU. If the product
+    // isn't found in the cache (e.g. deleted from the catalog after the
+    // LOI was created, or the picker query hasn't resolved yet), the
+    // badge stays hidden — form.product_id is preserved regardless so
+    // the API keeps the link on save.
+    const pid = loi.product_id;
+    setSelectedProduct(
+      pid ? (productsQuery.data?.items.find((p) => p.id === pid) ?? null) : null
+    );
     setShowForm(true);
   };
   const closeForm = () => {
     setShowForm(false);
     setEditing(null);
+    setSelectedProduct(null);
+  };
+
+  // ─── Product pick / clear handlers ───────────────────────────────────
+  // When the user picks a product from the catalog, we auto-fill the
+  // product_* fields from the Product record and set product_id. When
+  // they clear the selection, we drop the product_id link and reset the
+  // product_* fields to empty (manual entry). Per the API contract,
+  // explicit product_* values in the body take precedence over the
+  // auto-fill from product_id, so user-tweaked fields survive a save.
+  const handleProductPick = (p: Product | null) => {
+    if (p) {
+      setSelectedProduct(p);
+      const attrOrigin =
+        (p.attributes as Record<string, unknown> | null)?.origin_country;
+      setForm((prev) => ({
+        ...prev,
+        product_id: p.id,
+        product_name: p.name || prev.product_name,
+        product_description: p.description ?? prev.product_description,
+        hs_code: p.hs_code ?? prev.hs_code,
+        origin_country:
+          p.origin_country ?? (typeof attrOrigin === "string" ? attrOrigin : prev.origin_country),
+        unit: p.unit || prev.unit,
+        unit_price: p.price != null ? String(p.price) : prev.unit_price,
+      }));
+    } else {
+      // Treated the same as "Clear selection".
+      handleClearProduct();
+    }
+  };
+
+  const handleClearProduct = () => {
+    setSelectedProduct(null);
+    setForm((prev) => ({
+      ...prev,
+      product_id: null,
+      product_name: "",
+      product_description: "",
+      hs_code: "",
+      origin_country: "",
+      unit: prev.unit || "MT",
+      unit_price: "",
+    }));
   };
 
   const handleSubmit = () => {
@@ -588,7 +691,11 @@ export function LoisView() {
           ) : detail.data ? (
             <LoiDetail
               loi={detail.data}
+              tenant={tenant}
+              tenantLoading={tenantQuery.isLoading}
               partnerName={partnerName(detail.data.partner_id)}
+              hasProductLink={!!detail.data.product_id}
+              onViewProduct={() => setView("products")}
               onEdit={() => {
                 setDetailId(null);
                 openEdit(detail.data);
@@ -628,27 +735,18 @@ export function LoisView() {
               />
             </div>
 
-            <div>
-              <Label>{t("loi-buyer-name")} <span className="text-destructive">*</span></Label>
-              <Input
-                value={form.buyer_name}
-                onChange={(e) => setForm({ ...form, buyer_name: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label>{t("loi-buyer-contact")}</Label>
-              <Input
-                value={form.buyer_contact}
-                onChange={(e) => setForm({ ...form, buyer_contact: e.target.value })}
-              />
-            </div>
+            {/* Buyer (read-only — auto-filled from the tenant profile).
+                The tenant IS the buyer; the LOI is issued BY the tenant TO
+                the seller partner. The backend ignores buyer_name/address/
+                contact in the request body and fills them from the tenant
+                record, so we don't collect them. */}
             <div className="sm:col-span-2">
-              <Label>{t("loi-buyer-address")}</Label>
-              <Textarea
-                rows={2}
-                value={form.buyer_address}
-                onChange={(e) => setForm({ ...form, buyer_address: e.target.value })}
-              />
+              <Label>{t("loi-buyer-auto-filled")}</Label>
+              <BuyerInfoCard tenant={tenant} loading={tenantQuery.isLoading} />
+              <p className="text-xs text-muted-foreground mt-1.5 flex items-start gap-1.5">
+                <Info className="size-3.5 shrink-0 mt-0.5" />
+                <span>{t("loi-buyer-note")}</span>
+              </p>
             </div>
 
             <div className="sm:col-span-2">
@@ -658,6 +756,65 @@ export function LoisView() {
                 onChange={(e) => setForm({ ...form, subject: e.target.value })}
                 placeholder="Letter of Intent — Purchase of ..."
               />
+            </div>
+
+            {/* Product section: a ProductPicker at the top (lets the user
+                auto-fill product_name/description/hs_code/origin_country/
+                unit/unit_price from a catalog row), followed by the
+                editable product fields. When a product is selected, a
+                "Product selected" badge + "Clear selection" button appear
+                next to the picker — clearing the selection drops the
+                product_id link and resets the fields to manual entry.
+                The fields below are ALWAYS editable, even when a product
+                is selected — the API respects explicit values over the
+                product auto-fill, so the user can tweak unit_price for
+                this specific LOI without affecting the catalog row. */}
+            <div className="sm:col-span-2">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <Label className="mb-0">{t("loi-product")}</Label>
+                {form.product_id && (
+                  <Badge variant="secondary" className="gap-1">
+                    <Package className="size-3" />
+                    {t("loi-product-selected")}
+                    {selectedProduct?.sku && (
+                      <span className="font-mono text-[10px] opacity-70">
+                        {selectedProduct.sku}
+                      </span>
+                    )}
+                  </Badge>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <div className="flex-1">
+                  <ProductPicker
+                    value={form.product_id ?? ""}
+                    onSelect={handleProductPick}
+                    fallbackName={editing?.product_name || form.product_name || undefined}
+                    fallbackSku={undefined}
+                    placeholder={t("loi-select-from-catalog")}
+                  />
+                </div>
+                {form.product_id && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={handleClearProduct}
+                    className="h-8 text-xs text-muted-foreground"
+                    title={t("loi-clear-selection")}
+                  >
+                    <X className="size-3.5" />
+                    <span className="ml-1">{t("loi-clear-selection")}</span>
+                  </Button>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1.5 flex items-start gap-1.5">
+                <Info className="size-3.5 shrink-0 mt-0.5" />
+                <span>
+                  {t("loi-select-from-catalog")} — {t("loi-enter-manually")}.
+                </span>
+              </p>
             </div>
 
             <div>
@@ -870,12 +1027,25 @@ export function LoisView() {
 // ─── Detail panel ─────────────────────────────────────────────────────────
 function LoiDetail({
   loi, partnerName, onEdit, onSend, onDownload,
+  tenant, tenantLoading, hasProductLink, onViewProduct,
 }: {
   loi: LetterOfIntent;
   partnerName: string;
   onEdit: () => void;
   onSend: () => void;
   onDownload: () => void;
+  /** The tenant record (= the buyer). Used to render the read-only buyer
+   *  info card at the top of the detail panel, mirroring the form. When
+   *  `null` (tenant query not yet resolved, or 404), the LOI's own
+   *  buyer_name / buyer_address / buyer_contact fields are shown as a
+   *  fallback so the panel is never empty. */
+  tenant: Tenant | null;
+  tenantLoading: boolean;
+  /** When true, the LOI was created from a catalog product (loi.product_id
+   *  is set) — render a "View product in catalog" link below the product
+   *  DetailCard. */
+  hasProductLink: boolean;
+  onViewProduct: () => void;
 }) {
   const t = useT();
   return (
@@ -908,10 +1078,30 @@ function LoiDetail({
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <DetailCard label={t("loi-buyer")}>
-          <div className="font-medium">{loi.buyer_name}</div>
-          {loi.buyer_contact && <div className="text-sm text-muted-foreground">{loi.buyer_contact}</div>}
-          {loi.buyer_address && <div className="text-sm text-muted-foreground whitespace-pre-line">{loi.buyer_address}</div>}
+        {/* Buyer (read-only — auto-filled from the tenant profile). The
+            tenant IS the buyer; the LOI is issued BY the tenant. We use
+            the live tenant record when available, and fall back to the
+            LOI's own buyer_* fields if the tenant query hasn't resolved
+            yet (e.g. on first open). */}
+        <DetailCard label={t("loi-buyer-auto-filled")}>
+          {tenant ? (
+            <BuyerInfoBody tenant={tenant} />
+          ) : tenantLoading ? (
+            <Skeleton className="h-10 w-full" />
+          ) : (
+            // Fallback: render the snapshot stored on the LOI itself.
+            <div>
+              <div className="font-medium">{loi.buyer_name}</div>
+              {loi.buyer_contact && (
+                <div className="text-sm text-muted-foreground">{loi.buyer_contact}</div>
+              )}
+              {loi.buyer_address && (
+                <div className="text-sm text-muted-foreground whitespace-pre-line">
+                  {loi.buyer_address}
+                </div>
+              )}
+            </div>
+          )}
         </DetailCard>
         <DetailCard label={t("loi-seller")}>
           <div className="font-medium">{partnerName}</div>
@@ -941,6 +1131,18 @@ function LoiDetail({
             </>
           )}
         </dl>
+        {hasProductLink && (
+          <Button
+            type="button"
+            size="sm"
+            variant="link"
+            onClick={onViewProduct}
+            className="h-auto p-0 mt-2 text-xs"
+          >
+            <Package className="size-3 mr-1" />
+            {t("loi-view-product")}
+          </Button>
+        )}
       </DetailCard>
 
       <DetailCard label={t("loi-quantity") + " / " + t("loi-total-value")}>
@@ -1011,6 +1213,75 @@ function DetailCard({ label, children }: { label: string; children: React.ReactN
         {label}
       </div>
       {children}
+    </div>
+  );
+}
+
+// ─── Buyer info (read-only) ───────────────────────────────────────────────
+// Used by BOTH the form (BuyerInfoCard) and the detail panel (BuyerInfoBody).
+// Renders the tenant's legal name, address and contact info as a static
+// info card — no inputs, because the backend fills these from the tenant
+// profile and the buyer cannot be overridden.
+
+/** Assembles a single-line address from the tenant's address fields,
+ *  matching the API's own `buyerAddress` join logic. */
+function tenantAddress(t: Tenant): string | null {
+  const parts = [t.address_line, t.postal_code, t.city, t.country].filter(Boolean);
+  return parts.length > 0 ? parts.join(", ") : null;
+}
+
+/** Assembles a single-line contact line from the tenant's email + phone,
+ *  matching the API's own `buyerContact` join logic. */
+function tenantContact(t: Tenant): string | null {
+  const parts = [t.email, t.phone].filter(Boolean);
+  return parts.length > 0 ? parts.join(" — ") : null;
+}
+
+function BuyerInfoBody({ tenant }: { tenant: Tenant }) {
+  const name = tenant.legal_name || tenant.name;
+  const address = tenantAddress(tenant);
+  const contact = tenantContact(tenant);
+  return (
+    <div className="space-y-0.5">
+      <div className="flex items-center gap-1.5 font-medium">
+        <Building2 className="size-3.5 text-muted-foreground shrink-0" />
+        <span className="truncate">{name}</span>
+      </div>
+      {address && (
+        <div className="text-sm text-muted-foreground whitespace-pre-line pl-5">
+          {address}
+        </div>
+      )}
+      {contact && (
+        <div className="text-sm text-muted-foreground pl-5">{contact}</div>
+      )}
+    </div>
+  );
+}
+
+/** Read-only info card variant used in the form (with a border, padding,
+ *  and a "loading" skeleton state for first render). Mirrors the visual
+ *  style of an input but is purely presentational. */
+function BuyerInfoCard({
+  tenant,
+  loading,
+}: {
+  tenant: Tenant | null;
+  loading: boolean;
+}) {
+  if (loading && !tenant) {
+    return <Skeleton className="h-16 w-full rounded-md" />;
+  }
+  if (!tenant) {
+    return (
+      <div className="rounded-md border border-dashed border-border/60 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+        Tenant profile not available — buyer will be auto-filled on save.
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2.5">
+      <BuyerInfoBody tenant={tenant} />
     </div>
   );
 }

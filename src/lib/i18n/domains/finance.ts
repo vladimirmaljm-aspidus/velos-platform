@@ -583,6 +583,13 @@ export const FINANCE: Record<Locale, Record<string, string>> = {
     "loi-create-title": "Create letter of intent",
     "loi-edit-title": "Edit letter of intent",
     "loi-required-fields": "Required fields",
+    "loi-buyer-auto-filled": "Buyer (auto-filled from your company)",
+    "loi-buyer-note": "The LOI is issued by your company. Buyer details are auto-filled from your tenant profile.",
+    "loi-select-from-catalog": "Select from Catalog",
+    "loi-enter-manually": "Enter manually",
+    "loi-product-selected": "Product selected",
+    "loi-clear-selection": "Clear selection",
+    "loi-view-product": "View product in catalog",
   },
 
   sr: {
@@ -1147,6 +1154,13 @@ export const FINANCE: Record<Locale, Record<string, string>> = {
     "loi-create-title": "Kreiraj pismo o nameri",
     "loi-edit-title": "Izmeni pismo o nameri",
     "loi-required-fields": "Obavezna polja",
+    "loi-buyer-auto-filled": "Kupac (auto-popunjeno iz vaše kompanije)",
+    "loi-buyer-note": "LOI izdaje vaša kompanija. Podaci o kupcu se auto-popunjavaju iz profila tenanta.",
+    "loi-select-from-catalog": "Izaberi iz kataloga",
+    "loi-enter-manually": "Unesi ručno",
+    "loi-product-selected": "Proizvod izabran",
+    "loi-clear-selection": "Očisti izbor",
+    "loi-view-product": "Pogledaj proizvod u katalogu",
   },
 
   tr: {
@@ -1711,6 +1725,13 @@ export const FINANCE: Record<Locale, Record<string, string>> = {
     "loi-create-title": "Niyet mektubu oluştur",
     "loi-edit-title": "Niyet mektubu düzenle",
     "loi-required-fields": "Zorunlu alanlar",
+    "loi-buyer-auto-filled": "Alıcı (şirketinizden otomatik dolduruldu)",
+    "loi-buyer-note": "LOI şirketiniz tarafından verilir. Alıcı bilgileri tenant profilinizden otomatik doldurulur.",
+    "loi-select-from-catalog": "Katalogdan seç",
+    "loi-enter-manually": "Manuel gir",
+    "loi-product-selected": "Ürün seçildi",
+    "loi-clear-selection": "Seçimi temizle",
+    "loi-view-product": "Katalogda ürünü görüntüle",
   },
 
   de: {
@@ -2275,6 +2296,13 @@ export const FINANCE: Record<Locale, Record<string, string>> = {
     "loi-create-title": "Absichtsbrief erstellen",
     "loi-edit-title": "Absichtsbrief bearbeiten",
     "loi-required-fields": "Pflichtfelder",
+    "loi-buyer-auto-filled": "Käufer (automatisch von Ihrem Unternehmen)",
+    "loi-buyer-note": "Der LOI wird von Ihrem Unternehmen ausgestellt. Käuferdaten werden automatisch aus Ihrem Tenant-Profil gefüllt.",
+    "loi-select-from-catalog": "Aus Katalog wählen",
+    "loi-enter-manually": "Manuell eingeben",
+    "loi-product-selected": "Produkt ausgewählt",
+    "loi-clear-selection": "Auswahl löschen",
+    "loi-view-product": "Produkt im Katalog ansehen",
   },
 
   ru: {
@@ -2839,5 +2867,12 @@ export const FINANCE: Record<Locale, Record<string, string>> = {
     "loi-create-title": "Создать письмо о намерениях",
     "loi-edit-title": "Изменить письмо о намерениях",
     "loi-required-fields": "Обязательные поля",
+    "loi-buyer-auto-filled": "Покупатель (автозаполнено из вашей компании)",
+    "loi-buyer-note": "LOI выдаётся вашей компанией. Данные покупателя автозаполняются из профиля арендатора.",
+    "loi-select-from-catalog": "Выбрать из каталога",
+    "loi-enter-manually": "Ввести вручную",
+    "loi-product-selected": "Товар выбран",
+    "loi-clear-selection": "Очистить выбор",
+    "loi-view-product": "Посмотреть товар в каталоге",
   },
 };
