@@ -2,6 +2,23 @@ import React from "react";
 import { Document, Page, Text, View, StyleSheet, Image, Font } from "@react-pdf/renderer";
 import type { Offer, Invoice, Proforma, LetterOfIntent, OfferLineItem, Partner, Tenant, MemorandumSettings, TenantSeal } from "@/lib/supabase/types";
 
+// ── Country name resolver ──────────────────────────────────────────────────
+// Partners + tenants store country as ISO alpha-2 (e.g. "AE", "ET"). The
+// PDF must show the full name ("United Arab Emirates", "Ethiopia") — not
+// the cryptic 2-letter code. We import the countries list once and build
+// a lookup map.
+import { COUNTRIES } from "@/lib/data/geo/countries";
+const COUNTRY_BY_CODE: Record<string, string> = (() => {
+  const m: Record<string, string> = {};
+  for (const c of COUNTRIES) m[c.code.toUpperCase()] = c.name;
+  return m;
+})();
+function countryName(code?: string | null): string {
+  if (!code) return "—";
+  const upper = String(code).toUpperCase().trim();
+  return COUNTRY_BY_CODE[upper] || upper;
+}
+
 // Allow very long "words" (SKUs, HS codes like 1006.30.10.00, IBANs) to break
 // across lines. Short words are kept intact so normal prose still looks clean.
 Font.registerHyphenationCallback((word) => {
@@ -663,7 +680,7 @@ export function buildPdfDocument({
   const leadTime: string = tradeFields.lead_time || "—";
   const packaging: string = tradeFields.packaging || (items[0] as any)?.packaging || "—";
   const paymentTerms: string = tradeFields.payment_terms || tradeFields.terms || "—";
-  const originCountry: string = (items[0] as any)?.origin_country || "—";
+  const originCountry: string = countryName((items[0] as any)?.origin_country);
   const bankDetails: string = tradeFields.bank_details || "";
 
   // ── Bank accounts (modern JSON array on tenant) ─────────────────────
@@ -724,7 +741,7 @@ export function buildPdfDocument({
     if (tenant?.address_line) addrParts.push(tenant.address_line);
     const cityBits = [tenant?.postal_code, tenant?.city].filter(Boolean).join(" ");
     if (cityBits) addrParts.push(cityBits);
-    if (tenant?.country) addrParts.push(tenant.country);
+    if (tenant?.country) addrParts.push(countryName(tenant.country));
     const addrLine = addrParts.join(", ");
 
     const contactParts = [
@@ -821,7 +838,7 @@ export function buildPdfDocument({
         {addressLine && <Text style={styles.partyAddr}>{addressLine}</Text>}
         {(postal || city || country) && (
           <Text style={styles.partyAddr}>
-            {[postal, city, country].filter(Boolean).join(", ")}
+            {[postal, city, country ? countryName(country) : null].filter(Boolean).join(", ")}
           </Text>
         )}
         {reg && <Text style={styles.partyAddr}>Reg#: {reg}</Text>}
@@ -1037,7 +1054,7 @@ export function buildPdfDocument({
                 {item.brand ? `\nBrand: ${item.brand}` : ""}
               </Text>
               <Text style={[styles.td, { flex: 1.1 }]}>{(item as any).hs_code || "—"}</Text>
-              <Text style={[styles.td, { flex: 0.9 }]}>{(item as any).origin_country || "—"}</Text>
+              <Text style={[styles.td, { flex: 0.9 }]}>{countryName((item as any).origin_country)}</Text>
               <Text style={[styles.td, { flex: 1.1 }]}>
                 {item.quantity} {item.unit || "kg"}
               </Text>
@@ -1248,7 +1265,7 @@ export function buildPdfDocument({
                 {loi.origin_country && (
                   <View style={styles.specRow}>
                     <Text style={styles.specName}>Origin Country</Text>
-                    <Text style={styles.specValue}>{loi.origin_country}</Text>
+                    <Text style={styles.specValue}>{countryName(loi.origin_country)}</Text>
                   </View>
                 )}
                 <View style={styles.specRow}>

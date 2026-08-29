@@ -160,7 +160,17 @@ export async function POST(req: NextRequest) {
       const product = await store.getProduct(body.product_id);
       if (product && product.tenant_id === tid) {
         if (!productName) productName = product.name;
-        if (!productDescription) productDescription = product.description || null;
+        // Build a rich description: product.description + detailed_spec + brand +
+        // shelf_life + tags. This gives the LOI PDF a full product specification
+        // section without adding new columns to the lois table.
+        if (!productDescription) {
+          const specParts: string[] = [];
+          if (product.description) specParts.push(product.description);
+          if ((product as any).detailed_spec) specParts.push((product as any).detailed_spec);
+          if ((product as any).brand) specParts.push(`Brand: ${(product as any).brand}`);
+          if ((product as any).shelf_life) specParts.push(`Shelf life: ${(product as any).shelf_life}`);
+          productDescription = specParts.length > 0 ? specParts.join("\n\n") : null;
+        }
         if (!hsCode) hsCode = product.hs_code || null;
         if (!originCountry) originCountry = product.origin_country || (product.attributes as any)?.origin_country || null;
         if (!unit) unit = product.unit;

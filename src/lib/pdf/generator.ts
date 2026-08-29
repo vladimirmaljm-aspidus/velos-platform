@@ -5,6 +5,11 @@ import { generateQrCodeDataUrl, generateVerificationCode, computePdfHash } from 
 import { getStore } from "@/lib/data/store";
 import { getSupabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import type { Offer, Invoice, Proforma, LetterOfIntent, Partner, Tenant, MemorandumSettings, TenantSeal } from "@/lib/supabase/types";
+// P0-3 / Feature 2: partner PII (contact_email, phone, tax_id, vat_number)
+// is stored encrypted (enc: prefix). The PDF generator fetches the partner
+// via store.getPartner which returns the raw row — so tax_id shows as
+// "enc:v1:..." in the PDF. We decrypt here so the PDF shows plaintext.
+import { decryptField, isEncrypted } from "@/lib/crypto/field-encryption";
 
 export interface GeneratePdfOptions {
   docType: "offer" | "invoice" | "proforma" | "loi";
@@ -194,8 +199,36 @@ export async function generatePdf(opts: GeneratePdfOptions): Promise<GeneratePdf
   if (!doc) throw new Error(`${opts.docType} not found`);
 
   // Fetch partner + tenant + memorandum settings
-  const partner = doc.partner_id ? await store.getPartner(doc.partner_id) : null;
+  const rawPartner = doc.partner_id ? await store.getPartner(doc.partner_id) : null;
   const tenant = await store.getTenant(opts.tenantId);
+
+  // ── Decrypt partner PII for PDF display ─────────────────────────────
+  // partner.contact_email, phone, tax_id, vat_number are stored encrypted
+  // (enc: prefix, AES-256-GCM). store.getPartner returns the raw row, so
+  // without this decrypt pass the PDF would show "enc:v1:..." ciphertext
+  // in the party box (Tax ID, phone, email). We clone + decrypt here so
+  // the PDF templates receive plaintext PII. This mirrors the decryption
+  // the /api/partners/[id] GET route does for the admin UI.
+  const partner: Partner | null = rawPartner ? (() => {
+    const p = { ...rawPartner } as any;
+    if (p.tax_id && typeof p.tax_id === "string" && isEncrypted(p.tax_id)) {
+      try { p.tax_id = decryptField(p.tax_id); } catch { /* leave as-is */ }
+    }
+    if (p.vat_number && typeof p.vat_number === "string" && isEncrypted(p.vat_number)) {
+      try { p.vat_number = decryptField(p.vat_number); } catch { /* leave as-is */ }
+    }
+    if (p.contact_email && typeof p.contact_email === "string" && isEncrypted(p.contact_email)) {
+      try { p.contact_email = decryptField(p.contact_email); } catch { /* leave as-is */ }
+    }
+    if (p.phone && typeof p.phone === "string" && isEncrypted(p.phone)) {
+      try { p.phone = decryptField(p.phone); } catch { /* leave as-is */ }
+    }
+    // Strip internal HMAC columns (never shown in PDF)
+    delete p.tax_id_hmac;
+    delete p.vat_number_hmac;
+    delete p.portal_token;
+    return p as Partner;
+  })() : null;
 
   let memorandumSettings: MemorandumSettings | null = null;
   try {
