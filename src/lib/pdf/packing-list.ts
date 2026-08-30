@@ -121,12 +121,38 @@ export async function renderPackingListPdf(input: PackingListInput): Promise<Buf
   const totalVolume = input.cargo.total_volume_cbm ?? sum(input.packingList, (l) => (Number(l.length_cm || 0) * Number(l.width_cm || 0) * Number(l.height_cm || 0) * Number(l.packages || 0)) / 1_000_000);
   const totalPackages = input.cargo.total_packages ?? sum(input.packingList, (l) => Number(l.packages || 0));
 
+  // 9a-N6: synthesize a logistics status watermark for parity with the
+  // offer/invoice/proforma/LOI/marketplace templates (which all have a
+  // large semi-transparent DRAFT/PAID/etc. watermark per c90c218).
+  // packing-list.ts was the only template the c90c218 commit message
+  // claimed to cover but actually MISSED. We derive the status from the
+  // LR's date fields:
+  //   • targetDeliveryDate in the past → DELIVERED
+  //   • targetPickupDate in the past (no delivery yet) → IN TRANSIT
+  //   • any pickup/delivery scheduled (both future) → SCHEDULED
+  //   • no dates at all → DRAFT
+  const now = Date.now();
+  const pickupTs = input.targetPickupDate ? new Date(input.targetPickupDate).getTime() : NaN;
+  const deliveryTs = input.targetDeliveryDate ? new Date(input.targetDeliveryDate).getTime() : NaN;
+  let _status = "DRAFT";
+  if (Number.isFinite(deliveryTs) && now > deliveryTs) _status = "DELIVERED";
+  else if (Number.isFinite(pickupTs) && now > pickupTs) _status = "IN TRANSIT";
+  else if (Number.isFinite(pickupTs) || Number.isFinite(deliveryTs)) _status = "SCHEDULED";
+
   const doc = React.createElement(
     Document,
     null,
     React.createElement(
       Page,
       { size: "A4", style: styles.page },
+      // 9a-N6: status watermark — fixed View, absolute positioning, low opacity.
+      // Matches the templates.tsx watermark style: top 40%, left 50%, opacity 0.12,
+      // rotated -30deg, fontSize 80.
+      React.createElement(
+        View,
+        { style: { position: "absolute", top: "40%", left: "50%", transform: "translate(-50%, -50%) rotate(-30deg)", opacity: 0.12, zIndex: 0 }, fixed: true },
+        React.createElement(Text, { style: { fontSize: 80, fontWeight: "bold", color: "#1f2937" } }, _status),
+      ),
       // Header
       React.createElement(
         View,

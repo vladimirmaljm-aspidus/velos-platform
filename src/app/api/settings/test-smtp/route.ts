@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import nodemailer from "nodemailer";
-import { requireAdmin, audit, sanitizeError } from "@/lib/api/helpers";
+import { requireAdmin, audit, sanitizeError, getIp } from "@/lib/api/helpers";
 import { getStore, getStoreSync } from "@/lib/data/store";
+import { checkRateLimit } from "@/lib/security/rate-limiter";
 
 export const runtime = "nodejs";
 
@@ -44,6 +45,17 @@ function escapeHtml(str: string): string {
  *         (so the UI can show a friendly error message).
  */
 export async function POST(req: NextRequest) {
+  // 9b-N7: per-IP rate limit — sending SMTP test emails is a spam vector
+  // (admin can send unlimited emails to arbitrary external addresses).
+  // 10 sends per IP per 10 minutes matches interactive "try a config then
+  // wait for it to land" patterns.
+  const _rl = await checkRateLimit(`smtp:ip:${getIp(req)}`, 10, 10 * 60_000);
+  if (!_rl.allowed) {
+    return NextResponse.json(
+      { ok: false, error: "Too many SMTP test requests. Please wait a few minutes." },
+      { status: 429, headers: { "Retry-After": String(Math.ceil((_rl.retryAfter ?? 600_000) / 1000)) } },
+    );
+  }
   const auth = await requireAdmin(req);
   if (auth instanceof NextResponse) return auth;
     // Permission gate (settings.create)
@@ -116,6 +128,23 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // 9b-N3: SSRF validation on smtp_host. The host is admin-supplied via
+  // body override OR loaded from settings; both paths land in smtp.host.
+  // An admin with `settings.test` can pass `smtp_host: "169.254.169.254"`
+  // to hit AWS metadata via SMTP banner, or `127.0.0.1` to port-scan
+  // internal services. We re-use assertSafeWebhookUrl (generic URL
+  // validator with IP-range blocklist + scheme allowlist + DNS resolution).
+  // The validator expects a URL with a scheme — synthesize `smtp://` if missing.
+  const { assertSafeWebhookUrl } = await import("@/lib/webhooks/url-validation");
+  const hostForCheck = /^[a-z][a-z0-9+.-]*:\/\//i.test(smtp.host) ? smtp.host : `smtp://${smtp.host}:${smtp.port}`;
+  const hostCheck = await assertSafeWebhookUrl(hostForCheck);
+  if (!hostCheck.ok) {
+    return NextResponse.json(
+      { ok: false, error: `SMTP host rejected: ${hostCheck.error}` },
+      { status: 400 }
+    );
+  }
+
   // Verify connection first (fast-fail without sending)
   try {
     const transporter = nodemailer.createTransport({
@@ -167,7 +196,10 @@ export async function POST(req: NextRequest) {
     });
 
     try {
-      await audit(auth.store, auth.user, req, "settings.test_smtp", "setting", undefined, { host: body.smtp_host, port: body.smtp_port });
+      // 9b-N6: include `to` recipient in audit log so spam complaints can
+      // be traced back to the specific admin + recipient (parity with
+      // /api/settings/test-email which logs `to`).
+      await audit(auth.store, auth.user, req, "settings.test_smtp", "setting", undefined, { host: body.smtp_host, port: body.smtp_port, to: body.to });
     } catch (e) { console.error("[audit]", e); }
     return NextResponse.json({
       ok: true,

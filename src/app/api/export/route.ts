@@ -155,9 +155,32 @@ export async function GET(req: NextRequest) {
     }
 
     if (format === "csv") {
+      // 9b-N1: strip secret columns from `partners` export. The sibling route
+      // /api/partners/export explicitly drops `portal_token`, `tax_id_hmac`,
+      // and `vat_number_hmac` — but this unified /api/export?type=partners
+      // route passed raw `listPartners(*)` rows into `toCSV(items, cols)`.
+      // An admin / API key could request `?columns=portal_token,...` and
+      // exfiltrate the partner's portal token + HMAC-of-tax-id + HMAC-of-vat
+      // (the HMACs are equality-search tokens, not public IDs). The strip
+      // mirrors the sibling route's defence and removes both the columns
+      // from the row objects AND from the requested cols list.
+      const SECRET_PARTNER_COLS = new Set([
+        "portal_token",
+        "tax_id_hmac",
+        "vat_number_hmac",
+        "portal_token_hash",
+      ]);
       const { columns } = parseExportParams(req);
-      const cols = columns && columns.length > 0 ? columns : COLUMNS[type];
-      const csv = toCSV(items, cols);
+      let finalCols = columns && columns.length > 0 ? columns : COLUMNS[type];
+      if (type === "partners") {
+        items = items.map((it) => {
+          const r = it as Record<string, unknown>;
+          const { portal_token, tax_id_hmac, vat_number_hmac, portal_token_hash, ...rest } = r;
+          return rest;
+        });
+        finalCols = finalCols.filter((c) => !SECRET_PARTNER_COLS.has(c));
+      }
+      const csv = toCSV(items, finalCols);
       const filename = `${type}-${new Date().toISOString().split("T")[0]}.csv`;
       return csvResponse(filename, csv);
     }

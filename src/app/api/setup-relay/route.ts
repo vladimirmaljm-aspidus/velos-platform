@@ -112,7 +112,15 @@ export async function handler(req: NextRequest) {
     const token = process.env.VERCEL_TOKEN;
     if (token) {
       try {
-        const projectId = "prj_mSyTYNlssiuYTBZOhwvBNY8RvFSm";
+        // 9b-N4: read Vercel project ID from env var instead of hardcoding.
+        // The literal `prj_mSyTYNlssiuYTBZOhwvBNY8RvFSm` committed to source
+        // leaked a real Vercel platform identifier into the public repo.
+        // Operators set VERCEL_PROJECT_ID in the deployment env (Vercel →
+        // Settings → Environment Variables). Fallback to empty → reject.
+        const projectId = process.env.VERCEL_PROJECT_ID || "";
+        if (!projectId) {
+          return NextResponse.json({ ok: false, host: fullUrl, error: "VERCEL_PROJECT_ID env var not set on this deployment." });
+        }
         const listRes = await fetch(
           `https://api.vercel.com/v9/projects/${projectId}/env`,
           { headers: { Authorization: `Bearer ${token}` } },
@@ -141,7 +149,11 @@ export async function handler(req: NextRequest) {
         }
         return NextResponse.json({ ok: true, relayUrl: fullUrl, autoConfigured: true });
       } catch (e) {
-        return NextResponse.json({ ok: false, host: fullUrl, error: "Vercel API call failed", details: String(e) });
+        // 9b-N4: do NOT echo `String(e)` — fetch errors can include
+        // response bodies, redirect URLs, or internal diagnostics that
+        // widen the blast radius if a super_admin session is compromised.
+        console.error("[setup-relay] Vercel API call failed:", e);
+        return NextResponse.json({ ok: false, host: fullUrl, error: "Vercel API call failed. See server logs for details." });
       }
     }
 

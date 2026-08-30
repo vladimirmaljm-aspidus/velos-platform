@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuthOrApiKey, audit, sanitizeError, hasPermission, type AuthContext, type ApiKeyAuthContext } from "@/lib/api/helpers";
+import { requireAuthOrApiKey, audit, sanitizeError, hasPermission, getIp, type AuthContext, type ApiKeyAuthContext } from "@/lib/api/helpers";
 import { generatePdf } from "@/lib/pdf/generator";
+import { safeFilename } from "@/lib/security/safe-filename";
+import { checkRateLimit } from "@/lib/security/rate-limiter";
 
 export const runtime = "nodejs";
 
@@ -10,6 +12,18 @@ function getAuthUser(auth: AuthContext | ApiKeyAuthContext) {
 }
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  // 9a-N3: per-IP rate limit — PDF rendering is CPU-expensive (react-pdf
+  // renderToBuffer + logo fetch + SHA-256 hash + DB writes). Without a cap,
+  // a logged-in partner / API key holder can hammer this route thousands
+  // of times per minute. 30 renders per IP per minute matches admin
+  // interactive patterns (a human clicks a few PDFs in a row).
+  const _rl = await checkRateLimit(`pdf:ip:${getIp(req)}`, 30, 60_000);
+  if (!_rl.allowed) {
+    return NextResponse.json(
+      { error: "Too many PDF requests. Please slow down." },
+      { status: 429, headers: { "Retry-After": String(Math.ceil((_rl.retryAfter ?? 60_000) / 1000)) } },
+    );
+  }
   // F-FINAL: allow API key auth (Bearer asp_...) in addition to cookie
   // sessions. Unblocks programmatic PDF generation (e.g. an integration
   // that archives offer PDFs to external storage) without requiring a
@@ -52,11 +66,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       size: result.buffer.length,
     });
 
-    // Build professional filename: CompanyName_Offer_123-2026_ClientName.pdf
-    const safeName = (s: string) => s.replace(/[^a-zA-Z0-9]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
-    const tenantName = safeName(tenant?.name || "VELOS");
-    const docNum = safeName(offer?.number || id);
-    const partnerName = partner ? `_${safeName(partner.name)}` : "";
+    // 9a-N1: use shared safeFilename — strips CRLF / quotes / control
+    // chars. Inline safeName only stripped non-alphanumerics, leaving
+    // the door open to HTTP response-splitting via tenant.name or
+    // partner.name with `\r\nX-Evil: header-injected` (CSV-import vector).
+    const tenantName = safeFilename(tenant?.name, "VELOS").replace(/[^a-zA-Z0-9_-]/g, "-");
+    const docNum = safeFilename(offer?.number, id).replace(/[^a-zA-Z0-9_-]/g, "-");
+    const partnerName = partner ? `_${safeFilename(partner.name, "").replace(/[^a-zA-Z0-9_-]/g, "-")}` : "";
     const filename = `${tenantName}_Offer_${docNum}${partnerName}.pdf`;
 
     return new NextResponse(new Uint8Array(result.buffer), {

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuthOrApiKey, audit, sanitizeError, hasPermission, type AuthContext, type ApiKeyAuthContext } from "@/lib/api/helpers";
+import { requireAuthOrApiKey, audit, sanitizeError, hasPermission, getIp, type AuthContext, type ApiKeyAuthContext } from "@/lib/api/helpers";
 import { generatePdf } from "@/lib/pdf/generator";
+import { safeFilename } from "@/lib/security/safe-filename";
+import { checkRateLimit } from "@/lib/security/rate-limiter";
 
 export const runtime = "nodejs";
 
@@ -10,6 +12,14 @@ function getAuthUser(auth: AuthContext | ApiKeyAuthContext) {
 }
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  // 9a-N3: per-IP rate limit — PDF rendering is CPU-expensive.
+  const _rl = await checkRateLimit(`pdf:ip:${getIp(req)}`, 30, 60_000);
+  if (!_rl.allowed) {
+    return NextResponse.json(
+      { error: "Too many PDF requests. Please slow down." },
+      { status: 429, headers: { "Retry-After": String(Math.ceil((_rl.retryAfter ?? 60_000) / 1000)) } },
+    );
+  }
   // F-FINAL: allow API key auth (Bearer asp_...) in addition to cookie
   // sessions. Unblocks programmatic PDF generation (e.g. an integration
   // that archives proforma PDFs to external storage) without requiring a
@@ -52,10 +62,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       verification_code: result.verificationCode,
     });
 
-    const safeName = (s: string) => s.replace(/[^a-zA-Z0-9]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
-    const tenantName = safeName(tenant?.name || "VELOS");
-    const docNum = safeName(proforma?.number || id);
-    const partnerName = partner ? `_${safeName(partner.name)}` : "";
+    // 9a-N1: use shared safeFilename — strips CRLF / quotes / control chars.
+    const tenantName = safeFilename(tenant?.name, "VELOS").replace(/[^a-zA-Z0-9_-]/g, "-");
+    const docNum = safeFilename(proforma?.number, id).replace(/[^a-zA-Z0-9_-]/g, "-");
+    const partnerName = partner ? `_${safeFilename(partner.name, "").replace(/[^a-zA-Z0-9_-]/g, "-")}` : "";
     const filename = `${tenantName}_Proforma_${docNum}${partnerName}.pdf`;
 
     return new NextResponse(new Uint8Array(result.buffer), {

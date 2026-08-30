@@ -94,6 +94,22 @@ export async function POST(
     const signature = signPayload(body, webhook.secret);
     const nextAttempt = (delivery.attempts ?? 0) + 1;
 
+    // 9b-N2: re-validate the webhook URL before fetch. The cron retry
+    // path (lib/webhooks/deliver.ts:332) re-validates to close DNS
+    // rebinding between create-time and delivery-time — but the manual
+    // retry path skipped the same re-check. A webhook created with a
+    // benign hostname can be DNS-rebinded to 169.254.169.254 (AWS
+    // metadata) by the time the admin clicks "Retry", leaking the
+    // signed payload + tenant_id to an internal service.
+    const { assertSafeWebhookUrl } = await import("@/lib/webhooks/url-validation");
+    const urlCheck = await assertSafeWebhookUrl(webhook.url);
+    if (!urlCheck.ok) {
+      return NextResponse.json(
+        { error: `URL re-validation failed: ${urlCheck.error}` },
+        { status: 400 },
+      );
+    }
+
     let responseStatus: number | null = null;
     let responseBody: string | null = null;
     let delivered = false;

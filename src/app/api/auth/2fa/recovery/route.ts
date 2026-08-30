@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, audit, sanitizeError } from "@/lib/api/helpers";
+import { requireAuth, audit, sanitizeError, getIp } from "@/lib/api/helpers";
 import { hashRecoveryCode } from "@/lib/auth/totp";
+import { checkRateLimit } from "@/lib/security/rate-limiter";
 
 export const runtime = "nodejs";
 
@@ -26,6 +27,19 @@ export const runtime = "nodejs";
  */
 export async function POST(req: NextRequest) {
   try {
+    // 9b-N8: per-IP rate limit — /auth/2fa/recovery had no rate limit.
+    // A stolen-session attacker (XSS, leaked cookie) can fire 1000s of
+    // attempts/min at the 10 recovery codes (each is 8-char alphanumeric,
+    // ~2^47 bits of entropy — out of brute-force reach, but the noise
+    // floods audit logs + can DoS the account by draining codes).
+    // 5 attempts per IP per 5 minutes matches 2fa/login (5/5min per temp-token).
+    const _ipRl = await checkRateLimit(`2fa:recovery:ip:${getIp(req)}`, 5, 5 * 60_000);
+    if (!_ipRl.allowed) {
+      return NextResponse.json(
+        { error: "Too many recovery attempts. Try again later." },
+        { status: 429, headers: { "Retry-After": String(Math.ceil((_ipRl.retryAfter ?? 300_000) / 1000)) } },
+      );
+    }
     const auth = await requireAuth(req);
     if (auth instanceof NextResponse) return auth;
 

@@ -6,7 +6,9 @@ import {
 } from "@/lib/data/marketplace-trade-documents-store";
 import { renderTradeDocumentPDF } from "@/lib/marketplace/document-pdf";
 import { getStore } from "@/lib/data/store";
-import { audit } from "@/lib/api/helpers";
+import { audit, getIp } from "@/lib/api/helpers";
+import { safeFilename } from "@/lib/security/safe-filename";
+import { checkRateLimit } from "@/lib/security/rate-limiter";
 import { withApm } from "@/lib/monitoring/apm";
 
 export const runtime = "nodejs";
@@ -22,6 +24,16 @@ export const runtime = "nodejs";
 // marketplace entity. Non-issuers get a sanitised filename (no partner_id
 // in the filename) so a download doesn't leak the issuer's internal id.
 async function _get(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  // 9a-N3: per-IP rate limit — marketplace PDF rendering is also CPU-heavy
+  // (renderTradeDocumentPDF + JSON canonicalisation + SHA-256 fingerprint).
+  // 30 renders per IP per minute aligns with portal interactive patterns.
+  const _rl = await checkRateLimit(`mkt-pdf:ip:${getIp(req)}`, 30, 60_000);
+  if (!_rl.allowed) {
+    return NextResponse.json(
+      { error: "Too many PDF requests. Please slow down." },
+      { status: 429, headers: { "Retry-After": String(Math.ceil((_rl.retryAfter ?? 60_000) / 1000)) } },
+    );
+  }
   const access = await getPortalSessionAccess();
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
@@ -100,8 +112,11 @@ async function _get(req: NextRequest, ctx: { params: Promise<{ id: string }> }) 
       console.error("[marketplace.documents.pdf] audit failed:", e);
     }
 
-    // Filename: <type>_<reference>.pdf (or doc id when no reference).
-    const safeRef = (doc.reference_number || doc.id).replace(/[^a-zA-Z0-9_-]/g, "_");
+    // 9a-N2: use shared safeFilename — strips CRLF / quotes / control chars.
+    // reference_number is partner-editable via PUT /api/marketplace/documents/[id],
+    // so it can carry header-injection chars. Inline .replace(/[^a-zA-Z0-9_-]/g, "_")
+    // did NOT strip CRLF/quote/control chars (only non-alphanumerics).
+    const safeRef = safeFilename(doc.reference_number, doc.id).replace(/[^a-zA-Z0-9_-]/g, "_");
     const filename = `${doc.document_type}_${safeRef}.pdf`;
 
     // Convert the Node.js Buffer to a Uint8Array view — NextResponse's

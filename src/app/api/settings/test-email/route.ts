@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import nodemailer from "nodemailer";
-import { requireAdmin, audit, sanitizeError } from "@/lib/api/helpers";
+import { requireAdmin, audit, sanitizeError, getIp } from "@/lib/api/helpers";
 import { getStore, getStoreSync } from "@/lib/data/store";
 import type { EmailProvider } from "@/lib/email/service";
+import { checkRateLimit } from "@/lib/security/rate-limiter";
 
 export const runtime = "nodejs";
 
@@ -54,6 +55,14 @@ function escapeHtml(str: string): string {
  *   }
  */
 export async function POST(req: NextRequest) {
+  // 9b-N7: per-IP rate limit — test-email is also a spam vector.
+  const _rl = await checkRateLimit(`email:ip:${getIp(req)}`, 10, 10 * 60_000);
+  if (!_rl.allowed) {
+    return NextResponse.json(
+      { ok: false, error: "Too many test email requests. Please wait a few minutes." },
+      { status: 429, headers: { "Retry-After": String(Math.ceil((_rl.retryAfter ?? 600_000) / 1000)) } },
+    );
+  }
   const auth = await requireAdmin(req);
   if (auth instanceof NextResponse) return auth;
     // Permission gate (settings.create)
@@ -318,6 +327,19 @@ export async function POST(req: NextRequest) {
           category: "missing_config",
         },
         { status: 200 }
+      );
+    }
+
+    // 9b-N3: SSRF validation on smtp_host (parity with test-smtp).
+    // body.smtp_host is admin-supplied and can reach AWS metadata or
+    // internal services via SMTP banner.
+    const { assertSafeWebhookUrl } = await import("@/lib/webhooks/url-validation");
+    const hostForCheck = /^[a-z][a-z0-9+.-]*:\/\//i.test(smtp.host) ? smtp.host : `smtp://${smtp.host}:${smtp.port}`;
+    const hostCheck = await assertSafeWebhookUrl(hostForCheck);
+    if (!hostCheck.ok) {
+      return NextResponse.json(
+        { ok: false, error: `SMTP host rejected: ${hostCheck.error}`, category: "ssrf_blocked" },
+        { status: 400 }
       );
     }
 
