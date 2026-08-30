@@ -1394,11 +1394,58 @@ export class SupabaseStore implements Store {
     if (params?.filters?.type) q = q.eq("type", params.filters.type);
     if (params?.filters?.status) q = q.eq("status", params.filters.status);
     if (params?.filters?.partner_id) q = q.eq("partner_id", params.filters.partner_id);
+    // 2h-F1 fix (round 4): honour `reference_id` server-side instead of silently
+    // dropping it. Without this filter the PDF generator (and LOI send route)
+    // fetch the tenant's last N register rows and filter client-side — for
+    // tenants with >N entries the version counter is wrong and every regeneration
+    // produces a duplicate V1 row. With the filter, the query is also a single-row
+    // index lookup (idx_document_register_tenant_ref_type, migration 075).
+    if (params?.filters?.reference_id) q = q.eq("reference_id", params.filters.reference_id as string);
     q = q.order("created_at", { ascending: false });
     return paginateQuery<DocumentRegisterEntry>(q, params);
   }
   async upsertDocumentRegisterEntry(e: Partial<DocumentRegisterEntry> & { id?: string }): Promise<DocumentRegisterEntry> {
     return this.smartUpsert<DocumentRegisterEntry>("document_register", e, e.tenant_id ?? undefined);
+  }
+  /**
+   * Fetch a single document_register row by id (2g-F17 fix, round 4).
+   * Tenant-scoped when tenantId is provided (the typical admin path); unscoped
+   * for super-admin (tenantId=null). The query hits the table's PK index
+   * (primary key on `id`) in O(log n) instead of fetching 100k rows.
+   */
+  async getDocumentRegisterEntry(id: string, tenantId?: string): Promise<DocumentRegisterEntry | null> {
+    let q = this.sb().from("document_register").select("*").eq("id", id);
+    if (tenantId) q = q.eq("tenant_id", tenantId);
+    const { data, error } = await q.maybeSingle();
+    if (error) {
+      console.warn("[getDocumentRegisterEntry] query failed:", error.message);
+      return null;
+    }
+    return (data as DocumentRegisterEntry) || null;
+  }
+  /**
+   * Return the highest `version` for the (tenantId, referenceId, type) tuple
+   * (2g-F1 fix, round 4). Replaces `count + 1` which under-counted when an
+   * older version was deleted, and over-counted when a tenant had >limit
+   * rows for the same document. Uses the partial index from migration 075
+   * (idx_document_register_tenant_ref_type) — also O(log n).
+   */
+  async getMaxDocumentRegisterVersion(tenantId: string, referenceId: string, type: string): Promise<number> {
+    const { data, error } = await this.sb()
+      .from("document_register")
+      .select("version")
+      .eq("tenant_id", tenantId)
+      .eq("reference_id", referenceId)
+      .eq("type", type)
+      .order("version", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) {
+      console.warn("[getMaxDocumentRegisterVersion] query failed:", error.message);
+      return 0;
+    }
+    if (!data) return 0;
+    return Number(data.version) || 0;
   }
   async listDocumentRevisions(tenantId: string, documentId: string): Promise<DocumentRevision[]> {
     const { data, error } = await this.sb()
@@ -2393,6 +2440,30 @@ export class SupabaseStore implements Store {
       return (data as DocumentVerification) || null;
     } catch (err) {
       console.warn("[getDocumentVerificationByDoc] Unexpected error:", err);
+      return null;
+    }
+  }
+  /**
+   * Refresh the stored pdf_hash + pdf_size on an existing verification record
+   * (2h-F3 fix, round 4). The `updated_at` column is auto-bumped by the
+   * trg_set_updated_at_document_verifications trigger (migration 075).
+   * Returns the updated row, or null if the row was deleted concurrently.
+   */
+  async updateDocumentVerificationHash(id: string, pdfHash: string, pdfSize: number): Promise<DocumentVerification | null> {
+    try {
+      const { data, error } = await this.sb()
+        .from("document_verifications")
+        .update({ pdf_hash: pdfHash, pdf_size: pdfSize })
+        .eq("id", id)
+        .select()
+        .maybeSingle();
+      if (error) {
+        console.warn("[updateDocumentVerificationHash] UPDATE failed:", error.message);
+        return null;
+      }
+      return (data as DocumentVerification) || null;
+    } catch (err) {
+      console.warn("[updateDocumentVerificationHash] Unexpected error:", err);
       return null;
     }
   }

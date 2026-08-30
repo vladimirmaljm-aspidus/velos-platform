@@ -264,7 +264,24 @@ export async function renderPackingListPdf(input: PackingListInput): Promise<Buf
       React.createElement(
         Text,
         { style: styles.footer, fixed: true },
-        `${input.tenantName} · Packing List ${input.requestNumber} · Page rendered ${new Date().toLocaleString()}`,
+        // 2g-F5 fix (round 4): use the issue date (input.createdAt), not new Date() (regen date).
+        // 2g-F4 fix (round 4): real "Page X of Y" via the react-pdf render prop — was hardcoded
+        // "Page rendered <date>" on every page.
+        `${input.tenantName} · Packing List ${input.requestNumber}` +
+          (input.createdAt ? ` · Issued ${new Date(input.createdAt).toLocaleDateString("en-GB")}` : "") +
+          ` · Page `,
+      ),
+      // 2g-F4 fix (round 4): the <Text render> prop must be a child of a <View fixed>
+      // (a direct child of <Page>) so react-pdf recognises it on every page. The
+      // footer text above is the lead-in; the page-number Text below is the
+      // variable part.
+      React.createElement(
+        View,
+        { style: { position: "absolute", bottom: 20, left: 540, right: 30, fontSize: 8, color: "#9ca3af" }, fixed: true },
+        React.createElement(
+          Text,
+          { render: ({ pageNumber, totalPages }: { pageNumber: number; totalPages: number }) => `${pageNumber} of ${totalPages}` },
+        ),
       ),
     ),
   );

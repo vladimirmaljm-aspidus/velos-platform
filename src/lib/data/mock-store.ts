@@ -669,7 +669,18 @@ export class MockStore implements Store {
     if (params?.search) items = items.filter((e) => matchesSearch(`${e.number} ${e.title}`, params.search));
     if (params?.filters?.type) items = items.filter((e) => e.type === params.filters!.type);
     if (params?.filters?.status) items = items.filter((e) => e.status === params.filters!.status);
+    // 2h-F1 fix (round 4): honour reference_id server-side (mock equivalent).
+    if (params?.filters?.reference_id) items = items.filter((e) => e.reference_id === params.filters!.reference_id);
     return paginate(items, params);
+  }
+  async getDocumentRegisterEntry(id: string, tenantId?: string): Promise<DocumentRegisterEntry | null> {
+    const row = mock.documentRegister.find((e) => e.id === id && (!tenantId || e.tenant_id === tenantId));
+    return row || null;
+  }
+  async getMaxDocumentRegisterVersion(tenantId: string, referenceId: string, type: string): Promise<number> {
+    const rows = mock.documentRegister.filter((e) => e.tenant_id === tenantId && e.reference_id === referenceId && e.type === type);
+    if (rows.length === 0) return 0;
+    return Math.max(...rows.map((r) => Number(r.version) || 0));
   }
   async upsertDocumentRegisterEntry(e: Partial<DocumentRegisterEntry> & { id?: string }): Promise<DocumentRegisterEntry> {
     const existing = e.id ? mock.documentRegister.find((x) => x.id === e.id) : null;
@@ -1119,6 +1130,13 @@ export class MockStore implements Store {
   }
   async getDocumentVerificationByDoc(tenantId: string, docType: string, docId: string): Promise<DocumentVerification | null> {
     return mock.documentVerifications.find((v) => v.tenant_id === tenantId && v.document_type === docType && v.document_id === docId) || null;
+  }
+  async updateDocumentVerificationHash(id: string, pdfHash: string, pdfSize: number): Promise<DocumentVerification | null> {
+    const v = mock.documentVerifications.find((x) => x.id === id);
+    if (!v) return null;
+    (v as any).pdf_hash = pdfHash;
+    (v as any).pdf_size = pdfSize;
+    return v;
   }
   async logVerification(log: Omit<VerificationLog, "id" | "verified_at">): Promise<VerificationLog> {
     // increment verification count

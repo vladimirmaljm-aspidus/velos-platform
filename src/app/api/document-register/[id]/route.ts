@@ -26,10 +26,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     const { id } = await params;
 
-    // Tenant ownership check: listDocumentRegister filters by tenant_id,
-    // so a non-super_admin only sees their own tenant's rows.
-    const all = await auth.store.listDocumentRegister(auth.tenantId ?? "", { limit: 100000 });
-    const existing = all.items.find((d) => d.id === id);
+    // 2g-F17 fix (round 4): the prior code fetched up to 100,000 doc-register
+    // rows just to find one by id. Now we use the direct-by-id store method
+    // (getDocumentRegisterEntry) which hits the table's PK in O(log n).
+    // Tenant scope is enforced when the caller is tenant-bound; super-admin
+    // (tenantId=null) sees any row.
+    const existing = await auth.store.getDocumentRegisterEntry(id, auth.tenantId ?? undefined);
     if (!existing) return NextResponse.json({ error: "Not found." }, { status: 404 });
     if (!auth.isSuperAdmin && existing.tenant_id !== auth.tenantId) {
       return NextResponse.json({ error: "Not found." }, { status: 404 });
@@ -114,10 +116,8 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     { const { requirePermission } = await import("@/lib/permissions/can");
       const _d = requirePermission(auth, "document-register.delete"); if (_d) return _d; } /* requirePermission wired */
     const { id } = await params;
-    // Tenant ownership check: listDocumentRegister ignores tenantId in the store,
-    // so we fetch all and filter for non-super_admin.
-    const all = await auth.store.listDocumentRegister(auth.tenantId ?? "", { limit: 100000 });
-    const existing = all.items.find((d) => d.id === id);
+    // 2g-F17 fix (round 4): direct-by-id lookup (was list-all-then-find).
+    const existing = await auth.store.getDocumentRegisterEntry(id, auth.tenantId ?? undefined);
     if (!existing) return NextResponse.json({ error: "Not found." }, { status: 404 });
     if (!auth.isSuperAdmin && existing.tenant_id !== auth.tenantId) {
       return NextResponse.json({ error: "Not found." }, { status: 404 });
@@ -140,9 +140,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const _d = requirePermission(auth, "document-register.read"); if (_d) return _d; } /* requirePermission wired */
 
     const { id } = await params;
-    // Tenant ownership check on the parent document before listing its revisions.
-    const all = await auth.store.listDocumentRegister(auth.tenantId ?? "", { limit: 100000 });
-    const existing = all.items.find((d) => d.id === id);
+    // 2g-F17 fix (round 4): direct-by-id lookup (was list-all-then-find).
+    const existing = await auth.store.getDocumentRegisterEntry(id, auth.tenantId ?? undefined);
     if (!existing) return NextResponse.json({ error: "Not found." }, { status: 404 });
     if (!auth.isSuperAdmin && existing.tenant_id !== auth.tenantId) {
       return NextResponse.json({ error: "Not found." }, { status: 404 });

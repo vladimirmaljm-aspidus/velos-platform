@@ -860,6 +860,28 @@ export class PrismaStore implements Store {
     return { items: rows.map(mapDocumentRegisterRow), total };
   }
 
+  // 2h-F1 / 2g-F17 round 4: prisma-store is dev-only; the production path
+  // uses supabase-store. Implement direct-by-id + max-version lookups so
+  // the Store interface is satisfied and TypeScript stays happy.
+  async getDocumentRegisterEntry(id: string, _tenantId?: string): Promise<DocumentRegisterEntry | null> {
+    const r = await db.documentRegisterEntry.findUnique({ where: { id } });
+    return r ? mapDocumentRegisterRow(r) : null;
+  }
+  async getMaxDocumentRegisterVersion(_tenantId: string, _referenceId: string, _type: string): Promise<number> {
+    // Prisma schema field is `version` (Int). Best-effort: aggregate via
+    // findMany + reduce — keeps it dependency-free for dev.
+    const rows = await db.documentRegisterEntry.findMany({
+      where: { source_id: _referenceId ?? null, doc_type: _type },
+      select: { version: true },
+    });
+    if (rows.length === 0) return 0;
+    return Math.max(...rows.map((r: any) => Number(r.version) || 0));
+  }
+  async updateDocumentVerificationHash(_id: string, _pdfHash: string, _pdfSize: number): Promise<DocumentVerification | null> {
+    // prisma-store does not back the document_verifications table in dev mode.
+    return null;
+  }
+
   async upsertDocumentRegisterEntry(e: Partial<DocumentRegisterEntry> & { id?: string }): Promise<DocumentRegisterEntry> {
     const data: any = {
       tenant_id: e.tenant_id ?? "",

@@ -676,15 +676,42 @@ export function buildPdfDocument({
   // clearance, etc.). Same for "T/T in Advance" — a specific payment
   // instrument + timing the seller may not have agreed to. The em-dash
   // makes the missing-field state visually obvious on the rendered PDF.
+  //
+  // 2g-F18 fix (round 4): the Trade Terms grid used to render POL TWICE —
+  // once appended to the Incoterm cell ("FOB · Rotterdam") and once in its
+  // own POL cell. Now the Incoterm cell shows ONLY the incoterm code so
+  // the grid is non-redundant.
+  //
+  // 2g-F19 fix (round 4): the Trade Terms grid used to fall back to
+  // items[0]?.packaging / items[0]?.origin_country etc., which silently
+  // misrepresented multi-line offers with different packaging per line.
+  // Now the helpers detect multi-line divergence and show "Multiple" when
+  // the values differ across line items — the reader knows they need to
+  // look at the per-line table for the specifics.
   const incoterm: string = tradeFields.incoterm || (items[0] as any)?.incoterm || "—";
   const pol: string = tradeFields.pol || "—";
   const pod: string = tradeFields.pod || "—";
   const vessel: string = tradeFields.vessel || "—";
   const containerNo: string = tradeFields.container_no || "—";
   const leadTime: string = tradeFields.lead_time || "—";
-  const packaging: string = tradeFields.packaging || (items[0] as any)?.packaging || "—";
+  /** Pull a field from every line item and either return the common value
+   *  or "Multiple" when the values diverge (so the Trade Terms grid never
+   *  silently shows just the first item's value for a multi-line offer). */
+  const commonLineValue = (extractor: (it: OfferLineItem) => string | null | undefined): string => {
+    if (!items || items.length === 0) return "—";
+    const vals = items.map(extractor).filter((v): v is string => Boolean(v));
+    if (vals.length === 0) return "—";
+    const first = vals[0];
+    const allSame = vals.every((v) => v === first);
+    return allSame ? first : `Multiple (${vals.length})`;
+  };
+  const packaging: string = tradeFields.packaging || commonLineValue((it: any) => it.packaging);
   const paymentTerms: string = tradeFields.payment_terms || tradeFields.terms || "—";
-  const originCountry: string = countryName((items[0] as any)?.origin_country);
+  // 2g-F19 fix: Trade Terms "Origin" cell now shows the COMMON origin
+  // (or "Multiple") instead of just the first item's origin. The per-line
+  // Origin column in the line-items table already shows the per-item value,
+  // so when origins differ the reader looks at the table for the specifics.
+  const originCountry: string = commonLineValue((it: any) => (it as any).origin_country);
   const bankDetails: string = tradeFields.bank_details || "";
 
   // ── Bank accounts (modern JSON array on tenant) ─────────────────────
@@ -954,11 +981,13 @@ export function buildPdfDocument({
           <View style={styles.tradeTermsRow}>
             <View style={styles.tradeTermsCell}>
               <Text style={styles.tradeTermsLabel}>Incoterm</Text>
-              <Text style={styles.tradeTermsValue}>{incoterm}{pol && pol !== "—" ? ` · ${pol}` : ""}</Text>
+              {/* 2g-F18 fix (round 4): only the incoterm code here — POL has its own cell below. */}
+              <Text style={styles.tradeTermsValue}>{incoterm}</Text>
             </View>
             <View style={styles.tradeTermsCell}>
               <Text style={styles.tradeTermsLabel}>Origin</Text>
-              <Text style={styles.tradeTermsValue}>{originCountry}</Text>
+              {/* 2g-F19 fix (round 4): common origin (or "Multiple") instead of first-item-only. */}
+              <Text style={styles.tradeTermsValue}>{originCountry === "—" ? "—" : (originCountry.startsWith("Multiple") ? originCountry : countryName(originCountry))}</Text>
             </View>
             <View style={styles.tradeTermsCellLast}>
               <Text style={styles.tradeTermsLabel}>Payment</Text>
@@ -1007,30 +1036,44 @@ export function buildPdfDocument({
             <Text style={[styles.th, { flex: 1, textAlign: "right" }]}>Unit Price</Text>
             <Text style={[styles.th, { flex: 1.1, textAlign: "right" }]}>Total</Text>
           </View>
-          {items.map((item, i) => (
-            <View
-              key={i}
-              style={[styles.tableRow, ...(tableStripe && i % 2 === 1 ? [styles.tableRowEven] : [])]}
-            >
-              <Text style={[styles.td, { flex: 0.3 }]}>{i + 1}</Text>
-              <Text style={[styles.td, { flex: 3 }]}>
-                {item.product_name}
-                {item.sku ? `\nSKU: ${item.sku}` : ""}
-                {item.brand ? `\nBrand: ${item.brand}` : ""}
-              </Text>
-              <Text style={[styles.td, { flex: 1.1 }]}>{(item as any).hs_code || "—"}</Text>
-              <Text style={[styles.td, { flex: 0.9 }]}>{countryName((item as any).origin_country)}</Text>
-              <Text style={[styles.td, { flex: 1.1 }]}>
-                {item.quantity} {item.unit || "kg"}
-              </Text>
-              <Text style={[styles.td, { flex: 1, textAlign: "right" }]}>
-                {fmtMoney(item.unit_price, currency)}
-              </Text>
-              <Text style={[styles.td, { flex: 1.1, textAlign: "right", fontFamily: headingFontFamily }]}>
-                {fmtMoney(item.total, currency)}
-              </Text>
-            </View>
-          ))}
+          {items.map((item, i) => {
+            // 2g-F7 fix (round 4): the "Total" column previously rendered
+            // `item.total` verbatim — but for offers/invoices/proformas the
+            // backend stores the line total as the TAX-INCLUSIVE amount
+            // (lineTotal = net + tax in invoices-view.ts), while the
+            // Subtotal row sums TAX-EXCLUSIVE line totals. The column
+            // therefore didn't foot to the Subtotal. Now we render the
+            // per-line tax-EXCLUSIVE amount (qty × unit_price) so the
+            // column visually sums to the Subtotal row — matching the
+            // tax breakdown below (Tax / VAT line then adds to Grand Total).
+            const lineNet = (typeof item.unit_price === "number" && typeof item.quantity === "number")
+              ? item.unit_price * item.quantity
+              : (typeof item.total === "number" ? item.total : 0);
+            return (
+              <View
+                key={i}
+                style={[styles.tableRow, ...(tableStripe && i % 2 === 1 ? [styles.tableRowEven] : [])]}
+              >
+                <Text style={[styles.td, { flex: 0.3 }]}>{i + 1}</Text>
+                <Text style={[styles.td, { flex: 3 }]}>
+                  {item.product_name}
+                  {item.sku ? `\nSKU: ${item.sku}` : ""}
+                  {item.brand ? `\nBrand: ${item.brand}` : ""}
+                </Text>
+                <Text style={[styles.td, { flex: 1.1 }]}>{(item as any).hs_code || "—"}</Text>
+                <Text style={[styles.td, { flex: 0.9 }]}>{countryName((item as any).origin_country)}</Text>
+                <Text style={[styles.td, { flex: 1.1 }]}>
+                  {item.quantity} {item.unit || "kg"}
+                </Text>
+                <Text style={[styles.td, { flex: 1, textAlign: "right" }]}>
+                  {fmtMoney(item.unit_price, currency)}
+                </Text>
+                <Text style={[styles.td, { flex: 1.1, textAlign: "right", fontFamily: headingFontFamily }]}>
+                  {fmtMoney(lineNet, currency)}
+                </Text>
+              </View>
+            );
+          })}
         </View>
 
         {/* SPECIFICATIONS — coa_params (key/value table) + detailed_spec */}
@@ -1344,17 +1387,21 @@ export function buildPdfDocument({
         {/* Wrapped in a relative-positioned container so the company seal
             (when configured) can be absolutely positioned over the signature
             area, as is customary for stamped business documents. */}
+        {/* 2g-F24 fix (round 4): in LOI the partner is the SELLER (the
+            tenant issues the LOI as the BUYER). The prior fallback said
+            "Buyer" for the partner column in LOIs — wrong role. Now the
+            fallback labels match the docType's party roles. */}
         <View style={styles.signatureWrap} wrap={false}>
           <View style={styles.signatureBlock}>
             <View style={styles.signatureCol}>
               <Text style={styles.signatureParty}>For {tenant?.legal_name || tenant?.name || "Company"}:</Text>
               <View style={styles.signatureLine} />
-              <Text style={styles.signatureLabel}>Authorized Signature</Text>
+              <Text style={styles.signatureLabel}>{docType === "loi" ? "Buyer Signature" : "Authorized Signature"}</Text>
             </View>
             <View style={styles.signatureCol}>
-              <Text style={styles.signatureParty}>For {partner?.name || "Buyer"}:</Text>
+              <Text style={styles.signatureParty}>For {partner?.name || (docType === "loi" ? "Seller" : "Buyer")}:</Text>
               <View style={styles.signatureLine} />
-              <Text style={styles.signatureLabel}>Accepted &amp; Signed</Text>
+              <Text style={styles.signatureLabel}>{docType === "loi" ? "Seller Acceptance" : "Accepted & Signed"}</Text>
             </View>
           </View>
 
@@ -1466,19 +1513,27 @@ export function buildPdfDocument({
               })()}
             </View>
 
-            {/* Right column — page number + issued-by line.
-                2g-F4 fix: react-pdf v4 supports the `render` prop on <Text>
+            {/* Right column — page number + issued-date line.
+                2g-F4 fix (round 4): react-pdf v4 supports the `render` prop on <Text>
                 elements inside a `fixed` View — use it for "Page X of Y"
-                (was hardcoded "Page 1" on every page).
-                2g-F5 fix: stamp the document's issue_date (original issue),
-                not new Date() (regen time). Falls back to created_at, then now. */}
+                (was hardcoded "Page 1" on every page). Also mirrored to
+                `packing-list.ts` and `marketplace/document-pdf.ts` so all
+                three PDF templates render correct page numbers.
+                2g-F5 fix (round 4): stamp the document's issue_date (original issue),
+                not new Date() (regen time). Falls back to created_at, then now.
+                2g-F22 fix (round 4): drop the redundant "Issued by VELOS CRM"
+                sub-line — the company is already in the header (memorandum) +
+                the doc title block says "Commercial Invoice X · <tenant name>".
+                Replaced with the document number so the footer is self-identifying
+                when the page is torn off + photocopied (legal-trade-document
+                convention). */}
             <View style={styles.footerColRight}>
               <Text
                 style={styles.footerPage}
                 render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`}
               />
               <Text style={styles.footerSys}>
-                Issued by {pdfMeta?.creator || "VELOS CRM"} · {fmtDate((doc as any).issue_date || doc.created_at) || new Date().toLocaleString("en-GB")}
+                {docTitleMap[docType]} {doc.number} · {fmtDate((doc as any).issue_date || doc.created_at)}
               </Text>
             </View>
         </View>

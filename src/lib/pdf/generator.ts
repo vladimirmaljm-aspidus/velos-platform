@@ -342,58 +342,80 @@ export async function generatePdf(opts: GeneratePdfOptions): Promise<GeneratePdf
         issued_at: new Date().toISOString(),
       });
       verificationId = v.id;
+    } else {
+      // 2h-F3 fix (round 4): the existing verification record was created
+      // on a PRIOR render — its stored pdf_hash matches the OLD PDF, not
+      // the one we just generated. Refresh it so the forensic-equality
+      // check at /api/document-verify/forensic still passes after a
+      // regeneration. Without this, every regenerated PDF reports as
+      // "tampered" because the stored hash is the first render's hash.
+      await store.updateDocumentVerificationHash(verificationId, pdfHash, buffer.length);
     }
   }
 
   // ── Auto-register in Document Register ───────────────────────────────
-  // Every issued document (offer/invoice/proforma) must be recorded in the
-  // document register with a sequential version number so the firm has a
-  // complete audit trail of all outbound documents INCLUDING regenerations.
-  // 2g-F1 fix: the prior `alreadyRegistered` gate skipped ALL regenerations
-  // after V1 — so versions never went past V1 and the pdf_hash was never
-  // refreshed on re-generation. The fix: ALWAYS compute nextVersion =
-  // existing_count + 1 and upsert. Re-running with the same version is
-  // idempotent (upsert keyed on reference_id + version). Each regeneration
-  // now creates a new version entry (V2, V3, ...) with a fresh pdf_hash.
+  // Every issued document (offer/invoice/proforma/LOI) must be recorded in
+  // the document register with a sequential version number so the firm has
+  // a complete audit trail of all outbound documents INCLUDING regenerations.
+  //
+  // 2g-F1 fix (round 4): the prior `count + 1` logic produced wrong
+  // versions when (a) an older version was deleted, or (b) the tenant had
+  // >1000 doc-register entries for the same reference_id (the list-all
+  // path was capped). Now we ask the DB directly for max(version) and add
+  // 1 — and rely on the UNIQUE INDEX from migration 075 to prevent a
+  // race-condition duplicate. The retry loop handles the rare race where
+  // two concurrent renders both compute the same nextVersion.
   try {
-    const existing = await store.listDocumentRegister(opts.tenantId, {
-      limit: 1000,
-      filters: { reference_id: opts.docId },
-    });
-    // Determine the next version number for this document
-    const versions = existing.items.filter(
-      (e) => e.reference_id === opts.docId && e.type === opts.docType
-    );
-    const nextVersion = versions.length + 1;
-
-    await store.upsertDocumentRegisterEntry({
-      tenant_id: opts.tenantId,
-      number: `${doc.number}-V${nextVersion}`,
-      type: opts.docType as any,
-      version: nextVersion,
-      reference_id: opts.docId,
-      partner_id: doc.partner_id,
-      title: `${docTitleLabel} ${doc.number}`,
-      status: "current",
-      created_by: null,
-      metadata: {
-        verification_code: verificationCode,
-        verification_id: verificationId,
-        pdf_hash: pdfHash,
-        pdf_size: buffer.length,
-        currency: doc.currency,
-        // LOI stores the document value as `total_value` (quantity × unit_price),
-        // not `total`. Normalise so the register's metadata.total is consistent
-        // across doc types — offer/invoice/proforma use `.total`, LOI uses
-        // `.total_value`.
-        total: (doc as any).total ?? (doc as any).total_value ?? 0,
-        partner_name: partner?.name,
-        generated_at: new Date().toISOString(),
-      },
-    } as any);
+    const nextVersion = (await store.getMaxDocumentRegisterVersion(opts.tenantId, opts.docId, opts.docType)) + 1;
+    let attempts = 0;
+    let lastErr: unknown = null;
+    let registered = false;
+    // Retry up to 3 times in case of UNIQUE-constraint collision (rare race
+    // between two concurrent regens of the same doc — second one bumps to
+    // nextVersion+1 after the first one wins the slot).
+    while (attempts < 3 && !registered) {
+      try {
+        await store.upsertDocumentRegisterEntry({
+          tenant_id: opts.tenantId,
+          number: `${doc.number}-V${nextVersion + attempts}`,
+          type: opts.docType as any,
+          version: nextVersion + attempts,
+          reference_id: opts.docId,
+          partner_id: doc.partner_id,
+          title: `${docTitleLabel} ${doc.number}`,
+          status: "current",
+          created_by: null,
+          metadata: {
+            verification_code: verificationCode,
+            verification_id: verificationId,
+            pdf_hash: pdfHash,
+            pdf_size: buffer.length,
+            currency: doc.currency,
+            // LOI stores the document value as `total_value` (quantity × unit_price),
+            // not `total`. Normalise so the register's metadata.total is consistent
+            // across doc types — offer/invoice/proforma use `.total`, LOI uses
+            // `.total_value`.
+            total: (doc as any).total ?? (doc as any).total_value ?? 0,
+            partner_name: partner?.name,
+            generated_at: new Date().toISOString(),
+          },
+        } as any);
+        registered = true;
+      } catch (e) {
+        lastErr = e;
+        // 23505 = unique_violation in Postgres. If we hit it, the version
+        // slot is taken — retry with the next slot. Other errors propagate.
+        const msg = String((e as any)?.message || e);
+        if (!/unique|23505|duplicate key/i.test(msg)) break;
+        attempts++;
+      }
+    }
+    if (!registered) {
+      console.error("[pdf.generator] Document register write failed after retries:", lastErr);
+    }
   } catch (regErr) {
     // Don't fail the PDF generation if the register write fails — log it.
-    console.error("[pdf.generator] Document register write failed:", regErr);
+    console.error("[pdf.generator] Document register version lookup failed:", regErr);
   }
 
   return { buffer, verificationCode, pdfHash, verificationId };

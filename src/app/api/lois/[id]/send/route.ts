@@ -115,19 +115,21 @@ export async function POST(
     } as any);
 
     // Register in document_register
-    // 2g-F12 fix: the PDF download route (via src/lib/pdf/generator.ts) already
-    // creates a document_register entry with reference_id=loi.id + type='loi'.
-    // Sending the LOI here would INSERT a DUPLICATE entry (same reference_id,
-    // version 1, created twice). Check for an existing entry first; only insert
-    // if none exists. Idempotent on re-send.
+    // 2g-F12 fix (round 4, hardened): the PDF download route (via
+    // src/lib/pdf/generator.ts) already creates a document_register entry
+    // with reference_id=loi.id + type='loi'. Sending the LOI here would
+    // INSERT a DUPLICATE entry (same reference_id, version 1, created twice).
+    // The 2h-F1 fix (round 4) makes listDocumentRegister honour the
+    // `reference_id` filter server-side (was silently dropped before), so
+    // the dedup check now actually finds the prior entry. We use a tight
+    // limit (10) because we only care whether ANY entry exists — we don't
+    // need the full version history for the dedup decision.
     try {
       const existingReg = await store.listDocumentRegister(loi.tenant_id, {
-        limit: 100,
-        filters: { reference_id: loi.id },
+        limit: 10,
+        filters: { reference_id: loi.id, type: "loi" },
       });
-      const alreadyRegistered = existingReg.items.some(
-        (e) => e.reference_id === loi.id && e.type === "loi"
-      );
+      const alreadyRegistered = existingReg.items.length > 0;
       if (!alreadyRegistered) {
         await store.upsertDocumentRegisterEntry({
           tenant_id: loi.tenant_id,

@@ -126,6 +126,18 @@ export interface Store {
   listDocumentRevisions(tenantId: string, documentId: string): Promise<DocumentRevision[]>;
   addDocumentRevision(r: Partial<DocumentRevision> & { id?: string }): Promise<DocumentRevision>;
   deleteDocumentRegisterEntry(id: string): Promise<void>;
+  /**
+   * Fetch a single document_register row by id (with tenant_id scoping when
+   * the caller is tenant-scoped). Replaces the list-all-then-find pattern
+   * (audit 2g-F17) which O(n)-scanned the tenant's rows on every GET/PUT/DELETE.
+   */
+  getDocumentRegisterEntry(id: string, tenantId?: string): Promise<DocumentRegisterEntry | null>;
+  /**
+   * Return the highest `version` for (tenantId, referenceId, type) — used by
+   * the PDF generator's nextVersion = max+1 logic (audit 2g-F1 round 4).
+   * Returns 0 when no rows exist for the (tenant, reference, type) tuple.
+   */
+  getMaxDocumentRegisterVersion(tenantId: string, referenceId: string, type: string): Promise<number>;
 
   // audit
   listAudit(tenantId: string, params?: ListParams): Promise<ListResult<AuditLog>>;
@@ -315,6 +327,14 @@ export interface Store {
   // ---- document verification ----
   createDocumentVerification(v: Omit<DocumentVerification, "id" | "created_at" | "verification_count" | "last_verified_at" | "last_verified_ip" | "status"> & { status?: string }): Promise<DocumentVerification>;
   getDocumentVerificationByCode(code: string): Promise<DocumentVerification | null>;
+  /**
+   * Refresh the stored pdf_hash + pdf_size on an existing verification record
+   * after the PDF is regenerated (audit 2h-F3 round 4). Without this, regenerated
+   * PDFs fail the forensic-equality check at /api/document-verify/forensic — the
+   * stored hash is the *first* render's hash, not the current PDF's.
+   * Returns the updated row, or null if the row was deleted concurrently.
+   */
+  updateDocumentVerificationHash(id: string, pdfHash: string, pdfSize: number): Promise<DocumentVerification | null>;
   getDocumentVerificationByDoc(tenantId: string, docType: string, docId: string): Promise<DocumentVerification | null>;
   logVerification(log: Omit<VerificationLog, "id" | "verified_at">): Promise<VerificationLog>;
   listVerificationLogs(verificationId: string): Promise<VerificationLog[]>;
