@@ -1,27 +1,49 @@
 /**
  * Session TTL configuration — loaded from the DB settings table.
  *
- * CRITICAL INVARIANT: super_admin sessions never expire and never hit an
- * idle timeout. This is enforced in `requireAuth` (and the login route)
- * — `getSessionTtlForRole(super_admin)` returns `Infinity` regardless of
- * what is stored in the DB, so even an accidental misconfiguration can't
- * lock the platform owner out. The DB-backed `superAdminTtlMs` is kept
- * for API symmetry but `requireAuth` ignores it.
+ * Audit C1 / 2a-F2 fix (2026-08-30): super_admin sessions now have a
+ * FINITE absolute TTL (24h default) AND are subject to idle timeout
+ * (30min, same as admin/user). The previous "never expires, never
+ * idle-times-out" posture meant a stolen super_admin cookie was a
+ * permanent, undetectable backdoor — the JWT exp cap of 7d was refreshed
+ * on every /api/auth/touch heartbeat via bumpSessionActivity, so an
+ * attacker who stole the cookie and ran the heartbeat had access forever.
+ * A finite 24h TTL bounds the exposure window; the 30min idle timeout
+ * kills inactive stolen sessions quickly.
  *
- * Defaults:
- *   - super_admin: Infinity (never expires)
- *   - admin:        8h
- *   - user:         8h
- *   - idle timeout: 30min
+ * The "super_admin is never locked out of LOGIN" guarantee is preserved
+ * — that refers to the per-user LOGIN rate-limit (super_admin is exempt
+ * from the per-user login attempt cap so they can't be locked out by a
+ * brute-force botnet). It does NOT mean their SESSION never expires. If
+ * a super_admin's session expires, they log in again (the login rate-limit
+ * won't block them).
+ *
+ * To revoke a stolen super_admin session BEFORE the 24h TTL hits:
+ *   - POST /api/auth/logout-all (bumps token_version, invalidating all
+ *     their JWTs immediately — the requireAuth token_version check
+ *     rejects the old JWT on the very next request)
+ *   - Change the super_admin's password (also bumps token_version)
+ *
+ * NOTE for operators deploying this fix: existing super_admin sessions
+ * (minted before the fix) carry a 100-year placeholder `expires_at`.
+ * They are now subject to the 30min idle timeout, so they will expire
+ * naturally on the next 30min gap. To force immediate revocation of ALL
+ * existing super_admin sessions, bump the super_admin's token_version
+ * via POST /api/auth/logout-all after deploying.
+ *
+ * Defaults (post-fix):
+ *   - super_admin: 24h absolute, 30min idle (was Infinity / no idle)
+ *   - admin:        8h, 30min idle
+ *   - user:         7d, 30min idle
  *
  * Configurable by super-admins via PUT /api/settings/session-config.
  */
 
 export interface SessionConfig {
   /**
-   * TTL for super_admin sessions. Stored but NOT enforced — super_admin
-   * sessions never expire (see CRITICAL INVARIANT above). Kept in the
-   * interface so the Settings UI can show / restore the stored value.
+   * Absolute TTL for super_admin sessions. Audit C1 fix: NOW ENFORCED
+   * (was "stored but not enforced" — super_admin never expired). Default
+   * 24h. See file header for rationale.
    */
   superAdminTtlMs: number;
   /** TTL for admin role sessions. */
@@ -37,10 +59,12 @@ export interface SessionConfig {
 }
 
 export const DEFAULT_SESSION_CONFIG: SessionConfig = {
-  superAdminTtlMs: Infinity,
+  // Audit C1 fix: was Infinity. A finite 24h absolute TTL bounds the
+  // exposure window of a stolen super_admin cookie (was permanent).
+  superAdminTtlMs: 24 * 60 * 60 * 1000, // 24h (was Infinity)
   adminTtlMs: 8 * 60 * 60 * 1000, // 8h
   userTtlMs: 7 * 24 * 60 * 60 * 1000, // 7d (matches the login cookie maxAge)
-  idleTimeoutMs: 30 * 60 * 1000, // 30min
+  idleTimeoutMs: 30 * 60 * 1000, // 30min (applies to admin/user/super_admin — C1 fix)
 };
 
 let cachedConfig: SessionConfig | null = null;
@@ -84,34 +108,41 @@ export async function getSessionConfig(): Promise<SessionConfig> {
 
 /**
  * Resolve the TTL for a given role. The login route uses this to compute
- * the session's `expires_at` when minting a JWT. Super_admin always
- * returns Infinity — see CRITICAL INVARIANT above. Portal-client sessions
- * (role=portal_client) get the same TTL as regular users.
+ * the session's `expires_at` when minting a JWT. Audit C1 fix: super_admin
+ * now returns config.superAdminTtlMs (default 24h) — was Infinity.
+ * Portal-client sessions (role=portal_client) get the same TTL as regular
+ * users.
  */
 export function getSessionTtlForRole(
   role: string,
   config: SessionConfig,
 ): number {
-  if (role === "super_admin") return Infinity;
+  // C1 fix: was `return Infinity` — made stolen cookies permanent.
+  if (role === "super_admin") return config.superAdminTtlMs;
   if (role === "admin") return config.adminTtlMs;
   return config.userTtlMs;
 }
 
 /**
- * Whether the idle-timeout check should apply to this role. Super_admin
- * is exempt; portal_client is treated like a regular user (idle timeout
- * applies).
+ * Whether the idle-timeout check should apply to this role. Audit C1 fix:
+ * super_admin is NOW subject to idle timeout (30min default, same as
+ * admin/user). Was exempt, which let stolen cookies stay alive indefinitely
+ * as long as /api/auth/touch heartbeated every <30min. If the touch
+ * route stops heartbeating (e.g. attacker closes the tab), the session
+ * dies in 30min.
  */
 export function isIdleTimeoutApplicable(role: string): boolean {
-  return role !== "super_admin";
+  return true; // C1 fix: was `role !== "super_admin"`
 }
 
 /**
- * Whether the absolute-TTL check should apply to this role. Super_admin
- * is exempt; everyone else is checked against `expires_at`.
+ * Whether the absolute-TTL check should apply to this role. Audit C1 fix:
+ * super_admin is NOW subject to the absolute TTL (24h default). Was exempt,
+ * which made stolen cookies valid for the full 7d JWT exp cap (refreshed
+ * on every touch).
  */
 export function isAbsoluteTtlApplicable(role: string): boolean {
-  return role !== "super_admin";
+  return true; // C1 fix: was `role !== "super_admin"`
 }
 
 export function invalidateSessionConfigCache(): void {

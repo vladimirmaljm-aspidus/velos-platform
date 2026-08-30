@@ -45,7 +45,21 @@ const ALL_PRODUCTS: SeedProduct[] = [
 ];
 
 const API_BASE = process.env.VELOS_API_URL || "https://aspidus.onrender.com";
-const API_KEY = process.env.VELOS_API_KEY || "asp_f1386a0272d4f22254fa5cd0876264793ca46ff1567b3490";
+// Audit 2d-F1 fix: removed the hardcoded API key default
+// `asp_f1386a...REDACTED` (full key redacted — see git history rev 939791c).
+// committed to public git history (rev 939791c, 2026-08-30) and must be
+// rotated on the platform. The script now REQUIRES VELOS_API_KEY in the
+// env — if unset, it throws immediately with instructions. Generate a new
+// key via POST /api/api-keys (as a super_admin) and set it in your .env.
+const API_KEY = process.env.VELOS_API_KEY;
+if (!API_KEY || API_KEY.length < 20) {
+  console.error(
+    "[insert] VELOS_API_KEY env var is required (set it to a valid asp_... API key). " +
+      "The previous hardcoded default was removed (audit 2d-F1 — credential committed to git history). " +
+      "Generate a new key via POST /api/api-keys as a super_admin.",
+  );
+  process.exit(1);
+}
 
 // ── CLI args ────────────────────────────────────────────────────────────────
 const args = process.argv.slice(2);

@@ -17,10 +17,22 @@
  *
  * CORS: open to all origins (the relay carries no secrets — the Z.AI
  * token stays server-side in .z-ai-config, never exposed to the client).
+ *
+ * AUTH (Audit 2e-F8 fix): all POST endpoints require
+ *   `Authorization: Bearer <ZAI_RELAY_TOKEN>`
+ * Without this, anyone reaching the relay via the gateway
+ * (?XTransformPort=3030) got unauthenticated Z.AI API calls — the
+ * operator paid the bill and the caller could extract structured data
+ * (COA, spec sheets) from any uploaded document. Set ZAI_RELAY_TOKEN in
+ * the relay's env (and on the Next.js side that calls /api/ai/relay-proxy)
+ * to a random string (openssl rand -hex 32). The Next.js relay-proxy route
+ * must send `Authorization: Bearer ${ZAI_RELAY_TOKEN}` instead of the
+ * cosmetic `x-session-id` header it currently sends.
  */
 
 import ZAI from "z-ai-web-dev-sdk";
 import { createServer } from "http";
+import { timingSafeEqual } from "crypto";
 
 const PORT = 3030;
 const PROJECT_ROOT = "/home/z/my-project";
@@ -223,6 +235,40 @@ const server = createServer(async (req, res) => {
   }
   if (req.method !== "POST") {
     sendJSON(res, 405, { error: "Method not allowed" });
+    return;
+  }
+
+  // Audit 2e-F8 fix: require a Bearer token on all POST endpoints. Without
+  // this, anyone reaching the relay via the gateway (?XTransformPort=3030)
+  // gets unauthenticated Z.AI API calls — the operator pays the bill, and
+  // the caller can extract structured data (COA, spec sheets) from any
+  // uploaded document. The token is a shared secret between the Next.js app
+  // (which calls the relay via /api/ai/relay-proxy) and this service.
+  const RELAY_TOKEN = process.env.ZAI_RELAY_TOKEN;
+  if (!RELAY_TOKEN || RELAY_TOKEN.length < 16) {
+    console.error(
+      "[ai-relay] ZAI_RELAY_TOKEN env var is missing or too short (min 16 chars). " +
+        "Refusing all requests — set ZAI_RELAY_TOKEN to a random string (openssl rand -hex 32).",
+    );
+    sendJSON(res, 500, { error: "Relay not configured (missing ZAI_RELAY_TOKEN)." });
+    return;
+  }
+  const authHeader = req.headers.authorization || "";
+  const presented = authHeader.toLowerCase().startsWith("bearer ")
+    ? authHeader.slice(7).trim()
+    : "";
+  // Constant-time compare to prevent timing-attack token recovery.
+  if (presented.length !== RELAY_TOKEN.length) {
+    sendJSON(res, 401, { error: "Unauthorized" });
+    return;
+  }
+  try {
+    if (!timingSafeEqual(Buffer.from(presented), Buffer.from(RELAY_TOKEN))) {
+      sendJSON(res, 401, { error: "Unauthorized" });
+      return;
+    }
+  } catch {
+    sendJSON(res, 401, { error: "Unauthorized" });
     return;
   }
 

@@ -98,14 +98,36 @@ function getKeyForVersion(version: string): Buffer {
   } else {
     raw = process.env[`SECRET_KEY_V${version}`];
   }
-  if (!raw || raw.length < 16) {
+  // Audit 2d-F2 fix: enforce a strict 32-char minimum and stop padding
+  // short keys with the constant '0' byte. The previous `padEnd(32, "0")`
+  // reduced effective entropy: a 16-char key became 16 bytes of secret +
+  // 16 bytes of the publicly-known '0' char — half the AES-256 key was a
+  // constant value, dramatically weakening the vault's confidentiality.
+  //
+  // Operators who followed `.env.example` ("random 32+ char string") are
+  // UNAFFECTED: padEnd on a 32+ char string is a no-op, and slice(0,32)
+  // takes the first 32 bytes of full-entropy input. The behavior is
+  // bit-for-bit identical for compliant keys.
+  //
+  // Operators with a <32-char key had a weakly-encrypted vault and MUST
+  // rotate:
+  //   1. Generate a new 32+ char key: `openssl rand -hex 32`
+  //   2. Set VAULT_KEY_V2=<new-key> and VAULT_KEY_VERSION=2 in env
+  //   3. Run the /api/vault/rotate admin endpoint to re-encrypt existing
+  //      secrets with the new key (old rows decrypt with v1, re-encrypt
+  //      as v2; the versioned wire format makes this seamless).
+  if (!raw || raw.length < 32) {
     throw new Error(
-      `${envName} (or VAULT_KEY_V2) environment variable is required (min 16 chars) to decrypt ` +
+      `${envName} (or VAULT_KEY_V2) environment variable is required (min 32 chars — was 16, audit 2d-F2) to decrypt ` +
         `vault secrets encrypted with key version ${version}. ` +
-        `Set it in your .env or Render env vars.`,
+        `If you have a shorter key, your vault was encrypted with reduced entropy (padded with '0' bytes) — ` +
+        `rotate: set a 32+ char random value (openssl rand -hex 32), bump VAULT_KEY_VERSION, and run /api/vault/rotate.`,
     );
   }
-  return Buffer.from(raw.padEnd(32, "0").slice(0, 32), "utf8");
+  // No more padEnd — the key is already 32+ chars of full entropy. Take
+  // the first 32 bytes (matches the previous behavior for compliant keys,
+  // so existing vault entries decrypt unchanged).
+  return Buffer.from(raw.slice(0, 32), "utf8");
 }
 
 /** The CURRENT key (used for new `encrypt()` calls). */

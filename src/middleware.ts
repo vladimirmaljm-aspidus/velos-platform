@@ -174,7 +174,13 @@ export function middleware(req: NextRequest) {
   // Fire-and-forget — pings /api/capture-host which writes the external
   // Host header to /tmp/discovered-host.txt. Only runs on the sandbox
   // (skipped on Vercel). Non-blocking so it doesn't add latency.
-  if (process.env.VERCEL !== "1") {
+  //
+  // Audit H3 fix: previously this fired on EVERY non-Vercel request, adding
+  // a fetch() to /api/capture-host on every page/API load. Now gated
+  // behind SANDBOX_HOST_CAPTURE=1 so it only runs when the sandbox
+  // auto-discovery is explicitly enabled. Production (Vercel) already
+  // skipped it via the VERCEL check.
+  if (process.env.VERCEL !== "1" && process.env.SANDBOX_HOST_CAPTURE === "1") {
     try {
       const extHost = req.headers.get("x-forwarded-host") || req.headers.get("host") || "";
       const extProto = req.headers.get("x-forwarded-proto") || "https";

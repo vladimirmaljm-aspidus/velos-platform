@@ -26,6 +26,10 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import type { Store } from "@/lib/data/store";
 import type { Webhook, WebhookDelivery, WebhookPayload } from "@/lib/supabase/types";
+// Audit 2f-F1/F2 fix: re-validate the webhook URL at delivery time to close
+// the DNS-rebinding gap (URL validated at create-time, DNS re-pointed to a
+// private IP by delivery time). See `attemptDelivery` below.
+import { assertSafeWebhookUrl } from "@/lib/webhooks/url-validation";
 
 // Per-attempt backoff schedule (milliseconds). After attempt N fails, the
 // next retry is scheduled at `next_attempt_at = now + BACKOFF_MS[N]`.
@@ -312,21 +316,48 @@ async function attemptDelivery(
   let errorMessage: string | null = null;
 
   try {
-    const response = await fetch(webhook.url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Webhook-Event": delivery.event,
-        "X-Webhook-Signature": signature,
-        "X-Webhook-Delivery": delivery.id,
-        "User-Agent": WEBHOOK_USER_AGENT,
-      },
-      body,
-      signal: AbortSignal.timeout(WEBHOOK_HTTP_TIMEOUT_MS),
-    });
-    responseStatus = response.status;
-    responseBody = (await response.text().catch(() => "")).slice(0, 2000);
-    delivered = response.ok; // 2xx → delivered
+    // Audit 2f-F1 + 2f-F2 fix: re-validate the webhook URL at delivery time.
+    // The URL was validated at create-time (POST /api/webhooks), but DNS
+    // rebinding can re-point a public hostname to a private IP between
+    // create and delivery — which may be hours or days later. Re-running
+    // assertSafeWebhookUrl here closes the gap: if the hostname now resolves
+    // to 127.0.0.0/8, 10/8, 172.16/12, 192.168/16, 169.254/16 (AWS/GCP
+    // metadata), ::1, fc00::/7, fe80::/10 — we refuse to fetch.
+    //
+    // Also: `redirect: "manual"` so a 302 redirect from the receiver cannot
+    // redirect the POST (with its signed body + tenant_id payload) to an
+    // internal endpoint like http://169.254.169.254/latest/meta-data/. Any 3xx
+    // is treated as a delivery failure — no legitimate webhook receiver
+    // should redirect a POST with a body + signature.
+    const urlCheck = await assertSafeWebhookUrl(webhook.url);
+    if (!urlCheck.ok) {
+      errorMessage = `URL re-validation failed at delivery time: ${urlCheck.error}`;
+    } else {
+      const response = await fetch(webhook.url, {
+        method: "POST",
+        redirect: "manual", // never follow redirects (redirect-to-internal SSRF)
+        headers: {
+          "Content-Type": "application/json",
+          "X-Webhook-Event": delivery.event,
+          "X-Webhook-Signature": signature,
+          "X-Webhook-Delivery": delivery.id,
+          "User-Agent": WEBHOOK_USER_AGENT,
+        },
+        body,
+        signal: AbortSignal.timeout(WEBHOOK_HTTP_TIMEOUT_MS),
+      });
+      // 3xx is a redirect — treat as failure. Don't follow, don't expose
+      // the redirected body (which may contain internal-service data or a
+      // leaked IAM token from the metadata endpoint).
+      if (response.status >= 300 && response.status < 400) {
+        responseStatus = response.status;
+        errorMessage = `Receiver returned ${response.status} redirect — refusing to follow (potential redirect-to-internal SSRF).`;
+      } else {
+        responseStatus = response.status;
+        responseBody = (await response.text().catch(() => "")).slice(0, 2000);
+        delivered = response.ok; // 2xx → delivered
+      }
+    }
   } catch (e: any) {
     // Network error, DNS failure, timeout, etc.
     errorMessage = e?.message || String(e) || "Unknown fetch error";

@@ -25,7 +25,15 @@ const nextConfig: NextConfig = {
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "Content-Security-Policy", value: [
             "default-src 'self'",
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+            // Audit C2 fix: removed 'unsafe-eval' — it allows eval()/new Function()
+            // from an XSS injection, which is almost never needed in modern
+            // Next.js 16 (Turbopack bundles everything; no lib should eval
+            // untrusted strings). If a specific lib turns out to need it,
+            // scope to that lib's origin via a per-route header override
+            // rather than re-adding globally. Kept 'unsafe-inline' for now
+            // — removing it requires nonce-based CSP (middleware nonce
+            // injection + Next.js experimental.csp), which is a follow-up.
+            "script-src 'self' 'unsafe-inline'",
             "style-src 'self' 'unsafe-inline'",
             "img-src 'self' data: https: blob:",
             "font-src 'self' data:",

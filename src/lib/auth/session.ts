@@ -149,6 +149,22 @@ export async function createSession(payload: Omit<SessionPayload, "iat" | "exp">
 export async function verifySession(token: string): Promise<SessionPayload | null> {
   try {
     const { payload } = await jwtVerify(token, getSecret());
+    // Audit 2a-F1 fix: reject 2FA temp tokens presented as full session
+    // cookies. A temp token (kind:"2fa_temp") is only valid for the
+    // /api/auth/2fa/login flow (5-minute TTL, issued after password verify
+    // but before TOTP). If accepted here, an attacker who knows the password
+    // can plant the tempToken in the crm_session cookie and bypass 2FA
+    // entirely — every requireAuth-protected route would admit them for the
+    // temp token's 5-minute lifetime (and, combined with 2a-F6, the touch
+    // route would re-sign it into a 7-day full session).
+    //
+    // The `kind` marker is set by `issueTwoFactorTempToken` and is
+    // cryptographically bound to the JWT signature (an attacker cannot strip
+    // it without invalidating the signature). Checking it here is the single
+    // fix that closes the 2FA-bypass hole for every protected route at once.
+    if ((payload as { kind?: string } | null)?.kind === "2fa_temp") {
+      return null;
+    }
     return payload as unknown as SessionPayload;
   } catch {
     return null;
@@ -268,6 +284,17 @@ export async function verifyTwoFactorTempToken(
 export async function bumpSessionActivity(
   session: SessionPayload,
 ): Promise<string> {
+  // Audit 2a-F6 fix: refuse to re-sign a 2FA temp token as a full session.
+  // Even though `verifySession` now rejects `kind:"2fa_temp"` (2a-F1 fix),
+  // the /api/auth/touch route may decode the JWT payload directly and pass
+  // it here. Defense-in-depth: throw if a temp token reaches us, forcing the
+  // caller's try/catch to return 401 instead of minting a 7-day session.
+  // Without this guard, the touch route would re-sign the temp token with a
+  // fresh 7-day `exp` AND a fallback 7-day `expires_at`, turning a 5-minute
+  // 2FA temp token into a permanent full session cookie.
+  if ((session as { kind?: string } | null)?.kind === "2fa_temp") {
+    throw new Error("Refusing to bump 2FA temp token as a full session.");
+  }
   const expiresAt =
     typeof session.expires_at === "number"
       ? session.expires_at

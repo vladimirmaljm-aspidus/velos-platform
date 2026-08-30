@@ -113,12 +113,28 @@ CREATE POLICY webhook_deliveries_tenant_delete
 SELECT cron.unschedule('webhook-retry')
   WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'webhook-retry');
 
+-- Audit 2c-F2 fix: the literal CRON_TOKEN `DSn63EDE...` that was previously
+-- hardcoded in this URL has been removed. It was committed to public git
+-- history and must be rotated. The token is now read at runtime from the
+-- Postgres setting `app.cron_token` (set via
+--   ALTER DATABASE postgres SET app.cron_token = '<rotated-token>';
+-- ). Migrations 025 and 036 already applied this pattern to the LIVE DB;
+-- this redaction only affects fresh DBs (the live DB skips 023 because it
+-- is already recorded in supabase_migrations). The operator MUST:
+--   1. Generate a new token: openssl rand -hex 32
+--   2. Set it in the Next.js env: CRON_TOKEN=<new-token>
+--   3. Set it in the DB: ALTER DATABASE postgres SET app.cron_token = '<new-token>';
+--   4. Scrub git history: git filter-repo --replace-text (replace the old
+--      literal token string with `REDACTED` across all commits).
+-- If app.cron_token is unset, the URL has `?token=` (empty) and the cron-auth
+-- check rejects the request — fail-loud, no silent breakage.
 SELECT cron.schedule(
   'webhook-retry',
   '*/5 * * * *',  -- every 5 minutes
   $$
     SELECT net.http_get(
-      url := 'https://aspidus.onrender.com/api/cron/webhook-retry?token=DSn63EDE38vK54Z3lvKcCjdyox6wKVY59MpXqDdUcSo'
+      url := 'https://aspidus.onrender.com/api/cron/webhook-retry?token='
+            || COALESCE(nullif(current_setting('app.cron_token', true), ''), '')
     );
   $$
 );

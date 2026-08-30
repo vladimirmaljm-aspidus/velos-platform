@@ -68,7 +68,22 @@ import { jwtVerify } from "jose";
 import { timingSafeEqual } from "crypto";
 
 const PORT = Number(process.env.PORT ?? 3001);
-const CRON_TOKEN = process.env.CRON_TOKEN || "velos-realtime-dev";
+// Audit 2d-F3 / 2e-F6 fix: remove the "velos-realtime-dev" fallback. A
+// publicly-known default token meant anyone reaching /emit via the gateway
+// (?XTransformPort=3001) could broadcast events to any tenant room. Fail
+// loudly at boot if the token is missing — the operator must set CRON_TOKEN
+// in every environment (including sandbox). Generate with:
+//   openssl rand -hex 32
+const CRON_TOKEN_ENV = process.env.CRON_TOKEN;
+if (!CRON_TOKEN_ENV || CRON_TOKEN_ENV.length < 16) {
+  console.error(
+    "[realtime] CRON_TOKEN env var is missing or too short (min 16 chars). " +
+      "Refusing to start — set CRON_TOKEN to a random string (openssl rand -hex 32). " +
+      "The previous default 'velos-realtime-dev' was a publicly-known token (audit 2d-F3/2e-F6).",
+  );
+  process.exit(1);
+}
+const CRON_TOKEN: string = CRON_TOKEN_ENV;
 
 // JWT verification — must match the Next.js app's session signing secret.
 // `JWT_SECRET_KEY` is preferred (vault key separation, see `.env.example`);
@@ -351,21 +366,16 @@ io.use(async (socket: Socket, next) => {
         tenantId: looked.tenant_id,
         role: looked.role,
       };
-    } else if (!supabase) {
-      // Dev-only fallback when Supabase isn't configured — accept the
-      // handshake payload as-is so local development still works.
-      // Logged ONCE per socket connect so prod misconfig is visible.
-      console.warn(
-        "[realtime] accepting handshake payload without Supabase " +
-          "verification (dev mode). userId=",
-        authPayload.userId,
-      );
-      identity = {
-        userId: String(authPayload.userId),
-        tenantId: authPayload.tenantId ?? null,
-        role: "staff",
-      };
     }
+    // Audit 2d-F3 / 2e-F6 fix: removed the `else if (!supabase)` dev-mode
+    // fallback that accepted client-supplied userId/tenantId without
+    // Supabase verification. The exact bypass payload was:
+    //   io(url, { transports: ["websocket"],
+    //            auth: { token: { userId, tenantId } } })
+    // which let an attacker join any tenant room and receive that tenant's
+    // events. If Supabase is not configured, cross-origin handshakes are
+    // now rejected — cookie-based auth still works for same-origin
+    // connections (the production Vercel→sandbox path).
   }
 
   if (!identity) {
@@ -412,11 +422,6 @@ httpServer.listen(PORT, "0.0.0.0", () => {
   console.log(
     `[realtime] accessible via gateway at /?XTransformPort=${PORT}`,
   );
-  if (CRON_TOKEN === "velos-realtime-dev") {
-    console.warn(
-      "[realtime] CRON_TOKEN is the dev default — set CRON_TOKEN in prod.",
-    );
-  }
 });
 
 // Graceful shutdown — close the HTTP server first so new connections are

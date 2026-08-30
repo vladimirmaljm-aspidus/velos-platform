@@ -1,23 +1,33 @@
-:81 {
-	@transform_port_query {
-		query XTransformPort=*
-	}
+# ──────────────────────────────────────────────────────────────────────────
+# SANDBOX / DEV ONLY — do not deploy this Caddyfile publicly.
+# (Audit 2e-F1 / Phase 1 H5 fix)
+# The `reverse_proxy localhost:{query.XTransformPort}` directive is an OPEN
+# PROXY: anyone who can reach this Caddy instance can proxy to ANY localhost
+# port by setting ?XTransformPort=<port>. Binding to loopback only
+# (`http://localhost:81`) ensures the gateway is reachable only from the host
+# itself, not from the network. Production should use a proper authenticated
+# reverse proxy with a port allowlist, not this file.
+# ──────────────────────────────────────────────────────────────────────────
+http://localhost:81 {
+        @transform_port_query {
+                query XTransformPort=*
+        }
 
-	handle @transform_port_query {
-		reverse_proxy localhost:{query.XTransformPort} {
-			header_up Host {host}
-			header_up X-Forwarded-For {remote_host}
-			header_up X-Forwarded-Proto {scheme}
-			header_up X-Real-IP {remote_host}
-		}
-	}
+        handle @transform_port_query {
+                reverse_proxy localhost:{query.XTransformPort} {
+                        header_up Host {host}
+                        header_up X-Forwarded-For {remote_host}
+                        header_up X-Forwarded-Proto {scheme}
+                        header_up X-Real-IP {remote_host}
+                }
+        }
 
-	handle {
-		reverse_proxy localhost:3000 {
-			header_up Host {host}
-			header_up X-Forwarded-For {remote_host}
-			header_up X-Forwarded-Proto {scheme}
-			header_up X-Real-IP {remote_host}
-		}
-	}
+        handle {
+                reverse_proxy localhost:3000 {
+                        header_up Host {host}
+                        header_up X-Forwarded-For {remote_host}
+                        header_up X-Forwarded-Proto {scheme}
+                        header_up X-Real-IP {remote_host}
+                }
+        }
 }
