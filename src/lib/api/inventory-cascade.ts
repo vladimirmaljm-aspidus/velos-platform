@@ -56,6 +56,28 @@ interface DeductStockOpts {
  * Decrements stock for each line item of an accepted offer.
  * Returns the list of (productId, newStock) pairs updated — useful for the
  * caller to fire `notifyLowStock` for each product that fell below reorder.
+ *
+ * ── ATOMICITY (audit 2d2-F1 + 2d2-F5) ──────────────────────────────────
+ * Previously this function did a non-atomic 4-step read-modify-write
+ * per line item (SELECT products → SELECT inventory_movements → INSERT
+ * movement → UPDATE products.stock) across FOUR separate PostgREST
+ * calls. Two concurrent offer-acceptances on the SAME product (different
+ * offers — F1) both read stock=10, both wrote stock=5 → 5 units silently
+ * oversold. Two concurrent acceptances on the SAME offer+product (F5
+ * TOCTOU) both saw an empty inventory_movements row set and both
+ * inserted a -5 movement → stock decremented twice.
+ *
+ * Now each line item delegates to the `deduct_product_stock` SECURITY
+ * DEFINER RPC (migration 070), which performs all four steps inside ONE
+ * Postgres transaction with SELECT FOR UPDATE on the products row. The
+ * row lock serialises concurrent callers on the same product; the
+ * idempotency SELECT inside the same tx sees any concurrent caller's
+ * committed write. The JS loop over line items is preserved — but each
+ * iteration is now atomic, and cross-product calls remain independent.
+ *
+ * Falls back to the legacy non-atomic JS path ONLY if the RPC is
+ * unavailable (migration not applied). A warning is logged so ops
+ * know the atomicity guarantee is degraded.
  */
 export async function deductStockForOffer(opts: DeductStockOpts): Promise<
   Array<{ productId: string; newStock: number; productName: string; sku: string; reorderLevel: number }>
@@ -69,13 +91,92 @@ export async function deductStockForOffer(opts: DeductStockOpts): Promise<
     productId: string; newStock: number; productName: string; sku: string; reorderLevel: number;
   }> = [];
 
-  // ── Deduct stock for each line item ───────────────────────────────────
+  // Probe once whether the atomic RPC is available (migration 070 applied).
+  // On first call we attempt a no-op probe; if it fails we set a flag and
+  // fall back to the legacy path for the rest of this invocation.
+  let rpcAvailable = true;
+
   for (const item of opts.items) {
     const productId = item?.product_id;
     if (!productId) continue;
     const qty = Math.abs(Number(item.quantity) || 0);
     if (qty <= 0) continue;
 
+    if (rpcAvailable) {
+      try {
+        // ATOMIC PATH — delegate to the SECURITY DEFINER RPC (migration 070).
+        // The RPC: SELECT ... FOR UPDATE on products → idempotency check →
+        // INSERT movement → UPDATE products.stock, all in one tx.
+        const { data: rpcResult, error: rpcErr } = await sb.rpc("deduct_product_stock", {
+          p_product_id: productId,
+          p_quantity: qty,
+          p_tenant_id: tenantId,
+          p_offer_id: offerId,
+          p_partner_id: opts.partnerId || null,
+          p_offer_number: offerNumber,
+          p_source_label: sourceLabel,
+          p_reason_suffix: opts.reasonSuffix || null,
+        });
+        if (rpcErr) {
+          // PSQL error 42883 = function does not exist → migration not
+          // applied yet. Fall back to the legacy non-atomic path for the
+          // rest of this invocation (and log prominently so ops notice).
+          if (String(rpcErr.code) === "42883" || /could not find|does not exist/i.test(rpcErr.message)) {
+            console.warn(
+              "[inventory cascade] deduct_product_stock RPC not available — falling back to non-atomic path. Apply migration 070 to close 2d2-F1 + 2d2-F5.",
+            );
+            rpcAvailable = false;
+          } else {
+            console.error(
+              `[inventory cascade] deduct_product_stock RPC failed for ${productId}:`,
+              rpcErr.message,
+            );
+            continue;
+          }
+        } else if (rpcResult) {
+          const r = rpcResult as {
+            deducted?: boolean;
+            reason?: string;
+            new_stock?: number | string;
+            actual_deducted?: number | string;
+            product_name?: string;
+            sku?: string;
+            reorder_level?: number | string;
+          };
+          if (r.deducted) {
+            updatedProducts.push({
+              productId,
+              newStock: Number(r.new_stock ?? 0),
+              productName: r.product_name || "(unnamed)",
+              sku: r.sku || "",
+              reorderLevel: Number(r.reorder_level ?? 0),
+            });
+          } else if (r.reason === "product_not_found") {
+            console.warn(`[inventory cascade] product ${productId} not found, skipping stock decrement`);
+          } else if (r.reason === "already_deducted") {
+            console.log(
+              `[inventory cascade] net deduction already exists for offer ${offerId} / product ${productId}, skipping`,
+            );
+          } else if (r.reason === "non_positive_quantity") {
+            // skip silently
+          }
+          // Either way the RPC handled this item — continue to the next.
+          continue;
+        }
+      } catch (e: any) {
+        console.error(`[inventory cascade] deduct_product_stock RPC threw for ${productId}:`, e);
+        // Don't give up on the RPC entirely for a single throw — but if
+        // it's the "function does not exist" class, fall back.
+        if (/could not find|does not exist/i.test(String(e?.message || ""))) {
+          rpcAvailable = false;
+        }
+      }
+    }
+
+    // ── LEGACY NON-ATOMIC PATH (fallback when the RPC is unavailable) ──
+    // Kept for backward compatibility with environments where migration
+    // 070 has not yet been applied. The atomic RPC is the canonical path.
+    //
     // 1) Fetch current stock + reorder_level + name (for the notifyLowStock
     //    notification that fires after the deduction). Fetched BEFORE the
     //    movement insert so we can record the ACTUAL deducted amount.

@@ -94,7 +94,62 @@ export async function POST(req: NextRequest) {
         { status: 403 },
       );
     }
-    const created = await auth.store.upsertErpBankTransaction({ ...body, tenant_id: tenantId });
+
+    // ── IDEMPOTENCY (audit 2d2-F17) ───────────────────────────────────
+    // A client retrying a POST due to a network glitch can create a
+    // DUPLICATE erp_bank_transactions row with identical (bank_account_id,
+    // reference, amount, date). The bank ledger then shows 2× the credit;
+    // the cumulative-txn lookup in record-payment (migration 071 RPC)
+    // sums BOTH → invoice marked "paid" prematurely or double-paid.
+    //
+    // Migration 073 adds a partial UNIQUE index on
+    //   (tenant_id, bank_account_id, reference, amount, date)
+    //   WHERE reference IS NOT NULL
+    // We catch the unique-violation (PSQL 23505) and return 409 with the
+    // existing txn id so the client can treat the duplicate as a
+    // successful replay. Idempotency is only enforced when the caller
+    // supplies a non-empty `reference` (NULL references would otherwise
+    // block legitimate duplicates).
+    let created: any;
+    try {
+      created = await auth.store.upsertErpBankTransaction({ ...body, tenant_id: tenantId });
+    } catch (e: any) {
+      // PostgREST surfaces the PSQL error code on the error object. The
+      // unique-violation code is 23505. We match loosely on the code +
+      // the message ("unique" / "duplicate") for defense against the
+      // store method's error normalization (it may rethrow with a
+      // different shape than the raw PostgREST error).
+      const code = String(e?.code || "");
+      const msg = String(e?.message || "");
+      if (code === "23505" || /unique constraint|duplicate key/i.test(msg)) {
+        // Look up the existing row that won the race — return its id so
+        // the caller can treat the retry as a successful replay.
+        try {
+          const { data: existing } = await sb
+            .from("erp_bank_transactions")
+            .select("id, bank_account_id, amount, date, reference, transaction_type, description, counterparty, is_reconciled, reconciled_with, journal_entry_id, category, deal_id, invoice_number, is_auto_generated, created_at, updated_at")
+            .eq("tenant_id", tenantId)
+            .eq("bank_account_id", body.bank_account_id)
+            .eq("amount", body.amount)
+            .eq("date", body.date)
+            .eq("reference", body.reference)
+            .maybeSingle();
+          if (existing) {
+            return NextResponse.json(
+              { ...existing, idempotent_replay: true },
+              { status: 409 },
+            );
+          }
+        } catch (lookupErr: any) {
+          console.warn("[erp/bank-transactions POST] idempotency replay lookup failed:", lookupErr.message);
+        }
+        return NextResponse.json(
+          { error: "A bank transaction with the same (bank_account_id, reference, amount, date) already exists.", idempotent_replay: true },
+          { status: 409 },
+        );
+      }
+      throw e;
+    }
     await audit(auth.store, auth.user, req, "bank_transaction.create", "erp_bank_transaction", created.id, {
       bank_account_id: created.bank_account_id,
       amount: created.amount,

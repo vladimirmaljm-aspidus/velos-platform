@@ -187,6 +187,20 @@ export async function createCommissionOnOfferAccepted(
  * than catching internally — the caller is responsible for deciding
  * whether to fail the request or log + continue.
  *
+ * ATOMICITY FIX (audit 2d2-F20): previously this function SELECT'd the
+ * pending commission rows and UPDATEd each row in its own PostgREST call
+ * (one row per loop iteration). If the Nth update failed, the prior N-1
+ * updates were already committed — leaving commissions #1..N-1 = "approved"
+ * and #N..M = "pending" for the same deal. A concurrent payout-completion
+ * call could then grab the "approved" rows and mark them "paid", while
+ * the still-"pending" rows waited for the next retry — paying out a
+ * partial batch. Now we use a single bulk UPDATE statement (one PostgREST
+ * call) that atomically flips ALL matching rows. Either all flip or none
+ * do. The migration 071 `record_invoice_payment` RPC performs this same
+ * bulk UPDATE inline (single-statement atomic) when the invoice flips
+ * to "paid" — this helper remains for callers that don't go through
+ * the RPC.
+ *
  * Returns `{ updated: number }` so the caller can include the count in
  * its response/audit trail.
  */
@@ -196,36 +210,27 @@ export async function markCommissionsEarnedOnInvoicePaid(
 ): Promise<{ updated: number }> {
   if (!dealId || !tenantId) return { updated: 0 };
   const sb = getSupabase();
-  const { data, error: selectError } = await sb
+  // ATOMIC BULK UPDATE (audit 2d2-F20): single UPDATE statement flips
+  // all matching rows. The `.select("id")` returns the rows actually
+  // updated so we can count them. Either ALL matching rows flip from
+  // "pending" → "approved" or NONE do — no partial state.
+  const nowIso = new Date().toISOString();
+  const { data: updateResult, error: updateError } = await sb
     .from("deal_commissions")
-    .select("id, status")
+    .update({
+      status: "approved",
+      approved_at: nowIso,
+      notes: `Auto-approved: linked invoice paid at ${nowIso}`,
+      updated_at: nowIso,
+    })
     .eq("tenant_id", tenantId)
     .eq("deal_id", dealId)
-    .in("status", ["pending"]);
-  if (selectError) {
+    .in("status", ["pending"])
+    .select("id");
+  if (updateError) {
     throw new Error(
-      `markCommissionsEarnedOnInvoicePaid: select failed for deal ${dealId}: ${selectError.message}`,
+      `markCommissionsEarnedOnInvoicePaid: bulk update failed for deal ${dealId}: ${updateError.message}`,
     );
   }
-  if (!data || data.length === 0) return { updated: 0 };
-  let updated = 0;
-  const nowIso = new Date().toISOString();
-  for (const row of data as Array<{ id: string; status: string }>) {
-    const { error: updateError } = await sb
-      .from("deal_commissions")
-      .update({
-        status: "approved",
-        approved_at: nowIso,
-        notes: `Auto-approved: linked invoice paid at ${nowIso}`,
-        updated_at: nowIso,
-      })
-      .eq("id", row.id);
-    if (updateError) {
-      throw new Error(
-        `markCommissionsEarnedOnInvoicePaid: update failed for commission ${row.id} (deal ${dealId}): ${updateError.message}`,
-      );
-    }
-    updated += 1;
-  }
-  return { updated };
+  return { updated: Array.isArray(updateResult) ? updateResult.length : 0 };
 }

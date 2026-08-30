@@ -65,10 +65,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     //    a payout as completed ───────────────────────────────────────────
     // Without this check, an admin could mark a payout "completed" for a
     // batch that includes pending / cancelled commissions — bypassing the
-    // approval workflow. `markDealCommissionPaid` would then flip those
-    // commissions straight to "paid", skipping "approved". We check
-    // BEFORE the upsert so the payout row itself is never persisted in
-    // a "completed" state for an unapproved batch.
+    // approval workflow. The mark_commission_payout_paid RPC below also
+    // filters status='approved' as defense-in-depth, but we reject at the
+    // route layer first so the caller gets a clear 400 error.
     if (body.status === "completed" && existing.status !== "completed") {
       const commissionIds = Array.isArray(body.commission_ids) && body.commission_ids.length > 0
         ? body.commission_ids
@@ -101,25 +100,105 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       }
     }
 
-    const updated = await auth.store.upsertCommissionPayout({ ...body, id, tenant_id: existing.tenant_id });
-    // FIX-P1-LOGIC Fix 3: cascade payout completion → mark all linked
-    // DealCommissions as paid. Only fires on a real transition INTO
-    // "completed" — re-saving an already-completed payout is a no-op so we
-    // don't clobber paid_at on idempotent retries.
+    // ── ATOMIC PAYOUT COMPLETION (audit 2d2-F3 + 2d2-F20) ───────────────
+    // Previously the PUT did `upsertCommissionPayout({status:"completed"})`
+    // followed by a JS for-loop calling `markDealCommissionPaid` per
+    // commission_id, each in its own try/catch. If the Nth call failed,
+    // the loop continued silently — final state: payout.status="completed"
+    // but commissions #1..#N-1="paid", #N="approved", #N+1..M="paid".
+    // The user saw "completed" in the UI while commissions were in
+    // inconsistent states (2d2-F3). The same loop pattern in
+    // markCommissionsEarnedOnInvoicePaid (commission-cascade.ts) is closed
+    // by migration 071's record_invoice_payment RPC (F20).
+    //
+    // Now we delegate the completion to the `mark_commission_payout_paid`
+    // SECURITY DEFINER RPC (migration 072), which performs the payout
+    // UPDATE + the bulk deal_commissions UPDATE inside ONE Postgres
+    // transaction. The bulk UPDATE is a single statement — atomic, no
+    // loop. The RPC raises on any error → no partial completion.
+    //
+    // For non-completion PUTs (status="pending" / status unchanged /
+    // other fields), we fall through to the regular upsert path.
     if (body.status === "completed" && existing.status !== "completed") {
-      if (Array.isArray(updated.commission_ids) && updated.commission_ids.length > 0) {
-        for (const commissionId of updated.commission_ids) {
-          try {
-            await auth.store.markDealCommissionPaid(
-              commissionId,
-              updated.payment_reference || undefined,
-            );
-          } catch (e) {
-            console.warn(`[commission_payout.update] markDealCommissionPaid failed for ${commissionId}:`, e);
+      // Try the atomic RPC. Fall back to the legacy non-atomic loop if
+      // the migration 072 RPC is not yet applied.
+      type RpcResult = {
+        payout_id?: string;
+        status?: string;
+        commission_count?: number;
+        already_paid_count?: number;
+        total_count?: number;
+        idempotent_replay?: boolean;
+      };
+      let rpcResult: RpcResult | null = null;
+      let rpcError: string | null = null;
+      try {
+        const { getSupabase } = await import("@/lib/supabase/client");
+        const sb = getSupabase();
+        const { data, error } = await sb.rpc("mark_commission_payout_paid", {
+          p_payout_id: id,
+          p_tenant_id: existing.tenant_id,
+          p_payment_reference: body.payment_reference || null,
+        });
+        if (error) {
+          rpcError = error.message || String(error);
+        } else {
+          rpcResult = (data ?? null) as RpcResult | null;
+        }
+      } catch (e: any) {
+        rpcError = e?.message || String(e);
+      }
+
+      if (rpcError && /could not find|does not exist|function/i.test(rpcError) && rpcResult === null) {
+        // Migration 072 not applied — fall back to the legacy non-atomic
+        // path. A warning is logged so ops notice the atomicity guarantee
+        // is degraded. The legacy path retains the 2d2-F3 bug.
+        console.warn(
+          "[commission_payout.update] mark_commission_payout_paid RPC not available — falling back to non-atomic loop. Apply migration 072 to close 2d2-F3.",
+        );
+        const updated = await auth.store.upsertCommissionPayout({ ...body, id, tenant_id: existing.tenant_id });
+        if (Array.isArray(updated.commission_ids) && updated.commission_ids.length > 0) {
+          for (const commissionId of updated.commission_ids) {
+            try {
+              await auth.store.markDealCommissionPaid(
+                commissionId,
+                updated.payment_reference || undefined,
+              );
+            } catch (e) {
+              console.warn(`[commission_payout.update:legacy] markDealCommissionPaid failed for ${commissionId}:`, e);
+            }
           }
         }
+        await audit(auth.store, auth.user, req, "commission_payout.update", "commission_payout", id, {
+          status: "completed",
+          legacy_path: true,
+        });
+        return NextResponse.json(updated);
       }
+
+      if (rpcError) {
+        console.error("[commission_payout.update] RPC failed:", rpcError);
+        return NextResponse.json(
+          { error: `Failed to complete payout: ${rpcError}` },
+          { status: 500 },
+        );
+      }
+
+      // Refresh the payout row from the DB so we return the current
+      // state (the RPC updated status, paid_at, payment_reference).
+      const updated = await auth.store.getCommissionPayout(id);
+      await audit(auth.store, auth.user, req, "commission_payout.update", "commission_payout", id, {
+        status: "completed",
+        commission_count: rpcResult?.commission_count,
+        already_paid_count: rpcResult?.already_paid_count,
+        total_count: rpcResult?.total_count,
+      });
+      return NextResponse.json(updated ?? { ok: true, ...rpcResult });
     }
+
+    // Non-completion PUT (e.g. setting fields on a pending payout, or
+    // updating a payout that's already "completed" — idempotent retry).
+    const updated = await auth.store.upsertCommissionPayout({ ...body, id, tenant_id: existing.tenant_id });
     await audit(auth.store, auth.user, req, "commission_payout.update", "commission_payout", id);
     return NextResponse.json(updated);
   } catch (error: any) {
