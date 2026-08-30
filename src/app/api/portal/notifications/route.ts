@@ -17,7 +17,8 @@ export const runtime = "nodejs";
  *
  * Query:
  *   limit  — optional cap on the number of items returned (e.g. the bell
- *            dropdown only needs the most recent ~20). Defaults to "all".
+ *            dropdown only needs the most recent ~20). Defaults to 200
+ *            (2b2-F3 — pushed into the DB query; was "all").
  */
 export async function GET(req: Request) {
   try {
@@ -27,25 +28,21 @@ export async function GET(req: Request) {
     }
 
     const store = await getStore();
-    let items = await store.listNotificationsByPartner(access.tenant_id, access.partner_id);
 
-    // PORTAL-L7 — honour the optional ?limit= so the bell fetch doesn't
-    // load every notification ever issued for the tenant. Items are
-    // returned newest-first by the store layer; slice AFTER sorting so
-    // the limit takes the most recent N (the store currently returns
-    // created_at DESC, but we sort defensively here so the limit is
-    // stable regardless of the store's ordering).
+    // 2b2-F3 — push the limit into the DB query (was: fetch all + slice in JS).
+    // The store now caps at 200 internally even when no limit is passed.
     const url = new URL(req.url);
     const limitRaw = url.searchParams.get("limit");
+    let limit: number | undefined;
     if (limitRaw) {
-      const limit = Number.parseInt(limitRaw, 10);
-      if (Number.isFinite(limit) && limit > 0) {
-        items = items
-          .slice()
-          .sort((a, b) => (a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0))
-          .slice(0, limit);
-      }
+      const parsed = Number.parseInt(limitRaw, 10);
+      if (Number.isFinite(parsed) && parsed > 0) limit = parsed;
     }
+    const items = await store.listNotificationsByPartner(
+      access.tenant_id,
+      access.partner_id,
+      limit,
+    );
 
     // AUDIT2-LOGIC-UX M1 — compute unread_count from a SEPARATE total
     // count query, NOT from the (possibly sliced) items list. The bell

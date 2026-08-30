@@ -2602,7 +2602,7 @@ export class SupabaseStore implements Store {
     if (error) throw error;
     return (data as Notification[]) || [];
   }
-  async listNotificationsByPartner(tenantId: string, partnerId: string): Promise<Notification[]> {
+  async listNotificationsByPartner(tenantId: string, partnerId: string, limit?: number): Promise<Notification[]> {
     // STRICT: only notifications addressed to this exact partner. No broadcast
     // leak — internal notifications with partner_id=null are NEVER exposed to
     // the portal. Also restricted to portal-safe types so misrouted internal
@@ -2622,13 +2622,20 @@ export class SupabaseStore implements Store {
       "marketplace_response_rejected",
       "marketplace_message_received",
     ];
+    // 2b2-F3 — push the limit into the DB query (was: fetch all + slice in JS).
+    // Default cap 200 is a safety net for the dashboard 60s poll + the
+    // Notifications page (the bell already passes ?limit=20). A partner
+    // with thousands of historical notifications no longer pulls the full
+    // table on every page load.
+    const effectiveLimit = Math.min(Math.max(limit ?? 200, 1), 200);
     const { data, error } = await this.sb()
       .from("notifications")
       .select("*")
       .eq("tenant_id", tenantId)
       .eq("partner_id", partnerId)
       .in("type", PORTAL_SAFE_TYPES)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .limit(effectiveLimit);
     if (error) throw error;
     return (data as Notification[]) || [];
   }
@@ -2655,6 +2662,44 @@ export class SupabaseStore implements Store {
     const { error } = await this.sb().from("notifications").update({ read: true, read_at: new Date().toISOString() })
       .eq("tenant_id", tenantId).or(`user_id.eq.${userId},user_id.is.null`).eq("read", false);
     if (error) throw error;
+  }
+  /**
+   * 2b2-F2 — bulk "mark all as read" for a portal partner. Single
+   * UPDATE statement scoped by (tenant_id, partner_id, type IN
+   * PORTAL_SAFE_TYPES, read = false). Replaces the previous N×PUT
+   * pattern (frontend fired N parallel PUTs; each PUT internally
+   * scanned ALL partner notifications → N² row reads).
+   *
+   * Returns the count of rows actually updated (PostgREST `.update()`
+   * with `.select()` returns the affected rows; we count them). The
+   * count is used by the route for audit + the response envelope so
+   * the UI can show "marked N as read".
+   */
+  async markAllNotificationsReadForPartner(tenantId: string, partnerId: string): Promise<number> {
+    const PORTAL_SAFE_TYPES = [
+      "kyc_submitted", "kyc_approved", "kyc_rejected",
+      "rfq_received", "rfq_quoted",
+      "offer_sent", "offer_accepted", "offer_rejected", "offer_expired",
+      "invoice_sent", "invoice_overdue", "invoice_paid",
+      "proforma_sent",
+      "document_shared",
+      "portal_access_requested", "portal_access_approved", "portal_invite_sent",
+      "portal_message",
+      "marketplace_response_received",
+      "marketplace_response_accepted",
+      "marketplace_response_rejected",
+      "marketplace_message_received",
+    ];
+    const { data, error } = await this.sb()
+      .from("notifications")
+      .update({ read: true, read_at: new Date().toISOString() })
+      .eq("tenant_id", tenantId)
+      .eq("partner_id", partnerId)
+      .in("type", PORTAL_SAFE_TYPES)
+      .eq("read", false)
+      .select("id");
+    if (error) throw error;
+    return Array.isArray(data) ? data.length : 0;
   }
   async deleteNotification(id: string): Promise<void> {
     const { error } = await this.sb().from("notifications").delete().eq("id", id);

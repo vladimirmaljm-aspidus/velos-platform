@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -57,12 +57,26 @@ export function PortalLogistics() {
   const [showForm, setShowForm] = React.useState(false);
   const [prefill, setPrefill] = React.useState<any>(null);
   const [openTimelineId, setOpenTimelineId] = React.useState<string | null>(null);
-  const listQ = useQuery({
+  const listQ = useInfiniteQuery<{ items: any[]; total: number }>({
     queryKey: ["portal-logistics"],
-    queryFn: async () => {
-      const r = await fetch("/api/portal/logistics");
+    queryFn: async ({ pageParam }) => {
+      // 2b2-F4 — paginate via ?limit=&offset= so a partner with >50
+      // logistics requests can reach older rows. Page size 50 (matches
+      // the other portal lists). The route's hard ceiling is 200
+      // (was previously unbounded — the SELECT returned the full
+      // table on every page load).
+      const pageIdx = Number(pageParam) || 0;
+      const offset = pageIdx * 50;
+      const r = await fetch(`/api/portal/logistics?limit=50&offset=${offset}`);
       if (!r.ok) throw new Error("Failed to load requests");
-      return r.json() as Promise<{ items: any[] }>;
+      return r.json();
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      const fetched = allPages.reduce((sum, p) => sum + (p.items?.length ?? 0), 0);
+      if (fetched >= (lastPage.total ?? 0)) return undefined;
+      if ((lastPage.items?.length ?? 0) < 50) return undefined;
+      return allPages.length;
     },
   });
   // Load partner profile so we can pre-fill the origin address on the first request.
@@ -73,7 +87,13 @@ export function PortalLogistics() {
       return r.ok ? r.json() : null;
     },
   });
-  const items = listQ.data?.items || [];
+  // Flatten the infinite-query pages.
+  const items = React.useMemo(
+    () => (listQ.data?.pages ?? []).flatMap((p) => p.items ?? []),
+    [listQ.data],
+  );
+  const logisticsTotal = listQ.data?.pages?.[0]?.total ?? 0;
+  const hasMoreLogistics = items.length < logisticsTotal;
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -166,6 +186,31 @@ export function PortalLogistics() {
               );
             })}
           </div>
+
+          {/* 2b2-F4 — Load more button. */}
+          {hasMoreLogistics && (
+            <div className="border-t border-border/40 mt-2 p-4 flex flex-col items-center gap-2">
+              <p className="text-xs text-muted-foreground tabular">
+                {items.length} / {logisticsTotal}
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => listQ.fetchNextPage()}
+                disabled={listQ.isFetchingNextPage}
+                className="gap-1.5"
+              >
+                {listQ.isFetchingNextPage ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <ChevronDown className="size-4" />
+                )}
+                {listQ.isFetchingNextPage
+                  ? t("marketplace-loading-more")
+                  : t("marketplace-load-more")}
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 

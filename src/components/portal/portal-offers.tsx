@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState, useEffect, useMemo } from "react";
+import { useQuery, useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -58,6 +58,7 @@ import {
   Crown,
   Check,
   X,
+  ChevronDown,
   ArrowRightLeft,
   Send,
 } from "lucide-react";
@@ -116,14 +117,38 @@ export function PortalOffers() {
   const debouncedSearch = useDebounced(search, 300);
   const [detailId, setDetailId] = useState<string | null>(null);
 
-  const offersQ = useQuery<{ items: Offer[]; total: number }>({
+  const offersQ = useInfiniteQuery<{ items: Offer[]; total: number }>({
     queryKey: ["portal-offers", debouncedSearch],
-    queryFn: async () => {
-      const r = await fetch("/api/portal/offers");
+    queryFn: async ({ pageParam }) => {
+      // 2b2-F4 — paginate via ?limit=&offset= so a partner with >50
+      // offers can reach older rows by clicking "Load more". The
+      // previous useQuery fetched only the first 50 (the store's
+      // default cap) and silently truncated history. Page size 50
+      // matches the store default; the queryKey includes the search
+      // query so changing the search resets to page 0.
+      const pageIdx = Number(pageParam) || 0;
+      const offset = pageIdx * 50;
+      const r = await fetch(`/api/portal/offers?limit=50&offset=${offset}`);
       if (!r.ok) throw new Error("Failed to load offers");
       return r.json();
     },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      const fetched = allPages.reduce((sum, p) => sum + (p.items?.length ?? 0), 0);
+      if (fetched >= (lastPage.total ?? 0)) return undefined;
+      if ((lastPage.items?.length ?? 0) < 50) return undefined;
+      return allPages.length;
+    },
   });
+
+  // Flatten every fetched page into a single items array (mirrors
+  // marketplace-list.tsx's pattern).
+  const allItems = useMemo(
+    () => (offersQ.data?.pages ?? []).flatMap((p) => p.items ?? []),
+    [offersQ.data],
+  );
+  const total = offersQ.data?.pages?.[0]?.total ?? 0;
+  const hasMore = allItems.length < total;
 
   const detailQ = useQuery<Offer>({
     queryKey: ["portal-offer", detailId],
@@ -139,7 +164,13 @@ export function PortalOffers() {
     enabled: !!detailId,
   });
 
-  const allItems = offersQ.data?.items || [];
+  // `allItems` is now declared above (from the infinite-query pages).
+  // Apply the client-side search filter on top of the loaded items.
+  // NOTE: the search only filters what's been loaded so far — if the
+  // user is looking for an older item not yet fetched, they need to
+  // click "Load more" first. This is no worse than the previous
+  // behavior (which capped at 50 rows), and now the user can actually
+  // reach older rows by loading more.
   const filtered = debouncedSearch
     ? allItems.filter(
         (o) =>
@@ -292,6 +323,32 @@ export function PortalOffers() {
               </TableBody>
             </Table>
             </div>
+          </div>
+        )}
+
+        {/* 2b2-F4 — Load more button. Hidden when there's nothing
+            more to fetch (hasMore is false). Mirrors marketplace-list.tsx. */}
+        {hasMore && (
+          <div className="border-t border-border/40 p-4 flex flex-col items-center gap-2">
+            <p className="text-xs text-muted-foreground tabular">
+              {allItems.length} / {total}
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => offersQ.fetchNextPage()}
+              disabled={offersQ.isFetchingNextPage}
+              className="gap-1.5"
+            >
+              {offersQ.isFetchingNextPage ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <ChevronDown className="size-4" />
+              )}
+              {offersQ.isFetchingNextPage
+                ? t("marketplace-loading-more")
+                : t("marketplace-load-more")}
+            </Button>
           </div>
         )}
       </div>

@@ -212,7 +212,11 @@ export function PortalDashboardRedesign() {
   const notifsQ = useQuery<{ items: Notification[]; total: number }>({
     queryKey: ["portal-notifications"],
     queryFn: async () => {
-      const r = await fetch("/api/portal/notifications");
+      // 2b2-F3 — pass ?limit=6 so the store caps the DB query (was:
+      // fetch all partner notifications every 60s + slice in JS to 6
+      // for the widget). The widget only renders `recentNotifs.slice(0, 6)`
+      // — there's no point pulling thousands of rows.
+      const r = await fetch("/api/portal/notifications?limit=6");
       if (!r.ok) return { items: [], total: 0 };
       return r.json();
     },

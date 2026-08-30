@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -24,6 +24,7 @@ import {
   Download,
   FolderOpen,
   Loader2,
+  ChevronDown,
   FileCheck,
   Receipt,
   FileSignature,
@@ -100,16 +101,32 @@ export function PortalDocuments() {
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [previewDoc, setPreviewDoc] = useState<SharedDocument | null>(null);
 
-  const docsQ = useQuery<{ items: SharedDocument[]; total: number }>({
+  const docsQ = useInfiniteQuery<{ items: SharedDocument[]; total: number }>({
     queryKey: ["portal-documents"],
-    queryFn: async () => {
-      const r = await fetch("/api/portal/documents");
+    queryFn: async ({ pageParam }) => {
+      // 2b2-F4 — paginate via ?limit=&offset= so a partner with >50
+      // shared documents can reach older rows by clicking "Load more".
+      const pageIdx = Number(pageParam) || 0;
+      const offset = pageIdx * 50;
+      const r = await fetch(`/api/portal/documents?limit=50&offset=${offset}`);
       if (!r.ok) throw new Error("Failed to load documents");
       return r.json();
     },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      const fetched = allPages.reduce((sum, p) => sum + (p.items?.length ?? 0), 0);
+      if (fetched >= (lastPage.total ?? 0)) return undefined;
+      if ((lastPage.items?.length ?? 0) < 50) return undefined;
+      return allPages.length;
+    },
   });
 
-  const allItems = docsQ.data?.items || [];
+  const allItems = useMemo(
+    () => (docsQ.data?.pages ?? []).flatMap((p) => p.items ?? []),
+    [docsQ.data],
+  );
+  const total = docsQ.data?.pages?.[0]?.total ?? 0;
+  const hasMore = allItems.length < total;
 
   const categories = useMemo(() => {
     const set = new Set<DocCategory>();
@@ -227,6 +244,7 @@ export function PortalDocuments() {
       ) : filtered.length === 0 ? (
         <EmptyDocuments t={t} />
       ) : (
+        <>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[calc(100vh-280px)] overflow-y-auto custom-scroll pr-1">
           {filtered.map((doc) => {
             const meta = CATEGORY_META[doc.category];
@@ -300,6 +318,32 @@ export function PortalDocuments() {
             );
           })}
         </div>
+
+        {/* 2b2-F4 — Load more button. */}
+        {hasMore && (
+          <div className="border-t border-border/40 p-4 flex flex-col items-center gap-2 mt-4">
+            <p className="text-xs text-muted-foreground tabular">
+              {allItems.length} / {total}
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => docsQ.fetchNextPage()}
+              disabled={docsQ.isFetchingNextPage}
+              className="gap-1.5"
+            >
+              {docsQ.isFetchingNextPage ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <ChevronDown className="size-4" />
+              )}
+              {docsQ.isFetchingNextPage
+                ? t("marketplace-loading-more")
+                : t("marketplace-load-more")}
+            </Button>
+          </div>
+        )}
+        </>
       )}
 
       {/* Document Preview Dialog */}

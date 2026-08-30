@@ -141,10 +141,23 @@ export function PortalNotifications() {
   );
 
   const markAllRead = useCallback(async () => {
-    const unread = items.filter((n) => !n.read);
-    await Promise.all(unread.map((n) => fetch(`/api/portal/notifications/${n.id}/read`, { method: "PUT" })));
+    // 2b2-F2 — replace N parallel PUTs (each scanning the full partner
+    // notification list) with a single POST to the bulk endpoint. The
+    // backend runs one `UPDATE notifications SET read_at = now(),
+    // read = true WHERE partner_id = $1 AND tenant_id = $2 AND
+    // type IN (PORTAL_SAFE_TYPES) AND read = false` — one statement,
+    // one round-trip, regardless of how many unread notifications the
+    // partner has. The `updated` count is returned in the response so
+    // the UI can show "Marked N as read" (we currently invalidate the
+    // query for the list refetch — same UX, far less load).
+    try {
+      await fetch("/api/portal/notifications/read-all", { method: "POST" });
+    } catch {
+      // silent fail — the query invalidation below still fires so the
+      // UI reflects whatever the server actually updated.
+    }
     queryClient.invalidateQueries({ queryKey: ["portal-notifications"] });
-  }, [items, queryClient]);
+  }, [queryClient]);
 
   return (
     <div className="max-w-4xl mx-auto space-y-5">

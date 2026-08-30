@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect, useMemo } from "react";
+import { useQuery, useInfiniteQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -34,6 +34,7 @@ import {
   Lock,
   Inbox,
   Loader2,
+  ChevronDown,
   Calendar,
   Clock,
   CheckCircle2,
@@ -80,14 +81,34 @@ export function PortalInvoices() {
   const debouncedSearch = useDebounced(search, 300);
   const [detailId, setDetailId] = useState<string | null>(null);
 
-  const invoicesQ = useQuery<{ items: Invoice[]; total: number }>({
+  const invoicesQ = useInfiniteQuery<{ items: Invoice[]; total: number }>({
     queryKey: ["portal-invoices", debouncedSearch],
-    queryFn: async () => {
-      const r = await fetch("/api/portal/invoices");
+    queryFn: async ({ pageParam }) => {
+      // 2b2-F4 — paginate via ?limit=&offset= so a partner with >50
+      // invoices can reach older rows by clicking "Load more". The
+      // previous useQuery fetched only the first 50 (the store's
+      // default cap) and silently truncated history.
+      const pageIdx = Number(pageParam) || 0;
+      const offset = pageIdx * 50;
+      const r = await fetch(`/api/portal/invoices?limit=50&offset=${offset}`);
       if (!r.ok) throw new Error("Failed to load invoices");
       return r.json();
     },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      const fetched = allPages.reduce((sum, p) => sum + (p.items?.length ?? 0), 0);
+      if (fetched >= (lastPage.total ?? 0)) return undefined;
+      if ((lastPage.items?.length ?? 0) < 50) return undefined;
+      return allPages.length;
+    },
   });
+
+  const allItems = useMemo(
+    () => (invoicesQ.data?.pages ?? []).flatMap((p) => p.items ?? []),
+    [invoicesQ.data],
+  );
+  const total = invoicesQ.data?.pages?.[0]?.total ?? 0;
+  const hasMore = allItems.length < total;
 
   const detailQ = useQuery<Invoice>({
     queryKey: ["portal-invoice", detailId],
@@ -102,7 +123,8 @@ export function PortalInvoices() {
     enabled: !!detailId,
   });
 
-  const allItems = invoicesQ.data?.items || [];
+  // `allItems` is now declared above (from the infinite-query pages).
+  // Apply the client-side search filter on top of the loaded items.
   const filtered = debouncedSearch
     ? allItems.filter(
         (i) =>
@@ -263,6 +285,31 @@ export function PortalInvoices() {
               </TableBody>
             </Table>
             </div>
+          </div>
+        )}
+
+        {/* 2b2-F4 — Load more button. */}
+        {hasMore && (
+          <div className="border-t border-border/40 p-4 flex flex-col items-center gap-2">
+            <p className="text-xs text-muted-foreground tabular">
+              {allItems.length} / {total}
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => invoicesQ.fetchNextPage()}
+              disabled={invoicesQ.isFetchingNextPage}
+              className="gap-1.5"
+            >
+              {invoicesQ.isFetchingNextPage ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <ChevronDown className="size-4" />
+              )}
+              {invoicesQ.isFetchingNextPage
+                ? t("marketplace-loading-more")
+                : t("marketplace-load-more")}
+            </Button>
           </div>
         )}
       </div>

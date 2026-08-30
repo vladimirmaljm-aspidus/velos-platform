@@ -1314,7 +1314,7 @@ export class MockStore implements Store {
     if (unreadOnly) items = items.filter((n) => !n.read);
     return items.sort((a, b) => b.created_at.localeCompare(a.created_at));
   }
-  async listNotificationsByPartner(tenantId: string, partnerId: string): Promise<Notification[]> {
+  async listNotificationsByPartner(tenantId: string, partnerId: string, limit?: number): Promise<Notification[]> {
     const PORTAL_SAFE_TYPES = new Set([
       "kyc_submitted", "kyc_approved", "kyc_rejected",
       "rfq_received", "rfq_quoted",
@@ -1330,9 +1330,12 @@ export class MockStore implements Store {
       "marketplace_response_rejected",
       "marketplace_message_received",
     ]);
+    // 2b2-F3 — push the limit into the query (mock: slice the in-memory list).
+    const effectiveLimit = Math.min(Math.max(limit ?? 200, 1), 200);
     return mock.notifications
       .filter((n) => n.tenant_id === tenantId && n.partner_id === partnerId && PORTAL_SAFE_TYPES.has(n.type))
-      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .slice(0, effectiveLimit);
   }
   async createNotification(n: Omit<Notification, "id" | "created_at" | "read" | "read_at">): Promise<Notification> {
     const newN: Notification = {
@@ -1353,6 +1356,42 @@ export class MockStore implements Store {
         n.read = true; n.read_at = new Date().toISOString();
       }
     });
+  }
+  /**
+   * 2b2-F2 — bulk "mark all as read" for a portal partner. Mock impl
+   * filters in-memory (no DB). Mirrors the supabase store's
+   * tenant+partner+portal-safe-type scope so test fixtures behave the
+   * same as production.
+   */
+  async markAllNotificationsReadForPartner(tenantId: string, partnerId: string): Promise<number> {
+    const PORTAL_SAFE_TYPES = new Set([
+      "kyc_submitted", "kyc_approved", "kyc_rejected",
+      "rfq_received", "rfq_quoted",
+      "offer_sent", "offer_accepted", "offer_rejected", "offer_expired",
+      "invoice_sent", "invoice_overdue", "invoice_paid",
+      "proforma_sent",
+      "document_shared",
+      "portal_access_requested", "portal_access_approved", "portal_invite_sent",
+      "portal_message",
+      "marketplace_response_received",
+      "marketplace_response_accepted",
+      "marketplace_response_rejected",
+      "marketplace_message_received",
+    ]);
+    let updated = 0;
+    mock.notifications.forEach((n) => {
+      if (
+        n.tenant_id === tenantId &&
+        n.partner_id === partnerId &&
+        PORTAL_SAFE_TYPES.has(n.type) &&
+        !n.read
+      ) {
+        n.read = true;
+        n.read_at = new Date().toISOString();
+        updated += 1;
+      }
+    });
+    return updated;
   }
   async deleteNotification(id: string): Promise<void> {
     const idx = mock.notifications.findIndex((n) => n.id === id);

@@ -327,6 +327,11 @@ export function PortalShell({
   const notifsQ = useQuery<{ items: Notification[]; count: number; unread_count: number }>({
     queryKey: ["portal-notifications-badge"],
     queryFn: async () => {
+      // 2b2-F3 — pass ?limit=20 so the store caps the DB query (was:
+      // fetch all partner notifications + slice in JS). The bell
+      // dropdown only renders `recentNotifs.slice(0, 5)` and the
+      // unread_count comes from a separate COUNT query, so 20 is more
+      // than enough for the dropdown.
       const r = await fetch("/api/portal/notifications?limit=20");
       if (!r.ok) return { items: [], count: 0, unread_count: 0 } as { items: Notification[]; count: number; unread_count: number };
       return r.json() as Promise<{ items: Notification[]; count: number; unread_count: number }>;
@@ -345,12 +350,19 @@ export function PortalShell({
   const recentNotifs = notifItems.slice(0, 5);
 
   async function markAllNotifsRead() {
-    const unread = notifItems.filter((n) => !n.read);
-    await Promise.all(
-      unread.map((n) =>
-        fetch(`/api/portal/notifications/${n.id}/read`, { method: "PUT" }).catch(() => {}),
-      ),
-    );
+    // 2b2-F2 — replace N parallel PUTs (each scanning the full partner
+    // notification list) with a single POST to the new bulk endpoint.
+    // The backend runs one UPDATE scoped by (tenant_id, partner_id,
+    // type IN PORTAL_SAFE_TYPES, read=false). One statement, one
+    // round-trip — regardless of how many unread notifications the
+    // partner has. The previous N×PUT pattern was O(N²) on the
+    // notifications table.
+    try {
+      await fetch("/api/portal/notifications/read-all", { method: "POST" });
+    } catch {
+      // silent fail — the refetch below will reconcile whatever the
+      // server actually updated.
+    }
     notifsQ.refetch();
   }
 

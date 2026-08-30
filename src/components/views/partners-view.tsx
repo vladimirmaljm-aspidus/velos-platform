@@ -61,6 +61,38 @@ import { useT } from "@/lib/i18n/store";
 import { Checkbox } from "@/components/ui/checkbox";
 import { BulkActionBar, useRowSelection } from "@/components/common/bulk-action-bar";
 
+// 2b2-F1 — admin viewer URL rewriter. The admin partners-view renders
+// messages sent by portal clients whose `attachment_url` is now stored
+// in the new singular portal form `/api/portal/attachments/<id>` (auth
+// via `getPortalSessionAccess`). Admins are authenticated via
+// `requireAuth`, NOT the portal session, so they must use the
+// admin-scoped download route `/api/portal-uploads/<id>/download`
+// (gated by `requireAuth` + `requirePermission("portal-uploads.download")`).
+// This rewrite handles THREE URL forms:
+//   1. New singular portal form (post-2b2-F1 fix):
+//      /api/portal/attachments/<id>?mode=inline
+//        → /api/portal-uploads/<id>/download?mode=inline
+//   2. Legacy broken singular form (pre-2b2-F1, kept for historical rows):
+//      /api/portal/upload/<id>/download?mode=inline
+//        → /api/portal-uploads/<id>/download?mode=inline
+//   3. Legacy plural admin form (already correct, returned unchanged):
+//      /api/portal-uploads/<id>/download?mode=inline
+// Anything else is returned as-is (the message route's
+// `sanitizeAttachmentUrl` already strips arbitrary URLs to null, so
+// the only URLs that reach this code are portal-attachment paths).
+function toAdminAttachmentHref(url: string): string {
+  if (!url) return url;
+  let out = url.replace(
+    /^\/api\/portal\/attachments\/([^/?#]+)(\?[^#]*)?/,
+    (_m, id, q) => `/api/portal-uploads/${id}/download${q || ""}`,
+  );
+  out = out.replace(
+    /^\/api\/portal\/upload\/([^/?#]+)\/download/,
+    "/api/portal-uploads/$1/download",
+  );
+  return out;
+}
+
 const TYPE_LABEL_KEYS: Record<PartnerType, string> = {
   buyer: "crm-type-buyer",
   supplier: "crm-type-supplier",
@@ -2230,7 +2262,17 @@ function PortalMessageThread({
           {msg.message && <p className="leading-relaxed whitespace-pre-wrap">{msg.message}</p>}
           {msg.attachment_url && msg.attachment_name && (
             <a
-              href={msg.attachment_url.replace("/api/portal/upload/", "/api/portal-uploads/")}
+              // 2b2-F1 — admin viewer must use the admin-scoped download
+              // route `/api/portal-uploads/[id]/download` (gated by
+              // `requireAuth`), NOT the portal-side route
+              // `/api/portal/attachments/[id]` (gated by
+              // `getPortalSessionAccess`). The portal composer now
+              // stores the singular portal form, which an admin cookie
+              // would 401 at. `toAdminAttachmentHref` rewrites BOTH the
+              // new singular portal form AND the legacy broken singular
+              // `/api/portal/upload/<id>/download` form (kept for
+              // historical message rows) to the admin plural form.
+              href={toAdminAttachmentHref(msg.attachment_url)}
               target="_blank"
               rel="noopener noreferrer"
               className={`mt-1 inline-flex items-center gap-1 underline underline-offset-2 ${msg.direction === "outgoing" ? "text-primary-foreground" : "text-primary"}`}

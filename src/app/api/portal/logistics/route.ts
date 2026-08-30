@@ -60,7 +60,7 @@ async function nextNumber(tenantId: string): Promise<string> {
   return formatDocNumber("logistics", year, (count || 0) + 1);
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const access = await getPortalSessionAccess();
   if (!access) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
 
@@ -74,14 +74,31 @@ export async function GET() {
   if (_gpsGet) return _gpsGet;
 
   const sb = getSupabase();
-  const { data, error } = await sb
+
+  // 2b2-F4 — pagination + unbounded-SELECT safety cap. Previously this
+  // route did `select("*")` with NO `.limit()` and NO pagination params
+  // — a partner with thousands of historical logistics requests pulled
+  // the entire table on every page load. The hard ceiling is 200
+  // (single partner rarely has >200 logistics requests; the UI now
+  // shows a "Load more" button when items.length < total). Also
+  // accept ?limit=&offset= so the UI can paginate through history.
+  const url = new URL(req.url);
+  const limitParam = Number.parseInt(url.searchParams.get("limit") || "", 10);
+  const offsetParam = Number.parseInt(url.searchParams.get("offset") || "", 10);
+  const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, 200) : 200;
+  const offset = Number.isFinite(offsetParam) && offsetParam >= 0 ? offsetParam : 0;
+
+  // Use `count: "exact"` so we can return `total` in the response
+  // envelope for the pagination control.
+  const { data, error, count } = await sb
     .from("logistics_requests")
-    .select("*")
+    .select("*", { count: "exact" })
     .eq("tenant_id", access.tenant_id)
     .eq("partner_id", access.partner_id)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .range(offset, offset + limit - 1);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ items: data || [] });
+  return NextResponse.json({ items: data || [], total: count ?? 0 });
 }
 
 export async function POST(req: NextRequest) {

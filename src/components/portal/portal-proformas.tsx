@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState, useEffect, useMemo } from "react";
+import { useQuery, useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -35,6 +35,7 @@ import {
   Inbox,
   Phone,
   Loader2,
+  ChevronDown,
   Calendar,
   Clock,
   CheckCircle2,
@@ -97,12 +98,23 @@ export function PortalProformas() {
   const debouncedSearch = useDebounced(search, 300);
   const [detailId, setDetailId] = useState<string | null>(null);
 
-  const proformasQ = useQuery<{ items: Proforma[]; total: number }>({
+  const proformasQ = useInfiniteQuery<{ items: Proforma[]; total: number }>({
     queryKey: ["portal-proformas", debouncedSearch],
-    queryFn: async () => {
-      const r = await fetch("/api/portal/proformas");
+    queryFn: async ({ pageParam }) => {
+      // 2b2-F4 — paginate via ?limit=&offset= so a partner with >50
+      // proformas can reach older rows by clicking "Load more".
+      const pageIdx = Number(pageParam) || 0;
+      const offset = pageIdx * 50;
+      const r = await fetch(`/api/portal/proformas?limit=50&offset=${offset}`);
       if (!r.ok) throw new Error("Failed to load proformas");
       return r.json();
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      const fetched = allPages.reduce((sum, p) => sum + (p.items?.length ?? 0), 0);
+      if (fetched >= (lastPage.total ?? 0)) return undefined;
+      if ((lastPage.items?.length ?? 0) < 50) return undefined;
+      return allPages.length;
     },
   });
 
@@ -119,7 +131,14 @@ export function PortalProformas() {
     enabled: !!detailId,
   });
 
-  const allItems = proformasQ.data?.items || [];
+  // `allItems` flattened from the infinite-query pages.
+  const allItems = useMemo(
+    () => (proformasQ.data?.pages ?? []).flatMap((p) => p.items ?? []),
+    [proformasQ.data],
+  );
+  const total = proformasQ.data?.pages?.[0]?.total ?? 0;
+  const hasMore = allItems.length < total;
+
   const filtered = debouncedSearch
     ? allItems.filter(
         (p) =>
@@ -280,6 +299,31 @@ export function PortalProformas() {
               </TableBody>
             </Table>
             </div>
+          </div>
+        )}
+
+        {/* 2b2-F4 — Load more button. */}
+        {hasMore && (
+          <div className="border-t border-border/40 p-4 flex flex-col items-center gap-2">
+            <p className="text-xs text-muted-foreground tabular">
+              {allItems.length} / {total}
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => proformasQ.fetchNextPage()}
+              disabled={proformasQ.isFetchingNextPage}
+              className="gap-1.5"
+            >
+              {proformasQ.isFetchingNextPage ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <ChevronDown className="size-4" />
+              )}
+              {proformasQ.isFetchingNextPage
+                ? t("marketplace-loading-more")
+                : t("marketplace-load-more")}
+            </Button>
           </div>
         )}
       </div>

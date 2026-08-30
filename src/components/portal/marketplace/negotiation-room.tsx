@@ -357,7 +357,17 @@ export function NegotiationRoom({ negotiationId }: { negotiationId: string }) {
         throw new Error(e.error || "Upload failed.");
       }
       const upRow = await up.json();
-      const attachmentUrl = `/api/portal-uploads/${upRow.id}/download`;
+      // 2b2-F1 — point at the new portal-side download route
+      // `/api/portal/attachments/<id>` (handled by
+      // `src/app/api/portal/attachments/[id]/route.ts`, which uses
+      // `getPortalSessionAccess`). The previous code used
+      // `/api/portal-uploads/<id>/download` (plural admin route, gated
+      // by `requireAuth` + `requirePermission("portal-uploads.download")`),
+      // so a portal_client session cookie would 401 on download — the
+      // other party to the negotiation could never retrieve the file.
+      // The new route verifies `tenant_id` + (partner_id OR
+      // marketplace_negotiation party membership) before signing.
+      const attachmentUrl = `/api/portal/attachments/${upRow.id}`;
       // Step 2: post a marketplace_message with type='document'.
       const r = await fetch(`/api/marketplace/negotiations/${negotiationId}/messages`, {
         method: "POST",

@@ -342,7 +342,15 @@ export interface Store {
 
   // ---- notifications ----
   listNotifications(tenantId: string, userId?: string, unreadOnly?: boolean): Promise<Notification[]>;
-  listNotificationsByPartner(tenantId: string, partnerId: string): Promise<Notification[]>;
+  /**
+   * 2b2-F3 — added the optional `limit` param. Previously the store
+   * fetched EVERY notification for the partner then the route sliced
+   * in JS — for a partner with thousands of historical notifications,
+   * this returned the entire table on every poll. Pushing the limit
+   * into the DB query caps the wire payload. Defaults to 200 when
+   * omitted (the previous JS slice defaulted to "all").
+   */
+  listNotificationsByPartner(tenantId: string, partnerId: string, limit?: number): Promise<Notification[]>;
   /**
    * AUDIT2-LOGIC-UX M1 — return the TOTAL unread count for a portal
    * partner (no `limit` slice). The portal /notifications route computes
@@ -354,6 +362,21 @@ export interface Store {
   createNotification(n: Omit<Notification, "id" | "created_at" | "read" | "read_at">): Promise<Notification>;
   markNotificationRead(id: string, tenantId: string): Promise<void>;
   markAllNotificationsRead(tenantId: string, userId: string): Promise<void>;
+  /**
+   * 2b2-F2 — bulk "mark all as read" for a portal partner. Single
+   * UPDATE statement scoped by (tenant_id, partner_id, type IN
+   * PORTAL_SAFE_TYPES, read = false) — replaces the previous N×PUT
+   * pattern where the frontend fired N parallel PUTs and each PUT
+   * internally scanned ALL partner notifications.
+   *
+   * Returns the count of rows actually updated (for audit + UI feedback).
+   * Implementations MUST scope by both tenant_id AND partner_id AND
+   * the portal-safe-type whitelist (defense-in-depth — even if a
+   * partner_id is somehow reused across tenants, the tenant filter
+   * blocks cross-tenant writes; the type filter blocks internal-only
+   * notification types from being touched by a portal call).
+   */
+  markAllNotificationsReadForPartner(tenantId: string, partnerId: string): Promise<number>;
   deleteNotification(id: string): Promise<void>;
   getUnreadCount(tenantId: string, userId: string): Promise<number>;
   getNotificationById(id: string): Promise<Notification | null>;

@@ -94,7 +94,16 @@ export function PortalMessages() {
     mutationFn: async (body: string) => {
       const payload: any = { body };
       if (attachment) {
-        payload.attachment_url = `/api/portal/upload/${attachment.id}/download?mode=inline`;
+        // 2b2-F1 — point at the new portal-side download route
+        // `/api/portal/attachments/<id>` (handled by
+        // `src/app/api/portal/attachments/[id]/route.ts`, which uses
+        // `getPortalSessionAccess` — NOT admin `requireAuth`). The
+        // previous code used `/api/portal/upload/<id>/download?mode=inline`
+        // (singular `/upload/`) which had no route handler at all, so
+        // the link silently 404'd for the recipient. The messages POST
+        // route's `ATTACHMENT_URL_RE_SINGULAR` regex now accepts this
+        // exact URL form.
+        payload.attachment_url = `/api/portal/attachments/${attachment.id}?mode=inline`;
         payload.attachment_name = attachment.filename;
         payload.attachment_type = attachment.mime_type;
       }

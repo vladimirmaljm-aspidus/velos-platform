@@ -2376,7 +2376,9 @@ export class PrismaStore implements Store {
     return rows.map(mapNotificationRow);
   }
 
-  async listNotificationsByPartner(tenantId: string, partnerId: string): Promise<Notification[]> {
+  async listNotificationsByPartner(tenantId: string, partnerId: string, limit?: number): Promise<Notification[]> {
+    // 2b2-F3 — push the limit into the DB query (was: fetch all + slice in JS).
+    const effectiveLimit = Math.min(Math.max(limit ?? 200, 1), 200);
     const rows = await db.notification.findMany({
       where: {
         tenant_id: tenantId,
@@ -2400,6 +2402,7 @@ export class PrismaStore implements Store {
         },
       },
       orderBy: { created_at: "desc" },
+      take: effectiveLimit,
     });
     return rows.map(mapNotificationRow);
   }
@@ -2434,6 +2437,40 @@ export class PrismaStore implements Store {
       where: { tenant_id: tenantId, user_id: userId, read: false },
       data: { read: true, read_at: new Date() },
     });
+  }
+
+  /**
+   * 2b2-F2 — bulk "mark all as read" for a portal partner. Single
+   * `updateMany` scoped by (tenant_id, partner_id, type IN
+   * PORTAL_SAFE_TYPES, read = false). Replaces the previous N×PUT
+   * pattern. Returns the count of rows actually updated.
+   */
+  async markAllNotificationsReadForPartner(tenantId: string, partnerId: string): Promise<number> {
+    const r = await db.notification.updateMany({
+      where: {
+        tenant_id: tenantId,
+        partner_id: partnerId,
+        read: false,
+        type: {
+          in: [
+            "kyc_submitted", "kyc_approved", "kyc_rejected",
+            "rfq_received", "rfq_quoted",
+            "offer_sent", "offer_accepted", "offer_rejected", "offer_expired",
+            "invoice_sent", "invoice_overdue", "invoice_paid",
+            "proforma_sent",
+            "document_shared",
+            "portal_access_requested", "portal_access_approved", "portal_invite_sent",
+            "portal_message",
+            "marketplace_response_received",
+            "marketplace_response_accepted",
+            "marketplace_response_rejected",
+            "marketplace_message_received",
+          ],
+        },
+      },
+      data: { read: true, read_at: new Date() },
+    });
+    return r.count || 0;
   }
 
   async deleteNotification(id: string): Promise<void> {

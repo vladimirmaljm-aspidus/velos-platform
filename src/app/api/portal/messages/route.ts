@@ -8,19 +8,32 @@ import { audit } from "@/lib/api/helpers";
 export const runtime = "nodejs";
 
 /**
- * Allowed attachment_url pattern.
+ * Allowed attachment_url patterns.
  * AUDIT2-LOGIC-UX C3 — portal clients could previously submit arbitrary URLs
  * (e.g. https://evil.com/phish) and have them rendered as clickable links in
  * the admin partners-view. We now require attachment_url to be null OR to
- * point at the admin-scoped portal-upload download path. Anything else is
+ * point at one of the two portal-upload download paths. Anything else is
  * silently stripped (the message still inserts with attachment_name/metadata
  * but no clickable URL), so a portal client cannot inject a phishing link.
+ *
+ * 2b2-F1 — added the SINGULAR portal-side download path
+ * `/api/portal/attachments/<uuid>` (handled by the new
+ * `src/app/api/portal/attachments/[id]/route.ts`). The frontend
+ * portal-messages composer and marketplace negotiation-room upload
+ * flow now use this URL form (it goes through `getPortalSessionAccess`,
+ * NOT admin `requireAuth`). The legacy PLURAL admin path
+ * `/api/portal-uploads/<uuid>/download` is still accepted so that
+ * historical message rows continue to resolve (admins reading the
+ * thread can still click through to the admin-scoped download).
  */
-const ATTACHMENT_URL_RE = /^\/api\/portal-uploads\/[a-f0-9-]+\/download(\?|$)/;
+const ATTACHMENT_URL_RE_PLURAL = /^\/api\/portal-uploads\/[a-f0-9-]+\/download(\?|$)/;
+const ATTACHMENT_URL_RE_SINGULAR = /^\/api\/portal\/attachments\/[a-f0-9-]+(\?|$)/;
 
 function sanitizeAttachmentUrl(value: unknown): string | null {
   if (typeof value !== "string" || value.length === 0) return null;
-  if (!ATTACHMENT_URL_RE.test(value)) return null;
+  if (!ATTACHMENT_URL_RE_PLURAL.test(value) && !ATTACHMENT_URL_RE_SINGULAR.test(value)) {
+    return null;
+  }
   return value;
 }
 
