@@ -1,5 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+// 8c-2: KYC gate — without this, a portal client whose KYC submission
+// is `rejected` / `suspended` could still create + sign trade documents
+// (commercial invoice, packing list, CoO, BoL, proforma) — binding
+// commitments that affect counterparty's downstream customs/payment
+// flows. The top-level marketplace route, responses, negotiations,
+// contracts, finance, reviews routes all already gate on KYC; this
+// route (and shipments / groups / events / questions / blog / answers /
+// documents.auto-generate / documents.sign) were missed by the original
+// comment at marketplace/route.ts:55-60.
+import { requireKycApproved } from "@/lib/portal/kyc-gate";
 import {
   createDocument,
   listDocuments,
@@ -63,6 +73,9 @@ async function _post(req: NextRequest) {
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 8c-2: KYC gate — defence-in-depth, mirror top-level marketplace POST.
+  const _kycBlock = await requireKycApproved(access);
+  if (_kycBlock) return _kycBlock;
 
   let body;
   try {

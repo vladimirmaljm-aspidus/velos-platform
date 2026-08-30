@@ -4,8 +4,17 @@ import { getStore } from "@/lib/data/store";
 import { uploadPortalFile } from "@/lib/upload/service";
 import { verifyPortalUpload } from "@/lib/upload/verify-file";
 import { recordPortalUpload, PortalUploadCategory } from "@/lib/portal/uploads";
-import { audit } from "@/lib/api/helpers";
+import { audit, getIp } from "@/lib/api/helpers";
 import { MAX_UPLOAD_SIZE } from "@/lib/upload/constants";
+// 8c-4: when the description field encodes a marketplace negotiation
+// (`description = "Negotiation <uuid>"`), the uploader MUST be a party to
+// that negotiation. Without this check, Partner B (NOT a party to a
+// negotiation X between A and C) could forge the description and later
+// share the upload-id with Partner A/C — the cross-party download path
+// at `/api/portal/attachments/[id]` would then accept it because Partner
+// A/C IS a party to negotiation X. This closes the "forge description to
+// leak bait files into other negotiations" vector at the source.
+import { getSupabase } from "@/lib/supabase/client";
 
 export const runtime = "nodejs";
 
@@ -77,6 +86,66 @@ export async function POST(req: NextRequest) {
 
     const docType = (formData.get("doc_type") as string | null) || null;
     const description = (formData.get("description") as string | null) || null;
+
+    // 8c-4: when the description encodes a marketplace negotiation
+    // (`description = "Negotiation <uuid>"`), the UPLOADER must be a party
+    // to that negotiation. Without this check, a malicious Partner B
+    // (NOT party to negotiation X between A and C) could forge the
+    // description and later share the upload-id with Partner A/C — the
+    // cross-party download path at /api/portal/attachments/[id] would
+    // accept it because Partner A/C IS party to negotiation X. Closing
+    // the forge-description vector at the source (upload route) AND at
+    // the destination (download route — see the matching fix below).
+    if (category === "general" && docType === "marketplace_negotiation" && description && description.startsWith("Negotiation ")) {
+      const negotiationId = description.slice("Negotiation ".length).trim();
+      if (/^[a-f0-9-]{36}$/i.test(negotiationId)) {
+        const sb = getSupabase();
+        const { data: negRow } = await sb
+          .from("marketplace_negotiations")
+          .select("partner_id_a, partner_id_b, tenant_id_a, tenant_id_b")
+          .eq("id", negotiationId)
+          .maybeSingle();
+        const neg = negRow as {
+          partner_id_a: string;
+          partner_id_b: string;
+          tenant_id_a: string;
+          tenant_id_b: string;
+        } | null;
+        const isUploaderParty = !!neg &&
+          neg.tenant_id_a === access.tenant_id &&
+          neg.tenant_id_b === access.tenant_id &&
+          (neg.partner_id_a === access.partner_id || neg.partner_id_b === access.partner_id);
+        if (!isUploaderParty) {
+          // Audit-log the forge attempt so ops can spot the pattern of a
+          // partner trying to leak bait files into other negotiations.
+          try {
+            await audit(
+              store,
+              {
+                id: undefined,
+                username: access.portal_email || `portal:${access.id}`,
+                tenant_id: access.tenant_id,
+              },
+              req,
+              "portal.upload_negotiation_forge_blocked",
+              "marketplace_negotiation",
+              negotiationId,
+              {
+                attempted_description: description,
+                uploader_partner_id: access.partner_id,
+                ip: getIp(req),
+              },
+            );
+          } catch (e) {
+            console.error("[portal.upload POST] audit (forge blocked) failed:", e);
+          }
+          return NextResponse.json(
+            { error: "Cannot attach to a negotiation you are not a party to." },
+            { status: 403 },
+          );
+        }
+      }
+    }
 
     // ── Size + MIME validation ───────────────────────────────────────────
     // 2b2-F1 — size cap from the shared constants (25 MB). The KYC route

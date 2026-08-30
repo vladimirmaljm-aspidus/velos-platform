@@ -94,8 +94,13 @@ export function usePortalGeolocation(access: PortalAccess | null) {
 
     const onError = (err: GeolocationPositionError) => {
       // Always log an IP-only entry so the audit trail has a record even if
-      // the browser denied geolocation.
-      sendLocation({ latitude: 0, longitude: 0, accuracy: 0 }, "ip");
+      // the browser denied geolocation. 8b-1: send NULL coords (not
+      // `latitude=0, longitude=0` — the Atlantic sentinel the previous
+      // server check accepted as a valid "browser" fix). The server's
+      // `validateGpsAgainstIp` helper now rejects (0, 0) anyway, but
+      // sending null is semantically correct and avoids the IP-derived
+      // fallback path entirely.
+      sendLocation({ latitude: NaN, longitude: NaN, accuracy: 0 }, "ip");
       setState((s) => ({
         ...s,
         loading: false,

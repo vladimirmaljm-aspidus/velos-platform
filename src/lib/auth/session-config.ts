@@ -156,13 +156,21 @@ export function invalidateSessionConfigCache(): void {
  */
 export function validateSessionConfig(config: Partial<SessionConfig>): string[] {
   const errors: string[] = [];
-  // superAdminTtlMs is allowed to be Infinity or a finite positive number.
-  // The check still runs (for the Settings UI) even though `requireAuth`
-  // ignores the value for super_admin.
+  // 8a-9: superAdminTtlMs MUST be a finite number between 1min and 7d.
+  // Previously accepted `Infinity` — which `createSession` materialised as
+  // a 100-year `expires_at`, reintroducing the C1 permanent-session
+  // backdoor via a single `PUT /api/settings/session-config` call from a
+  // super_admin (or any future code path that allowed Infinity through).
+  // The C1 fix set the default to 24h; this validator now enforces that
+  // upper bound at the API surface too. `isAbsoluteTtlApplicable` still
+  // returns `true` for super_admin post-C1, so `Infinity` is no longer
+  // "safe" even as a documentation placeholder.
   if (config.superAdminTtlMs !== undefined) {
     const v = config.superAdminTtlMs;
-    if (typeof v !== "number" || isNaN(v) || (v !== Infinity && (v < 60_000 || v > 365 * 24 * 60 * 60 * 1000))) {
-      errors.push("superAdminTtlMs must be Infinity or between 60000 and 1 year (in ms).");
+    if (typeof v !== "number" || isNaN(v) || v < 60_000 || v > 7 * 24 * 60 * 60 * 1000) {
+      errors.push(
+        "superAdminTtlMs must be between 60000 (1min) and 604800000 (7d) — Infinity is rejected (C1 fix: super_admin is now subject to absolute TTL).",
+      );
     }
   }
   const finiteFields: Array<[keyof SessionConfig, number, number]> = [

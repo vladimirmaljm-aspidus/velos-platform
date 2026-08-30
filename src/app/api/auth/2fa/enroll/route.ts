@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, audit, sanitizeError } from "@/lib/api/helpers";
-import { generateTotpSecret, generateTotpUri, generateRecoveryCodes } from "@/lib/auth/totp";
+import { generateTotpSecret, generateTotpUri, generateRecoveryCodes, hashRecoveryCode } from "@/lib/auth/totp";
 
 export const runtime = "nodejs";
 
@@ -12,11 +12,19 @@ export const runtime = "nodejs";
  * left false — the user must verify a code at /api/auth/2fa/verify to
  * activate), and returns the otpauth:// URI + 10 one-time recovery codes.
  *
- * The recovery codes are returned EXACTLY ONCE in plaintext here. The
- * hashed versions are persisted at /verify (NOT here) — so if the user
- * abandons enrollment after this call, no recovery codes exist on the
- * account and the stored secret is harmless (login still skips TOTP
- * because totp_enabled=false).
+ * 8a-4: the recovery codes are now HASHED and persisted HERE (enroll),
+ * not at /verify. The plaintext codes are returned EXACTLY ONCE in this
+ * response — the user must save them now. The previous design (persist
+ * at /verify from a client-supplied array) allowed an attacker who
+ * briefly held the session between /enroll and /verify to supply their
+ * OWN recovery codes via /verify, leaving the legitimate user's 2FA
+ * active but with attacker-known recovery codes. With this fix, the
+ * /verify route accepts ONLY a TOTP token — recovery_codes are already
+ * in place from /enroll.
+ *
+ * If the user abandons enrollment after this call, no recovery codes
+ * exist on the account (recovery_codes is null) AND totp_enabled=false
+ * (login still skips TOTP). The stored secret is harmless in that state.
  *
  * CRITICAL: super_admin CAN call this route (they may want 2FA on their
  * own account), but it's optional — super_admin is NEVER required to
@@ -52,16 +60,19 @@ export async function POST(req: NextRequest) {
     const uri = generateTotpUri(secret, user.email || user.username);
     const recoveryCodes = generateRecoveryCodes();
 
-    // Store the secret but DO NOT activate yet. If the user abandons
-    // enrollment here, the secret is harmless (login still skips TOTP
-    // because totp_enabled=false). The recovery codes are NOT stored
-    // here — they're hashed + persisted at /verify, so an abandoned
-    // enrollment leaves no recovery-code surface.
+    // 8a-4: persist BOTH the TOTP secret AND the HASHED recovery codes
+    // here at /enroll (previously persisted only the secret — recovery
+    // codes were hashed at /verify from a client-supplied array, which
+    // allowed the attacker-in-the-middle session to supply their own
+    // codes). totp_enabled is still false (the user must verify a code
+    // at /verify to activate 2FA), so an abandoned enrollment leaves
+    // the secret + hashed recovery codes harmlessly dormant.
+    const recoveryHashes = recoveryCodes.map((c) => hashRecoveryCode(c));
     await auth.store.upsertUser({
       id: user.id,
       totp_secret: secret,
       totp_enabled: false,
-      recovery_codes: null,
+      recovery_codes: recoveryHashes,
     });
 
     await audit(
@@ -71,7 +82,7 @@ export async function POST(req: NextRequest) {
       "auth.2fa.enroll",
       "auth",
       user.id,
-      { step: "secret_generated" },
+      { step: "secret_generated", recovery_code_count: recoveryHashes.length },
     );
 
     return NextResponse.json({

@@ -292,10 +292,16 @@ export async function POST(req: NextRequest) {
     });
     await setSessionCookie(token);
 
-    // F-7: clear the per-IP rate-limit counter on successful login — best-effort.
-    void resetRateLimit(rateLimitKey).catch(() => {});
-    // P0-1: also clear the per-portal-user rate-limit counter — same
-    // rationale as the per-IP reset.
+    // F-7 / 8b-3: per-IP rate-limit counter is NO LONGER reset on
+    // successful login. With the reset, an attacker holding ONE valid
+    // portal credential could enumerate unknown portal_email-_values
+    // up to the per-IP cap (20/15min default), then re-login with the
+    // known credential to reset the bucket and start a new enumeration
+    // wave — indefinitely. The per-portal-user reset (line below) is
+    // kept because that bucket only ever fills on attempts against a
+    // KNOWN portal_email, which is the legitimate fat-finger case.
+    // Per-IP bucket now expires naturally (15 min window).
+    // P0-1: per-portal-user reset is still desirable for the fat-finger case.
     void resetRateLimit(`login:portal:${access.id}`).catch(() => {});
 
     // Success: reset the failed-attempt counter and record the login.

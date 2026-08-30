@@ -4,6 +4,14 @@ import { getNegotiation } from "@/lib/data/marketplace-store";
 import { getSupabase } from "@/lib/supabase/client";
 import { audit } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
+// 8c-5: notify the counterparty when a negotiation is cancelled. The
+// previous implementation inserted a system message + audit-log but did
+// NOT call `notify()`, so the counterparty only discovered the
+// cancellation when they next opened the negotiations list (which they
+// may not do for hours / days — exactly the case where the
+// negotiation's "going dark" prompted the cancellation in the first
+// place). Now mirrors the messages-route notification pattern.
+import { notify } from "@/lib/notif/helper";
 import { withApm } from "@/lib/monitoring/apm";
 
 export const runtime = "nodejs";
@@ -214,6 +222,33 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
       console.error(
         "[marketplace.negotiations.cancel] audit failed:",
         auditErr,
+      );
+    }
+
+    // 8c-5 — Step 8: notify the counterparty. Best-effort (fire-and-
+    // forget, wrapped in try/catch) so a notification failure does not
+    // roll back the cancellation. The counterparty's partner_id is the
+    // one of `partner_id_a` / `partner_id_b` that ISN'T the caller.
+    try {
+      const otherPartnerId =
+        n.partner_id_a === access.partner_id ? n.partner_id_b : n.partner_id_a;
+      if (otherPartnerId && otherPartnerId !== access.partner_id) {
+        await notify({
+          tenantId: access.tenant_id,
+          partnerId: otherPartnerId,
+          type: "marketplace_negotiation_cancelled",
+          title: "Negotiation cancelled",
+          message: `${partnerName || "Counterparty"} cancelled the negotiation.`,
+          entityType: "marketplace_negotiation",
+          entityId: id,
+          actionUrl: `/portal/marketplace/negotiations/${id}`,
+          actionLabel: "Open room",
+        });
+      }
+    } catch (notifyErr) {
+      console.error(
+        "[marketplace.negotiations.cancel] counterparty notify failed:",
+        notifyErr,
       );
     }
 

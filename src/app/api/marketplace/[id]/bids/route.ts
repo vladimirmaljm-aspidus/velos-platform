@@ -6,6 +6,11 @@ import { audit } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { notify } from "@/lib/notif/helper";
 import { triggerWebhooks } from "@/lib/webhooks/deliver";
+// 8d-7: per-partner+post rate limit on bid placement — without this,
+// a malicious partner can spam hundreds of bids in a minute on
+// someone else's auction, each triggering an audit log + notification
+// + outbound webhook to the auction owner (flood + abuse vector).
+import { checkRateLimit } from "@/lib/security/rate-limiter";
 import { withApm } from "@/lib/monitoring/apm";
 
 export const runtime = "nodejs";
@@ -127,6 +132,17 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
   const { id } = await ctx.params;
+
+  // 8d-7: per-partner+post rate limit on bid placement. 10/min is well
+  // above a legit pattern (a human takes >5s between bids); bursts above
+  // this are almost always script-driven abuse.
+  const bidRl = await checkRateLimit(`mkt:bid:${access.partner_id}:${id}`, 10, 60_000);
+  if (!bidRl.allowed) {
+    return NextResponse.json(
+      { error: "Too many bids in a short period. Please slow down." },
+      { status: 429 },
+    );
+  }
 
   let body;
   try {

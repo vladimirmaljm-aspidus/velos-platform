@@ -32,9 +32,14 @@ export async function GET(req: NextRequest) {
  * Body: `Partial<SessionConfig>` — only the fields you want to change.
  * Returns the merged config after the update.
  *
- * CRITICAL: even if a super_admin misconfigures `superAdminTtlMs` to a
- * tiny value, `requireAuth` ignores it for super_admin — see
- * session-config.ts CRITICAL INVARIANT.
+ * 8a-9: `superAdminTtlMs` is now validated by `validateSessionConfig` to
+ * reject `Infinity` (closing the C1 permanent-session backdoor that a
+ * super_admin could re-introduce via a single PUT). The post-C1 invariant
+ * is that EVERY role — including super_admin — is subject to both the
+ * idle-timeout AND the absolute-TTL checks in `requireAuth` /
+ * `getPortalSessionAccess`. The previous "requireAuth ignores
+ * superAdminTtlMs" comment was pre-C1 and misleading; this update
+ * removes it.
  */
 export async function PUT(req: NextRequest) {
   const auth = await requireSuperAdmin(req);

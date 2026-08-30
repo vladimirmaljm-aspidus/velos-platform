@@ -21,6 +21,18 @@ export async function GET() {
     if ((session.token_version || 0) !== (access.token_version || 0)) {
       return NextResponse.json({ access: null }, { status: 200 });
     }
+    // 8b-9: mirror `getPortalSessionAccess`'s tenant-status check. A
+    // portal client whose tenant was suspended AFTER their cookie was
+    // issued would otherwise see the portal shell render successfully
+    // (the /me call returns `access`), only for the next portal API
+    // call to 401 — UX inconsistency. Returning `access: null` here
+    // forces the portal shell to show the login screen, which then
+    // rejects the suspended tenant at /api/portal/login (the
+    // AUDIT2-LOGIC-UX H4 check already exists there).
+    const tenant = await store.getTenant(access.tenant_id);
+    if (!tenant || tenant.status === "suspended" || tenant.status === "cancelled") {
+      return NextResponse.json({ access: null }, { status: 200 });
+    }
     // FIX-AUDIT4-SEC / Fix 8 — strip sensitive / internal columns from the
     // portal_access row before returning it to the portal client. The
     // previous implementation only stripped `password_hash`, leaking:

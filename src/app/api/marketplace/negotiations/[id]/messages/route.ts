@@ -6,6 +6,18 @@ import {
 } from "@/lib/data/marketplace-store";
 import { getSupabase } from "@/lib/supabase/client";
 import { sanitizeFields } from "@/lib/security/sanitize-input";
+// 8c-3: validate the attachment_url against the platform's own
+// attachment-URL allow-list. Without this, a malicious partner could
+// send `attachment_url: "javascript:..."` or
+// `"https://evil.example.com/phishing"` — the URL would be stored and
+// later rendered as `<a href="..." target="_blank">` in
+// `negotiation-room.tsx`, exposing the recipient to XSS / phishing.
+import { sanitizeAttachmentUrl } from "@/lib/security/sanitize-attachment-url";
+// 8b-10: per-portal-access rate limit on negotiation-message send —
+// without this, a malicious partner can spam thousands of messages
+// per minute, each triggering a notification + counterparty email +
+// audit-log row. 20/min is well above any legit human typing speed.
+import { checkRateLimit } from "@/lib/security/rate-limiter";
 import { notify } from "@/lib/notif/helper";
 import { getStore } from "@/lib/data/store";
 import { triggerWebhooks } from "@/lib/webhooks/deliver";
@@ -39,6 +51,12 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
   }
   const { id } = await ctx.params;
 
+  // 8b-10: per-portal-access rate limit (20 msgs/min). See import comment.
+  const rl = await checkRateLimit(`mkt-neg-msg:${access.id}`, 20, 60_000);
+  if (!rl.allowed) {
+    return NextResponse.json({ error: "Too many messages. Please slow down." }, { status: 429 });
+  }
+
   let body;
   try {
     body = await req.json();
@@ -50,12 +68,36 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
     return NextResponse.json({ error: "Message too long (max 10000 chars)." }, { status: 400 });
   }
 
-  const allowedTypes = ["text", "offer", "counter_offer", "accept", "reject", "document", "system"];
+  // 8c-6 / 8d-2: do NOT allow clients to forge `message_type: "system"`
+  // — system messages are inserted by route handlers (cancel, accept,
+  // contract creation) to record lifecycle events. Allowing a portal
+  // client to write one would let them impersonate the platform in the
+  // negotiation room (e.g. "System: this negotiation is now binding").
+  const allowedTypes = ["text", "offer", "counter_offer", "accept", "reject", "document"];
   if (body.message_type && !allowedTypes.includes(body.message_type)) {
     return NextResponse.json({ error: "Invalid message_type." }, { status: 400 });
   }
 
-  body = sanitizeFields(body, ["message", "attachment_url"]);
+  // 8c-3: sanitise the message body (HTML-entity escape) for the free-text
+  // fields, then validate the attachment_url against the platform's own
+  // attachment-URL allow-list. `sanitizeFields` alone is NOT enough — it
+  // converts `< > \" '` to entities but accepts ANY URL scheme, including
+  // `javascript:` (which React 16.9+ warns about but does NOT strip when
+  // rendered as `<a href>`). The sanitiser rejects anything that's not a
+  // path under `/api/portal-uploads/<uuid>/download` or
+  // `/api/portal/attachments/<uuid>` — phishing / XSS URLs become `null`
+  // and are stored as such (rather than rejected with a 400, so the rest
+  // of the message body still goes through for a normal conversation).
+  body = sanitizeFields(body, ["message"]);
+  const safeAttachmentUrl = sanitizeAttachmentUrl(body.attachment_url);
+  if (body.attachment_url && safeAttachmentUrl === null) {
+    // The caller explicitly tried to attach a non-allow-listed URL —
+    // log + drop the URL but keep the message body (could still be a
+    // legit message with a malicious / fat-fingered link field).
+    console.warn(
+      `[marketplace.messages] attachment_url rejected by sanitiser — partner=${access.partner_id} negotiation=${id}`,
+    );
+  }
 
   try {
     const created = await addNegotiationMessage(
@@ -67,7 +109,9 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
         message: body.message ?? null,
         message_type: body.message_type,
         offer_data: body.offer_data ?? null,
-        attachment_url: body.attachment_url ?? null,
+        // 8c-3: use the SANITISED attachment URL (null if it failed the
+        // allow-list) — never the raw client-supplied value.
+        attachment_url: safeAttachmentUrl,
       },
     );
 

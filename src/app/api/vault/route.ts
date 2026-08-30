@@ -116,6 +116,33 @@ export async function POST(req: NextRequest) {
     }
     body.tenant_id = tid;
 
+    // 8d-6: whitelist the fields a caller can write to a vault_secret row.
+    // Without this, a malicious caller could mass-assign arbitrary columns
+    // (e.g. `last_used_by`, `created_at`, `id` to overwrite another row in
+    // their tenant via IDOR — the store layer scopes by tenant_id so the
+    // IDOR would be intra-tenant, but still lets a malicious admin
+    // overwrite the `key` label of another vault row, breaking future
+    // lookups). Mirror the `whitelistUserFields()` pattern in users/route.ts.
+    const ALLOWED_VAULT_FIELDS = new Set([
+      "key",
+      "category",
+      "metadata",
+      "encrypted_value",
+      "value", // accepted as plaintext input, encrypted below
+      "key_version", // server-set below; allowed here so the override goes through
+      "expires_at",
+      // `id` is allowed ONLY on the UPDATE path (caller passes the row id to
+      // update). On INSERT, smartUpsert generates a fresh uuid.
+      "id",
+    ]);
+    const cleanBody: Record<string, unknown> = {};
+    for (const k of Object.keys(body)) {
+      if (ALLOWED_VAULT_FIELDS.has(k)) cleanBody[k] = body[k];
+    }
+    // Re-hydrate body with the whitelisted fields only.
+    body = cleanBody;
+    body.tenant_id = tid;
+
     // Encrypt the secret value before it hits the store. Accept either
     // `encrypted_value` (legacy field name) or `value` (newer name) from the
     // caller — both are treated as plaintext here and encrypted with

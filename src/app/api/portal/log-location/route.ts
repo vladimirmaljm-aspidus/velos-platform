@@ -3,6 +3,13 @@ import { getStore } from "@/lib/data/store";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { getTierMeta } from "@/lib/portal/tiers";
 import { getIp } from "@/lib/api/helpers";
+// 8b-1: shared GPS validator (validates coords + IP-distance check). The
+// previous implementation only validated the lat/lng numeric range, so
+// `latitude=0, longitude=0` (the Atlantic sentinel + the placeholder the
+// `use-geolocation` hook sends when the browser DENYs geolocation) passed
+// the gate and bumped `gps_verified_at` — the entire GPS control was
+// bypassable with one curl call.
+import { validateGpsAgainstIp } from "@/lib/utils/geo-ip";
 
 export const runtime = "nodejs";
 
@@ -64,14 +71,18 @@ export async function POST(req: NextRequest) {
     // only (recorded in the audit trail) and never gates the
     // `gps_verified_at` bump. A "browser" source without real lat/lng
     // is downgraded to "ip" so the gate stays closed.
-    const lat = typeof body.latitude === "number" ? body.latitude : NaN;
-    const lng = typeof body.longitude === "number" ? body.longitude : NaN;
-    const latValid = Number.isFinite(lat) && lat >= -90 && lat <= 90;
-    const lngValid = Number.isFinite(lng) && lng >= -180 && lng <= 180;
-    const hasRealFix = latValid && lngValid;
-    // `effectiveSource` is the SOURCE OF TRUTH for whether to bump
-    // `gps_verified_at`. Derived from real coordinates only — the
-    // client-supplied `body.source` is NOT trusted for this decision.
+    // 8b-1: route the coords through the shared `validateGpsAgainstIp`
+    // helper which additionally (vs the previous range-only check):
+    //   - rejects (0, 0) — Atlantic sentinel / browser-denied fallback
+    //   - rejects coords > 500 km away from the IP-derived location
+    //     (likely spoofed via a VPN browser extension or curl)
+    //   - requires the client to actually claim `source === "browser"`
+    // The previous range-only check accepted `latitude=0, longitude=0`,
+    // which the `use-geolocation` hook sends as a placeholder when the
+    // browser DENYs geolocation — the gate would unlock with no real
+    // location shared. The audit trail now records the rejection reason.
+    const gpsCheck = await validateGpsAgainstIp(ip, body.latitude, body.longitude, body.source);
+    const hasRealFix = gpsCheck.valid;
     const effectiveSource = hasRealFix ? "browser" : "ip";
 
     // If the client lied about the source (claimed "browser" but sent
@@ -79,7 +90,7 @@ export async function POST(req: NextRequest) {
     // attempt pattern in the audit trail.
     if (body.source === "browser" && !hasRealFix) {
       console.warn(
-        `[portal.log-location] client claimed source="browser" but provided no valid lat/lng (lat=${body.latitude}, lng=${body.longitude}) — downgraded to "ip", gps_verified_at NOT bumped`,
+        `[portal.log-location] client claimed source="browser" but coords failed validation (reason=${gpsCheck.reason}, lat=${body.latitude}, lng=${body.longitude}) — downgraded to "ip", gps_verified_at NOT bumped`,
       );
     }
 
@@ -93,15 +104,18 @@ export async function POST(req: NextRequest) {
       entity_type: "portal_access",
       entity_id: access.id,
       details: {
-        latitude: hasRealFix ? lat : null,
-        longitude: hasRealFix ? lng : null,
+        latitude: hasRealFix ? body.latitude! : null,
+        longitude: hasRealFix ? body.longitude! : null,
         accuracy: typeof body.accuracy === "number" ? body.accuracy : null,
         // Record BOTH the client-claimed source AND the server-derived
         // effectiveSource so a spoofing attempt is visible in the audit
         // trail (client_claimed_source="browser" + effectiveSource="ip"
-        // = bypass attempt).
+        // = bypass attempt). 8b-1: also persist the validation rejection
+        // reason so ops can spot patterns (e.g. many clients with
+        // reason="too_far_from_ip" → likely shared VPN being used).
         client_claimed_source: body.source || null,
         source: effectiveSource,
+        gps_rejected_reason: gpsCheck.reason ?? null,
         ip,
         user_agent: userAgent,
         tier: access.tier,

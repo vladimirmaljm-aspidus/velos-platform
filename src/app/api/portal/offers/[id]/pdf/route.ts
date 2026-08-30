@@ -4,6 +4,10 @@ import { requireKycApproved } from "@/lib/portal/kyc-gate";
 import { requireGpsVerified } from "@/lib/portal/require-gps";
 import { generatePdf } from "@/lib/pdf/generator";
 import { markDocumentViewed } from "@/lib/portal/mark-viewed";
+// 8b-8: sanitise the document number before interpolating into
+// Content-Disposition — closes a header-injection vector on admin-
+// controlled but potentially import-tainted numbers.
+import { safeFilename } from "@/lib/security/safe-filename";
 
 export const runtime = "nodejs";
 
@@ -71,7 +75,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return new NextResponse(new Uint8Array(result.buffer), {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `inline; filename="Offer-${offer.number}.pdf"`,
+        "Content-Disposition": `inline; filename="Offer-${safeFilename(offer.number, id)}.pdf"`,
         "Content-Length": result.buffer.length.toString(),
       },
     });

@@ -508,9 +508,74 @@ export async function POST(req: NextRequest) {
       const subEnd = tenant?.subscription_end ? new Date(tenant.subscription_end) : null;
       const trialEnd = tenant?.trial_ends_at ? new Date(tenant.trial_ends_at) : null;
       if (subEnd && subEnd < now && tenant.status !== "trial") {
+        // 8a-5: previously returned 402 WITHOUT audit / reportSecurityEvent.
+        // Mirror the tenant-suspended branch above so the audit trail + IDS
+        // see login.blocked events for subscription-expired denials too —
+        // an attacker probing a tenant whose subscription lapsed should
+        // be as visible as one probing a suspended tenant.
+        try {
+          await store.recordLoginHistory({
+            user_id: user.id,
+            username: user.username,
+            ip,
+            user_agent: userAgent,
+            country,
+            success: false,
+            reason: "Subscription expired",
+          });
+        } catch { /* non-critical */ }
+        await store.appendAudit({
+          user_id: user.id,
+          username: user.username,
+          action: "login.blocked",
+          entity_type: "auth",
+          entity_id: user.id,
+          details: { reason: "subscription_expired" },
+          ip,
+          user_agent: userAgent,
+        });
+        reportSecurityEvent({
+          type: "login.blocked",
+          userId: user.id,
+          tenantId: user.tenant_id ?? undefined,
+          ip,
+          details: { reason: "subscription_expired" },
+          severity: "warning",
+        });
         return NextResponse.json({ error: "Subscription expired. Contact the platform administrator to renew.", subscription_expired: true }, { status: 402 });
       }
       if (String(tenant?.status) === "trial" && trialEnd && trialEnd < now) {
+        // 8a-5: mirror the subscription-expired audit / reportSecurityEvent
+        // for the trial-expired branch too.
+        try {
+          await store.recordLoginHistory({
+            user_id: user.id,
+            username: user.username,
+            ip,
+            user_agent: userAgent,
+            country,
+            success: false,
+            reason: "Trial expired",
+          });
+        } catch { /* non-critical */ }
+        await store.appendAudit({
+          user_id: user.id,
+          username: user.username,
+          action: "login.blocked",
+          entity_type: "auth",
+          entity_id: user.id,
+          details: { reason: "trial_expired" },
+          ip,
+          user_agent: userAgent,
+        });
+        reportSecurityEvent({
+          type: "login.blocked",
+          userId: user.id,
+          tenantId: user.tenant_id ?? undefined,
+          ip,
+          details: { reason: "trial_expired" },
+          severity: "warning",
+        });
         return NextResponse.json({ error: "Trial period has ended. Upgrade to continue using VELOS.", subscription_expired: true }, { status: 402 });
       }
     }
@@ -519,13 +584,15 @@ export async function POST(req: NextRequest) {
     await store.upsertUser({ id: user.id, failed_attempts: 0, locked_until: null });
     await store.updateUserLastLogin(user.id, ip);
 
-    // F-7: on successful login, clear the per-IP rate-limit counter so a
-    // user who fat-fingered their password a few times doesn't carry that
-    // count forward. Best-effort — failures here don't block login.
-    void resetRateLimit(rateLimitKey).catch(() => {});
-
-    // P0-1: also clear the per-user rate-limit counter (super_admin was
-    // never counted, so this is a no-op for them).
+    // F-7 / 8a-6: per-IP rate-limit counter is NO LONGER reset on
+    // successful login. With the reset, an attacker holding ONE valid
+    // credential could enumerate unknown usernames up to the per-IP cap
+    // (20/15min default), then re-login with the known credential to
+    // reset the bucket and start a new enumeration wave — indefinitely.
+    // The per-user reset (line below) is kept because that bucket only
+    // ever fills on attempts against a KNOWN username (the legitimate
+    // fat-finger case). Per-IP bucket now expires naturally (15 min window).
+    // P0-1: per-user reset is still desirable for the fat-finger case.
     if (user.role !== "super_admin") {
       void resetRateLimit(`login:user:${user.username}`).catch(() => {});
     }

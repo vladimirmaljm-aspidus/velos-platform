@@ -1,5 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, audit, sanitizeError } from "@/lib/api/helpers";
+// 8d-4: RBAC gate — `lois/[id]` previously called `requireAuth(req)` only,
+// which authorised the call but did NOT check the caller had the right
+// permission for the action. Any authenticated tenant user (even one with a
+// `user` role whose permissions exclude `lois.*`) could read/update/delete
+// any LOI in their tenant. Now gates GET / PUT / DELETE on `lois.read` /
+// `lois.update` / `lois.delete` respectively — super_admin bypasses via
+// `can()`'s rule 1.
+import { requirePermission } from "@/lib/permissions/can";
 import { getStore } from "@/lib/data/store";
 import { CURRENCY_CODES } from "@/lib/data/reference";
 import type { LetterOfIntent } from "@/lib/supabase/types";
@@ -30,6 +38,9 @@ export async function GET(
   try {
     const auth = await requireAuth(req);
     if (auth instanceof NextResponse) return auth;
+    // 8d-4: RBAC gate.
+    const denied = requirePermission(auth, "lois.read");
+    if (denied) return denied;
     const { id } = await params;
     const store = await getStore();
     const loi = await store.getLoi(id);
@@ -50,6 +61,9 @@ export async function PUT(
   try {
     const auth = await requireAuth(req);
     if (auth instanceof NextResponse) return auth;
+    // 8d-4: RBAC gate.
+    const denied = requirePermission(auth, "lois.update");
+    if (denied) return denied;
     const { id } = await params;
     const store = await getStore();
     const existing = await store.getLoi(id);
@@ -132,6 +146,9 @@ export async function DELETE(
   try {
     const auth = await requireAuth(req);
     if (auth instanceof NextResponse) return auth;
+    // 8d-4: RBAC gate.
+    const denied = requirePermission(auth, "lois.delete");
+    if (denied) return denied;
     const { id } = await params;
     const store = await getStore();
     const existing = await store.getLoi(id);

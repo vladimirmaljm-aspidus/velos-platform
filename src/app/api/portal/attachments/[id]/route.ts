@@ -114,7 +114,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
             n &&
             n.tenant_id_a === access.tenant_id &&
             n.tenant_id_b === access.tenant_id &&
-            (n.partner_id_a === access.partner_id || n.partner_id_b === access.partner_id)
+            (n.partner_id_a === access.partner_id || n.partner_id_b === access.partner_id) &&
+            // 8c-4: ALSO verify the UPLOADER (upload.partner_id) is a party
+            // to the same negotiation. Without this, a malicious Partner B
+            // (NOT party to negotiation X between A and C) could forge the
+            // description at upload time (now blocked at /api/portal/upload
+            // by the matching 8c-4 fix, but old rows + future bypass
+            // vectors are still a concern) and share the upload-id with
+            // Partner A/C — Partner A/C IS a party to their own negotiation
+            // so the previous check would pass and the bait file would be
+            // served. Defense-in-depth: the destination check mirrors the
+            // source check.
+            (n.partner_id_a === upload.partner_id || n.partner_id_b === upload.partner_id)
           ) {
             allowed = true;
           }

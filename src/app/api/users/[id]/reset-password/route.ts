@@ -107,6 +107,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       password_hash: passwordHash,
       must_change_password: false,
       token_version: nextTokenVersion,
+      // 8a-8: clear stored 2FA recovery codes on admin-initiated password
+      // reset. Without this, an attacker who had exfiltrated recovery codes
+      // before the reset could still disable 2FA via /api/auth/2fa/recovery
+      // after the user (via admin) rotated their password.
+      recovery_codes: null,
     });
 
     // ── Session rotation ───────────────────────────────────────────────

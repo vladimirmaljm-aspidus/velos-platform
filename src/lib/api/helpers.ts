@@ -341,7 +341,10 @@ export async function requireAuth(req?: NextRequest): Promise<AuthContext | Next
   return {
     user: safe as SafeUser,
     store,
-    ip: "",
+    // 8a-2: pass real client IP (was hardcoded `""` — every audit_log / security
+    // event written via `auth.ip` lost the IP, blinding per-IP IDS burst detection).
+    // `getIp()` is hoisted (function declaration), and accepts the optional req.
+    ip: req ? getIp(req) : "",
     tenantId: effectiveUser.tenant_id,
     isSuperAdmin,
     impersonation,
@@ -576,6 +579,18 @@ export async function requireSuperAdmin(req?: NextRequest): Promise<AuthContext 
   const auth = await requireAuth(req);
   if (auth instanceof NextResponse) return auth;
   if (!auth.isSuperAdmin) {
+    // 8a-1: do NOT report when the caller is a super_admin currently
+    // impersonating another user — `auth.isSuperAdmin` is intentionally false
+    // during impersonation (effectiveUser is the target). Those callers must
+    // use `requireSuperAdminOrImpersonating` instead of this helper. Avoid
+    // spamming `role.escalation` for legitimate super-admins returning to
+    // their own session and calling a super-admin route mid-impersonation.
+    if (auth.impersonation) {
+      return NextResponse.json(
+        { error: "Super-admin access required. End impersonation first." },
+        { status: 403 },
+      );
+    }
     // P0-2 (Monitoring) — fire `role.escalation` for non-super-admin
     // callers attempting a super-admin-only route. The event type is
     // `role.escalation` (not `permission.denied`) because the
@@ -595,6 +610,46 @@ export async function requireSuperAdmin(req?: NextRequest): Promise<AuthContext 
     return NextResponse.json({ error: "Super-admin access required." }, { status: 403 });
   }
   return auth;
+}
+
+/**
+ * 8a-1: Variant of `requireSuperAdmin` used by `/api/super-admin/impersonate/end`.
+ *
+ * During an active impersonation, `requireAuth` swaps `effectiveUser` to the
+ * impersonation TARGET (a regular user) and sets `impersonation = session.impersonating`.
+ * Consequently `auth.isSuperAdmin === false` for the duration of the impersonation.
+ * Calling `requireSuperAdmin()` from `/impersonate/end` therefore always 403s
+ * while impersonation is active — which makes the "End Impersonation" button
+ * in the ImpersonateBanner non-functional (super_admin can only escape via
+ * full logout, losing the matching `impersonate.end` audit event).
+ *
+ * This helper allows either:
+ *   - a true super_admin (no impersonation active), OR
+ *   - a super_admin mid-impersonation (`auth.impersonation` is set + baseUser
+ *     role is super_admin — verified by `requireAuth`'s guard at line 139).
+ */
+export async function requireSuperAdminOrImpersonating(
+  req?: NextRequest,
+): Promise<AuthContext | NextResponse> {
+  const auth = await requireAuth(req);
+  if (auth instanceof NextResponse) return auth;
+  // `requireAuth` (line 139) only sets `impersonation` when `baseUser.role ===
+  // "super_admin"` AND the session carries an `impersonating` claim that has
+  // not expired AND the target token_version still matches. Therefore, the
+  // presence of `auth.impersonation` is sufficient proof that the original
+  // session holder is a super_admin.
+  if (auth.isSuperAdmin || auth.impersonation) {
+    return auth;
+  }
+  reportSecurityEvent({
+    type: "role.escalation",
+    userId: auth.user.id,
+    tenantId: auth.tenantId ?? undefined,
+    ip: auth.ip,
+    details: { required: "super_admin_or_impersonating", role: auth.user.role },
+    severity: "critical",
+  });
+  return NextResponse.json({ error: "Super-admin access required." }, { status: 403 });
 }
 
 /**

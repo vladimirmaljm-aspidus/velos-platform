@@ -61,6 +61,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (!decision || !["accept", "reject", "counter"].includes(decision)) {
       return NextResponse.json({ error: "Decision must be 'accept', 'reject', or 'counter'." }, { status: 400 });
     }
+    // 8b-6: cap `note` and `signature` length — without these, a portal
+    // client could POST a 100MB string and fill the DB / break PDF render.
+    // Mirror portal-rfqs' 5000-char cap (matches other portal note fields).
+    if (note && typeof note === "string" && note.length > 5000) {
+      return NextResponse.json({ error: "Note is too long (max 5000 chars)." }, { status: 400 });
+    }
+    if (signature && typeof signature === "string" && signature.length > 10_000) {
+      return NextResponse.json({ error: "Signature is too long (max 10000 chars)." }, { status: 400 });
+    }
 
     // Counter-specific validation — amount must be a positive number; the
     // currency must be a 3-letter ISO code; the message is optional but

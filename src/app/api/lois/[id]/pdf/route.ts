@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, audit, sanitizeError } from "@/lib/api/helpers";
 import { generatePdf } from "@/lib/pdf/generator";
+// 8b-8: sanitise the LOI number before interpolating into Content-Disposition.
+import { safeFilename } from "@/lib/security/safe-filename";
 
 export const runtime = "nodejs";
 
@@ -55,7 +57,7 @@ export async function GET(
 
     const headers = new Headers();
     headers.set("Content-Type", "application/pdf");
-    headers.set("Content-Disposition", `attachment; filename="LOI-${loi.number}.pdf"`);
+    headers.set("Content-Disposition", `attachment; filename="LOI-${safeFilename(loi.number, id)}.pdf"`);
     headers.set("Content-Length", String(result.buffer.length));
     if (result.verificationCode) {
       headers.set("X-Verification-Code", result.verificationCode);

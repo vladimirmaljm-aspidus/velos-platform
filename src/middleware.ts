@@ -67,14 +67,29 @@ function getRateLimitKey(path: string, ip: string): string {
 }
 
 function getIp(req: NextRequest): string {
+  // 8a-11: mirror `helpers.ts:getIp()` resolution order. The previous
+  // implementation returned `parts[parts.length - 1]` (the LAST XFF entry),
+  // which was correct for a Render-only deploy but WRONG for the current
+  // Cloudflare→Render production topology — the LAST XFF entry is now
+  // Cloudflare's edge-node IP, so every per-IP rate-limit bucket was
+  // shared across all users on the same CF edge (~30/min cap became
+  // 30/min total for an entire POP). The new order:
+  //   1. `CF-Connecting-IP` — Cloudflare's authoritative client IP.
+  //   2. `X-Real-IP` — single-proxy deploys.
+  //   3. `X-Forwarded-For` FIRST entry — the original client (only reached
+  //      when CF-Connecting-IP and X-Real-IP are both absent, i.e. NOT
+  //      behind Cloudflare, so the trusted proxy that wrote XFF is the
+  //      only writer of the chain).
+  const cfIp = req.headers.get("cf-connecting-ip");
+  if (cfIp) return cfIp.trim();
+  const realIp = req.headers.get("x-real-ip");
+  if (realIp) return realIp.trim();
   const xff = req.headers.get("x-forwarded-for");
   if (xff) {
-    // Render's proxy appends the real client IP at the END of the chain.
-    // The first value is attacker-controlled and must NOT be trusted.
     const parts = xff.split(",").map(s => s.trim()).filter(Boolean);
-    if (parts.length > 0) return parts[parts.length - 1];
+    if (parts.length > 0) return parts[0];
   }
-  return req.headers.get("x-real-ip") || "unknown";
+  return "unknown";
 }
 
 // Clean up expired entries every 5 minutes

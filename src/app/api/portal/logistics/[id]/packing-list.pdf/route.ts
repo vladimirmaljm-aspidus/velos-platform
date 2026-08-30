@@ -3,6 +3,9 @@ import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { getSupabase } from "@/lib/supabase/client";
 import { getStore } from "@/lib/data/store";
 import { renderPackingListPdf } from "@/lib/pdf/packing-list";
+// 8b-8: sanitise the LR number before interpolating into
+// Content-Disposition — closes a header-injection vector.
+import { safeFilename } from "@/lib/security/safe-filename";
 
 export const runtime = "nodejs";
 
@@ -57,7 +60,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   return new Response(bytes as any, {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="packing-list-${(lr as any).number || id}.pdf"`,
+      "Content-Disposition": `attachment; filename="packing-list-${safeFilename((lr as any).number, id)}.pdf"`,
       "Cache-Control": "no-store",
     },
   });

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuthOrApiKey, hasPermission, sanitizeError, type AuthContext, type ApiKeyAuthContext } from "@/lib/api/helpers";
 import { getSupabase } from "@/lib/supabase/client";
 import { renderPackingListPdf } from "@/lib/pdf/packing-list";
+// 8b-8: sanitise the LR number before interpolating into Content-Disposition.
+import { safeFilename } from "@/lib/security/safe-filename";
 
 export const runtime = "nodejs";
 
@@ -40,7 +42,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   return new Response(bytes as any, {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="packing-list-${(lr as any).number || id}.pdf"`,
+      "Content-Disposition": `attachment; filename="packing-list-${safeFilename((lr as any).number, id)}.pdf"`,
       "Cache-Control": "no-store",
     },
   });

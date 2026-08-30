@@ -1609,6 +1609,10 @@ export type NotificationType =
   | "marketplace_response_accepted" // responder's offer was accepted by the post owner
   | "marketplace_response_rejected" // responder's offer was rejected by the post owner
   | "marketplace_message_received" // other party sent a message in a negotiation room
+  // 8c-5: counterparty cancelled the negotiation. Surfaces in the portal
+  // bell so the counterparty finds out without having to refresh the
+  // negotiations list.
+  | "marketplace_negotiation_cancelled"
   // FEAT-1 / Trial approval system — fires when a new tenant self-registers
   // with status="pending_approval". Tied to the pending tenant's tenant_id
   // (the only tenant_id available at signup time — super_admins have

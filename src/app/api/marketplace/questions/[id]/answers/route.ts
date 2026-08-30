@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+// 8c-2: KYC gate — mirror top-level marketplace POST route. Without this,
+// a portal client whose KYC is `rejected` / `suspended` could still create
+// shipments / sign trade documents / post community content — binding
+// commitments that affect counterparty's downstream flows.
+import { requireKycApproved } from "@/lib/portal/kyc-gate";
 import { createAnswer, listAnswers } from "@/lib/data/marketplace-community-store";
 import { audit } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
@@ -43,6 +48,9 @@ async function _post(req: NextRequest, ctx: RouteCtx) {
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 8c-2: KYC gate — defence-in-depth, mirror top-level marketplace POST.
+  const _kycBlock = await requireKycApproved(access);
+  if (_kycBlock) return _kycBlock;
   const { id } = await ctx.params;
 
   let body;

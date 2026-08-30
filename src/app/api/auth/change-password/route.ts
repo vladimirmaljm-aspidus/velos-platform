@@ -165,6 +165,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // 8a-7: defence-in-depth — refuse to rotate the password to the SAME
+    // value as the current password. The portal equivalent
+    // `/api/portal/change-password` already has this check; without it, a
+    // user who suspects compromise and "rotates" their password to the
+    // same value leaves the previously-stolen credential still valid.
+    const sameAsOld = await verifyPassword(newPassword, user.password_hash);
+    if (sameAsOld) {
+      return NextResponse.json(
+        { error: "New password must be different from your current password." },
+        { status: 400 },
+      );
+    }
+
     // ── Hash + bump token_version ──────────────────────────────────────
     const newPasswordHash = await hashPassword(newPassword);
     const nextTokenVersion = (user.token_version || 1) + 1;
@@ -176,6 +189,13 @@ export async function POST(req: NextRequest) {
       token_version: nextTokenVersion,
       failed_attempts: 0,
       locked_until: null,
+      // 8a-8: clear stored 2FA recovery codes on password change. The
+      // admin-initiated `/api/users/[id]/disable-2fa` route already does
+      // this; the user-initiated password-change route did NOT, so an
+      // attacker who had exfiltrated recovery codes earlier could still
+      // disable 2FA via `/api/auth/2fa/recovery` AFTER the user rotated
+      // their password. Mirror portal-change-password which also clears.
+      recovery_codes: null,
     });
 
     // ── Re-mint the current session with the new token_version ────────

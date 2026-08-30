@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireSuperAdmin, audit, getIp } from "@/lib/api/helpers";
+// 8a-1: switched from `requireSuperAdmin` to `requireSuperAdminOrImpersonating`.
+// During an active impersonation `auth.isSuperAdmin === false` (effectiveUser is
+// the target), so the strict helper always 403s — the End-Impersonation button
+// in the ImpersonateBanner was non-functional and a super_admin could only
+// escape via full logout (losing the matching `impersonate.end` audit event).
+import { requireSuperAdminOrImpersonating, audit, getIp } from "@/lib/api/helpers";
 import { createSession, setSessionCookie, getSessionFromCookie } from "@/lib/auth/session";
 // P0-2 (Monitoring) — fire `impersonate.stop` for Sentry / IDS / webhook
 // fan-out. Pure reporting call; never blocks the super-admin.
@@ -13,7 +18,7 @@ export const runtime = "nodejs";
  */
 export async function POST(req: NextRequest) {
   try {
-    const auth = await requireSuperAdmin(req);
+    const auth = await requireSuperAdminOrImpersonating(req);
     if (auth instanceof NextResponse) return auth;
 
     const session = await getSessionFromCookie();

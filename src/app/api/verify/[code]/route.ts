@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getStore } from "@/lib/data/store";
 import { getSupabase } from "@/lib/supabase/client";
 import { parseUserAgent } from "@/lib/utils/device-parser";
-import { lookupIp, GeoData } from "@/lib/utils/geo-ip";
+import { lookupIp, GeoData, validateGpsAgainstIp } from "@/lib/utils/geo-ip";
 import { getIp } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
@@ -193,15 +193,42 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ cod
   }
 
   // ── Detailed document_verification_logs row (WHO/WHERE/HOW + GPS) ────
-  const gpsCoords =
-    body.latitude != null && body.longitude != null
-      ? {
-          latitude: body.latitude,
-          longitude: body.longitude,
-          accuracy: typeof body.accuracy === "number" ? body.accuracy : null,
-          source: body.source ?? "browser",
-        }
-      : null;
+  // 8a-3: GPS coords from the client body were previously accepted
+  // unconditionally and written to the row's `latitude` / `longitude`
+  // columns. `checkGpsVerified()` then matched on `latitude IS NOT NULL`,
+  // which meant `curl ... -d '{"latitude":0,"longitude":0,"source":"browser"}'`
+  // unlocked the gate without the verifier actually sharing their location.
+  // Now we validate the coords against the IP-derived geo (distance check,
+  // reject (0,0), reject out-of-range/non-finite, require source="browser")
+  // BEFORE persisting them. Coords that fail validation are NOT written to
+  // `latitude` / `longitude` — the row still records the attempt (with the
+  // failure reason in `details` for forensic review), but `checkGpsVerified`
+  // returns false, so the gate stays locked.
+  let gpsCoords: {
+    latitude: number;
+    longitude: number;
+    accuracy?: number | null;
+    source?: string;
+  } | null = null;
+  let gpsRejectReason: string | null = null;
+  if (body.latitude != null && body.longitude != null) {
+    const ip = getIp(req) || "unknown";
+    const gpsCheck = await validateGpsAgainstIp(ip, body.latitude, body.longitude, body.source);
+    if (gpsCheck.valid) {
+      gpsCoords = {
+        latitude: body.latitude as number,
+        longitude: body.longitude as number,
+        accuracy: typeof body.accuracy === "number" ? body.accuracy : null,
+        source: body.source ?? "browser",
+      };
+    } else {
+      gpsRejectReason = gpsCheck.reason ?? "unknown";
+      // Log the bypass attempt so the super-admin viewer can spot patterns.
+      console.warn(
+        `[verify POST] GPS coords rejected (reason=${gpsRejectReason}) — ip=${ip}`,
+      );
+    }
+  }
 
   void logVerificationAttempt(
     req,
@@ -210,6 +237,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ cod
     result,
     v,
     gpsCoords,
+    gpsRejectReason,
   );
 
   return NextResponse.json({ ok: true, result });
@@ -231,6 +259,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ cod
 // Returns true if there's a recent (within 5 min) GPS verification log
 // for this code from the same IP. This is the server-side gate that
 // prevents document data from leaking without actual GPS sharing.
+//
+// 8a-3: previously matched on `latitude IS NOT NULL` alone, which was
+// satisfied by IP-only rows (the lat/lng columns were filled from
+// `geo.latitude` when the client sent no body at all) AND by attacker-supplied
+// (0, 0) coords. Now we additionally require `raw_headers.gps.source ===
+// "browser"` — only validated browser GPS rows unlock the gate.
 async function checkGpsVerified(req: NextRequest, code: string): Promise<boolean> {
   try {
     const ip = getIp(req) || "unknown";
@@ -238,7 +272,7 @@ async function checkGpsVerified(req: NextRequest, code: string): Promise<boolean
     const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
     const { data, error } = await sb
       .from("document_verification_logs")
-      .select("id, latitude, longitude")
+      .select("id, latitude, longitude, raw_headers")
       .eq("verification_code", code)
       .eq("ip", ip)
       .gte("verified_at", fiveMinAgo)
@@ -246,7 +280,12 @@ async function checkGpsVerified(req: NextRequest, code: string): Promise<boolean
       .order("verified_at", { ascending: false })
       .limit(1);
     if (error) return false;
-    return !!(data && data.length > 0);
+    if (!data || data.length === 0) return false;
+    // 8a-3: only count real "browser" GPS rows as unlocking the gate. IP-only
+    // rows have `raw_headers.gps.source = "ip"` and MUST NOT satisfy the gate.
+    const row = data[0] as { raw_headers?: { gps?: { source?: string } } } | null;
+    const src = row?.raw_headers?.gps?.source;
+    return src === "browser";
   } catch {
     return false;
   }
@@ -270,6 +309,7 @@ async function logVerificationAttempt(
     accuracy?: number | null;
     source?: string;
   } | null,
+  gpsRejectReason: string | null = null,
 ): Promise<void> {
   try {
     // Resolve the caller's IP via the shared `getIp()` helper.
@@ -300,8 +340,29 @@ async function logVerificationAttempt(
     // GPS coordinates take PRIORITY over IP-based lat/lng when available.
     // Country/city/region still come from the IP lookup (GPS doesn't carry
     // those) — so a row can have precise lat/lng + IP-derived country.
-    const finalLatitude = gpsCoords?.latitude ?? geo.latitude;
-    const finalLongitude = gpsCoords?.longitude ?? geo.longitude;
+    //
+    // 8a-3: when the client SUPPLIED coords but they failed validation
+    // (`gpsRejectReason != null`), we MUST NOT fall back to the IP-derived
+    // lat/lng — `checkGpsVerified()` matches on `latitude IS NOT NULL` and
+    // would otherwise unlock the gate based on the IP fallback alone.
+    // Rejecting coords → write null lat/lng + reject reason marker in
+    // raw_headers.gps; the row still records the attempt for forensic review.
+    let finalLatitude: number | null;
+    let finalLongitude: number | null;
+    if (gpsCoords) {
+      finalLatitude = gpsCoords.latitude;
+      finalLongitude = gpsCoords.longitude;
+    } else if (gpsRejectReason) {
+      // Coords supplied but failed validation — DO NOT use IP fallback
+      // (would re-open the gate the validation is supposed to close).
+      finalLatitude = null;
+      finalLongitude = null;
+    } else {
+      // No coords supplied at all (IP-only verification) — preserve the
+      // pre-8a-3 behaviour so legacy rows continue to render on the map.
+      finalLatitude = geo.latitude;
+      finalLongitude = geo.longitude;
+    }
 
     const sb = getSupabase();
     const { error } = await sb.from("document_verification_logs").insert({
@@ -326,9 +387,12 @@ async function logVerificationAttempt(
       referrer: req.headers.get("referer") || null,
       accept_language: req.headers.get("accept-language") || null,
       // raw_headers preserves BOTH sources for forensic analysis:
-      //  - gps.source = "browser" → user granted precise GPS
+      //  - gps.source = "browser" → user granted precise GPS (validated)
       //  - gps.source = "ip"      → GPS denied/unavailable, fell back to IP
-      // The lat/lng stored above is whichever source provided the coords.
+      //  - gps.rejected = "<reason>" → client supplied coords but validation
+      //    rejected them (e.g. too_far_from_ip, zero_zero) — the row is the
+      //    evidence trail for the bypass attempt; lat/lng above are NULL so
+      //    checkGpsVerified() correctly returns false.
       raw_headers: {
         gps: gpsCoords
           ? {
@@ -336,7 +400,10 @@ async function logVerificationAttempt(
               lng: gpsCoords.longitude,
               accuracy: gpsCoords.accuracy ?? null,
               source: gpsCoords.source ?? "browser",
+              rejected: null,
             }
+          : gpsRejectReason
+          ? { lat: null, lng: null, accuracy: null, source: "rejected", rejected: gpsRejectReason }
           : { lat: null, lng: null, accuracy: null, source: "ip" },
       },
     });

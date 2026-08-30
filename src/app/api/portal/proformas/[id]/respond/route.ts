@@ -45,6 +45,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (!decision || !["accept", "reject"].includes(decision)) {
       return NextResponse.json({ error: "Decision must be 'accept' or 'reject'." }, { status: 400 });
     }
+    // 8b-6: cap `note` length — without this, a portal client could POST a
+    // 100MB string. Proforma route is WORSE than offers because it APPENDS to
+    // existing `proforma.notes` — 100MB note adds 100MB on top.
+    if (note && typeof note === "string" && note.length > 5000) {
+      return NextResponse.json({ error: "Note is too long (max 5000 chars)." }, { status: 400 });
+    }
 
     const store = await getStore();
 

@@ -4,6 +4,12 @@ import { listThread, insertMessage, markThreadRead, sanitizeMessageBody } from "
 import { sendEmail, newMessageEmail } from "@/lib/email/service";
 import { getStore } from "@/lib/data/store";
 import { audit } from "@/lib/api/helpers";
+// 8b-10: per-portal-access rate limit on message send — without this,
+// a portal client with a valid cookie can spam the messages endpoint
+// thousands of times per minute, each triggering an email to the tenant
+// admin + notification insert + audit log entry. 20/min is well above
+// any legit human typing speed.
+import { checkRateLimit } from "@/lib/security/rate-limiter";
 
 export const runtime = "nodejs";
 
@@ -29,12 +35,16 @@ export const runtime = "nodejs";
 const ATTACHMENT_URL_RE_PLURAL = /^\/api\/portal-uploads\/[a-f0-9-]+\/download(\?|$)/;
 const ATTACHMENT_URL_RE_SINGULAR = /^\/api\/portal\/attachments\/[a-f0-9-]+(\?|$)/;
 
+// 8c-3: imported from the shared sanitiser module for parity with the
+// marketplace negotiation-messages route. The local regex + function are
+// kept here as a thin shim so existing imports of `sanitizeAttachmentUrl`
+// from this file keep working (in case any other route handler imports
+// from here directly — verify with grep before removing).
+import {
+  sanitizeAttachmentUrl as sanitizeAttachmentUrlShared,
+} from "@/lib/security/sanitize-attachment-url";
 function sanitizeAttachmentUrl(value: unknown): string | null {
-  if (typeof value !== "string" || value.length === 0) return null;
-  if (!ATTACHMENT_URL_RE_PLURAL.test(value) && !ATTACHMENT_URL_RE_SINGULAR.test(value)) {
-    return null;
-  }
-  return value;
+  return sanitizeAttachmentUrlShared(value);
 }
 
 /**
@@ -67,6 +77,12 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const access = await getPortalSessionAccess();
   if (!access) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+
+  // 8b-10: per-portal-access rate limit (20 msgs/min). See import comment.
+  const rl = await checkRateLimit(`portal-msg:${access.id}`, 20, 60_000);
+  if (!rl.allowed) {
+    return NextResponse.json({ error: "Too many messages. Please slow down." }, { status: 429 });
+  }
 
   let raw;
   try {
