@@ -347,50 +347,50 @@ export async function generatePdf(opts: GeneratePdfOptions): Promise<GeneratePdf
 
   // ── Auto-register in Document Register ───────────────────────────────
   // Every issued document (offer/invoice/proforma) must be recorded in the
-  // document register with a sequential number so the firm has a complete
-  // audit trail of all outbound documents. This is idempotent — if an entry
-  // with the same reference_id + version already exists, we skip.
+  // document register with a sequential version number so the firm has a
+  // complete audit trail of all outbound documents INCLUDING regenerations.
+  // 2g-F1 fix: the prior `alreadyRegistered` gate skipped ALL regenerations
+  // after V1 — so versions never went past V1 and the pdf_hash was never
+  // refreshed on re-generation. The fix: ALWAYS compute nextVersion =
+  // existing_count + 1 and upsert. Re-running with the same version is
+  // idempotent (upsert keyed on reference_id + version). Each regeneration
+  // now creates a new version entry (V2, V3, ...) with a fresh pdf_hash.
   try {
     const existing = await store.listDocumentRegister(opts.tenantId, {
       limit: 1000,
       filters: { reference_id: opts.docId },
     });
-    const alreadyRegistered = existing.items.some(
+    // Determine the next version number for this document
+    const versions = existing.items.filter(
       (e) => e.reference_id === opts.docId && e.type === opts.docType
     );
-    if (!alreadyRegistered) {
-      // Determine the next version number for this document
-      const versions = existing.items.filter(
-        (e) => e.reference_id === opts.docId && e.type === opts.docType
-      );
-      const nextVersion = versions.length + 1;
+    const nextVersion = versions.length + 1;
 
-      await store.upsertDocumentRegisterEntry({
-        tenant_id: opts.tenantId,
-        number: `${doc.number}-V${nextVersion}`,
-        type: opts.docType as any,
-        version: nextVersion,
-        reference_id: opts.docId,
-        partner_id: doc.partner_id,
-        title: `${docTitleLabel} ${doc.number}`,
-        status: "current",
-        created_by: null,
-        metadata: {
-          verification_code: verificationCode,
-          verification_id: verificationId,
-          pdf_hash: pdfHash,
-          pdf_size: buffer.length,
-          currency: doc.currency,
-          // LOI stores the document value as `total_value` (quantity × unit_price),
-          // not `total`. Normalise so the register's metadata.total is consistent
-          // across doc types — offer/invoice/proforma use `.total`, LOI uses
-          // `.total_value`.
-          total: (doc as any).total ?? (doc as any).total_value ?? 0,
-          partner_name: partner?.name,
-          generated_at: new Date().toISOString(),
-        },
-      } as any);
-    }
+    await store.upsertDocumentRegisterEntry({
+      tenant_id: opts.tenantId,
+      number: `${doc.number}-V${nextVersion}`,
+      type: opts.docType as any,
+      version: nextVersion,
+      reference_id: opts.docId,
+      partner_id: doc.partner_id,
+      title: `${docTitleLabel} ${doc.number}`,
+      status: "current",
+      created_by: null,
+      metadata: {
+        verification_code: verificationCode,
+        verification_id: verificationId,
+        pdf_hash: pdfHash,
+        pdf_size: buffer.length,
+        currency: doc.currency,
+        // LOI stores the document value as `total_value` (quantity × unit_price),
+        // not `total`. Normalise so the register's metadata.total is consistent
+        // across doc types — offer/invoice/proforma use `.total`, LOI uses
+        // `.total_value`.
+        total: (doc as any).total ?? (doc as any).total_value ?? 0,
+        partner_name: partner?.name,
+        generated_at: new Date().toISOString(),
+      },
+    } as any);
   } catch (regErr) {
     // Don't fail the PDF generation if the register write fails — log it.
     console.error("[pdf.generator] Document register write failed:", regErr);

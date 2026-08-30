@@ -115,18 +115,32 @@ export async function POST(
     } as any);
 
     // Register in document_register
+    // 2g-F12 fix: the PDF download route (via src/lib/pdf/generator.ts) already
+    // creates a document_register entry with reference_id=loi.id + type='loi'.
+    // Sending the LOI here would INSERT a DUPLICATE entry (same reference_id,
+    // version 1, created twice). Check for an existing entry first; only insert
+    // if none exists. Idempotent on re-send.
     try {
-      await store.upsertDocumentRegisterEntry({
-        tenant_id: loi.tenant_id,
-        number: loi.number,
-        type: "loi" as any,
-        version: 1,
-        reference_id: loi.id,
-        partner_id: loi.partner_id,
-        title: loi.subject,
-        status: "current",
-        created_by: auth.user.id,
-      } as any);
+      const existingReg = await store.listDocumentRegister(loi.tenant_id, {
+        limit: 100,
+        filters: { reference_id: loi.id },
+      });
+      const alreadyRegistered = existingReg.items.some(
+        (e) => e.reference_id === loi.id && e.type === "loi"
+      );
+      if (!alreadyRegistered) {
+        await store.upsertDocumentRegisterEntry({
+          tenant_id: loi.tenant_id,
+          number: loi.number,
+          type: "loi" as any,
+          version: 1,
+          reference_id: loi.id,
+          partner_id: loi.partner_id,
+          title: loi.subject,
+          status: "current",
+          created_by: auth.user.id,
+        } as any);
+      }
     } catch (e) {
       console.warn("[loi.send] document_register insert failed:", e);
     }
