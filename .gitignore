@@ -54,3 +54,5 @@ tool-results/
 # ── Temporary agent worklogs / notes ─────────────────────────────────────────
 *.agent.md
 tmp/
+prisma/db/*.db
+prisma/db/
