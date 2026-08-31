@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSuperAdmin, audit } from "@/lib/api/helpers";
 import { sendEmail } from "@/lib/email/service";
+import { escapeHtml } from "@/lib/security/escape-html";
 
 export const runtime = "nodejs";
 
@@ -21,15 +22,6 @@ export const runtime = "nodejs";
  * (`DELETE /api/tenants/[id]` with the countTenantDependencies confirm
  * gate) and not what this route is for.
  */
-function escapeHtml(str: string): string {
-  if (!str) return "";
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
 
 function rejectionEmail(opts: {
   contactName: string;

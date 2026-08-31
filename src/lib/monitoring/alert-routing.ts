@@ -45,6 +45,7 @@
 // ----------------------------------------------------------------------------
 
 import type { SecurityEvent } from "@/lib/monitoring/security-alerts";
+import { escapeHtml } from "@/lib/security/escape-html";
 
 /**
  * Send an alert email to every recipient on every active route whose
@@ -128,12 +129,3 @@ export async function routeAlert(event: SecurityEvent): Promise<void> {
   }
 }
 
-function escapeHtml(str: string): string {
-  if (!str) return "";
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}

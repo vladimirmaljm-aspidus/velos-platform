@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 // caller fetching /api/partners/<non-existent-id> gets 404 (not 401).
 import { requireAuthOrApiKey, hasPermission, audit, sanitizeError } from "@/lib/api/helpers";
 // FIX-ALL-2 / Fix 1 — strip KYC / bank / vat / tax fields from API-key responses.
-import { redactPartnerFields } from "@/lib/api/redact";
+import { shapePartnerRow } from "@/lib/api/redact";
 // FIX-ALL-2 / Fix 6 — XSS prevention on free-text fields.
 import { sanitizeFields } from "@/lib/security/sanitize-input";
 // SEC-M9 — partner mass-assignment whitelist (shared with POST handler).
@@ -52,26 +52,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     // partner:read principal (including API keys) is a credential exposure.
     // P0-3 / Feature 2: decrypt contact_email / phone / tax_id /
     // vat_number for the admin UI; strip the internal HMAC columns.
-    const { portal_token: _omit, tax_id_hmac: _omitTid, vat_number_hmac: _omitVn, ...safePartner } = partner as any;
-    if (safePartner.contact_email && typeof safePartner.contact_email === "string") {
-      safePartner.contact_email = decryptField(safePartner.contact_email);
-    }
-    if (safePartner.phone && typeof safePartner.phone === "string") {
-      safePartner.phone = decryptField(safePartner.phone);
-    }
-    // AUDIT16 — decrypt contact_phone (parity with the list route; the
-    // portal profile PUT encrypts it).
-    if (safePartner.contact_phone && typeof safePartner.contact_phone === "string") {
-      safePartner.contact_phone = decryptField(safePartner.contact_phone);
-    }
-    if (safePartner.tax_id && typeof safePartner.tax_id === "string") {
-      safePartner.tax_id = decryptField(safePartner.tax_id);
-    }
-    if (safePartner.vat_number && typeof safePartner.vat_number === "string") {
-      safePartner.vat_number = decryptField(safePartner.vat_number);
-    }
-    // FIX-ALL-2 / Fix 1 — strip KYC / bank / vat / tax from API-key responses.
-    const redactedPartner = redactPartnerFields(safePartner as any, auth);
+    // AUDIT18 — canonical shaping (was one of 5 drifted copies; the PUT
+    // response below forgot contact_phone decryption → enc: blob in the UI).
+    const redactedPartner = shapePartnerRow(partner as any, auth);
     return NextResponse.json(redactedPartner);
   } catch (error: any) {
     return NextResponse.json({ error: sanitizeError(error) }, { status: 500 });
@@ -168,21 +151,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     await audit(auth.store, auditUser, req, "partner.update", "partner", id, { name: updated.name });
     // Strip portal_token from response (parity with GET / list — audit D-5 / F-9-1).
     // P0-3 / Feature 2: decrypt PII fields + strip the HMAC columns.
-    const { portal_token: _omit, tax_id_hmac: _omitTid, vat_number_hmac: _omitVn, ...safeUpdated } = updated as any;
-    if (safeUpdated.contact_email && typeof safeUpdated.contact_email === "string") {
-      safeUpdated.contact_email = decryptField(safeUpdated.contact_email);
-    }
-    if (safeUpdated.phone && typeof safeUpdated.phone === "string") {
-      safeUpdated.phone = decryptField(safeUpdated.phone);
-    }
-    if (safeUpdated.tax_id && typeof safeUpdated.tax_id === "string") {
-      safeUpdated.tax_id = decryptField(safeUpdated.tax_id);
-    }
-    if (safeUpdated.vat_number && typeof safeUpdated.vat_number === "string") {
-      safeUpdated.vat_number = decryptField(safeUpdated.vat_number);
-    }
-    // FIX-ALL-2 / Fix 1 — strip KYC / bank / vat / tax from API-key responses.
-    const redactedUpdated = redactPartnerFields(safeUpdated as any, auth);
+    // AUDIT18 — canonical shaping (fixes the contact_phone decrypt gap that
+    // flashed an enc: blob in the admin UI after every partner edit).
+    const redactedUpdated = shapePartnerRow(updated as any, auth);
     return NextResponse.json(redactedUpdated);
   } catch (error: any) {
     return NextResponse.json({ error: sanitizeError(error) }, { status: 500 });

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireSuperAdmin, audit, getIp } from "@/lib/api/helpers";
 import { sendEmail } from "@/lib/email/service";
 import { notify } from "@/lib/notif/helper";
+import { escapeHtml } from "@/lib/security/escape-html";
 
 export const runtime = "nodejs";
 
@@ -30,15 +31,6 @@ const TRIAL_DAYS = 14;
  * previously also created sessions; for an approved trial tenant the
  * status gate now passes and they get a regular session.)
  */
-function escapeHtml(str: string): string {
-  if (!str) return "";
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
 
 function welcomeRegisterEmail(opts: {
   contactName: string;

@@ -7,6 +7,7 @@ import {
   decryptSensitiveFields,
   COMMS_SENSITIVE_KEYS,
 } from "@/lib/crypto/field-encryption";
+import { escapeHtml } from "@/lib/security/escape-html";
 
 export const runtime = "nodejs";
 
@@ -16,15 +17,6 @@ export const runtime = "nodejs";
  * `fromName`, `fromEmail`, `smtp.user`, `smtp.host` are admin-settable
  * fields interpolated into the test email HTML body.
  */
-function escapeHtml(str: string): string {
-  if (!str) return "";
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
 
 /**
  * POST /api/settings/test-smtp

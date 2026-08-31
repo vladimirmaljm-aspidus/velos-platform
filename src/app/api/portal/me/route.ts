@@ -2,36 +2,22 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromCookie, clearSessionCookie, SESSION_COOKIE_NAME } from "@/lib/auth/session";
 import { audit } from "@/lib/api/helpers";
 import { getSupabase } from "@/lib/supabase/client";
+import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 
 export const runtime = "nodejs";
 
 export async function GET() {
   try {
-    const session = await getSessionFromCookie();
-    if (!session || session.role !== "portal_client") {
+    // AUDIT18: delegate to getPortalSessionAccess (the canonical portal
+    // session gate) instead of hand-rolling a subset of its checks. The
+    // local copy skipped the SessionConfig absolute-TTL and idle-timeout
+    // checks (getPortalSessionAccess lines 58–80) and the `portal:`-prefix
+    // sub validation — so /me stayed fresh after an idle-timeout while every
+    // other portal call 401'd, and the portal shell rendered a logged-in UI
+    // over a dead session. Same 401 semantics as the rest of the portal API.
+    const access = await getPortalSessionAccess();
+    if (!access) {
       return NextResponse.json({ access: null }, { status: 401 });
-    }
-    const accessId = session.sub.slice("portal:".length);
-    const { getStore } = await import("@/lib/data/store");
-    const store = await getStore();
-    const access = await store.getPortalAccessById(accessId);
-    if (!access || access.status !== "active") {
-      return NextResponse.json({ access: null }, { status: 401 });
-    }
-    if ((session.token_version || 0) !== (access.token_version || 0)) {
-      return NextResponse.json({ access: null }, { status: 200 });
-    }
-    // 8b-9: mirror `getPortalSessionAccess`'s tenant-status check. A
-    // portal client whose tenant was suspended AFTER their cookie was
-    // issued would otherwise see the portal shell render successfully
-    // (the /me call returns `access`), only for the next portal API
-    // call to 401 — UX inconsistency. Returning `access: null` here
-    // forces the portal shell to show the login screen, which then
-    // rejects the suspended tenant at /api/portal/login (the
-    // AUDIT2-LOGIC-UX H4 check already exists there).
-    const tenant = await store.getTenant(access.tenant_id);
-    if (!tenant || tenant.status === "suspended" || tenant.status === "cancelled") {
-      return NextResponse.json({ access: null }, { status: 200 });
     }
     // FIX-AUDIT4-SEC / Fix 8 — strip sensitive / internal columns from the
     // portal_access row before returning it to the portal client. The

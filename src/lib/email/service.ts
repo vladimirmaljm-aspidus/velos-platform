@@ -6,6 +6,7 @@ import {
   decryptField,
   isEncrypted,
 } from "@/lib/crypto/field-encryption";
+import { escapeHtml } from "@/lib/security/escape-html";
 
 /**
  * Escape HTML special characters to prevent XSS in email templates.
@@ -14,15 +15,6 @@ import {
  * rename a tenant to `<img src=x onerror=...>` and inject it into every
  * email body. (Audit finding P2-4.)
  */
-function escapeHtml(str: string): string {
-  if (!str) return "";
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
 
 /**
  * Email service — multi-provider.

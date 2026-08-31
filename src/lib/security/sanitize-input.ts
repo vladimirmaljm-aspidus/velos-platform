@@ -37,7 +37,14 @@
 export function sanitizeInput(input: unknown): unknown {
   if (typeof input !== "string") return input;
   if (input.length === 0) return input;
+  // AUDIT18: escape `&` FIRST (canonical escaping order — see
+  // lib/security/escape-html.ts). Previously this skipped `&` entirely,
+  // so a pre-escaped value like "&amp;" would round-trip as "&amp;" but a
+  // raw "&" stayed raw — two different escaping alphabets in the codebase
+  // meant the same text rendered differently depending on which helper a
+  // route happened to use.
   return input
+    .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")

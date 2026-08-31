@@ -6,7 +6,7 @@ import { toCSV, csvResponse, parseExportParams } from "@/lib/export/csv";
 // internal HMAC search-token columns. Decrypt the PII fields before
 // serializing to CSV; strip the HMAC columns and the legacy portal_token
 // (parity with /api/partners GET list handler, lines 188-205).
-import { decryptField } from "@/lib/crypto/field-encryption";
+import { shapePartnerRow } from "@/lib/api/redact";
 
 export const runtime = "nodejs";
 
@@ -48,26 +48,8 @@ export async function GET(req: NextRequest) {
   // exported — even if an admin explicitly requests them via
   // ?columns=tax_id_hmac,portal_token, the strip below removes them
   // from the row object before toCSV sees the column.
-  const safeItems = result.items.map((row: any) => {
-    const { portal_token, tax_id_hmac, vat_number_hmac, ...rest } = row as any;
-    if (rest.contact_email && typeof rest.contact_email === "string") {
-      rest.contact_email = decryptField(rest.contact_email);
-    }
-    if (rest.phone && typeof rest.phone === "string") {
-      rest.phone = decryptField(rest.phone);
-    }
-    // AUDIT16 — contact_phone parity (portal profile PUT encrypts it).
-    if (rest.contact_phone && typeof rest.contact_phone === "string") {
-      rest.contact_phone = decryptField(rest.contact_phone);
-    }
-    if (rest.tax_id && typeof rest.tax_id === "string") {
-      rest.tax_id = decryptField(rest.tax_id);
-    }
-    if (rest.vat_number && typeof rest.vat_number === "string") {
-      rest.vat_number = decryptField(rest.vat_number);
-    }
-    return rest;
-  });
+  // AUDIT18 — canonical shaping (was one of 5 drifted copies).
+  const safeItems = result.items.map((row: any) => shapePartnerRow(row));
 
   // Defense-in-depth: also strip the secret / HMAC columns from the
   // user-supplied `cols` list so an admin can't `?columns=portal_token`

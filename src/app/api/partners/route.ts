@@ -3,7 +3,7 @@ import { requireAuthOrApiKey, resolveTenantId, hasPermission, audit, type AuthCo
 import { triggerWebhooks } from "@/lib/webhooks/deliver";
 import { withApm } from "@/lib/monitoring/apm";
 // FIX-ALL-2 / Fix 1 — strip KYC / bank / vat / tax fields from API-key responses.
-import { redactPartnerFields } from "@/lib/api/redact";
+import { redactPartnerFields, shapePartnerRow } from "@/lib/api/redact";
 // FIX-ALL-2 / Fix 6 — XSS prevention on free-text fields.
 import { sanitizeFields } from "@/lib/security/sanitize-input";
 // P0-3 / Feature 2 — field-level encryption. The partner PII fields
@@ -180,38 +180,11 @@ async function _get(req: NextRequest) {
     // admin UI shows plaintext PII. tax_id / vat_number are ALSO decrypted
     // here so the UI shows them — they're not used for equality search on
     // the read path (the HMAC column is, on the write path's duplicate-check).
-    const safeItems = result.items.map(({ portal_token, ...rest }: any) => {
-      if (rest.contact_email && typeof rest.contact_email === "string") {
-        rest.contact_email = decryptField(rest.contact_email);
-      }
-      if (rest.phone && typeof rest.phone === "string") {
-        rest.phone = decryptField(rest.phone);
-      }
-      // AUDIT16 — contact_phone: encrypted by the portal profile PUT
-      // (B4) but never decrypted on ANY read path — after a client edited
-      // their profile, every admin view rendered the enc: blob. Decrypt
-      // here (no-op on plaintext).
-      if (rest.contact_phone && typeof rest.contact_phone === "string") {
-        rest.contact_phone = decryptField(rest.contact_phone);
-      }
-      if (rest.tax_id && typeof rest.tax_id === "string") {
-        rest.tax_id = decryptField(rest.tax_id);
-      }
-      if (rest.vat_number && typeof rest.vat_number === "string") {
-        rest.vat_number = decryptField(rest.vat_number);
-      }
-      // Internal-only HMAC columns — never returned to the client.
-      delete rest.tax_id_hmac;
-      delete rest.vat_number_hmac;
-      return rest;
-    });
-    // FIX-ALL-2 / Fix 1 — strip KYC / bank / vat / tax fields from API-key
-    // responses. The strip is conditional on `"apiKeyId" in auth` — session
-    // callers (admin UI) keep the full row so the CRM continues to render
-    // bank / KYC / VAT fields; only API-key integrators lose them. The
-    // helper is a no-op for session callers so we always invoke it.
-    const redactedItems = redactPartnerFields(safeItems as any, auth);
-    return NextResponse.json({ ...result, items: redactedItems });
+    // AUDIT18 — canonical shaping (shapePartnerRow) replaces the hand-rolled
+    // decrypt/strip block (this was one of 5 drifted copies of the same logic).
+    const safeItems = result.items.map((row: any) => shapePartnerRow(row, auth));
+    // (shapePartnerRow already applies redactPartnerFields for API-key callers)
+    return NextResponse.json({ ...result, items: safeItems });
   } catch (e: any) {
     console.error("[partners.list]", e);
     return NextResponse.json(

@@ -8,6 +8,7 @@ import {
   decryptSensitiveFields,
   COMMS_SENSITIVE_KEYS,
 } from "@/lib/crypto/field-encryption";
+import { escapeHtml } from "@/lib/security/escape-html";
 
 export const runtime = "nodejs";
 
@@ -23,15 +24,6 @@ export const runtime = "nodejs";
  * admin who has been socially engineered to paste a "weird from-name"
  * could end up logging an XSS payload into the audit trail.
  */
-function escapeHtml(str: string): string {
-  if (!str) return "";
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
 
 /**
  * POST /api/settings/test-email

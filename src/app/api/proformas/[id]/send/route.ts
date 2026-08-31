@@ -4,6 +4,7 @@ import { sendEmail, documentEmail } from "@/lib/email/service";
 import { generatePdf } from "@/lib/pdf/generator";
 import { notify } from "@/lib/notif/helper";
 import { validateStatusTransition } from "@/lib/api/status-validator";
+import { assertNoSoDViolation } from "@/lib/permissions/sod-matrix";
 // FIX-PRODUCTS-DOCS / Fix 5 — parity with offers send route: terminal-
 // state guard + sent_at first-send guard + 5/15min rate limit. The
 // previous proforma send route had NONE of these — a paid/expired/
@@ -58,6 +59,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // Tenant ownership check
     if (!auth.isSuperAdmin && proforma.tenant_id !== auth.tenantId) {
       return NextResponse.json({ error: "Proforma not found." }, { status: 404 });
+    }
+
+    // AUDIT18 (SoD parity): the "send" action IS the approval step for a
+    // proforma (once sent, it is locked). Invoice and offer sends enforce
+    // separation-of-duties via migration 040's created_by / owner_id; the
+    // proforma send route was missed — a proforma's creator could send
+    // (= approve) their own proforma. Migration 079 adds proformas.created_by
+    // (backfilled from audit_logs); this check now mirrors the invoice route.
+    // `created_by` is null on legacy rows → the check fails OPEN (does not
+    // block), same semantics as invoices.
+    {
+      const sod = await assertNoSoDViolation(auth, (proforma as any).created_by, {
+        create_perm: "proformas.create",
+        approve_perm: "proformas.send",
+      });
+      if (sod) return sod;
     }
 
     // FIX-PRODUCTS-DOCS / Fix 5 (a) — terminal-state guard. Refuse to

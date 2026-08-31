@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSuperAdmin, audit } from "@/lib/api/helpers";
 import { getSupabase } from "@/lib/supabase/client";
+import { escapeHtml } from "@/lib/security/escape-html";
 
 export const runtime = "nodejs";
 
@@ -15,15 +16,6 @@ export const runtime = "nodejs";
  * still a bug — and a compromised super_admin account could
  * weaponize the `admin_note` to inject into ANY user's email).
  */
-function escapeHtml(str: string): string {
-  if (!str) return "";
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
 
 /**
  * Super-admin approves or rejects a plan-upgrade request.

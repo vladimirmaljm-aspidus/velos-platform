@@ -173,22 +173,15 @@ export async function GET(req: NextRequest) {
       const { columns } = parseExportParams(req);
       let finalCols = columns && columns.length > 0 ? columns : COLUMNS[type];
       if (type === "partners") {
-        // AUDIT16 — decrypt the encrypted-at-rest PII columns so the CSV
-        // shows real values. /api/partners/export (the sibling route)
-        // already decrypts; this unified route exported raw `enc:` blobs
-        // for contact_email / phone / tax_id / vat_number whenever those
-        // were stored encrypted (P0-3), and both routes are wired to the
-        // same "Export selected" UI action.
-        const { decryptField } = await import("@/lib/crypto/field-encryption");
+        // AUDIT16/18 — decrypt the encrypted-at-rest PII columns via the
+        // canonical shapePartnerRow (also strips the HMAC twins).
+        const { shapePartnerRow } = await import("@/lib/api/redact");
         items = items.map((it) => {
           const r = it as Record<string, unknown>;
           const { portal_token, tax_id_hmac, vat_number_hmac, portal_token_hash, ...rest } = r;
-          for (const k of ["contact_email", "phone", "tax_id", "vat_number", "contact_phone"] as const) {
-            if (typeof rest[k] === "string" && (rest[k] as string).startsWith("enc:")) {
-              rest[k] = decryptField(rest[k] as string);
-            }
-          }
-          return rest;
+          // AUDIT18 — canonical partner shaping (shapePartnerRow) replaces the
+          // inline decrypt loop (was one of 5 drifted copies of the same logic).
+          return shapePartnerRow(rest as any);
         });
         finalCols = finalCols.filter((c) => !SECRET_PARTNER_COLS.has(c));
       }

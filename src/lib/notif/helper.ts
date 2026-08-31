@@ -1,5 +1,6 @@
 import { getStore } from "@/lib/data/store";
 import type { NotificationType, User } from "@/lib/supabase/types";
+import { escapeHtml } from "@/lib/security/escape-html";
 
 /**
  * Notification helper — creates in-app notifications and optionally sends emails.
@@ -492,15 +493,6 @@ export async function notifySuperAdminsOfSignupRequest(opts: {
   }
 }
 
-function escapeHtml(str: string): string {
-  if (!str) return "";
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
 
 function signupRequestEmailBody(opts: {
   contactName: string;

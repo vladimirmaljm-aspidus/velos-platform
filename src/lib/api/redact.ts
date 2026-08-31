@@ -20,6 +20,8 @@
  *                      Defaults to {@link DEFAULT_DENY} when omitted.
  */
 
+import { decryptField } from "@/lib/crypto/field-encryption";
+
 const DEFAULT_DENY = [
   "password",
   "password_hash",
@@ -188,6 +190,48 @@ export function redactSensitiveFields<T extends Record<string, unknown>>(
   return kind === "partner"
     ? redactPartnerFields(record, auth)
     : redactOfferFields(record, auth);
+}
+
+// ── AUDIT18 — canonical partner response shaping ────────────────────────────
+//
+// The partner entity was independently shaped in 5 places (list, [id] GET,
+// [id] PUT response, /api/partners/export, /api/export?type=partners), each
+// hand-rolling "strip portal_token + hmac twins → decrypt the encrypted-at-
+// rest PII fields". The copies DRIFTED: the PUT response forgot
+// `contact_phone` decryption (an `enc:` blob flashed in the admin UI after
+// every edit), and the export branch added email when others didn't. This
+// single source of truth replaces all five; it deliberately decrypts BEFORE
+// redactPartnerFields so API-key callers still get the redacted view.
+
+
+/** PII fields stored encrypted-at-rest (audit15/16) + their hmac twins to strip. */
+const PARTNER_OMIT_KEYS = ["portal_token", "tax_id_hmac", "vat_number_hmac"];
+const PARTNER_ENCRYPTED_FIELDS = [
+  "contact_email",
+  "phone",
+  "contact_phone",
+  "tax_id",
+  "vat_number",
+] as const;
+
+/**
+ * Strip hmac/portal-token twins, decrypt the encrypted-at-rest PII fields,
+ * and (for API-key callers) strip the sensitive block. Mutates nothing —
+ * returns a shallow, typed copy.
+ */
+export function shapePartnerRow<T extends Record<string, unknown>>(
+  partner: T,
+  auth?: unknown,
+): T {
+  const copy: Record<string, unknown> = { ...partner };
+  for (const k of PARTNER_OMIT_KEYS) delete copy[k];
+  for (const f of PARTNER_ENCRYPTED_FIELDS) {
+    const v = copy[f];
+    if (typeof v === "string" && v !== "") {
+      copy[f] = decryptField(v);
+    }
+  }
+  return redactPartnerFields(copy as T, auth) as T;
 }
 
 /**

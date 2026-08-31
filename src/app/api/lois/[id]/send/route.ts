@@ -4,6 +4,7 @@ import { getStore } from "@/lib/data/store";
 import { sendEmail } from "@/lib/email/service";
 import { checkRateLimit } from "@/lib/security/rate-limiter";
 import { decryptField, isEncrypted } from "@/lib/crypto/field-encryption";
+import { escapeHtml } from "@/lib/security/escape-html";
 
 export const runtime = "nodejs";
 
@@ -13,15 +14,6 @@ export const runtime = "nodejs";
  * in email/service.ts escapes; this route built raw HTML — a partner name
  * like "<img src=x onerror=...>" would execute in the recipient's inbox.
  */
-function escapeHtml(str: unknown): string {
-  if (str == null) return "";
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
 
 /**
  * POST /api/lois/[id]/send — send the LOI via email to the partner.
@@ -33,11 +25,29 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const auth = await requireAuth(req);
+  if (auth instanceof NextResponse) return auth;
+  // AUDIT18 (security parity): this route previously had NO permission gate,
+  // NO feature gate, and NO admin-role check — any authenticated tenant
+  // `user` (even one with zero granted permissions) could email LOIs to
+  // partners, while invoice/offer/proforma sends all enforce
+  // <doc>.send + module_finance + admin role. Same three gates now.
+  {
+    const { requirePermission } = await import("@/lib/permissions/can");
+    const _d = requirePermission(auth, "lois.send");
+    if (_d) return _d;
+  }
+  {
+    const { requireFeature } = await import("@/lib/api/feature-guard");
+    const _f = await requireFeature(auth.tenantId, "module_finance", auth.isSuperAdmin);
+    if (_f) return _f;
+  }
+  if (auth.user.role !== "admin" && auth.user.role !== "super_admin") {
+    return NextResponse.json({ error: "Admin access required." }, { status: 403 });
+  }
+  const { id } = await params;
+  const store = await getStore();
   try {
-    const auth = await requireAuth(req);
-    if (auth instanceof NextResponse) return auth;
-    const { id } = await params;
-    const store = await getStore();
     const loi = await store.getLoi(id);
     if (!loi) return NextResponse.json({ error: "Not found." }, { status: 404 });
     if (!auth.isSuperAdmin && loi.tenant_id !== auth.tenantId) {
@@ -52,8 +62,8 @@ export async function POST(
       );
     }
 
-    // 60s idempotency guard
-    if (loi.sent_at) {
+    // 60s idempotency guard — super-admin bypasses (invoice/offer parity)
+    if (!auth.isSuperAdmin && loi.sent_at) {
       const elapsedMs = Date.now() - new Date(loi.sent_at).getTime();
       if (elapsedMs < 60_000) {
         const retryAfterSec = Math.ceil((60_000 - elapsedMs) / 1000);
@@ -64,9 +74,13 @@ export async function POST(
       }
     }
 
-    // 5/15min rate limit (defense in depth)
-    const rl = await checkRateLimit(`loi-send:${id}`, 5, 15 * 60 * 1000);
-    if (!rl.allowed) {
+    // 5/15min rate limit (defense in depth) — super-admin bypasses
+    // (invoice/offer/proforma send parity; previously super_admin WAS
+    // rate-limited here, inconsistently with every other document send).
+    const rl = auth.isSuperAdmin
+      ? null
+      : await checkRateLimit(`loi-send:${id}`, 5, 15 * 60 * 1000);
+    if (rl && !rl.allowed) {
       const retryAfterSec = Math.ceil((rl.retryAfter ?? 60_000) / 1000);
       return NextResponse.json(
         { error: "Too many sends. Please try again later.", retry_after: retryAfterSec },

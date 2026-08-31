@@ -11,6 +11,7 @@ import { checkRateLimit } from "@/lib/security/rate-limiter";
 import { reportSecurityEvent } from "@/lib/monitoring/security-alerts";
 import { sendEmail } from "@/lib/email/service";
 import { notifySuperAdminsOfSignupRequest } from "@/lib/notif/helper";
+import { escapeHtml } from "@/lib/security/escape-html";
 
 export const runtime = "nodejs";
 
@@ -45,15 +46,6 @@ const REGISTER_RATE_LIMIT = {
   windowMs: 60 * 60 * 1000,
 };
 
-function escapeHtml(str: string): string {
-  if (!str) return "";
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
 
 /**
  * Build the welcome email body. Inline-styled HTML so it renders in every

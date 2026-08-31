@@ -5,6 +5,7 @@ import { createPasswordReset } from "@/lib/auth/password-reset";
 import { getIp } from "@/lib/api/helpers";
 import { checkRateLimit } from "@/lib/security/rate-limiter";
 import { getRateLimitConfig } from "@/lib/security/rate-limit-config";
+import { escapeHtml } from "@/lib/security/escape-html";
 
 export const runtime = "nodejs";
 
@@ -24,15 +25,6 @@ export const runtime = "nodejs";
  * in the password reset email that goes to their own portal clients.
  * Same escape discipline as `src/lib/email/service.ts:escapeHtml`.
  */
-function escapeHtml(str: string): string {
-  if (!str) return "";
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
 
 /**
  * POST /api/portal/forgot-password

@@ -165,6 +165,16 @@ export async function POST(req: NextRequest) {
     }
 
     body.tenant_id = tid!;
+    // AUDIT18 (SoD parity, migration 079): record the proforma's creator so
+    // the send route's separation-of-duties check can compare creator vs.
+    // approver — same pattern as invoices (migration 040). Always overwrite
+    // whatever the client sent (spoof guard); API-key callers get NULL
+    // (SoD fails open, admin-controlled).
+    if ("user" in auth) {
+      body.created_by = auth.user.id;
+    } else {
+      body.created_by = null;
+    }
     if (!body.id) {
       const isSA = !("apiKeyId" in auth) && auth.isSuperAdmin;
       const { enforceQuota } = await import("@/lib/api/plan-limits");

@@ -23,6 +23,7 @@
 // incident-specific narrative (description, root_cause, mitigation_steps).
 // ----------------------------------------------------------------------------
 import type { SecurityIncident } from "@/lib/compliance/incident-response";
+import { escapeHtml } from "@/lib/security/escape-html";
 
 /**
  * The supervisory authority's email address. Configurable per
@@ -219,12 +220,3 @@ export async function sendBreachNotification(
  * `sendEmail` from that module, so importing the escape helper at module
  * load time would create a circular dep at evaluation time.
  */
-function escapeHtml(str: string): string {
-  if (!str) return "";
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
