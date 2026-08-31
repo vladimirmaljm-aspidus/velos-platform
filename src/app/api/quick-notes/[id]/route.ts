@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, audit } from "@/lib/api/helpers";
+import { requireAuth, audit, sanitizeError } from "@/lib/api/helpers";
 import { getSupabase } from "@/lib/supabase/client";
 
 export const runtime = "nodejs";
@@ -20,7 +20,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       .eq("id", id)
       .eq("tenant_id", auth.tenantId)
       .eq("user_id", auth.user.id);
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) return NextResponse.json({ error: sanitizeError(error) }, { status: 500 });
     try {
       await audit(auth.store, auth.user, req, "quick_note.delete", "quick_note", id, {});
     } catch (e) { console.error("[audit]", e); }

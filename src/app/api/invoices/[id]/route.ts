@@ -189,16 +189,48 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     // FIX-P1-LOGIC Fix 5: recompute totals from line items — never trust
     // client-supplied totals (parity with offers PUT). Always overwrite.
     if (Array.isArray(body.items) && body.items.length > 0) {
+      // AUDIT17 / F2 — range-validate percentage fields before recomputing
+      // (PUT previously had no line validation: 150% discount / negative
+      // tax_rate flowed straight into the stored totals).
+      for (let i = 0; i < body.items.length; i++) {
+        const it = body.items[i];
+        const disc = Number(it.discount);
+        if (Number.isFinite(disc) && (disc < 0 || disc > 100)) {
+          return NextResponse.json(
+            { error: `items[${i}].discount must be between 0 and 100.` },
+            { status: 400 },
+          );
+        }
+        const tr = Number(it.tax_rate);
+        if (Number.isFinite(tr) && (tr < 0 || tr > 100)) {
+          return NextResponse.json(
+            { error: `items[${i}].tax_rate must be between 0 and 100.` },
+            { status: 400 },
+          );
+        }
+      }
       let subtotal = 0, discountTotal = 0, taxTotal = 0;
       for (const it of body.items) {
         const line = (Number(it.quantity) || 0) * (Number(it.unit_price) || 0);
         const disc = line * (Number(it.discount) || 0) / 100;
         const net = line - disc;
         const tax = net * (Number(it.tax_rate) || 0) / 100;
-        subtotal += line;
-        discountTotal += disc;
-        taxTotal += tax;
-        it.total = Math.round((net + tax) * 100) / 100;
+        // AUDIT17 / F1 — round each line component to 2dp BEFORE aggregating,
+        // so the stored it.total equals net+tax of the ROUNDED components and
+        // the header sums the same rounded values. Previously the header
+        // summed unrounded amounts (subtotal - discountTotal + taxTotal)
+        // while each printed line was rounded — 2 lines × 10.254 printed as
+        // 10.25 + 10.25 = 20.50 against a header total of 20.51. A VAT
+        // document whose line items don't sum to its total is rejected by
+        // tax authorities.
+        const rLine = Math.round(line * 100) / 100;
+        const rDisc = Math.round(disc * 100) / 100;
+        const rTax = Math.round(tax * 100) / 100;
+        const rNet = Math.round(net * 100) / 100;
+        subtotal += rLine;
+        discountTotal += rDisc;
+        taxTotal += rTax;
+        it.total = Math.round((rNet + rTax) * 100) / 100;
       }
       body.subtotal = Math.round(subtotal * 100) / 100;
       body.discount_total = Math.round(discountTotal * 100) / 100;
@@ -262,7 +294,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           .eq("category", "invoice_payment");
         if (bankTxns && bankTxns.length > 0) {
           for (const bt of bankTxns) {
-            await sb.from("erp_bank_transactions").insert({
+            // AUDIT17 / F9 — the erp_bank_transactions column is `date` (see
+            // types.ts / migration 073's index); the previous insert used the
+            // nonexistent `transaction_date`, so PostgREST returned PGRST204,
+            // supabase-js did NOT throw, and the { error } result was never
+            // checked — the bank ledger kept the credit payment of a
+            // cancelled invoice. Use the right column and surface failures.
+            const { error: revTxErr } = await sb.from("erp_bank_transactions").insert({
               tenant_id: tid,
               bank_account_id: bt.bank_account_id,
               transaction_type: "debit",
@@ -271,8 +309,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
               description: `Reversal: cancelled invoice ${existing.number}`,
               invoice_number: existing.number,
               reference: `reversal-inv-${id}`,
-              transaction_date: new Date().toISOString().split("T")[0],
+              date: new Date().toISOString().split("T")[0],
             });
+            if (revTxErr) {
+              console.error("[invoice.cancel] bank reversal txn insert failed:", revTxErr);
+            }
           }
         }
 

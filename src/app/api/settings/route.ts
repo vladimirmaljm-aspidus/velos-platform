@@ -153,25 +153,30 @@ export async function PUT(req: NextRequest) {
     const { key, value } = body;
     if (!key) return NextResponse.json({ error: "Missing key." }, { status: 400 });
 
-    // EMAIL-AUDIT / CRITICAL — from-email spoofing guard at save time.
+    // EMAIL-AUDIT — from-email spoofing guard at save time.
     // The `comms` blob carries up to three from-email fields:
     //   - `from_email`             (used by SMTP and as fallback for the
     //                              provider-specific from-emails)
     //   - `resend_from_email`      (Resend `from` header)
     //   - `postmark_from_email`    (Postmark `From` header)
     //
-    // Each is validated against the platform allowlist
-    // (`email_allowed_from_domains` platform setting, or env
-    // `ALLOWED_FROM_DOMAINS`, or the default `["aspidus.onrender.com",
-    // "resend.dev"]`). An invalid from-email returns a 400 with the
-    // safe fallback so the admin sees the actual rewrite that would
-    // happen at send time.
+    // AUDIT17 / P0 — the previous logic rejected (400) any tenant comms
+    // save whose from-domain wasn't on the PLATFORM allowlist (default:
+    // aspidus.onrender.com, resend.dev). Tenants could not even SAVE their
+    // own working SMTP settings without a super-admin allowlisting their
+    // domain — and at send time the from was silently rewritten, breaking
+    // every send through strict relays (From ≠ authenticated user → 550)
+    // and every Resend/Postmark send (unverified platform domain → 403).
     //
-    // NOTE: this check is skipped for the platform-level setting itself
-    // (`tenantId === null`) so a super_admin can save the
-    // `email_allowed_from_domains` blob without being gated by the
-    // previous allowlist — they're the ones who edit the allowlist.
-    if (key === "comms" && tenantId !== null && value && typeof value === "object") {
+    // New policy (mirrors getEmailConfig):
+    //   - PLATFORM-LEVEL blob (tenantId === null): keep the strict
+    //     allowlist — this blob sends through the platform operator's
+    //     provider account, so its from addresses are platform-controlled.
+    //   - TENANT-LEVEL blob: the provider enforces From ownership itself
+    //     (SMTP credentials = mailbox owner; Resend/Postmark require
+    //     DNS-verified domains in the tenant's own account). Validate
+    //     FORMAT only — malformed addresses still 400.
+    if (key === "comms" && value && typeof value === "object") {
       const v = value as Record<string, unknown>;
       const candidates: Array<{ field: string; email: string }> = [];
       if (typeof v.from_email === "string" && v.from_email.trim()) {
@@ -183,21 +188,31 @@ export async function PUT(req: NextRequest) {
       if (typeof v.postmark_from_email === "string" && v.postmark_from_email.trim()) {
         candidates.push({ field: "postmark_from_email", email: v.postmark_from_email });
       }
-      // Sequential validation so the error message names the first
-      // invalid field (so the admin knows which one to fix). The
-      // platform-level allowlist is the same one `getEmailConfig`
-      // consults at send time — they can't drift apart.
       for (const c of candidates) {
-        const result = await validateFromEmailStrict(c.email);
-        if (!result.valid) {
+        const email = String(c.email || "").trim().toLowerCase();
+        const wellFormed = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+        if (tenantId === null) {
+          // Platform-level save: strict allowlist still applies.
+          const result = await validateFromEmailStrict(c.email);
+          if (!result.valid) {
+            return NextResponse.json(
+              {
+                error:
+                  `Email spoofing protection: the platform-level "${c.field}" value "${c.email}" ` +
+                  `uses a domain that is not on the platform's allowed from-domains list. ` +
+                  `Set the platform setting "email_allowed_from_domains" to allow this domain, ` +
+                  `or use a domain that is already allowed. The send would have been rewritten ` +
+                  `to "${result.fallback}".`,
+              },
+              { status: 400 },
+            );
+          }
+        } else if (!wellFormed) {
+          // Tenant-level save: format check only (the provider enforces
+          // From ownership — see getEmailConfig AUDIT17 note).
           return NextResponse.json(
             {
-              error:
-                `Email spoofing protection: the "${c.field}" value "${c.email}" ` +
-                `uses a domain that is not on the platform's allowed from-domains list. ` +
-                `Ask a super admin to add the domain to the platform setting ` +
-                `"email_allowed_from_domains", or use a domain that is already ` +
-                `allowed. The send would have been rewritten to "${result.fallback}".`,
+              error: `The "${c.field}" value "${c.email}" is not a valid email address.`,
             },
             { status: 400 },
           );

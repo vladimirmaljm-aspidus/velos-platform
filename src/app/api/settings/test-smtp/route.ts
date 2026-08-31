@@ -100,7 +100,15 @@ export async function POST(req: NextRequest) {
   } | null = null;
 
   const store = getStoreSync() ?? (await getStore());
-  let comms = await store.getSetting<any>("comms");
+  // AUDIT17 / P1-4 — load the TENANT's comms blob (auth.tenantId), not the
+  // platform-level one. The previous call omitted the tenantId argument, so
+  // getSetting fell back to the platform blob (tenant_id IS NULL) — a tenant
+  // admin "testing the saved settings" was actually testing platform-level
+  // credentials: misleading "not configured" / wrong-credential results that
+  // masked the real per-tenant state. Super-admins (tenantId null) keep the
+  // platform-level read.
+  let comms = await store.getSetting<any>("comms", auth.tenantId ?? undefined);
+  if (!comms) comms = await store.getSetting<any>("comms");
   // EMAIL-FIX: decrypt the at-rest secrets (`enc:` …) before using them —
   // the settings PUT encrypts smtp_password on save. Without this the
   // verify() call authenticates with the ciphertext and fails.

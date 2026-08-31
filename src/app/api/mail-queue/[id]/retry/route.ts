@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, audit } from "@/lib/api/helpers";
+import { requireAuth, audit, sanitizeError } from "@/lib/api/helpers";
 import { sendEmail, resolveQueueToAddress } from "@/lib/email/service";
 
 export const runtime = "nodejs";
@@ -68,7 +68,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
     const { data: entry, error } = await q.maybeSingle();
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ error: sanitizeError(error) }, { status: 500 });
     }
     if (!entry) {
       return NextResponse.json({ error: "Not found." }, { status: 404 });
@@ -149,8 +149,24 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       });
 
       if (!result.success) {
-        // sendEmail() already updated the queue entry (attempts+1, new error)
-        // and re-broadcast the failure notification — surface the error.
+        // sendEmail() already updated the queue entry (status/error, and
+        // re-broadcast the failure notification) — surface the error.
+        // AUDIT17 / P2-2: sendEmail no longer writes the attempts counter
+        // for retry rows (it reset it to 1) — bump it here, mirroring the
+        // throw path below, so the UI shows the real attempt count.
+        const nextAttempts = (Number((entry as any).attempts) || 0) + 1;
+        let failedUpdate = sb
+          .from("mail_queue")
+          .update({
+            status: "failed",
+            attempts: nextAttempts,
+            error: result.error || "Retry failed.",
+          })
+          .eq("id", id);
+        if (!auth.isSuperAdmin && tid) {
+          failedUpdate = failedUpdate.eq("tenant_id", tid);
+        }
+        await failedUpdate;
         return NextResponse.json({ error: result.error || "Retry failed." }, { status: 500 });
       }
 
@@ -210,7 +226,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         .update({
           status: "failed",
           attempts: nextAttempts,
-          error: e.message,
+          error: sanitizeError(e),
         })
         .eq("id", id);
       if (!auth.isSuperAdmin && tid) {
@@ -218,10 +234,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }
       await failedUpdate;
 
-      return NextResponse.json({ error: e.message }, { status: 500 });
+      return NextResponse.json({ error: sanitizeError(e) }, { status: 500 });
     }
   } catch (error: any) {
     console.error("[mail-queue retry]", error);
-    return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(error) || "Internal server error" }, { status: 500 });
   }
 }

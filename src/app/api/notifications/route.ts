@@ -74,8 +74,11 @@ export async function GET(req: NextRequest) {
     system: ["system_message", "low_stock_alert", "signup_request"],
   };
 
+  // AUDIT17 / P2 — unread-only polls (the topbar bell) only need the latest
+  // window; full listings get the 500-row store cap.
+  const fetchLimit = unreadOnly ? 50 : undefined;
   const [items, unreadCount] = await Promise.all([
-    auth.store.listNotifications(effectiveTenantId, auth.user.id, unreadOnly),
+    auth.store.listNotifications(effectiveTenantId, auth.user.id, unreadOnly, fetchLimit),
     auth.store.getUnreadCount(effectiveTenantId, auth.user.id),
   ]);
 

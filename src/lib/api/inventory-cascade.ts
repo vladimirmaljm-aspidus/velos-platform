@@ -343,22 +343,38 @@ export async function restoreStockForOffer(opts: RestoreStockOpts): Promise<void
     return;
   }
 
-  // Check if a restoration movement already exists (avoid double-restore on
-  // repeated cancel calls).
-  const { data: priorRestorations } = await sb
+  // AUDIT17 / F12 — per-(offer, product) NET idempotency. The previous
+  // global check ("any positive movement exists → skip everything") broke
+  // the supported re-accept cycle: accept (deduct) → cancel (restore) →
+  // re-accept (deduct) → cancel — the second cancel saw the FIRST
+  // restoration and skipped, permanently losing stock. Mirroring the
+  // deduct side's net semantics: a (offer, product) pair is restored iff
+  // its restorations are fewer than its deductions.
+  const { data: movementPairs } = await sb
     .from("inventory_movements")
-    .select("id")
+    .select("product_id, delta")
     .eq("tenant_id", tenantId)
-    .eq("reference", offerId)
-    .gt("delta", 0); // positive deltas = restorations
-  if (priorRestorations && priorRestorations.length > 0) {
-    console.log(`[inventory restore] restoration already exists for offer ${offerId}, skipping`);
+    .eq("reference", offerId);
+  const netByProduct = new Map<string, number>(); // deductions - restorations
+  for (const mv of movementPairs || []) {
+    const pid = (mv as any).product_id as string;
+    if (!pid) continue;
+    const d = Number((mv as any).delta) || 0;
+    netByProduct.set(pid, (netByProduct.get(pid) || 0) + (d < 0 ? Math.abs(d) : -d));
+  }
+  // Products with a positive outstanding deduction balance need restoring.
+  const restorable = new Set(
+    [...netByProduct.entries()].filter(([, net]) => net > 0.000001).map(([pid]) => pid),
+  );
+  if (restorable.size === 0) {
+    console.log(`[inventory restore] no outstanding deduction for offer ${offerId}, skipping`);
     return;
   }
 
   for (const item of opts.items) {
     const productId = item?.product_id;
     if (!productId) continue;
+    if (!restorable.has(productId)) continue; // AUDIT17 / F12 — net-zero pair
     const qty = Math.abs(Number(item.quantity) || 0);
     if (qty <= 0) continue;
 
@@ -399,19 +415,11 @@ export async function restoreStockForOffer(opts: RestoreStockOpts): Promise<void
     // to record `actual_delta` (clamped to currentStock), the restore will
     // automatically pick up the correct value without further changes.
     // Falls back to `qty` only if the movement row can't be found (defensive).
-    const { data: priorDeduction } = await sb
-      .from("inventory_movements")
-      .select("delta")
-      .eq("tenant_id", tenantId)
-      .eq("reference", offerId)
-      .eq("product_id", productId)
-      .lt("delta", 0) // negative = deduction
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    const actualDeducted = priorDeduction
-      ? Math.abs(Number((priorDeduction as any).delta) || 0)
-      : qty;
+    // AUDIT17 / F12 — restore the outstanding NET deduction for this
+    // (offer, product) pair (deductions minus prior restorations). After a
+    // re-accept the net is the second deduction only — restoring the gross
+    // would over-credit stock.
+    const actualDeducted = netByProduct.get(productId) || qty;
     const currentStock = Number((productRow as any).stock ?? 0) || 0;
     const newStock = currentStock + actualDeducted;
     const { error: updErr } = await sb

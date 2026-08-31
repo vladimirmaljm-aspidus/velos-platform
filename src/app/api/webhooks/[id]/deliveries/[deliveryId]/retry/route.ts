@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, audit, resolveTenantId } from "@/lib/api/helpers";
+import { requireAuth, audit, resolveTenantId, sanitizeError } from "@/lib/api/helpers";
 import { signPayload, MAX_WEBHOOK_ATTEMPTS } from "@/lib/webhooks/deliver";
 
 export const runtime = "nodejs";
@@ -191,7 +191,7 @@ export async function POST(
   } catch (error: any) {
     console.error("[webhook retry]", error);
     return NextResponse.json(
-      { error: error.message || "Internal server error" },
+      { error: sanitizeError(error) || "Internal server error" },
       { status: 500 },
     );
   }

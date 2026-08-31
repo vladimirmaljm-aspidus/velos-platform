@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, audit } from "@/lib/api/helpers";
+import { requireAuth, audit, sanitizeError } from "@/lib/api/helpers";
 import { assertNoSoDViolation } from "@/lib/permissions/sod-matrix";
 
 export const runtime = "nodejs";
@@ -41,14 +41,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     try {
       const fresh = await auth.store.getErpJournalEntry(id);
       const lines = Array.isArray((fresh as any)?.lines) ? (fresh as any).lines : [];
-      const totalDebit = lines.reduce(
-        (sum: number, l: any) => sum + (Number(l?.debit) || 0),
-        0,
-      );
-      const totalCredit = lines.reduce(
-        (sum: number, l: any) => sum + (Number(l?.credit) || 0),
-        0,
-      );
+      // AUDIT17 / F3 — FX-revaluation entries (create_fx_revaluation, 038)
+      // carry amounts ONLY in debit_base/credit_base (debit/credit are 0 —
+      // a "foreign amount" is meaningless for a revaluation adjustment).
+      // When every line is base-only, validate + compare in base amounts
+      // instead, otherwise the documented "draft → review → post" workflow
+      // for revaluations is dead-ended by the 0 == 0 vs stored totals check.
+      const sumLine = (field: "debit" | "credit") =>
+        lines.reduce((sum: number, l: any) => sum + (Number(l?.[field]) || 0), 0);
+      const sumBase = (field: "debit_base" | "credit_base") =>
+        lines.reduce((sum: number, l: any) => sum + (Number(l?.[field]) || 0), 0);
+      const foreignTotal = sumLine("debit") + sumLine("credit");
+      const baseOnlyEntry = foreignTotal === 0 && (sumBase("debit_base") > 0 || sumBase("credit_base") > 0);
+      const totalDebit = baseOnlyEntry ? sumBase("debit_base") : sumLine("debit");
+      const totalCredit = baseOnlyEntry ? sumBase("credit_base") : sumLine("credit");
       if (Math.abs(totalDebit - totalCredit) > 0.01) {
         return NextResponse.json(
           {
@@ -113,6 +119,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     });
     return NextResponse.json(posted);
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e) }, { status: 500 });
   }
 }

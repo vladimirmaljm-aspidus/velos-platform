@@ -145,7 +145,10 @@ describe("sendEmail — provider failure path (audit16 MAIL-RETRY)", () => {
       const row = upsertMailQueueEntry.mock.calls[0][0];
       expect(row.id).toBe("mq-existing-7");
       expect(row.status).toBe("failed");
-      expect(row.attempts).toBe(1);
+      // AUDIT17 / P2-2 — a RETRY failure (queueEntryId set) no longer stamps
+      // attempts (the retry route owns the increment; a hard 1 here reset the
+      // counter on every failed retry). The key must be absent.
+      expect("attempts" in row).toBe(false);
     } finally {
       global.fetch = originalFetch;
     }

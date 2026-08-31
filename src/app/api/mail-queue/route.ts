@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, audit, resolveTenantId } from "@/lib/api/helpers";
+import { requireAuth, audit, resolveTenantId, sanitizeError } from "@/lib/api/helpers";
 import type { MailQueueEntry } from "@/lib/supabase/types";
+import { resolveQueueToAddress } from "@/lib/email/service";
 
 export const runtime = "nodejs";
 
@@ -57,7 +58,16 @@ export async function GET(req: NextRequest) {
       q = q.order("created_at", { ascending: false });
       const { data, count, error } = await q;
       if (error) throw error;
-      const items = (data as MailQueueEntry[]) || [];
+      // AUDIT17 / P3: decrypt to_email for display — legacy rows wrote the
+      // address before per-tenant encryption-at-rest landed and some carry
+      // `enc:` ciphertext; rendering it in the admin UI is the ciphertext-
+      // in-UI bug class. resolveQueueToAddress is a decrypt-no-op on
+      // plaintext and refuses undecryptable values (kept as-is so the
+      // operator can see the row is broken and mark it failed).
+      const items = ((data as MailQueueEntry[]) || []).map((row) => ({
+        ...row,
+        to_email: resolveQueueToAddress(row.to_email || "").to,
+      }));
       try {
         await audit(auth.store, auth.user, req, "mail.read", "mail_queue", undefined, {
           cross_tenant: true,
@@ -71,11 +81,19 @@ export async function GET(req: NextRequest) {
 
     if (!tid) return NextResponse.json({ error: "No tenant context." }, { status: 400 });
     const result = await auth.store.listMailQueue(tid, { search, filters: { status } });
+    // AUDIT17 / P3: same to_email decrypt-for-display as the cross-tenant
+    // path above.
+    if (result?.items) {
+      result.items = result.items.map((row: MailQueueEntry) => ({
+        ...row,
+        to_email: resolveQueueToAddress(row.to_email || "").to,
+      }));
+    }
     return NextResponse.json(result);
   } catch (e: any) {
     console.error("[mail-queue GET]", e);
     return NextResponse.json(
-      { error: e.message || "Internal server error" },
+      { error: sanitizeError(e) || "Internal server error" },
       { status: 500 },
     );
   }
@@ -107,7 +125,7 @@ export async function POST(req: NextRequest) {
   } catch (e: any) {
     console.error("[mail-queue POST]", e);
     return NextResponse.json(
-      { error: e.message || "Internal server error" },
+      { error: sanitizeError(e) || "Internal server error" },
       { status: 500 },
     );
   }

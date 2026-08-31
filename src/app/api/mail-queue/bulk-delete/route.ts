@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, audit, resolveTenantId } from "@/lib/api/helpers";
+import { requireAuth, audit, resolveTenantId, sanitizeError } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
 
@@ -81,7 +81,7 @@ export async function DELETE(req: NextRequest) {
   } catch (e: any) {
     console.error("[mail-queue bulk-delete]", e);
     return NextResponse.json(
-      { error: e.message || "Internal server error" },
+      { error: sanitizeError(e) || "Internal server error" },
       { status: 500 },
     );
   }

@@ -1359,7 +1359,7 @@ export class MockStore implements Store {
   }
 
   // ---- notifications ----
-  async listNotifications(tenantId: string, userId?: string, unreadOnly?: boolean): Promise<Notification[]> {
+  async listNotifications(tenantId: string, userId?: string, unreadOnly?: boolean, limit?: number): Promise<Notification[]> {
     let items = mock.notifications.filter((n) => n.tenant_id === tenantId);
     if (userId) items = items.filter((n) => n.user_id === null || n.user_id === userId);
     if (unreadOnly) items = items.filter((n) => !n.read);

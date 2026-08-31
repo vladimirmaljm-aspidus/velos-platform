@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, audit } from "@/lib/api/helpers";
+import { requireAuth, audit, sanitizeError } from "@/lib/api/helpers";
 import { getPortalUpload, softDeletePortalUpload, hardDeletePortalUpload } from "@/lib/portal/uploads";
 import { getSupabase } from "@/lib/supabase/client";
 
@@ -33,7 +33,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     }
     return NextResponse.json(finalUpload);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(error) || "Internal server error" }, { status: 500 });
   }
 }
 
@@ -68,6 +68,6 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     await audit(auth.store, auth.user, req, "portal_upload.soft_delete", "portal_upload", id, { filename: upload.filename });
     return NextResponse.json({ ok: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(error) || "Internal server error" }, { status: 500 });
   }
 }

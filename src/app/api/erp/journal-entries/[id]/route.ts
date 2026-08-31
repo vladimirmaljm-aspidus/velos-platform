@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, audit } from "@/lib/api/helpers";
+import { requireAuth, audit, sanitizeError } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
 
@@ -25,7 +25,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     }
     return NextResponse.json(entry);
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e) }, { status: 500 });
   }
 }
 
@@ -95,13 +95,22 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       body.credit_total = totalCredit;
     }
 
+    // AUDIT17 / P1 — same mass-assignment strip as the POST route: only the
+    // dedicated /post endpoint (erp.post permission + SoD + re-validation)
+    // may set status/posted_by/posted_at. A user holding only erp.update
+    // could previously flip a draft straight to "posted" or forge the
+    // posted_by/posted_at audit stamps.
+    delete body.status;
+    delete body.posted_by;
+    delete body.posted_at;
+
     const updated = await auth.store.upsertErpJournalEntry({ ...body, id, tenant_id: existing.tenant_id });
     await audit(auth.store, auth.user, req, "journal_entry.update", "erp_journal_entry", id, {
       entry_number: updated.entry_number,
     });
     return NextResponse.json(updated);
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e) }, { status: 500 });
   }
 }
 
@@ -135,6 +144,6 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     });
     return NextResponse.json({ ok: true });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e) }, { status: 500 });
   }
 }

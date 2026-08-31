@@ -257,17 +257,34 @@ export async function validateFromEmailStrict(fromEmail: string): Promise<{ vali
  * Load the email configuration for a tenant (or the global config).
  * Returns the resolved provider + its credentials.
  *
- * EMAIL-AUDIT / CRITICAL — the `from_email` (and provider-specific
- * `resend_from_email` / `postmark_from_email`) are validated against
- * the platform allowlist at load time. A tenant that configured
- * `from_email=ceo@victim.com` before this fix silently gets the
- * platform default `noreply@<allowed-domain>` instead — defense-in-
- * depth on top of the save-time rejection in the settings PUT route.
+ * AUDIT17 / P0 — ROOT CAUSE of "emails constantly fail despite correct
+ * per-tenant SMTP settings". The previous logic validated EVERY from-email
+ * against the platform allowlist (default: aspidus.onrender.com, resend.dev)
+ * and silently rewrote failures to `noreply@aspidus.onrender.com` while the
+ * SMTP transport still authenticated as the tenant's own `smtp_user`:
+ *   - strict relays (Office365 550 5.7.60, Zoho, Postfix with
+ *     reject_sender_login_mismatch) refuse From ≠ authenticated user —
+ *     every single send failed;
+ *   - Resend/Postmark reject from-domains not verified in the TENANT's own
+ *     provider account — the rewritten platform domain is unverified there,
+ *     so every HTTP-provider send failed too.
+ * Ownership of a From address is enforced by the provider itself (SMTP
+ * credentials = mailbox ownership; Resend/Postmark require DNS-verified
+ * domains per account). The allowlist is therefore kept ONLY for the
+ * PLATFORM-LEVEL fallback config (tenant_id NULL, used for tenants without
+ * their own comms): there it protects the platform operator's verified
+ * domains from being claimed by a tenant. A tenant's own configured from
+ * addresses are trusted (format-validated only).
  */
 export async function getEmailConfig(tenantId?: string): Promise<EmailConfig | null> {
   const store = await getStore();
   // Prefer the tenant's own comms config; fall back to platform-level (tenant_id NULL).
   let comms = tenantId ? await store.getSetting<any>("comms", tenantId) : null;
+  // AUDIT17: is this the tenant's OWN blob (trusted froms) or the
+  // platform-level fallback (allowlist-enforced)? A tenant without its own
+  // comms sends through the PLATFORM's provider account — only there is a
+  // from-spoofing concern (claiming an address verified at platform level).
+  const isPlatformConfig = !comms;
   if (!comms) comms = await store.getSetting<any>("comms", null);
   if (!comms) return null;
 
@@ -284,20 +301,50 @@ export async function getEmailConfig(tenantId?: string): Promise<EmailConfig | n
 
   const provider: EmailProvider = comms.email_provider || (comms.smtp_host ? "smtp" : "none");
   const fromName = comms.from_name || "VELOS CRM";
-  // Validate the base from-email against the platform allowlist. This
-  // value is what SMTP uses directly AND what Resend/Postmark fall back
-  // to when their provider-specific from-email is missing.
   const rawFromEmail = comms.from_email || process.env.NOREPLY_EMAIL || "noreply@aspidus.onrender.com";
-  const fromEmail = await resolveFromEmail(rawFromEmail);
-  if (fromEmail !== rawFromEmail.toLowerCase()) {
-    // The rawFromEmail was rewritten — log it so the platform operator
-    // can see the spoofing attempt in their logs. The send still goes
-    // through (with the safe fallback); we don't break the user-facing
-    // flow, we just refuse to use the spoofed address.
-    console.warn(
-      `[email] from_email "${rawFromEmail}" is not on the platform allowlist; falling back to "${fromEmail}". ` +
-      `Set the platform setting "email_allowed_from_domains" to allow this domain.`,
-    );
+  let fromEmail: string;
+  if (isPlatformConfig) {
+    // Platform-level fallback config — enforce the allowlist: this blob
+    // sends through the platform operator's provider account, so nobody
+    // may claim arbitrary from addresses on it.
+    fromEmail = await resolveFromEmail(rawFromEmail);
+    if (fromEmail !== String(rawFromEmail).toLowerCase()) {
+      console.warn(
+        `[email] platform-level from_email "${rawFromEmail}" is not on the platform allowlist; falling back to "${fromEmail}". ` +
+        `Set the platform setting "email_allowed_from_domains" to allow this domain.`,
+      );
+    }
+  } else {
+    // AUDIT17: the tenant's own config — trust the configured from address
+    // (the provider enforces ownership: SMTP auth user = mailbox owner,
+    // Resend/Postmark require a DNS-verified domain in the tenant's own
+    // account). Only malformed addresses fall back to the safe default.
+    const allowed = await loadAllowedFromDomains();
+    const safeDefault = `noreply@${allowed[0] || "aspidus.onrender.com"}`;
+    const candidate = String(rawFromEmail || "").trim();
+    fromEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(candidate) ? candidate : safeDefault;
+    if (fromEmail !== candidate) {
+      console.warn(`[email] malformed from_email "${rawFromEmail}"; falling back to "${fromEmail}".`);
+    }
+    // Diagnostic for the classic "correct settings but relay rejects" case:
+    // strict relays require From domain === authenticated SMTP user domain.
+    if (
+      comms.smtp_host &&
+      comms.smtp_user &&
+      provider === "smtp" &&
+      typeof comms.smtp_user === "string" &&
+      comms.smtp_user.includes("@")
+    ) {
+      const fromDomain = fromEmail.split("@")[1]?.toLowerCase();
+      const userDomain = comms.smtp_user.split("@")[1]?.toLowerCase();
+      if (fromDomain && userDomain && fromDomain !== userDomain) {
+        console.warn(
+          `[email] from_email domain "${fromDomain}" differs from the SMTP login domain "${userDomain}" — ` +
+          `strict relays (Office365, Zoho, Postfix) reject From ≠ authenticated user. ` +
+          `Set from_email to an address on "${userDomain}" if sends fail with 550 5.7.60.`,
+        );
+      }
+    }
   }
 
   const config: EmailConfig = { provider, fromName, fromEmail };
@@ -315,13 +362,16 @@ export async function getEmailConfig(tenantId?: string): Promise<EmailConfig | n
   }
 
   if (comms.resend_api_key) {
-    // Validate the provider-specific from-email too — a tenant could
-    // set `from_email=noreply@aspidus.onrender.com` (allowed) but
-    // `resend_from_email=ceo@victim.com` (not allowed). The provider-
-    // specific value goes into the `from` header, so it must be
-    // validated independently.
+    // AUDIT17: for the tenant's own config the provider-specific from is
+    // trusted (Resend rejects unverified domains in the tenant's own
+    // account with a clean 403 — visible in the Mail Queue / test-email).
+    // For the platform-level fallback config the allowlist still applies.
     const rawResendFrom = comms.resend_from_email || fromEmail;
-    const resendFromEmail = await resolveFromEmail(rawResendFrom);
+    const resendFromEmail = isPlatformConfig
+      ? await resolveFromEmail(rawResendFrom)
+      : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(rawResendFrom || "").trim())
+        ? String(rawResendFrom).trim()
+        : fromEmail;
     if (resendFromEmail !== String(rawResendFrom).toLowerCase() && comms.resend_from_email) {
       console.warn(
         `[email] resend_from_email "${comms.resend_from_email}" is not on the platform allowlist; falling back to "${resendFromEmail}".`,
@@ -336,8 +386,16 @@ export async function getEmailConfig(tenantId?: string): Promise<EmailConfig | n
   }
 
   if (comms.postmark_server_token) {
+    // AUDIT17: same trust model as the Resend branch above — Postmark
+    // requires verified sender signatures per account, so the tenant's
+    // own provider-specific from is trusted; the platform-level fallback
+    // config keeps the allowlist.
     const rawPostmarkFrom = comms.postmark_from_email || fromEmail;
-    const postmarkFromEmail = await resolveFromEmail(rawPostmarkFrom);
+    const postmarkFromEmail = isPlatformConfig
+      ? await resolveFromEmail(rawPostmarkFrom)
+      : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(rawPostmarkFrom || "").trim())
+        ? String(rawPostmarkFrom).trim()
+        : fromEmail;
     if (postmarkFromEmail !== String(rawPostmarkFrom).toLowerCase() && comms.postmark_from_email) {
       console.warn(
         `[email] postmark_from_email "${comms.postmark_from_email}" is not on the platform allowlist; falling back to "${postmarkFromEmail}".`,
@@ -441,7 +499,11 @@ export async function sendEmail(opts: SendEmailOptions): Promise<SendEmailResult
         subject: opts.subject,
         body: opts.html,
         status: "failed",
-        attempts: 1,
+        // AUDIT17 / P2-2: only stamp attempts on a FRESH row. When this
+        // failure updates an existing retry row (queueEntryId set) the
+        // attempts counter is owned by the retry route, which increments
+        // it — a hard 1 here reset the counter on every failed retry.
+        ...(opts.queueEntryId ? {} : { attempts: 1 }),
         error: e.message,
         ...(opts.entityType ? { entity_type: opts.entityType } : {}),
         ...(opts.entityId ? { entity_id: opts.entityId } : {}),
@@ -510,7 +572,13 @@ export function resolveQueueToAddress(raw: string): { to: string; usable: boolea
 async function sendViaResend(opts: SendEmailOptions, cfg: ResendConfig): Promise<{ success: boolean; messageId?: string; error?: string }> {
   const payload: Record<string, unknown> = {
     from: `${cfg.fromName} <${cfg.fromEmail}>`,
-    to: [opts.to],
+    // AUDIT17 / P2-4: a comma-separated To string (e.g. alert-routing
+    // recipient lists) must be split into an array — Resend validates each
+    // array element as a single address and 422s a comma string.
+    to: String(opts.to)
+      .split(",")
+      .map((a) => a.trim())
+      .filter(Boolean),
     subject: opts.subject,
     html: opts.html,
   };
@@ -537,6 +605,10 @@ async function sendViaResend(opts: SendEmailOptions, cfg: ResendConfig): Promise
       "Content-Type": "application/json",
     },
     body: JSON.stringify(payload),
+    // AUDIT17 / P2-1: a hung provider API must not block the calling
+    // request (document sends run through this path) until the function
+    // timeout kills it — match the test routes' 15s budget.
+    signal: AbortSignal.timeout(15_000),
   });
 
   if (!res.ok) {
@@ -589,6 +661,8 @@ async function sendViaPostmark(opts: SendEmailOptions, cfg: PostmarkConfig): Pro
       "X-Postmark-Server-Token": cfg.serverToken,
     },
     body: JSON.stringify(payload),
+    // AUDIT17 / P2-1: same 15s budget as Resend — no hung-provider stalls.
+    signal: AbortSignal.timeout(15_000),
   });
 
   if (!res.ok) {

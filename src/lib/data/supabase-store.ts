@@ -2756,11 +2756,17 @@ export class SupabaseStore implements Store {
   // Broadcast notifications (KYC, RFQ, invoice paid, etc.) are written with
   // user_id=null so every admin on the tenant sees them — the filter must
   // match "assigned to me" OR "broadcast", never just "assigned to me".
-  async listNotifications(tenantId: string, userId?: string, unreadOnly?: boolean): Promise<Notification[]> {
+  async listNotifications(tenantId: string, userId?: string, unreadOnly?: boolean, limit?: number): Promise<Notification[]> {
+    // AUDIT17 / P2 — DB-side cap (was: unbounded select of the FULL tenant +
+    // user notification history; the topbar bell polls this endpoint on an
+    // interval, so a mature tenant re-read its entire history every poll).
+    // 500 matches the audit_logs cap; the route's in-memory filter/search/
+    // pagination still runs on the capped window.
+    const effectiveLimit = Math.min(Math.max(limit ?? 500, 1), 500);
     let q = this.sb().from("notifications").select("*").eq("tenant_id", tenantId);
     if (userId) q = q.or(`user_id.eq.${userId},user_id.is.null`);
     if (unreadOnly) q = q.eq("read", false);
-    q = q.order("created_at", { ascending: false });
+    q = q.order("created_at", { ascending: false }).limit(effectiveLimit);
     const { data, error } = await q;
     if (error) throw error;
     return (data as Notification[]) || [];
@@ -3556,12 +3562,22 @@ export class SupabaseStore implements Store {
       created_by: reversedBy,
     };
     // p_reversal_lines — the ORIGINAL lines (debit/credit). The RPC swaps
-    // them server-side. We only send the columns the RPC reads.
-    const p_reversal_lines = lines.map((l) => ({
+    // them server-side.
+    // AUDIT17 / F4 — also pass the multi-currency columns: the RPC
+    // (migration 078) now persists currency/fx_rate on the reversal lines
+    // and derives debit_base/credit_base from the swapped amount × rate.
+    // Previously reversal lines defaulted to currency='USD', fx_rate=1,
+    // bases=0 — reversing a foreign-currency entry corrupted base-currency
+    // reports (effectiveBase fell back to the raw foreign amount).
+    const p_reversal_lines = lines.map((l: any) => ({
       account_id: l.account_id,
       description: l.description,
       debit: l.debit || 0,
       credit: l.credit || 0,
+      currency: l.currency ?? original.currency ?? undefined,
+      fx_rate: l.fx_rate ?? original.exchange_rate ?? undefined,
+      ...(l.debit_base != null ? { debit_base: l.debit_base } : {}),
+      ...(l.credit_base != null ? { credit_base: l.credit_base } : {}),
     }));
     const p_reversal_reason = `Reversal of entry ${original.entry_number} by ${reversedBy}`;
 

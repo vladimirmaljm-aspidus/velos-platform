@@ -174,15 +174,19 @@ export async function GET(req: NextRequest) {
     const dbTemplates = await auth.store.listDocumentTemplates(tenantId);
 
     if (dbTemplates.length > 0) {
-      // Return database templates mapped to the email template format
+      // AUDIT17 / P3 — the previous mapping read unrelated DocumentTemplate
+      // columns (subject ← header_content, html ← body_font_family), so the
+      // templates view rendered layout snippets as subjects/HTML. These are
+      // PDF document-templates, not email bodies: map honestly (type-based
+      // subject, empty html) instead of showing garbage.
       const templates: EmailTemplate[] = dbTemplates.map((t) => ({
         id: t.id,
         name: t.name,
-        subject: t.header_content || "",
+        subject: `${t.type} document template`,
         category: mapTemplateType(t.type),
         variables: [],
         description: `${t.type} template — ${t.page_size}`,
-        html: t.body_font_family || "",
+        html: "",
         isDefault: t.is_default,
         createdAt: t.created_at || new Date().toISOString(),
         updatedAt: t.updated_at || new Date().toISOString(),

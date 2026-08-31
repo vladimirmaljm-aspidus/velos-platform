@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, resolveTenantId } from "@/lib/api/helpers";
+import { requireAuth, resolveTenantId, sanitizeError } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
 
@@ -70,7 +70,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   } catch (error: any) {
     console.error("[webhooks.deliveries GET]", error);
     return NextResponse.json(
-      { error: error.message || "Internal server error" },
+      { error: sanitizeError(error) || "Internal server error" },
       { status: 500 },
     );
   }

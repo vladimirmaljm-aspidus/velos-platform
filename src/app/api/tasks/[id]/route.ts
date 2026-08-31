@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, audit } from "@/lib/api/helpers";
+import { requireAuth, audit, sanitizeError } from "@/lib/api/helpers";
 import { getSupabase } from "@/lib/supabase/client";
 import type { UserTask } from "@/lib/supabase/types";
 
@@ -40,7 +40,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   try {
     existing = await fetchTaskForTenant(id, auth.tenantId);
   } catch (e: any) {
-    return NextResponse.json({ error: e.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e) || "Internal server error" }, { status: 500 });
   }
   if (!existing) return NextResponse.json({ error: "Not found." }, { status: 404 });
   let body;
@@ -67,7 +67,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   try {
     existing = await fetchTaskForTenant(id, auth.tenantId);
   } catch (e: any) {
-    return NextResponse.json({ error: e.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e) || "Internal server error" }, { status: 500 });
   }
   if (!existing) return NextResponse.json({ error: "Not found." }, { status: 404 });
   await auth.store.deleteTask(id);

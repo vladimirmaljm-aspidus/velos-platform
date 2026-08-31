@@ -112,6 +112,24 @@ export async function POST(req: NextRequest) {
             { status: 400 },
           );
         }
+        // AUDIT17 / F2 — range-validate the percentage fields. A discount
+        // of 150% or a negative tax_rate previously flowed straight into the
+        // totals (a negative-total invoice is trivially "paid" by the first
+        // payment: record_invoice_payment's total_paid >= total - 0.01).
+        const disc = Number(it.discount);
+        if (Number.isFinite(disc) && (disc < 0 || disc > 100)) {
+          return NextResponse.json(
+            { error: `items[${i}].discount must be between 0 and 100.` },
+            { status: 400 },
+          );
+        }
+        const tr = Number(it.tax_rate);
+        if (Number.isFinite(tr) && (tr < 0 || tr > 100)) {
+          return NextResponse.json(
+            { error: `items[${i}].tax_rate must be between 0 and 100.` },
+            { status: 400 },
+          );
+        }
       }
     }
 
@@ -187,10 +205,22 @@ export async function POST(req: NextRequest) {
         const disc = line * (Number(it.discount) || 0) / 100;
         const net = line - disc;
         const tax = net * (Number(it.tax_rate) || 0) / 100;
-        subtotal += line;
-        discountTotal += disc;
-        taxTotal += tax;
-        it.total = Math.round((net + tax) * 100) / 100;
+        // AUDIT17 / F1 — round each line component to 2dp BEFORE aggregating,
+        // so the stored it.total equals net+tax of the ROUNDED components and
+        // the header sums the same rounded values. Previously the header
+        // summed unrounded amounts (subtotal - discountTotal + taxTotal)
+        // while each printed line was rounded — 2 lines × 10.254 printed as
+        // 10.25 + 10.25 = 20.50 against a header total of 20.51. A VAT
+        // document whose line items don't sum to its total is rejected by
+        // tax authorities.
+        const rLine = Math.round(line * 100) / 100;
+        const rDisc = Math.round(disc * 100) / 100;
+        const rTax = Math.round(tax * 100) / 100;
+        const rNet = Math.round(net * 100) / 100;
+        subtotal += rLine;
+        discountTotal += rDisc;
+        taxTotal += rTax;
+        it.total = Math.round((rNet + rTax) * 100) / 100;
       }
       body.subtotal = Math.round(subtotal * 100) / 100;
       body.discount_total = Math.round(discountTotal * 100) / 100;

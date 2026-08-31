@@ -361,7 +361,7 @@ export interface Store {
   upsertFeatureFlags(f: Partial<TenantFeatureFlags> & { id?: string; tenant_id: string }): Promise<TenantFeatureFlags>;
 
   // ---- notifications ----
-  listNotifications(tenantId: string, userId?: string, unreadOnly?: boolean): Promise<Notification[]>;
+  listNotifications(tenantId: string, userId?: string, unreadOnly?: boolean, limit?: number): Promise<Notification[]>;
   /**
    * 2b2-F3 — added the optional `limit` param. Previously the store
    * fetched EVERY notification for the partner then the route sliced

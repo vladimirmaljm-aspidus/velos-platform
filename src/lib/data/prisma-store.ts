@@ -2390,7 +2390,7 @@ export class PrismaStore implements Store {
 
   // ─── Notifications ──────────────────────────────────────────────────────
 
-  async listNotifications(tenantId: string, userId?: string, unreadOnly?: boolean): Promise<Notification[]> {
+  async listNotifications(tenantId: string, userId?: string, unreadOnly?: boolean, limit?: number): Promise<Notification[]> {
     const where: any = { tenant_id: tenantId };
     if (userId) where.user_id = userId;
     if (unreadOnly) where.read = false;

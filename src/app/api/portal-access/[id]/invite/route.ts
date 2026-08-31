@@ -190,7 +190,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // automation and the change-email route already set this correctly;
   // this is the one path that didn't. Best-effort: a failure here must
   // not fail the (already-sent) invite response.
-  if (result.success) {
+  //
+  // AUDIT17 / P1-1 — "success" alone is NOT delivered: the no-provider
+  // path returns { success: true, queued: true } (email parked in
+  // mail_queue, client got NOTHING). Gating on success alone made the
+  // admin UI show "Invite sent" while the mail sat in the queue — the
+  // exact "unsent mails with correct settings" confusion. Only a
+  // non-queued success counts as delivered.
+  const delivered = result.success && !result.queued;
+  if (delivered) {
     try {
       await auth.store.upsertPortalAccess({
         id: access.id,
@@ -204,11 +212,29 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   await audit(auth.store, auth.user, req, "portal.invite", "portal_access", id, {
     email: portalEmail,
     sent: result.success,
+    delivered,
+    queued: !!result.queued,
     token_issued: !!setupToken,
   });
-  // Notify
-  await notifyPortalInviteSent(access.tenant_id, partner?.name || "Client", portalEmail || "", id);
+  // Notify — only when the invite actually reached the client's mailbox.
+  if (delivered) {
+    await notifyPortalInviteSent(access.tenant_id, partner?.name || "Client", portalEmail || "", id);
+  }
 
+  if (result.queued) {
+    // AUDIT17: distinguish "parked in the queue" from "failed" — the
+    // admin should configure a provider and hit Retry in the Mail Queue.
+    return NextResponse.json(
+      {
+        ok: true,
+        queued: true,
+        message:
+          "No email provider is configured for this tenant (Settings → Communications). " +
+          "The invite is queued in the Mail Queue — configure a provider, then retry.",
+      },
+      { status: 409 },
+    );
+  }
   if (!result.success) {
     return NextResponse.json({ error: "Email failed to send. Queued for retry.", details: result.error }, { status: 500 });
   }

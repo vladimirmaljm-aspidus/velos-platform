@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, audit, resolveTenantId } from "@/lib/api/helpers";
+import { requireAuth, audit, resolveTenantId, sanitizeError } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
 
@@ -26,6 +26,6 @@ export async function GET(req: NextRequest) {
   const sessions = await auth.store.listSessions(tid, userId);
   return NextResponse.json({ items: sessions });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(error) || "Internal server error" }, { status: 500 });
   }
 }

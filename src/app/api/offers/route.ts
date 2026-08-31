@@ -113,6 +113,17 @@ async function _post(req: NextRequest) {
       if (!Number.isFinite(price) || price < 0) {
         return NextResponse.json({ error: `items[${i}].unit_price must be a non-negative number.` }, { status: 400 });
       }
+      // AUDIT17 / F2 — range-validate percentage fields (0-100) so a 150%
+      // discount / negative tax_rate can't produce a negative-total doc
+      // (trivially "paid" per record_invoice_payment's tolerance check).
+      const disc = Number(it.discount);
+      if (Number.isFinite(disc) && (disc < 0 || disc > 100)) {
+        return NextResponse.json({ error: `items[${i}].discount must be between 0 and 100.` }, { status: 400 });
+      }
+      const tr = Number(it.tax_rate);
+      if (Number.isFinite(tr) && (tr < 0 || tr > 100)) {
+        return NextResponse.json({ error: `items[${i}].tax_rate must be between 0 and 100.` }, { status: 400 });
+      }
     }
   }
 
@@ -231,12 +242,19 @@ async function _post(req: NextRequest) {
       const disc = line * (it.discount || 0) / 100;
       const net = line - disc;
       const tax = net * (it.tax_rate || 0) / 100;
-      subtotal += line;
-      discountTotal += disc;
-      taxTotal += tax;
+      // AUDIT17 / F1 — round each line component to 2dp BEFORE aggregating so
+      // the header sums the same rounded values the lines print (see the
+      // invoices route for the full VAT-rejection rationale).
+      const rLine = Math.round(line * 100) / 100;
+      const rDisc = Math.round(disc * 100) / 100;
+      const rTax = Math.round(tax * 100) / 100;
+      const rNet = Math.round(net * 100) / 100;
+      subtotal += rLine;
+      discountTotal += rDisc;
+      taxTotal += rTax;
       // Round each line total to 2 decimals to prevent floating-point
       // drift (e.g. 32199.999999999996 → 32200.00). Audit fix P2-15.
-      it.total = Math.round((net + tax) * 100) / 100;
+      it.total = Math.round((rNet + rTax) * 100) / 100;
     }
     body.subtotal = Math.round(subtotal * 100) / 100;
     body.discount_total = Math.round(discountTotal * 100) / 100;
@@ -379,7 +397,27 @@ async function _post(req: NextRequest) {
         // use it verbatim. Otherwise fall back to rate × base.
         const dealValue = Number(created.total) || 0;
         const dealProfit = Number(tradeCalcMeta._margin) || 0;
+        // AUDIT17 / F10 — compute in the AGENT's commission currency via the
+        // canonical store calculator (FX conversion + all type semantics).
+        // The previous inline math multiplied the OFFER-currency total by the
+        // rate and stored it with commission_currency=agent's — two paths for
+        // the same deal produced different amounts (e.g. EUR offer 100k, 2%
+        // USD agent, EUR/USD 1.10: inline $2,000 vs canonical $2,200).
         let calculatedCommission = tradeCalcMeta._commission_amount;
+        if (!calculatedCommission && tradeCalcMeta._commission_agent_id) {
+          try {
+            calculatedCommission = await auth.store.calculateCommission(
+              tradeCalcMeta._commission_agent_id,
+              dealValue,
+              dealProfit,
+              Number((created.items?.[0]?.quantity)) || 0,
+              (created.items?.[0]?.unit) || "MT",
+              created.currency || "USD",
+            );
+          } catch (calcErr) {
+            console.error("[offers.post] canonical commission calc failed, falling back to inline math:", calcErr);
+          }
+        }
         if (!calculatedCommission) {
           switch (commissionType) {
             case "profit_percent":

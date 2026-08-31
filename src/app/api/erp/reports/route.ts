@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, resolveTenantId } from "@/lib/api/helpers";
+import { requireAuth, resolveTenantId, sanitizeError } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
 
@@ -75,6 +75,6 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: `Unknown report type: ${type}. Use: trial_balance, balance_sheet, profit_and_loss, general_ledger` }, { status: 400 });
     }
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e) }, { status: 500 });
   }
 }

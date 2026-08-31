@@ -179,17 +179,30 @@ export async function onKycApproved(ctx: KycAutomationContext) {
       tier: access.tier,
       setupToken,
     });
-    await sendEmail({
-      to: accessEmail,
-      subject: wSub,
-      html: wHtml,
-      tenantId: submission.tenant_id,
-    }).catch((e) => console.error("[kyc.welcome]", e));
+    // AUDIT17 / P1-3 — gate welcome_email_sent on ACTUAL delivery.
+    // sendEmail resolves { success:true, queued:true } when no provider is
+    // configured (mail parked, client got nothing) and { success:false }
+    // on provider failure — neither may flip the flag (the invite route
+    // and change-email route already apply the same gate).
+    let welcomeDelivered = false;
+    try {
+      const sendResult = await sendEmail({
+        to: accessEmail,
+        subject: wSub,
+        html: wHtml,
+        tenantId: submission.tenant_id,
+      });
+      welcomeDelivered = !!(sendResult.success && !sendResult.queued);
+    } catch (e) {
+      console.error("[kyc.welcome]", e);
+    }
 
-    await store.upsertPortalAccess({
-      id: access.id,
-      welcome_email_sent: true,
-    }).catch(() => {});
+    if (welcomeDelivered) {
+      await store.upsertPortalAccess({
+        id: access.id,
+        welcome_email_sent: true,
+      }).catch(() => {});
+    }
   }
 
   return { access };

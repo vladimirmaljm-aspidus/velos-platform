@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, resolveTenantId, audit } from "@/lib/api/helpers";
+import { requireAuth, resolveTenantId, audit, sanitizeError } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
 
@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
     });
     return NextResponse.json(result);
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e) }, { status: 500 });
   }
 }
 
@@ -154,14 +154,19 @@ export async function POST(req: NextRequest) {
     // tenant_id so tenant A's closed period can't block tenant B. If no
     // period is configured for the date, we allow (don't block on missing
     // config — same behaviour as the post-time check).
-    if (body.date) {
+    // AUDIT17 / P1 — the store always writes a date
+    // (`entryFields.date ?? new Date()…`), so the previous `if (body.date)`
+    // gate let a caller dodge the closed-period check by simply omitting
+    // body.date. Validate the EFFECTIVE date.
+    const effectiveDate = body.date || new Date().toISOString();
+    {
       const { getSupabase } = await import("@/lib/supabase/client");
       const { data: period, error: periodErr } = await getSupabase()
         .from("fiscal_periods")
         .select("id, status")
         .eq("tenant_id", tenantId)
-        .lte("start_date", body.date)
-        .gte("end_date", body.date)
+        .lte("start_date", effectiveDate)
+        .gte("end_date", effectiveDate)
         .maybeSingle();
       if (periodErr) {
         return NextResponse.json(
@@ -177,6 +182,38 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // AUDIT17 / P0 — cross-tenant IDOR + posted-entry rewrite via body.id.
+    // The RPC upsert_journal_entry (migration 038) matches the UPDATE purely
+    // on `WHERE id = v_id` with NO tenant filter, and even reassigns
+    // tenant_id from the payload — a POST carrying a victim entry's id
+    // silently MOVED that entry (and deleted/replaced its lines) into the
+    // caller's tenant. The same POST path also bypassed PUT's
+    // `status !== "draft"` guard, rewriting POSTED ledger rows.
+    // Defense here (route-level, works without a migration):
+    //   1. body.id present → the entry must exist, belong to THIS tenant,
+    //      and still be a draft. Otherwise 404/403/409.
+    //   2. status / posted_by / posted_at are STRIPPED — only the dedicated
+    //      /post route (erp.post permission + SoD + balance re-validation)
+    //      may set them. This closes the SoD bypass where a user with only
+    //      erp.create flipped drafts straight to "posted".
+    if (body.id) {
+      const existing = await auth.store.getErpJournalEntry(body.id);
+      if (!existing || existing.tenant_id !== tenantId) {
+        return NextResponse.json({ error: "Journal entry not found." }, { status: 404 });
+      }
+      if ((existing as any).status !== "draft") {
+        return NextResponse.json(
+          { error: "Only draft journal entries can be modified. Use the post/reverse endpoints for posted entries." },
+          { status: 409 },
+        );
+      }
+    }
+    // AUDIT17 / P1 — strip the mass-assignment vector (only /post may set
+    // these; forging posted_by/posted_at also corrupts the audit trail).
+    delete body.status;
+    delete body.posted_by;
+    delete body.posted_at;
+
     const created = await auth.store.upsertErpJournalEntry({
       ...body,
       tenant_id: tenantId,
@@ -191,6 +228,6 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json(created);
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e) }, { status: 500 });
   }
 }

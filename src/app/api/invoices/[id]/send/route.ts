@@ -232,6 +232,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     await audit(auth.store, auth.user, req, "invoice.send_email", "invoice", id, { to: toEmail || "(portal only)" });
 
+    // AUDIT17 / P2-3 — a queued email (no provider configured) is NOT a
+    // delivery: return 409 with an actionable message (same semantics as
+    // the LOI send route) instead of a bare 200 { queued: true } that the
+    // views toasted as "The invoice sent".
+    if (emailResult.queued) {
+      return NextResponse.json(
+        {
+          error:
+            "No email provider is configured for this tenant (Settings → Communications). " +
+            "The invoice email is queued in the Mail Queue — configure a provider, then retry. " +
+            "The invoice status stays draft.",
+          queued: true,
+        },
+        { status: 409 },
+      );
+    }
     return NextResponse.json(emailResult);
   } catch (e) {
     console.error("[invoice.send]", e);

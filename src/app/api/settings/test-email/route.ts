@@ -106,7 +106,11 @@ export async function POST(req: NextRequest) {
   // Load saved config as defaults
   let saved: Record<string, any> = {};
   const store = getStoreSync() ?? (await getStore());
-  const comms = await store.getSetting<any>("comms");
+  // AUDIT17 / P1-4 — read the TENANT's comms blob (auth.tenantId), not the
+  // platform-level one (see test-smtp/route.ts for the full note). When the
+  // form fields are blank the route is exercising the saved tenant config —
+  // it must be the tenant's, or the admin debugs the wrong credentials.
+  const comms = await store.getSetting<any>("comms", auth.tenantId ?? undefined);
   if (comms) saved = comms;
   // EMAIL-FIX: the comms blob stores secrets encrypted at rest (`enc:` …).
   // Without decrypting here, the test send would hand the provider the

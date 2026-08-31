@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, audit } from "@/lib/api/helpers";
+import { requireAuth, audit, sanitizeError } from "@/lib/api/helpers";
 import { getPortalUpload } from "@/lib/portal/uploads";
 import { getSupabase } from "@/lib/supabase/client";
 
@@ -18,7 +18,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       const _d = requirePermission(auth, "portal-uploads.download"); if (_d) return _d; }
 
     const { id } = await params;
-    const upload = await getPortalUpload(id, auth.tenantId || "");
+    // AUDIT17 / P2 — super-admin fallback (mirrors GET/DELETE on the same
+    // resource): a super-admin got 404 on downloads of uploads whose
+    // metadata they could read and delete. Tenant users keep the strict
+    // tenant-scoped lookup.
+    const upload = auth.isSuperAdmin
+      ? (await getSupabase().from("portal_uploads").select("*").eq("id", id).maybeSingle()).data as any
+      : await getPortalUpload(id, auth.tenantId || "");
     if (!upload) return NextResponse.json({ error: "Not found." }, { status: 404 });
     if (!auth.isSuperAdmin && upload.tenant_id !== auth.tenantId) {
       return NextResponse.json({ error: "Not found." }, { status: 404 });
@@ -35,6 +41,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     await audit(auth.store, auth.user, req, "portal_upload.download", "portal_upload", id, { filename: upload.filename }).catch(() => {});
     return NextResponse.redirect(data.signedUrl, 302);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(error) || "Internal server error" }, { status: 500 });
   }
 }

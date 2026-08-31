@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, requireAdmin, requireAuthOrApiKey, requireAuthOrApiKeyPermission, resolveTenantId, audit } from "@/lib/api/helpers";
+import { requireAuth, requireAdmin, requireAuthOrApiKey, requireAuthOrApiKeyPermission, resolveTenantId, audit, sanitizeError } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
 
@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(settings);
   } catch (e: any) {
     console.error("[erp/settings GET]", e);
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e) }, { status: 500 });
   }
 }
 
@@ -76,6 +76,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(upserted);
   } catch (e: any) {
     console.error("[erp/settings POST]", e);
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e) }, { status: 500 });
   }
 }

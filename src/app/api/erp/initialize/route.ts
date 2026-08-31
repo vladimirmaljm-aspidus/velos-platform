@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin, resolveTenantId, audit } from "@/lib/api/helpers";
+import { requireAdmin, resolveTenantId, audit, sanitizeError } from "@/lib/api/helpers";
 import type { ErpAccount } from "@/lib/supabase/types";
 
 export const runtime = "nodejs";
@@ -139,6 +139,6 @@ export async function POST(req: NextRequest) {
       accounts: createdAccounts,
     });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e) }, { status: 500 });
   }
 }

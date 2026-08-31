@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin, audit, resolveTenantId } from "@/lib/api/helpers";
+import { requireAdmin, audit, resolveTenantId, sanitizeError } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
 
@@ -37,7 +37,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       .eq("tenant_id", tid)
       .maybeSingle();
     if (fetchErr) {
-      return NextResponse.json({ error: fetchErr.message }, { status: 500 });
+      return NextResponse.json({ error: sanitizeError(fetchErr) }, { status: 500 });
     }
     if (!existing) return NextResponse.json({ error: "Not found." }, { status: 404 });
     // Super-admin override: if a super-admin is reconciling a txn outside
@@ -56,6 +56,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     });
     return NextResponse.json(reconciled);
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e) }, { status: 500 });
   }
 }

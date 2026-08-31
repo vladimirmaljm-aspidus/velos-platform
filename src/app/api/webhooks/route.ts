@@ -50,6 +50,18 @@ export async function POST(req: NextRequest) {
   // Permission gate (webhooks.create)
   { const { requirePermission } = await import("@/lib/permissions/can");
     const _d = requirePermission(auth, "webhooks.create"); if (_d) return _d; } /* requirePermission wired */
+  // AUDIT17 / P1 — POST with a body.id performs an UPDATE (smartUpsert), so
+  // it must ALSO require webhooks.update. Previously a user holding only
+  // webhooks.create could rewrite an existing webhook's URL/secret/events —
+  // redirecting the tenant's event stream to an attacker URL — because the
+  // create gate was the only check. Peek at the body BEFORE parsing errors
+  // would matter: we re-check after the parse below.
+  let _peek: any = null;
+  try { _peek = await req.clone().json(); } catch { _peek = null; }
+  if (_peek && typeof _peek === "object" && _peek.id) {
+    const { requirePermission } = await import("@/lib/permissions/can");
+    const _u = requirePermission(auth, "webhooks.update"); if (_u) return _u;
+  }
   // Feature gate (module_webhooks)
   { const { requireFeature } = await import("@/lib/api/feature-guard");
     const _f = await requireFeature(auth.tenantId, "module_webhooks", auth.isSuperAdmin); if (_f) return _f; } /* requireFeature wired */
