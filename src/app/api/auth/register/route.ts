@@ -193,6 +193,70 @@ export async function POST(req: NextRequest) {
     // duplicates via that single lookup.
     const existing = await store.getUserByUsername(email);
     if (existing) {
+      // ─── Audit finding 8a-39: per-email 24h duplicate-registration rate-
+      // limit (defense-in-depth).
+      //
+      // Self-registration in VELOS does NOT verify email ownership — there
+      // is no `email_verified_at` column on `users` (verified by grep, no
+      // migration added per task instruction). A malicious actor who knows
+      // an existing user's email can therefore repeatedly hit /api/auth/
+      // register with that email to enumerate accounts (the success-shape
+      // masking below hides WHICH emails exist, but the per-IP rate-limit
+      // on /api/auth/register is the only thing stopping a distributed
+      // attack from confirming emails one-by-one via timing or downstream
+      // side-effects). This guard adds a per-email 24h backstop: if the
+      // same email is registered twice within 24h, the SECOND attempt is
+      // rejected with 429 + Retry-After.
+      //
+      // This is DEFENSE-IN-DEPTH, not a substitute for real email
+      // verification. The proper fix is a future enhancement: add an
+      // `email_verified_at` column, send a verification link at signup,
+      // and gate account activation on the click. Until that lands, this
+      // per-email rate-limit + the per-IP F-7 cap together keep the
+      // enumeration cost high enough that the success-shape masking
+      // below is meaningful.
+      try {
+        const createdAt = new Date(existing.created_at).getTime();
+        if (Number.isFinite(createdAt) && Date.now() - createdAt < 24 * 60 * 60 * 1000) {
+          // Existing account was created within the last 24h — this is a
+          // rapid-fire duplicate. Treat it as rate-limited and short-
+          // circuit before the standard duplicate-handling audit below.
+          try {
+            await store.appendAudit({
+              user_id: null,
+              username: email,
+              action: "register.duplicate_email_ratelimited",
+              entity_type: "auth",
+              entity_id: null,
+              details: { email, company_name: companyName, existing_created_at: existing.created_at },
+              ip,
+              user_agent: req.headers.get("user-agent") || null,
+            });
+          } catch {
+            // non-critical — an audit-log failure must not unblock the
+            // attacker by falling through to the success-shape return.
+          }
+          reportSecurityEvent({
+            type: "rate.limit.hit",
+            ip,
+            details: { scope: "per_email_24h", key: "register", email },
+            severity: "warning",
+          });
+          const retryAfterSec = Math.max(
+            1,
+            Math.ceil((24 * 60 * 60 * 1000 - (Date.now() - createdAt)) / 1000),
+          );
+          return NextResponse.json(
+            { error: "Too many sign-up attempts for this email. Try again later." },
+            { status: 429, headers: { "Retry-After": String(retryAfterSec) } },
+          );
+        }
+      } catch {
+        // If `existing.created_at` is malformed or `new Date()` throws,
+        // fall through to the standard duplicate-handling path below.
+        // A parsing error must never unblock an attacker.
+      }
+
       // Audit the duplicate attempt so the security pipeline sees
       // enumeration. HACK-SIM Fix 3 (MEDIUM): previously this branch
       // returned a 409 "An account with this email already exists" — a

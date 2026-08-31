@@ -125,18 +125,20 @@ describe("FIX-V1 / Fix 1 — can() honours the cached role override", () => {
     expect(can(mgr, OFFERS.CREATE)).toBe(false);
   });
 
-  it("can() still grants platform.* to a non-super-admin with the '*' wildcard", () => {
-    // The "*" check is unconditional in can() — it short-circuits BEFORE
-    // the isPlatformPerm gate (this is the existing invariant, pinned by
-    // rbac-permissions.test.ts). FIX-V1 does NOT change this — "*" is
-    // the platform-root grant, equivalent to super_admin.
+  it("can() DENIES platform.* to a non-super-admin even with the '*' wildcard (security hardening)", () => {
+    // SECURITY HARDENING: can() now blocks platform.* perms for ALL
+    // non-super_admin accounts before the wildcard-"*" check (can.ts
+    // line ~99: `if (isPlatformPerm(permission)) return false;`).
+    // FIX-V1 preserves this hardened invariant — the platform-root grant
+    // is exclusive to role === "super_admin". A misconfigured admin with
+    // `*` must NOT become a de-facto super_admin.
     const mgr: PermissionSubject = {
       role: "admin",
       permissions: ["*"],
       tenant_id: "tenant-A",
     };
-    expect(can(mgr, PLATFORM.TENANTS_READ)).toBe(true);
-    expect(can(mgr, PLATFORM.IMPERSONATE)).toBe(true);
+    expect(can(mgr, PLATFORM.TENANTS_READ)).toBe(false);
+    expect(can(mgr, PLATFORM.IMPERSONATE)).toBe(false);
   });
 
   it("can() denies platform.* for a non-super-admin WITHOUT the '*' wildcard", () => {

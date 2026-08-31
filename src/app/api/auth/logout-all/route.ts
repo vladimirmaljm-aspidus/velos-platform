@@ -15,6 +15,16 @@ export const runtime = "nodejs";
  * The bump uses the atomic `bump_token_version` RPC (SupabaseStore) — see
  * `bumpUserTokenVersion` for the concurrency rationale (audit M-4).
  *
+ * 8b-11 (Task 10-B-v2): the atomic RPC path (migration 017) is the PRIMARY
+ * path. There is no TOCTOU window on logout-all because the bump is a
+ * single Postgres UPDATE...RETURNING with a row lock — two concurrent
+ * logout-all calls always observe each other's increment. The CAS retry
+ * fallback (MAX_RETRIES=3, throws on exhaustion) lives inside
+ * SupabaseStore.bumpUserTokenVersion for the rare case where the RPC
+ * errors out (migration not applied, RPC grant revoked, transient blip);
+ * this route calls the helper and surfaces a 500 on throw rather than
+ * silently leaving stale JWTs valid.
+ *
  * This is the self-service "I forgot to log out on another device" button
  * surfaced in the Security view. It does NOT change the password — a password
  * change also rotates sessions via `rotateUserSessions`, but this endpoint is

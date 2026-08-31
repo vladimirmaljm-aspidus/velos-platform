@@ -124,9 +124,14 @@ async function _put(
     // marketplace_response status from ... Allowed transitions: ...").
     // The transition error is the only one that mentions "Allowed
     // transitions", so that's the discriminator.
+    //
+    // 8c-7: the TOCTOU CAS guard now also throws
+    // "Response status changed; please reload and retry." when 0 rows
+    // were affected by the guarded UPDATE — also a 409 (concurrent
+    // modification; client should reload and retry).
     const status = /not found/i.test(msg) ? 404 :
       /only the post owner/i.test(msg) ? 403 :
-      /Allowed transitions/i.test(msg) ? 409 :
+      /Allowed transitions|status changed/i.test(msg) ? 409 :
       500;
     return NextResponse.json({ error: msg }, { status });
   }

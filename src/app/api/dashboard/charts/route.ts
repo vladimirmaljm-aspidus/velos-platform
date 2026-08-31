@@ -3,9 +3,18 @@ import {
   requireAuthOrApiKey,
   requireAuthOrApiKeyPermission,
   resolveTenantId,
+  getIp,
   sanitizeError,
 } from "@/lib/api/helpers";
 import { withApm } from "@/lib/monitoring/apm";
+// 9b-N13 — dashboard routes had no rate limit. A caller with a valid
+// session OR API key could spam getDashboardCharts() (multi-join
+// aggregations + Top-N ordering) without any per-IP cap. The DB-backed
+// rate limiter (migration 024) is shared across instances — the cap
+// holds even on multi-replica deploys. 60 req/min/IP is generous (a
+// legit dashboard polls at 30s × 1 tab = 2 req/min) but blocks a
+// single attacker from saturating the dashboard endpoints.
+import { checkRateLimit } from "@/lib/security/rate-limiter";
 
 export const runtime = "nodejs";
 
@@ -36,6 +45,19 @@ export const runtime = "nodejs";
 
 async function _get(req: NextRequest) {
   try {
+    // 9b-N13 — per-IP rate limit, runs BEFORE auth so unauthenticated
+    // probes are also capped. 429 + Retry-After on limit exceeded.
+    const rl = await checkRateLimit(`dashboard:ip:${getIp(req)}`, 60, 60_000);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: "Too many dashboard requests. Try again later." },
+        {
+          status: 429,
+          headers: { "Retry-After": String(Math.ceil((rl.retryAfter ?? 60_000) / 1000)) },
+        },
+      );
+    }
+
     const auth = await requireAuthOrApiKey(req);
     if (auth instanceof NextResponse) return auth;
 

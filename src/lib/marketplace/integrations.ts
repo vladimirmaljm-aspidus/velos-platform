@@ -218,7 +218,25 @@ export async function uploadTradeDocument(
       // upload attempt will succeed). If the storage key lacks the
       // create-bucket permission, the upload will keep failing — the
       // function falls back to a mock URL.
-      void supabase.storage.createBucket(bucket, { public: true }).catch(() => {});
+      //
+      // ─── Audit finding 8d-12: bucket MUST be private, not public.
+      //
+      // Trade documents (commercial invoices, BLs, CoOs, packing lists,
+      // L/C drafts, customs declarations) contain PII, financials, and
+      // counterparty terms. A public bucket lets anyone with the URL
+      // fetch the file (including search engines if the URL is ever
+      // logged or leaked). The previous `{ public: true }` was a
+      // leftover from the placeholder phase that did not hold once real
+      // documents started flowing: signatures verify integrity but do
+      // NOT restrict access. The private bucket enforces download-time
+      // authz — every fetch must go through a signed-URL issuance path
+      // that checks the caller's marketplace role.
+      //
+      // KNOWN GAP (follow-up tracked in Task 10-D-v2 worklog): the
+      // `getPublicUrl()` call below returns a URL that 403s against the
+      // private bucket. A signed-URL download route is NOT yet wired;
+      // the placeholder mock-URL fallback masks this in local dev.
+      void supabase.storage.createBucket(bucket, { public: false }).catch(() => {});
       throw upErr;
     }
     const { data } = supabase.storage.from(bucket).getPublicUrl(cleanPath);

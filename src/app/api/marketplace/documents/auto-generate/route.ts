@@ -142,6 +142,26 @@ async function _post(req: NextRequest) {
       if (n.partner_id_a !== access.partner_id && n.partner_id_b !== access.partner_id) {
         return NextResponse.json({ error: "Negotiation not found." }, { status: 404 });
       }
+      // 8c-8: cross-FK consistency — when the caller supplies BOTH a
+      // post_id and a negotiation_id, the negotiation's own post_id MUST
+      // equal the supplied post_id. Without this check, a partner could
+      // pair a real negotiation with an UNRELATED post_id (one they
+      // own or have read access to but that the negotiation was never
+      // opened on) and the auto-generate path below would build a
+      // document using the negotiation's agreed_terms (price, currency,
+      // incoterm, payment_terms) combined with the unrelated post's
+      // product_name / origin_country / packaging — a commercial
+      // forgery vector that would have looked legitimate to the
+      // counterparty receiving the generated PDF. The check fires
+      // after the party-membership check above so cross-tenant probes
+      // still 404 (not 400) — this 400 only fires for callers that
+      // legitimately resolved both rows but supplied a mismatched pair.
+      if (postId && n.post_id && n.post_id !== postId) {
+        return NextResponse.json(
+          { error: "negotiation_id does not belong to the supplied post_id." },
+          { status: 400 },
+        );
+      }
       negotiation = n;
       // If the caller didn't pass a post_id, follow the negotiation's FK.
       if (!post && n.post_id) {

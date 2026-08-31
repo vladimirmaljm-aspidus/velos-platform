@@ -6,6 +6,14 @@ import { audit } from "@/lib/api/helpers";
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
+  // 8b-11 (Task 10-B-v2): this route invalidates the user's JWT by bumping
+  // `users.token_version` via `store.bumpUserTokenVersion(session.sub)`
+  // below. The bump goes through the atomic `bump_token_version` RPC
+  // (migration 017) — a single Postgres UPDATE...RETURNING with a row
+  // lock, so two concurrent logout calls always see each other's bump
+  // (no lost increments, no TOCTOU window). The RPC's Compare-And-Swap
+  // fallback (MAX_RETRIES=3) lives inside SupabaseStore for the rare
+  // case where the RPC errors out; this route just calls the helper.
   // Invalidate the JWT by bumping token_version, and revoke the SecuritySession
   // record (if any) so the Sessions tab shows the session as revoked.
   try {

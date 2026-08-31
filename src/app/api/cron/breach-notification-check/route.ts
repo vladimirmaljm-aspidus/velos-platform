@@ -11,6 +11,11 @@ import {
   type IncidentType,
 } from "@/lib/compliance/incident-response";
 import { sendBreachNotification } from "@/lib/compliance/breach-notification";
+// 9b-N9: outbound webhook must be HMAC-signed so the receiver can verify
+// authenticity + integrity. Uses the same `signPayload` primitive as the
+// generic webhook delivery pipeline (`@/lib/webhooks/deliver`) — the
+// receiver side can share the verification logic via `verifySignature`.
+import { signPayload } from "@/lib/webhooks/deliver";
 
 export const runtime = "nodejs";
 
@@ -177,14 +182,39 @@ export async function GET(req: NextRequest) {
       // Opsgenie). The webhook URL is optional — deployments that don't
       // configure it skip this step (the audit log is still the source
       // of truth).
+      //
+      // 9b-N9: the outbound webhook is now HMAC-signed. The receiver must
+      // verify `X-Velos-Signature: sha256=<hex>` over the raw request body
+      // (timing-safe compare — see `verifySignature` in
+      // `@/lib/webhooks/deliver`). The signature is computed over the
+      // EXACT JSON string we send (not a re-serialised copy) so the
+      // receiver's `verifySignature(rawBody, sig, secret)` works on the
+      // raw bytes — no canonical-JSON canonicalisation mismatch possible.
+      //
+      // FAIL-CLOSED: if `BREACH_NOTIFICATION_WEBHOOK_SECRET` is missing,
+      // the webhook call is SKIPPED with a `console.error`. The cron
+      // still dispatches the email + audit log; only the outbound webhook
+      // is suppressed. Rationale: an unsigned webhook is worse than no
+      // webhook — a misconfigured receiver might log + act on the
+      // unsigned payload, and an attacker who could reach the receiver
+      // (e.g. DNS-rebinding) could forge their own escalation. Better to
+      // skip until ops set the secret than to send unsigned.
       const webhookUrl = process.env.BREACH_NOTIFICATION_WEBHOOK_URL;
+      const webhookSecret = process.env.BREACH_NOTIFICATION_WEBHOOK_SECRET;
       if (webhookUrl) {
-        try {
-          await fetch(webhookUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            signal: AbortSignal.timeout(10_000),
-            body: JSON.stringify({
+        if (!webhookSecret) {
+          console.error(
+            `[cron/breach-notification-check] BREACH_NOTIFICATION_WEBHOOK_SECRET env var is missing — ` +
+            `skipping outbound webhook for incident ${inc.id} (fail-closed). Set the secret on the deployment.`,
+          );
+        } else {
+          try {
+            // Build the body ONCE as a string. The same string is signed
+            // AND sent — the receiver recomputes the HMAC over the raw
+            // body and compares (timing-safe) with the X-Velos-Signature
+            // header. No re-serialisation mismatch is possible because
+            // the bytes the receiver hashes are the bytes we signed.
+            const webhookBody = JSON.stringify({
               event: breached ? "breach_deadline_breached" : "breach_deadline_approaching",
               incident_id: inc.id,
               type: inc.type,
@@ -197,15 +227,26 @@ export async function GET(req: NextRequest) {
               dispatched_by_cron: sendResult.success,
               message_id: sendResult.messageId,
               ran_at: ranAt,
-            }),
-          });
-        } catch (e: any) {
-          // Webhook failure is non-fatal — the audit log + email
-          // dispatch already happened. Just log so ops can triage.
-          console.error(
-            `[cron/breach-notification-check] webhook call failed for incident ${inc.id}:`,
-            e?.message || e,
-          );
+            });
+            const signature = signPayload(webhookBody, webhookSecret);
+
+            await fetch(webhookUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "X-Velos-Signature": `sha256=${signature}`,
+              },
+              signal: AbortSignal.timeout(10_000),
+              body: webhookBody,
+            });
+          } catch (e: any) {
+            // Webhook failure is non-fatal — the audit log + email
+            // dispatch already happened. Just log so ops can triage.
+            console.error(
+              `[cron/breach-notification-check] webhook call failed for incident ${inc.id}:`,
+              e?.message || e,
+            );
+          }
         }
       }
 

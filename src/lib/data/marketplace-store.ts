@@ -536,13 +536,27 @@ export async function updateMarketplaceResponseStatus(
     }
   }
 
+  // 8c-7: TOCTOU race — only update rows where status is still the
+  // expected prior state (Compare-And-Swap guard). Between the
+  // validateStatusTransition() call above and the UPDATE below, a
+  // concurrent request (e.g. a cron sweep expiring the response, or a
+  // second owner tab clicking accept/reject) could change the row's
+  // status out from under us. Without this CAS check, two concurrent
+  // PUTs could both "win" — e.g. accept on top of an already-rejected
+  // row, silently reviving it and re-triggering contract auto-creation.
+  // `.maybeSingle()` returns null when 0 rows are affected (status no
+  // longer matches); we surface that as a 409 in the route handler.
   const { data: updated, error } = await sb
     .from("marketplace_responses")
     .update({ status: newStatus })
     .eq("id", responseId)
+    .eq("status", _currentStatus)
     .select()
-    .single();
+    .maybeSingle();
   if (error) throw error;
+  if (!updated) {
+    throw new Error("Response status changed; please reload and retry.");
+  }
   return updated as MarketplaceResponse;
 }
 

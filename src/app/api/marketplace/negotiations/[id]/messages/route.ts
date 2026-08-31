@@ -57,6 +57,70 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
     return NextResponse.json({ error: "Too many messages. Please slow down." }, { status: 429 });
   }
 
+  // 8c-11: negotiation status lock — fail-fast BEFORE body parse. The
+  // previous implementation parsed the body, ran the rate-limit budget
+  // against the recipient's notification queue, and only THEN called
+  // addNegotiationMessage() — which threw on a terminal-status
+  // negotiation. That meant a partner could keep hitting a closed /
+  // rejected / signed negotiation and burn rate-limit budget + notification
+  // attempts against a conversation the other side had already terminated.
+  // This pre-check fetches the negotiation row's `status` column
+  // directly; when it's in a terminal state, we 409 before any side
+  // effect fires. System-message insert paths (cancel, accept-handshake,
+  // contract-creation) bypass this check because they don't go through
+  // this POST route — they write to marketplace_messages directly via
+  // the store / supabase client from their own route handlers.
+  //
+  // The set of terminal states covers everything the spec calls out:
+  //   • accepted — both parties shook hands; no further negotiation.
+  //   • rejected — either party walked away.
+  //   • expired — 48h auto-expiry or explicit expiry.
+  //   • cancelled — admin / either-party cancellation.
+  //   • signed — contract was countersigned; the room is now read-only.
+  //   • closed — generic terminal lifecycle state.
+  // `active` (and Phase 2's `awaiting` sub-state, when set) is the only
+  // state in which a new message is allowed.
+  {
+    const sb = getSupabase();
+    const { data: negRow, error: negErr } = await sb
+      .from("marketplace_negotiations")
+      .select("id, status, tenant_id_a, tenant_id_b, partner_id_a, partner_id_b")
+      .eq("id", id)
+      .maybeSingle();
+    if (negErr) {
+      console.error("[marketplace.messages.create] status pre-check failed:", negErr);
+      return NextResponse.json({ error: "Failed to load negotiation." }, { status: 500 });
+    }
+    if (!negRow) {
+      return NextResponse.json({ error: "Negotiation not found." }, { status: 404 });
+    }
+    const n = negRow as {
+      id: string;
+      status: string;
+      tenant_id_a: string;
+      tenant_id_b: string;
+      partner_id_a: string;
+      partner_id_b: string;
+    };
+    // Tenant + party membership check — a partner probing another tenant's
+    // negotiation gets the same 404 as a missing row (no information leak).
+    if (n.tenant_id_a !== access.tenant_id && n.tenant_id_b !== access.tenant_id) {
+      return NextResponse.json({ error: "Negotiation not found." }, { status: 404 });
+    }
+    if (n.partner_id_a !== access.partner_id && n.partner_id_b !== access.partner_id) {
+      return NextResponse.json({ error: "Negotiation not found." }, { status: 404 });
+    }
+    const TERMINAL_STATUSES = new Set([
+      "accepted", "rejected", "expired", "cancelled", "signed", "closed",
+    ]);
+    if (TERMINAL_STATUSES.has(n.status)) {
+      return NextResponse.json(
+        { error: `Negotiation is ${n.status} — no further messages can be sent.` },
+        { status: 409 },
+      );
+    }
+  }
+
   let body;
   try {
     body = await req.json();
@@ -150,6 +214,14 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
             : n.partner_id_a;
 
         // (1) Notification to the other party (any message type).
+        // 8c-10: dedup key collapses a burst of messages in the same
+        // negotiation into ONE notification per 5-minute window —
+        // a partner typing 100 messages in 60s produces ONE bell-badge
+        // entry for the recipient (not 100). The dedup is scoped by
+        // (partner, type, entityType=marketplace_negotiation, entityId=
+        // negotiation_id) so two parallel negotiations on the same post
+        // don't collapse into each other. notify() consults the store's
+        // new findRecentNotification() probe before the insert.
         if (otherPartnerId && otherPartnerId !== access.partner_id) {
           await notify({
             tenantId: access.tenant_id,
@@ -161,6 +233,8 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
             entityId: id,
             actionUrl: `/portal/marketplace/negotiations/${id}`,
             actionLabel: "Open room",
+            dedupKey: `marketplace_negotiation:${id}:message`,
+            dedupWindowMs: 5 * 60 * 1000, // 5 min — one badge per burst
           });
         }
 

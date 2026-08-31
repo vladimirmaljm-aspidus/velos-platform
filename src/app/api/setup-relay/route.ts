@@ -53,7 +53,7 @@ function getAllowedHosts(): string[] {
 }
 
 /**
- * GET/POST /api/setup-relay
+ * POST /api/setup-relay
  *
  * Captures the external Host header from the request (which the gateway
  * forwards) and writes it to /tmp/discovered-host.txt so the sandbox
@@ -64,8 +64,21 @@ function getAllowedHosts(): string[] {
  * CRITICAL FIX (AUDIT4-SEC / Fix 1): the route now requires a super_admin
  * session AND validates the inbound Host against an allowlist before
  * touching the filesystem or the Vercel API.
+ *
+ * 9b-N12 — CSRF via state-changing GET. Previously this handler was
+ * exported as BOTH GET and POST (a single `handler` function aliased to
+ * both verbs). A state-changing GET on an authenticated route is a CSRF
+ * vector: an attacker can embed `<img src="/api/setup-relay?host=evil.com">`
+ * in any page the super_admin visits, and the browser will issue the
+ * request with the super_admin's session cookie attached. The
+ * `requireSuperAdmin` Origin check inside requireAuth would normally
+ * catch this — but only if that check actually runs for GET, and a
+ * misconfigured proxy that strips the Origin header (or a same-origin
+ * attacker) could bypass it. Defense-in-depth: state changes only via
+ * POST. The `Allow: POST` header on the 405 response tells well-behaved
+ * clients (and the spec) what's permitted.
  */
-export async function handler(req: NextRequest) {
+export async function POST(req: NextRequest) {
   // ── Auth gate — only a super_admin may retarget the AI relay. ───────────
   const auth = await requireSuperAdmin(req);
   if (auth instanceof NextResponse) return auth;
@@ -172,5 +185,14 @@ export async function handler(req: NextRequest) {
   });
 }
 
-export const GET = handler;
-export const POST = handler;
+export async function GET(_req: NextRequest) {
+  // 9b-N12 — state-changing GET was a CSRF vector. The GET verb is now
+  // REJECTED with 405 (Method Not Allowed) + an `Allow: POST` header so
+  // well-behaved clients know the only valid verb. The body of the
+  // response is intentionally generic — no reflection of the request URL
+  // or headers, which would be an information-leak on a probe.
+  return NextResponse.json(
+    { ok: false, error: "Method Not Allowed. Use POST. GET does not perform state changes (9b-N12)." },
+    { status: 405, headers: { Allow: "POST" } },
+  );
+}

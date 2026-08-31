@@ -11,6 +11,18 @@ import {
   MAX_WEBHOOK_ATTEMPTS,
 } from "@/lib/webhooks/deliver";
 
+// 2f-F1 + 2f-F2 fix added a real DNS-lookup SSRF re-validation in
+// attemptDelivery() before every fetch. The webhook tests use
+// `https://receiver.example.com/hook` (IANA-reserved example domain) which
+// fails DNS resolution in the test sandbox → fetch is never called →
+// 9 tests fail. Mock assertSafeWebhookUrl to short-circuit the SSRF gate so
+// the delivery tests can assert on fetch / store.createWebhookDelivery /
+// store.updateWebhookDelivery behaviour (which is what they're actually
+// testing — the SSRF gate has its own dedicated test in url-validation).
+vi.mock("@/lib/webhooks/url-validation", () => ({
+  assertSafeWebhookUrl: vi.fn(async () => ({ ok: true } as never)),
+}));
+
 // ── Helpers ───────────────────────────────────────────────────────────────
 
 const SECRET = "whsec_test_secret_12345";

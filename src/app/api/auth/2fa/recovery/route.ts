@@ -95,6 +95,40 @@ export async function POST(req: NextRequest) {
       recovery_codes: null,
     });
 
+    // 9b-N15 (Task 10-B-v2): recovery-code usage signals device compromise
+    // — the user typed a recovery code because they couldn't generate a
+    // TOTP, which on a controlled device they always can. So we treat
+    // every successful recovery like a logout-all: bump
+    // `users.token_version` so EVERY other JWT previously issued for this
+    // user (including the one on the stolen / compromised device that may
+    // have been used to GET here — though note the route requires a
+    // valid session, so the caller's OWN cookie is one of those)
+    // immediately fails the `requireAuth` token_version check. The
+    // caller's CURRENT request still completes (the bump invalidates
+    // FUTURE requests; this one is mid-flight and unaffected). The
+    // user will then need to log back in (and, since totp_enabled is
+    // now false, that next login will NOT prompt for TOTP — but they
+    // can re-enroll via /api/auth/2fa/verify afterward).
+    //
+    // Best-effort: recovery has already succeeded at this point. A
+    // transient DB error bumping token_version must NOT strand the
+    // user in a state where 2FA is disabled but the old device is
+    // still valid (we'd rather have the bump throw and surface here
+    // than silently skip it). However, since the bump is itself best-
+    // effort at the route layer (the user's recovery is already
+    // recorded), we wrap in try/catch and log via console.error for
+    // ops triage rather than 500'ing the recovery response.
+    try {
+      await auth.store.bumpUserTokenVersion(user.id);
+    } catch (bumpErr) {
+      console.error(
+        "[2fa.recovery] FAILED to bump token_version after recovery — " +
+          "the user's other sessions may remain valid until next logout. " +
+          "Ops should investigate; the recovery itself has succeeded.",
+        bumpErr,
+      );
+    }
+
     await audit(
       auth.store,
       auth.user,

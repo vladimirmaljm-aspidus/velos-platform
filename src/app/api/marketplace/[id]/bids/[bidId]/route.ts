@@ -100,12 +100,79 @@ async function _get(req: NextRequest, ctx: { params: Promise<{ id: string; bidId
 // DELETE /api/marketplace/[id]/bids/[bidId] — withdraw a bid. Only the
 // bidder themselves can withdraw; only on english auctions; only while
 // the auction is still active.
+//
+// 8d-10 / 8d-11: defense-in-depth — the store's `withdrawBid` already
+// enforces bidder ownership + auction-type + auction-status, but the
+// route layer adds its OWN pre-checks so a future store refactor that
+// accidentally weakens one of those gates doesn't expose a delete path.
+// The two pre-checks are:
+//   • Ownership (8d-10): 404 when `bid.partner_id !== access.partner_id`.
+//     Returns 404 (not 403) so a partner probing another bidder's UUID
+//     learns nothing — same shape as a missing bid.
+//   • Bid-status (8d-11): 409 when `is_winning === true`. The schema
+//     (migration 046) intentionally has no `status` column on
+//     marketplace_auction_bids — `is_winning` is the analogue of
+//     `status === 'accepted'`. A winning bid that has already settled
+//     the auction cannot be withdrawn (the settlement flow has already
+//     tied the winner_id on the post, notified the loser, etc.).
 async function _delete(req: NextRequest, ctx: { params: Promise<{ id: string; bidId: string }> }) {
   const access = await getPortalSessionAccess();
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
   const { id, bidId } = await ctx.params;
+
+  // 8d-10 / 8d-11: route-level pre-checks. The bid is fetched JOINED to
+  // its own post + scoped to the URL's `post_id` so a bid on a different
+  // post 404s (matches the GET handler's behaviour above). The JOIN lets
+  // us verify the bid's post tenant_id matches the caller's tenant
+  // (defense-in-depth — already filtered via post_id + the RLS layer,
+  // but explicit is better).
+  const sb = getSupabase();
+  const { data: bidRow } = await sb
+    .from("marketplace_auction_bids")
+    .select(
+      "*, post:marketplace_posts!inner(tenant_id, partner_id, auction_type, auction_winner_id, status)",
+    )
+    .eq("id", bidId)
+    .eq("post_id", id)
+    .maybeSingle();
+  const bid = bidRow as {
+    partner_id: string;
+    is_winning: boolean;
+    post: {
+      tenant_id: string;
+      partner_id: string;
+      auction_type: string | null;
+      auction_winner_id: string | null;
+      status: string;
+    };
+  } | null;
+  // Cross-tenant probe or non-existent bid → 404 (no information leak).
+  if (!bid || bid.post.tenant_id !== access.tenant_id) {
+    return NextResponse.json({ error: "Not found." }, { status: 404 });
+  }
+  // 8d-10: ownership defense-in-depth — the store re-checks this, but
+  // the route layer 404s BEFORE the store call so a future store change
+  // can't silently expose the delete path. Returns 404 (not 403) to
+  // match the GET handler's "no information leak" stance.
+  if (bid.partner_id !== access.partner_id) {
+    return NextResponse.json({ error: "Not found." }, { status: 404 });
+  }
+  // 8d-11: bid-status defense-in-depth — `is_winning` is the analogue
+  // of `status === 'accepted'` per migration 046 (no separate `status`
+  // column exists on marketplace_auction_bids). A winning bid has
+  // already triggered the post-settlement flow (winner_id was stamped
+  // on the post, the loser was notified, escrow / finance milestone may
+  // have been initiated) — withdrawing it after settlement would leave
+  // the auction in an inconsistent state. 409 surfaces this clearly to
+  // the UI so it can disable the "Withdraw" button on settled rows.
+  if (bid.is_winning === true) {
+    return NextResponse.json(
+      { error: "Cannot withdraw a winning bid — the auction has already been settled." },
+      { status: 409 },
+    );
+  }
 
   try {
     await withdrawBid(access.tenant_id, access.partner_id, bidId);
@@ -127,7 +194,16 @@ async function _delete(req: NextRequest, ctx: { params: Promise<{ id: string; bi
   } catch (e: any) {
     console.error("[marketplace.bids.delete]", e);
     const msg = e?.message || "Failed to withdraw bid.";
+    // 8d-10 / 8d-11: the new route-level pre-checks (ownership 404 +
+    // winning-bid 409) short-circuit BEFORE the try block, so the
+    // store-level backstop errors here only fire on a race (e.g. the
+    // auction settled between the pre-check and the store call). The
+    // original mapping is preserved — store ownership / auction-state
+    // errors surface as 400 to match the pre-fix behaviour; the new
+    // `winning` keyword is added so a future store-side guard surfaces
+    // 409 (not 400) for consistency with the route-level pre-check.
     const status = /not found/i.test(msg) ? 404 :
+      /winning/i.test(msg) ? 409 :
       /only the bidder|own bid|english|active/i.test(msg) ? 400 : 500;
     return NextResponse.json({ error: msg }, { status });
   }

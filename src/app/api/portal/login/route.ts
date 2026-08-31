@@ -65,13 +65,19 @@ export async function POST(req: NextRequest) {
     if (!tenant_id) {
       const allByEmail = await store.listPortalAccessByEmail(email);
       if (allByEmail.length > 1) {
-        // Return the list of tenant names so the UI can show a picker.
-        const tenants = await Promise.all(
-          allByEmail.map(async (pa) => {
-            const t = await store.getTenant(pa.tenant_id);
-            return { tenant_id: pa.tenant_id, tenant_name: t?.name || "Unknown" };
-          })
-        );
+        // 8b-4 / 8a-10 (Task 10-B-v2): previously this branch looked up
+        // each tenant's display name via store.getTenant() and returned
+        // `tenant_name` per tenant in the 409 body. That made every
+        // workspace the email belongs to enumerable to an unauthenticated
+        // attacker — they could probe a single email and walk away with
+        // the list of organizations it is registered with (email +
+        // tenant enumeration vector). The frontend now labels
+        // workspaces by array index ("Workspace 1", "Workspace 2",
+        // …) and the user authenticates by selecting one, so we only
+        // need the opaque `tenant_id` here. The getTenant() lookup +
+        // Promise.all have been removed since tenant_name is no longer
+        // surfaced.
+        const tenants = allByEmail.map((pa) => ({ tenant_id: pa.tenant_id }));
         return NextResponse.json({
           error: "This email is registered with multiple organizations. Please select which one to sign into.",
           multiple_tenants: true,
@@ -188,30 +194,22 @@ export async function POST(req: NextRequest) {
           { email, ip, country, reason: existing ? "invalid_credentials" : "account_not_found" },
         );
       } catch (e) { console.error("[audit]", e); }
-      // FIX-ALL-2 / Fix 8 — distinguish "wrong password" from "account
-      // suspended" so the user knows what to do next. Audit Part D found
-      // the previous "Invalid credentials or account not active." toast
-      // conflated two unrelated problems:
-      //   • a user with a wrong password (should retype)
-      //   • a user whose account is frozen (should contact support)
-      // The fix is conditional on `existing.status` — if we already have
-      // a portal_access row found by email AND that row's status is
-      // explicitly suspended / revoked, the user provided correct
-      // credentials at some point but the account is frozen. Otherwise
-      // (no row found, or status is "pending"/"invited" — which would
-      // surface as "must_set_password" earlier) it's a wrong-password
-      // case and we keep the same generic message to prevent email
-      // enumeration. The tenant-status gate further down handles
-      // workspace-level suspensions separately.
-      if (
-        existing &&
-        (existing.status === "suspended" || existing.status === "revoked")
-      ) {
-        return NextResponse.json(
-          { error: "Your account is suspended. Contact support to reactivate it." },
-          { status: 403 },
-        );
-      }
+      // 8b-5 (Task 10-B-v2): previously this branch returned a distinct
+      // 403 `{error: "Your account is suspended…"}` when `existing.status`
+      // was "suspended" or "revoked". That distinguished the case from a
+      // wrong-password 401 — which leaked account-existence AND account-
+      // suspension state to an unauthenticated attacker (an email probe
+      // would return "suspended" for a known frozen account vs. "invalid
+      // email or password" for an unknown one). The detailed reason is
+      // still captured in the audit log entry above (`invalid_credentials`
+      // when the row exists but the password is wrong, `account_not_found`
+      // when there is no row at all) — the audit trail is internal-only,
+      // and the user-facing response is now identical across all three
+      // failure cases (missing-email / wrong-password / suspended-account):
+      // the same 401 `{error: "Invalid email or password."}`. The
+      // tenant-status gate further down (which returns 402 for a
+      // workspace-level suspension) is unaffected — that surfaces only
+      // AFTER the password verifies, so it does not leak email-existence.
       return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
     }
 

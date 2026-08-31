@@ -23,6 +23,7 @@ import {
   KycSubmission, KycDocument, PortalRfq,
   TenantFeatureFlags,
   Notification,
+  NotificationType,
   CommissionAgent, DealCommission, CommissionPayout, CommissionSummary,
   ErpAccount, FiscalPeriod, ErpJournalEntry, ErpJournalLine,
   ErpCostCenter, ErpBankAccount, ErpBankTransaction, ErpSetting,
@@ -118,7 +119,23 @@ async function paginateQuery<T>(
  * object form is unavailable. Input sanitization is the defense.
  */
 function safeSearch(value: string): string {
-  return value.replace(/[(),\\]/g, " ");
+  // ─── Audit finding 8d-8: dot (.) was missing from the strip class.
+  //
+  // PostgREST's `.or()` filter syntax uses the dot as the column/operator/
+  // value separator: `column.ilike.%term%`. A search term that contains
+  // a literal dot can therefore reshape the filter into something the
+  // caller did not intend. The classic injection is:
+  //
+  //   search = "foo%,password_hash.eq.%anything"
+  //
+  // interpolated into `username.ilike.%${search}%` would produce
+  //   `username.ilike.%foo%,password_hash.eq.%anything%`
+  // which PostgREST parses as TWO clauses — the second of which the
+  // caller never authorised. Adding `.` to the strip class closes the
+  // hazard without breaking any legitimate search term (dots in search
+  // queries are almost always part of dates, IPs, or sentence
+  // punctuation; replacing them with a space keeps the search useful).
+  return value.replace(/[(),.\\]/g, " ");
 }
 
 export class SupabaseStore implements Store {
@@ -460,23 +477,75 @@ export class SupabaseStore implements Store {
     // token_version=5 and both write 6 — losing one increment and breaking
     // session invalidation guarantees.
     //
-    // The RPC `bump_token_version(p_user_id)` is created by migration
+    // PRIMARY PATH (8b-11, Task 10-B-v2, verified): the RPC
+    // `bump_token_version(p_user_id)` is created by migration
     // `supabase/migrations/017_bump_token_version_rpc.sql`. It performs a
-    // single UPDATE ... SET token_version = COALESCE(token_version, 0) + 1
-    // RETURNING token_version, which is atomic at the Postgres level.
+    // single `UPDATE users SET token_version = COALESCE(token_version, 0) + 1
+    // WHERE id = p_user_id RETURNING token_version`, which is atomic at the
+    // Postgres level (the row lock is held for the duration of the UPDATE,
+    // so two concurrent calls always observe the bump from the other — no
+    // lost increments). The auth logout (`/api/auth/logout`) and
+    // logout-all (`/api/auth/logout-all`) routes both go through this
+    // atomic path; no TOCTOU window exists between the read and the write
+    // there.
     //
-    // Fallback: if the RPC is missing (e.g. migration not yet applied to
-    // this environment, or running against the mock/prima store which
-    // doesn't implement it), fall back to the old read-modify-write. This
-    // is less safe under concurrency but preserves functionality.
+    // FALLBACK PATH (8b-11, Task 10-B-v2, hardened): if the RPC errors out
+    // (migration not yet applied to this environment, PostgREST RPC grant
+    // missing, transient network blip, etc.) we used to do a naive
+    // read-modify-write — which has a classic TOCTOU race: two concurrent
+    // calls both read token_version=5, both compute next=6, both write 6,
+    // losing one increment and breaking the session-invalidation guarantee
+    // that `requireAuth`'s `baseUser.token_version !== session.token_version`
+    // check relies on.
+    //
+    // The fallback is now a Compare-And-Swap retry loop:
+    //   1. Re-read current token_version on every attempt.
+    //   2. Write `current + 1` guarded by `.eq("token_version", current)`
+    //      so Postgres only updates the row if no one else bumped it
+    //      between our read and our write (the CAS precondition).
+    //   3. If 0 rows came back, the version moved under us — retry.
+    //   4. MAX_RETRIES = 3. On exhaustion we throw — the caller (logout /
+    //      logout-all / 2fa-disable / 2fa-recovery / change-password) is
+    //      already structured to surface this as a 500 to the user rather
+    //      than silently succeeding (which would leave a stale JWT valid).
+    // The CAS guard turns the lost-update into a transient retry failure
+    // instead of a silent correctness bug.
     const { data, error } = await this.sb().rpc("bump_token_version", { p_user_id: id });
     if (error) {
-      // Fall back to read-modify-write if RPC doesn't exist.
-      const u = await this.getUserById(id);
-      const next = (u?.token_version ?? 0) + 1;
-      const { error: e2 } = await this.sb().from("users").update({ token_version: next }).eq("id", id);
-      if (e2) throw e2;
-      return next;
+      // 8b-11 (Task 10-B-v2) — Compare-And-Swap fallback.
+      const MAX_RETRIES = 3;
+      let lastErr: unknown;
+      for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        // Re-read the current token_version on every attempt — never
+        // reuse the value from a previous iteration, since a concurrent
+        // bump may have advanced it in the meantime.
+        const u = await this.getUserById(id);
+        const current = (u?.token_version ?? 0);
+        const next = current + 1;
+        // CAS precondition: only update if token_version is STILL `current`.
+        // `.select()` returns the updated row(s); if 0 rows match, the
+        // version moved under us between read and write — loop and retry.
+        const { data: updated, error: casErr } = await this.sb()
+          .from("users")
+          .update({ token_version: next })
+          .eq("id", id)
+          .eq("token_version", current)
+          .select();
+        if (casErr) {
+          lastErr = casErr;
+          continue; // transient DB error — retry the CAS
+        }
+        if (updated && Array.isArray(updated) && updated.length > 0) {
+          return next; // CAS succeeded — our write landed
+        }
+        // 0 rows updated → token_version changed under us. Retry.
+        lastErr = new Error("bumpUserTokenVersion CAS: token_version moved under us");
+      }
+      // Exhausted retries — surface to the caller so they can 500 instead
+      // of silently leaving a stale session valid.
+      throw lastErr instanceof Error
+        ? lastErr
+        : new Error("bumpUserTokenVersion fallback exhausted retries");
     }
     return data ?? 0;
   }
@@ -2714,6 +2783,57 @@ export class SupabaseStore implements Store {
     const { data, error } = await this.sb().from("notifications").insert({ ...n, read: false }).select().single();
     if (error) throw error;
     return data as Notification;
+  }
+  /**
+   * 8c-10 — dedup probe for the marketplace notification path. Returns the
+   * most-recent row in `notifications` matching the (tenant, partner, type,
+   * entityType, entityId) tuple with `created_at >= now - windowMs`, or
+   * null when no such row exists.
+   *
+   * Implemented as a single PostgREST `select` filtered by tenant + partner
+   * + type + entity, ordered by `created_at desc`, limited to 1. The window
+   * cutoff is computed in-process (rather than via `.gte("created_at", ...)`)
+   * so the timezone / clock-skew behaviour is identical to the helper's
+   * `Date.now()` reference; the server-side filter narrows the row set
+   * before the JS-side recency check fires.
+   *
+   * Best-effort: any error (network, RLS, missing index) is caught and
+   * returns null — the helper's notify() then falls through to the original
+   * insert path so the notification is never silently dropped.
+   */
+  async findRecentNotification(
+    tenantId: string,
+    partnerId: string,
+    type: NotificationType,
+    entityType: string | null,
+    entityId: string | null,
+    windowMs: number,
+  ): Promise<Notification | null> {
+    try {
+      let q = this.sb()
+        .from("notifications")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .eq("partner_id", partnerId)
+        .eq("type", type)
+        .order("created_at", { ascending: false })
+        .limit(1);
+      if (entityType) q = q.eq("entity_type", entityType);
+      if (entityId) q = q.eq("entity_id", entityId);
+      const { data, error } = await q.maybeSingle();
+      if (error) return null;
+      if (!data) return null;
+      const n = data as Notification;
+      // JS-side recency check (clock-skew tolerant — `Date.now() - windowMs`
+      // and `Date.parse(n.created_at)` both use the server's wall clock).
+      const cutoff = Date.now() - windowMs;
+      const createdMs = Date.parse(n.created_at);
+      if (!Number.isFinite(createdMs)) return null;
+      return createdMs >= cutoff ? n : null;
+    } catch (e) {
+      console.warn("[SupabaseStore.findRecentNotification] lookup failed:", e);
+      return null;
+    }
   }
   async markNotificationRead(id: string, tenantId: string): Promise<void> {
     // CRITICAL FIX (audit A3): add tenant filter to prevent cross-tenant

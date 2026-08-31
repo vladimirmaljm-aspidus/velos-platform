@@ -380,6 +380,36 @@ export interface Store {
    */
   getUnreadCountByPartner(tenantId: string, partnerId: string): Promise<number>;
   createNotification(n: Omit<Notification, "id" | "created_at" | "read" | "read_at">): Promise<Notification>;
+  /**
+   * 8c-10 — dedup probe. Returns the most-recent notification matching the
+   * (tenant, partner, type, entityType, entityId) tuple, OR null when no
+   * such notification exists within the supplied `windowMs` lookback.
+   *
+   * Used by notify() (in src/lib/notif/helper.ts) to collapse high-frequency
+   * notification storms — e.g. a partner sending 100 marketplace negotiation
+   * messages in 60s produces ONE bell-badge entry per 5-min window instead
+   * of 100 separate "New marketplace message" rows.
+   *
+   * The lookup is best-effort: implementations MUST NOT throw on a missing
+   * index / connection error — they should return null so the caller falls
+   * through to the original insert path (a notification is never silently
+   * dropped because the dedup probe failed). SupabaseStore does this by
+   * catching the underlying error and returning null; MockStore and
+   * PrismaStore mirror the same shape.
+   *
+   * When `entityType` or `entityId` is null, the filter treats them as
+   * "match any value" (i.e. only the non-null filters apply). This lets
+   * callers dedup on (partner, type) alone when the event has no entity
+   * (rare — most events do, but the signature tolerates both shapes).
+   */
+  findRecentNotification(
+    tenantId: string,
+    partnerId: string,
+    type: NotificationType,
+    entityType: string | null,
+    entityId: string | null,
+    windowMs: number,
+  ): Promise<Notification | null>;
   markNotificationRead(id: string, tenantId: string): Promise<void>;
   markAllNotificationsRead(tenantId: string, userId: string): Promise<void>;
   /**

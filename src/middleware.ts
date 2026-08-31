@@ -19,8 +19,40 @@ const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 /**
  * Per-route limits. Keys are path *prefixes* — a request matches the longest
  * matching prefix, so `/api/products/abc` falls under `/api/products`.
+ *
+ * ─── Audit finding 8a-13: this object is the STATIC DEFAULT layer only.
+ *
+ * The middleware rate-limit model has TWO layers, layered NARROWLY:
+ *
+ *   1. THIS layer — `RATE_LIMITS_DEFAULT` below, optionally overridden
+ *      at deploy time via the `RATE_LIMIT_OVERRIDE_JSON` env var (see
+ *      `buildRateLimits()`). This is the OUTERMOST backstop: a coarse,
+ *      in-memory, per-instance cap whose only job is to blunt generic
+ *      API abuse (scripted enumeration, scraping, fuzzing) before the
+ *      request reaches the route handler. It is intentionally
+ *      conservative — generous enough that no normal UI workflow ever
+ *      trips it.
+ *
+ *   2. THE DB-CONFIGURED layer — `/api/settings/rate-limits` (managed
+ *      by super_admin via the platform-config panel). Route handlers
+ *      that need a tighter, tenant-aware, or per-user cap than the
+ *      middleware provides query this endpoint at runtime and apply
+ *      a SECOND check on top of the middleware's verdict. Because it
+ *      sits ABOVE the middleware layer, it can only NARROW the cap
+ *      (e.g. tighten 30/min → 10/min for a specific tenant); it can
+ *      never WIDEN it. A route that the middleware 429s never reaches
+ *      the DB-configured layer.
+ *
+ * The split keeps the hot path cheap: the middleware Map is O(1), no
+ * DB round-trip, no auth required. The DB layer is only consulted by
+ * the small set of routes whose policy needs to differ per-tenant or
+ * per-user (auth flows, billing, exports). The env-var override on
+ * layer 1 lets operators ship an urgent cap-tightening without a
+ * redeploy — set `RATE_LIMIT_OVERRIDE_JSON`, restart the process,
+ * done. It is NOT a substitute for the DB layer: it is per-instance,
+ * not per-tenant, and not auth-aware.
  */
-const RATE_LIMITS: Record<string, { maxRequests: number; windowMs: number }> = {
+const RATE_LIMITS_DEFAULT: Record<string, { maxRequests: number; windowMs: number }> = {
   // ── auth flows (pre-existing) ────────────────────────────────────────────
   "/api/auth/login": { maxRequests: 30, windowMs: 60_000 },            // 30/min
   "/api/portal/login": { maxRequests: 30, windowMs: 60_000 },         // 30/min
@@ -54,6 +86,69 @@ const RATE_LIMITS: Record<string, { maxRequests: number; windowMs: number }> = {
   "/api/portal/forgot-password": { maxRequests: 3, windowMs: 60_000 },// 3/min (portal email flood)
   "/api/verify": { maxRequests: 10, windowMs: 60_000 },               // 10/min (code brute-force)
 };
+
+/**
+ * Build the effective per-route rate-limit map by deep-merging the
+ * `RATE_LIMIT_OVERRIDE_JSON` env var (if present and valid) over
+ * `RATE_LIMITS_DEFAULT`. The override can replace existing entries
+ * OR add new path caps — operators use the latter to ship an urgent
+ * cap-tightening on a route the defaults don't yet cover without
+ * waiting for a redeploy.
+ *
+ * Validation is STRICT and FAIL-OPEN to defaults on any error:
+ *   • key must be a string starting with `/`
+ *   • value must be `{ maxRequests, windowMs }` where both are
+ *     Number.isInteger AND Number.isFinite AND > 0
+ *   • `JSON.parse` is wrapped in try/catch — invalid JSON is treated
+ *     as "no override" (a warning is logged) so a typo'd env var
+ *     cannot take the entire middleware offline.
+ *
+ * Memoized at module-init time — `RATE_LIMITS` below is computed
+ * exactly once per process so the JSON parse + validation overhead
+ * never lands on the hot path.
+ */
+function buildRateLimits(): Record<string, { maxRequests: number; windowMs: number }> {
+  const merged: Record<string, { maxRequests: number; windowMs: number }> = { ...RATE_LIMITS_DEFAULT };
+  const raw = process.env.RATE_LIMIT_OVERRIDE_JSON;
+  if (!raw) return merged;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    // Invalid JSON in env var → log + fall back to defaults. The
+    // middleware must NEVER crash on a config error: fail-open to the
+    // static defaults rather than 500 every request.
+    console.warn(
+      "[rate-limit] RATE_LIMIT_OVERRIDE_JSON is set but failed to parse — ignoring override.",
+      e instanceof Error ? e.message : String(e),
+    );
+    return merged;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    console.warn("[rate-limit] RATE_LIMIT_OVERRIDE_JSON must be a JSON object — ignoring override.");
+    return merged;
+  }
+  for (const [key, val] of Object.entries(parsed as Record<string, unknown>)) {
+    if (typeof key !== "string" || !key.startsWith("/")) continue; // strict: only path keys
+    if (!val || typeof val !== "object" || Array.isArray(val)) continue;
+    const cfg = val as Record<string, unknown>;
+    const maxRequests = Number(cfg.maxRequests);
+    const windowMs = Number(cfg.windowMs);
+    if (
+      !Number.isFinite(maxRequests) || !Number.isInteger(maxRequests) || maxRequests <= 0
+      || !Number.isFinite(windowMs) || !Number.isInteger(windowMs) || windowMs <= 0
+    ) {
+      continue; // silently skip — one bad entry shouldn't kill the rest
+    }
+    // Override (if key exists) or add (new path cap). findRouteConfig's
+    // longest-prefix logic will route correctly either way.
+    merged[key] = { maxRequests, windowMs };
+  }
+  return merged;
+}
+
+// Memoized effective rate-limit map. Computed once at module init.
+const RATE_LIMITS: Record<string, { maxRequests: number; windowMs: number }> = buildRateLimits();
 
 /**
  * Global ceiling — applied to every /api/* request that doesn't match a

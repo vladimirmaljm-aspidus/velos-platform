@@ -17,9 +17,55 @@ export async function notify(opts: {
   entityId?: string;
   actionUrl?: string;
   actionLabel?: string;
+  // 8c-10: optional dedup key — when supplied, the helper consults the
+  // store's new findRecentNotification() method BEFORE inserting. If a
+  // notification with the same (partnerId, type, entityType, entityId)
+  // tuple was already created within `dedupWindowMs` (default 5 min), the
+  // helper skips the insert entirely. This collapses high-frequency
+  // notification storms into a single bell-badge entry — e.g. a partner
+  // sending 100 negotiation messages in 60s no longer produces 100 "New
+  // marketplace message" notifications; the recipient sees ONE badge
+  // bump for the whole burst. The dedup is best-effort: a store impl
+  // that doesn't override findRecentNotification() (or one whose lookup
+  // errors) falls through to the original insert path so notifications
+  // are never SILENTLY dropped on a degraded store.
+  dedupKey?: string;
+  dedupWindowMs?: number; // default 5 * 60 * 1000 (5 min)
 }): Promise<void> {
   try {
     const store = await getStore();
+
+    // 8c-10: dedup pre-check. Only run when the caller supplied a
+    // dedupKey AND targeted a specific partner — broadcast notifications
+    // (partnerId === null) are NEVER deduped (they go to all admins, who
+    // may need every instance). The lookup is scoped by (tenant, partner,
+    // type, entityType, entityId) so two distinct negotiations on the
+    // same post don't collapse into each other.
+    if (opts.dedupKey && opts.partnerId) {
+      const windowMs = opts.dedupWindowMs ?? 5 * 60 * 1000;
+      try {
+        const recent = await store.findRecentNotification(
+          opts.tenantId,
+          opts.partnerId,
+          opts.type,
+          opts.entityType ?? null,
+          opts.entityId ?? null,
+          windowMs,
+        );
+        if (recent) {
+          // A notification for this same (partner, type, entity) tuple
+          // was already created within the dedup window. Skip the insert
+          // — the bell badge already reflects the prior instance.
+          return;
+        }
+      } catch (dedupErr) {
+        // Best-effort: a lookup failure must NOT silently swallow the
+        // notification. Fall through to the original insert path so the
+        // recipient still gets at least one bell entry.
+        console.warn("[notify] dedup lookup failed, falling through to insert:", dedupErr);
+      }
+    }
+
     await store.createNotification({
       tenant_id: opts.tenantId,
       user_id: opts.userId ?? null,

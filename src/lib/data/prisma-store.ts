@@ -2444,6 +2444,59 @@ export class PrismaStore implements Store {
     return mapNotificationRow(r);
   }
 
+  /**
+   * 8c-10 — dedup probe (prisma impl). Mirrors SupabaseStore /
+   * MockStore.findRecentNotification. Filters by tenant + type + (when
+   * supplied) entity_type + entity_id at the DB level; orders by
+   * created_at desc; takes 1; applies the JS-side recency check.
+   *
+   * Partner-id check is BEST-EFFORT here: the legacy prisma
+   * createNotification path (above) doesn't persist `partner_id` to a
+   * dedicated column (it's bundled into the JSON `data` blob), so the
+   * probe can't filter on partner_id at the DB level. When the mapped
+   * row's partner_id is present (forward-compat with a future prisma
+   * migration that adds the column) and doesn't match the caller, we
+   * return null (dedup miss) so the insert fires. When partner_id is
+   * absent (the current legacy shape), we accept the row as a dedup hit
+   * — the prisma store is legacy-only and the trade-off is documented.
+   *
+   * Best-effort: any error is caught and returns null so notify() falls
+   * through to the original insert path.
+   */
+  async findRecentNotification(
+    tenantId: string,
+    partnerId: string,
+    type: NotificationType,
+    entityType: string | null,
+    entityId: string | null,
+    windowMs: number,
+  ): Promise<Notification | null> {
+    try {
+      const cutoff = new Date(Date.now() - windowMs);
+      const where: Record<string, unknown> = {
+        tenant_id: tenantId,
+        type,
+        created_at: { gte: cutoff },
+      };
+      if (entityType) where.entity_type = entityType;
+      if (entityId) where.entity_id = entityId;
+      const rows = await db.notification.findMany({
+        where,
+        orderBy: { created_at: "desc" },
+        take: 1,
+      });
+      if (!rows || rows.length === 0) return null;
+      const n = mapNotificationRow(rows[0]);
+      // Forward-compat partner_id check (legacy prisma createNotification
+      // doesn't persist partner_id, so this branch is skipped today).
+      if (n.partner_id && n.partner_id !== partnerId) return null;
+      return n;
+    } catch (e) {
+      console.warn("[PrismaStore.findRecentNotification] lookup failed:", e);
+      return null;
+    }
+  }
+
   async markNotificationRead(id: string, tenantId: string): Promise<void> {
     // CRITICAL FIX (audit A3): add tenant filter to prevent cross-tenant
     // notification reads. updateMany (rather than update) lets us add the

@@ -159,18 +159,19 @@ describe("RBAC permission matrix — can()", () => {
     });
 
     it("ignores even an explicit '*' in permissions (defense: still subject to platform gate)", () => {
-      // The catalog says role=admin → tenant perms implicit. If someone
-      // mistakenly assigns permissions:["*"] to an admin, the platform
-      // gate STILL denies — `isPlatformPerm` runs before the wildcard
-      // check on line 41 of can.ts? Actually no — super-admin bypass on
-      // line 38 checks `perms.includes("*")` BEFORE the platform gate.
-      // So an admin with "*" in their perms WOULD be treated as super.
-      // Document this exact behaviour so future refactors notice.
+      // SECURITY HARDENING (post-fix): the can() implementation now blocks
+      // platform.* perms for ALL non-super_admin accounts (see can.ts
+      // line ~99: `if (isPlatformPerm(permission)) return false;`). This
+      // gate runs BEFORE the wildcard-"*" check, so an admin whose
+      // `permissions` array contains "*" STILL cannot reach super-admin
+      // surfaces. This is the intended defense-in-depth — a misconfigured
+      // admin with `*` must not become a de-facto super-admin.
       const adminWithStar = { role: "admin", permissions: ["*"] } as PermissionSubject;
-      // Because perms.includes("*") returns true on line 38, can() grants
-      // EVERYTHING — including platform perms. This is documented behaviour:
-      // the "*" permission is the platform-root grant, role-agnostic.
-      expect(can(adminWithStar, PLATFORM.TENANTS_DELETE)).toBe(true);
+      // Platform perm → denied regardless of `*`.
+      expect(can(adminWithStar, PLATFORM.TENANTS_DELETE)).toBe(false);
+      // Non-platform perm → still granted via the admin implicit grant.
+      const nonPlatformPerm = ALL_PERMISSIONS.find((p) => !isPlatformPerm(p))!;
+      expect(can(adminWithStar, nonPlatformPerm)).toBe(true);
     });
   });
 
@@ -243,13 +244,21 @@ describe("RBAC permission matrix — can()", () => {
   describe("wildcard permission '*' on a user-role account", () => {
     const w = wildcardUser();
 
-    it("grants every permission in the catalog (including platform.*)", () => {
-      // The "*" check on line 38 of can.ts is unconditional — it doesn't
-      // consult isPlatformPerm afterwards. So a user with "*" is effectively
-      // a super_admin by another name. This is intentional: "*" is the
-      // platform-root grant.
+    it("grants every NON-PLATFORM permission in the catalog (platform.* blocked by isPlatformPerm gate)", () => {
+      // SECURITY HARDENING (post-fix): can() now blocks platform.* perms
+      // for non-super_admin accounts before the wildcard-"*" check (can.ts
+      // line ~99). So a regular user with "*" in their perms gets every
+      // non-platform perm, but platform perms (e.g. PLATFORM.TENANTS_DELETE)
+      // are still DENIED. The platform-root grant is exclusive to
+      // role === "super_admin".
       for (const perm of ALL_PERMISSIONS) {
-        expect(can(w, perm)).toBe(true);
+        if (isPlatformPerm(perm)) {
+          // Platform perm → denied despite the wildcard.
+          expect(can(w, perm)).toBe(false);
+        } else {
+          // Non-platform perm → granted via the wildcard.
+          expect(can(w, perm)).toBe(true);
+        }
       }
     });
   });

@@ -53,6 +53,34 @@ import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
  */
 
 const ALGORITHM = "aes-256-gcm";
+// ─── Audit finding 8d-1: IV_LENGTH inconsistency (vault=16B vs field-enc=12B)
+//
+// This module uses a 16-byte (128-bit) AES-GCM IV, while its sibling
+// `src/lib/crypto/field-encryption.ts` uses the 12-byte (96-bit) IV that
+// NIST SP 800-38D §5.2.1.1 recommends as the GCM standard. The mismatch
+// is a code-clarity hazard (two crypto modules diverging on a security
+// primitive invites future maintainers to cargo-cult one or the other),
+// but it is NOT a security defect in the current deployment:
+//
+//   • AES-GCM security only requires that (key, IV) pairs are unique.
+//     `crypto.randomBytes(16)` is a CSPRNG with a 2^128 IV space, so IV
+//     reuse is astronomically unlikely under any realistic load.
+//   • `decrypt()` reads the IV length from the wire format (the
+//     base64-decoded bytes between the first and second colons), so it
+//     handles 16-byte IVs transparently regardless of the constant.
+//   • NIST RECOMMENDS 12 because it enables the 32-bit counter + no
+//     GHASH length-extension, but 16 is still safe given CSPRNG IVs.
+//
+// MIGRATION PLAN (do NOT change the constant in this commit — that would
+// change the IV length of NEW ciphertext while OLD ciphertext still has
+// 16-byte IVs; `decrypt()` reads the length from the wire so it WOULD
+// still work, but mixing IV lengths without a key bump is a surprise
+// future operators shouldn't have to reason about): 1) bump
+// `VAULT_KEY_VERSION` to the next integer, 2) run `/api/vault/rotate`
+// to re-encrypt every existing row with the new key (new ciphertext
+// will use the new IV length once the constant is changed), 3) only
+// THEN change `IV_LENGTH` to 12, 4) leave the wire-format fallback in
+// `decrypt()` (already present) so stale rows still decrypt.
 const IV_LENGTH = 16;
 
 /**

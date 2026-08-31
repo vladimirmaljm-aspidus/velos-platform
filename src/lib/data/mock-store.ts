@@ -1362,6 +1362,49 @@ export class MockStore implements Store {
     mock.notifications.unshift(newN);
     return newN;
   }
+  /**
+   * 8c-10 — dedup probe (mock impl). Mirrors SupabaseStore.findRecentNotification:
+   * scans the in-memory `mock.notifications` list for the most-recent row
+   * matching (tenant, partner, type, entityType?, entityId?) whose
+   * `created_at` falls within `windowMs` of now. Returns null when no
+   * such row exists OR when the lookup throws (defensive — never block
+   * the caller's insert on a degraded mock).
+   */
+  async findRecentNotification(
+    tenantId: string,
+    partnerId: string,
+    type: NotificationType,
+    entityType: string | null,
+    entityId: string | null,
+    windowMs: number,
+  ): Promise<Notification | null> {
+    try {
+      const cutoff = Date.now() - windowMs;
+      // In-memory scan; mock list is small so the linear walk is fine.
+      // Sort by created_at desc (already the canonical mock ordering) and
+      // return the first match within the recency window.
+      const sorted = [...mock.notifications].sort((a, b) =>
+        b.created_at.localeCompare(a.created_at),
+      );
+      for (const n of sorted) {
+        if (n.tenant_id !== tenantId) continue;
+        if (n.partner_id !== partnerId) continue;
+        if (n.type !== type) continue;
+        if (entityType && n.entity_type !== entityType) continue;
+        if (entityId && n.entity_id !== entityId) continue;
+        const createdMs = Date.parse(n.created_at);
+        if (!Number.isFinite(createdMs)) continue;
+        if (createdMs >= cutoff) return n;
+        // The list is sorted desc by created_at — once we hit a row
+        // older than the cutoff, all subsequent rows are also older.
+        break;
+      }
+      return null;
+    } catch (e) {
+      console.warn("[MockStore.findRecentNotification] lookup failed:", e);
+      return null;
+    }
+  }
   async markNotificationRead(id: string, tenantId: string): Promise<void> {
     // CRITICAL FIX (audit A3): add tenant filter to prevent cross-tenant
     // notification reads.
