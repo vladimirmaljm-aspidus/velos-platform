@@ -4387,12 +4387,12 @@ export class SupabaseStore implements Store {
 
   // ─── Security (write methods) ───────────────────────────────────────────
 
-  async createSession(s: { user_id: string; ip?: string | null; user_agent?: string | null; country?: string | null; expires_at: string; current?: boolean }): Promise<SecuritySession> {
-    // Resolve tenant_id from user
-    const user = await this.getUserById(s.user_id);
+  async createSession(s: { user_id: string; tenant_id?: string; ip?: string | null; user_agent?: string | null; country?: string | null; expires_at: string; current?: boolean }): Promise<SecuritySession> {
+    // Resolve tenant_id from the explicit value (auth routes provide it) or the user row
+    const user = s.tenant_id ? null : await this.getUserById(s.user_id);
     const payload: SupaRow = {
       user_id: s.user_id,
-      tenant_id: user?.tenant_id || null,
+      tenant_id: s.tenant_id ?? user?.tenant_id ?? null,
       ip: s.ip ?? null,
       user_agent: s.user_agent ?? null,
       country: s.country ?? null,
@@ -4460,7 +4460,7 @@ export class SupabaseStore implements Store {
     return data as LoginHistoryEntry;
   }
 
-  async upsertKnownIp(ip: { user_id: string; ip: string; country?: string | null; trusted?: boolean }): Promise<KnownIp> {
+  async upsertKnownIp(ip: { user_id: string; tenant_id?: string; ip: string; country?: string | null; trusted?: boolean }): Promise<KnownIp> {
     const user = await this.getUserById(ip.user_id);
     // Find existing
     const { data: existing } = await this.sb()
@@ -4485,7 +4485,7 @@ export class SupabaseStore implements Store {
     }
     const payload: SupaRow = {
       user_id: ip.user_id,
-      tenant_id: user?.tenant_id || null,
+      tenant_id: ip.tenant_id ?? user?.tenant_id ?? null,
       ip: ip.ip,
       country: ip.country ?? null,
       trusted: ip.trusted ?? false,
@@ -4495,7 +4495,7 @@ export class SupabaseStore implements Store {
     return data as KnownIp;
   }
 
-  async upsertTrustedDevice(d: { user_id: string; device_name: string; fingerprint: string; ip?: string | null }): Promise<TrustedDevice> {
+  async upsertTrustedDevice(d: { user_id: string; tenant_id?: string; device_name: string; fingerprint: string; ip?: string | null }): Promise<TrustedDevice> {
     const user = await this.getUserById(d.user_id);
     const { data: existing } = await this.sb()
       .from("trusted_devices")
@@ -4519,7 +4519,7 @@ export class SupabaseStore implements Store {
     }
     const payload: SupaRow = {
       user_id: d.user_id,
-      tenant_id: user?.tenant_id || null,
+      tenant_id: d.tenant_id ?? user?.tenant_id ?? null,
       device_name: d.device_name,
       fingerprint: d.fingerprint,
       ip: d.ip ?? null,

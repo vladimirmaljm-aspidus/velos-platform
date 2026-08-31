@@ -675,7 +675,7 @@ export async function POST(req: NextRequest) {
           country,
           expires_at: expiresAt,
           current: true,
-        } as any);
+        });
       } catch (e) {
         console.error("[login] createSession failed:", e);
       }
@@ -706,7 +706,7 @@ export async function POST(req: NextRequest) {
           tenant_id: user.tenant_id,
           ip,
           country,
-        } as any);
+        });
       } catch (e) {
         console.error("[login] upsertKnownIp failed:", e);
       }
@@ -718,7 +718,7 @@ export async function POST(req: NextRequest) {
           device_name: deriveDeviceName(userAgent),
           fingerprint: deviceFingerprint(userAgent, ip),
           ip,
-        } as any);
+        });
       } catch (e) {
         console.error("[login] upsertTrustedDevice failed:", e);
       }

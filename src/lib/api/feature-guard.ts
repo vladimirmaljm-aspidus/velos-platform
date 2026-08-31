@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSupabase } from "@/lib/supabase/client";
+import { getStore } from "@/lib/data/store";
 
 /**
  * Server-side feature-flag enforcement.
@@ -42,13 +42,18 @@ async function loadFlags(tenantId: string): Promise<Record<string, boolean>> {
   const cached = cache.get(tenantId);
   if (cached && now - cached.ts < TTL_MS) return cached.flags;
 
-  const supabase = getSupabase();
-  const { data } = await supabase
-    .from("feature_flags")
-    .select("module_crm, module_trade, module_finance, module_inventory, module_portal, module_logistics, module_kyc, module_document_templates, module_document_verification, module_vault, module_api_keys, module_webhooks, module_mail_queue, module_security")
-    .eq("tenant_id", tenantId)
-    .maybeSingle();
-  const flags = (data as any) || {};
+  // AUDIT18 (live E2E finding): route through the store abstraction instead
+  // of calling getSupabase() directly. The direct call hard-throws when
+  // SUPABASE_URL/SERVICE_ROLE_KEY are unset (self-hosted / DB_BACKEND=prisma
+  // deployments), turning every feature-gated route into a 500 — e.g.
+  // POST /api/partners failed at enforceQuota and GET /api/supplier-offers
+  // failed at requireFeature during local E2E. SupabaseStore.getFeatureFlags
+  // reads the same feature_flags table, so production behavior (and the
+  // fail-closed semantics below) is unchanged; Prisma/Mock stores now serve
+  // their own tenant_feature_flags rows.
+  const store = await getStore();
+  const row = await store.getFeatureFlags(tenantId);
+  const flags = (row ?? {}) as unknown as Record<string, boolean>;
   cache.set(tenantId, { flags, ts: now });
   return flags;
 }

@@ -44,7 +44,42 @@ function paginate<T>(items: T[], params?: ListParams): ListResult<T> {
   return { items: items.slice(offset, offset + limit), total: items.length };
 }
 
+
+// AUDIT18: interface-parity stubs for modules that exist only on the Supabase
+// backend (LOIs, commissions, letterheads/seals, security-session writes).
+// Previously these methods were entirely ABSENT, so any route touching them
+// crashed with "store.listLois is not a function" (opaque 500). Now they fail
+// with an actionable message instead. Production (DB_BACKEND=supabase / Vercel)
+// is unaffected — SupabaseStore implements all of them for real.
+function mockUnsupported(op: string): Error {
+  return new Error(
+    `${op}() is not implemented on the MockStore backend. This module requires the Supabase store — set DB_BACKEND=supabase. The MockStore is an in-memory test fallback and was never extended with this module's tables.`,
+  );
+}
+
 export class MockStore implements Store {
+  async listLois(tenantId: string, params?: ListParams) { throw mockUnsupported("listLois"); }
+  async getLoi(id: string) { throw mockUnsupported("getLoi"); }
+  async upsertLoi(l: Partial<LetterOfIntent> & { id?: string }) { throw mockUnsupported("upsertLoi"); }
+  async deleteLoi(id: string) { throw mockUnsupported("deleteLoi"); }
+  async listLetterheads(tenantId: string) { throw mockUnsupported("listLetterheads"); }
+  async getLetterhead(id: string) { throw mockUnsupported("getLetterhead"); }
+  async getDefaultLetterhead(tenantId: string) { throw mockUnsupported("getDefaultLetterhead"); }
+  async upsertLetterhead(l: Partial<TenantLetterhead> & { id?: string; tenant_id: string }) { throw mockUnsupported("upsertLetterhead"); }
+  async deleteLetterhead(id: string) { throw mockUnsupported("deleteLetterhead"); }
+  async listSeals(tenantId: string) { throw mockUnsupported("listSeals"); }
+  async getSeal(id: string) { throw mockUnsupported("getSeal"); }
+  async getDefaultSeal(tenantId: string) { throw mockUnsupported("getDefaultSeal"); }
+  async upsertSeal(s: Partial<TenantSeal> & { id?: string; tenant_id: string }) { throw mockUnsupported("upsertSeal"); }
+  async deleteSeal(id: string) { throw mockUnsupported("deleteSeal"); }
+  async createSession(s: { user_id: string; tenant_id?: string; ip?: string | null; user_agent?: string | null; country?: string | null; expires_at: string; current?: boolean }) { throw mockUnsupported("createSession"); }
+  async revokeSessionById(id: string) { throw mockUnsupported("revokeSessionById"); }
+  async touchSession(id: string) { throw mockUnsupported("touchSession"); }
+  async recordLoginHistory(e: { user_id: string; username: string; ip?: string | null; user_agent?: string | null; country?: string | null; success: boolean; reason?: string | null }) { throw mockUnsupported("recordLoginHistory"); }
+  async upsertKnownIp(ip: { user_id: string; tenant_id?: string; ip: string; country?: string | null; trusted?: boolean }) { throw mockUnsupported("upsertKnownIp"); }
+  async upsertTrustedDevice(d: { user_id: string; tenant_id?: string; device_name: string; fingerprint: string; ip?: string | null }) { throw mockUnsupported("upsertTrustedDevice"); }
+  async revokeTrustedDeviceById(id: string) { throw mockUnsupported("revokeTrustedDeviceById"); }
+
   // ---- ERP in-memory maps ----
   private erpAccounts = new Map<string, ErpAccount>();
   private fiscalPeriods = new Map<string, FiscalPeriod>();

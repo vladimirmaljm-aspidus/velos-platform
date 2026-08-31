@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getSupabase } from "@/lib/supabase/client";
+import { getSupabase, isSupabaseConfigured } from "@/lib/supabase/client";
+import { getStore } from "@/lib/data/store";
 
 /**
  * Plan-limit enforcement.
@@ -29,6 +30,33 @@ interface TenantRow {
 }
 
 async function getPlanForTenant(tenantId: string): Promise<{ tenant: TenantRow; plan: PlanRow | null } | null> {
+  if (!isSupabaseConfigured()) {
+    // AUDIT18 (live E2E finding): store-backed fallback for self-hosted /
+    // DB_BACKEND=prisma deployments. Previously getPlanForTenant called
+    // getSupabase() directly, which hard-throws when SUPABASE_URL is unset —
+    // POST /api/partners 500'd at enforceQuota before the row was ever
+    // inserted. Limits come from the tenant row + tenant_feature_flags
+    // (Prisma/Mock stores). NOTE semantics: in the feature-flags schema
+    // `0` means UNLIMITED (see TenantFeatureFlags docs), which we honour
+    // here by normalizing 0 → null (no limit) for this fallback path only;
+    // the Supabase `plans` path below keeps its own "0 = zero" convention.
+    const store = await getStore();
+    const tenant = await store.getTenant(tenantId);
+    if (!tenant) return null;
+    const flags = await store.getFeatureFlags(tenantId).catch(() => null);
+    const plan: PlanRow | null = flags
+      ? {
+          max_users: flags.max_users || null,
+          max_partners: flags.max_partners || null,
+          max_products: null,
+          max_monthly_documents: flags.max_monthly_documents || null,
+        }
+      : null;
+    return {
+      tenant: { id: tenant.id, plan: tenant.plan ?? null, max_users: tenant.max_users ?? null },
+      plan,
+    };
+  }
   const supabase = getSupabase();
   const { data: tenant } = await supabase
     .from("tenants")
@@ -51,6 +79,30 @@ async function getPlanForTenant(tenantId: string): Promise<{ tenant: TenantRow; 
 }
 
 async function countCurrent(tenantId: string, resource: QuotaResource): Promise<number> {
+  if (!isSupabaseConfigured()) {
+    // AUDIT18: store-backed fallback (see getPlanForTenant above).
+    const store = await getStore();
+    if (resource === "monthly_documents") {
+      const startOfMonth = new Date();
+      startOfMonth.setUTCDate(1);
+      startOfMonth.setUTCHours(0, 0, 0, 0);
+      const iso = startOfMonth.toISOString();
+      const [inv, pro, off] = await Promise.all([
+        store.listInvoices(tenantId, { filters: { date_from: iso } }),
+        store.listProformas(tenantId, { filters: { date_from: iso } }),
+        store.listOffers(tenantId, { filters: { date_from: iso } }),
+      ]);
+      return inv.total + pro.total + off.total;
+    }
+    if (resource === "users") {
+      const users = await store.listUsers(tenantId);
+      return users.filter((u) => u.active).length;
+    }
+    if (resource === "partners") {
+      return (await store.listPartners(tenantId, {})).total;
+    }
+    return (await store.listProducts(tenantId, {})).total;
+  }
   const supabase = getSupabase();
   if (resource === "monthly_documents") {
     // Sum invoices + proformas + offers created in the current calendar month.

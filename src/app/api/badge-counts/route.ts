@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, resolveTenantId } from "@/lib/api/helpers";
-import { getSupabase } from "@/lib/supabase/client";
+import { getSupabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import { unreadCountForTenant } from "@/lib/portal/messages";
 
 export const runtime = "nodejs";
@@ -34,6 +34,31 @@ export async function GET(req: NextRequest) {
       tasks: 0,
       portal_messages: 0,
       signup_requests: 0,
+    });
+  }
+
+  // AUDIT18 (live E2E finding): store-backed path for self-hosted /
+  // DB_BACKEND=prisma deployments where SUPABASE_URL is unset. Previously
+  // this route 500'd on every sidebar poll (getSupabase() hard-throws).
+  // Counts degrade to 0 for entities without a store abstraction
+  // (logistics_requests, portal_messages) — badges are cosmetic, a 500 is
+  // not. Supabase deployments keep the exact original query path below.
+  if (!isSupabaseConfigured()) {
+    const [kyc, rfqs, tasks, notifs, tenants] = await Promise.all([
+      auth.store.listKycSubmissions(tenantId ?? "", { filters: { status: "submitted" } }).catch(() => ({ total: 0 })),
+      tenantId ? auth.store.listPortalRfqs(tenantId, { filters: { status: "pending" } }).catch(() => ({ total: 0 })) : Promise.resolve({ total: 0 }),
+      auth.store.listTasks(tenantId ?? "", auth.user.id).catch(() => [] as never[]),
+      tenantId && auth.user.id ? auth.store.getUnreadCount(tenantId, auth.user.id).catch(() => 0) : Promise.resolve(0),
+      isSuperAdmin ? auth.store.listTenants().catch(() => [] as never[]) : Promise.resolve([] as never[]),
+    ]);
+    return NextResponse.json({
+      kyc_review: kyc.total ?? 0,
+      portal_rfqs: rfqs.total ?? 0,
+      logistics_requests: 0,
+      notifications: notifs ?? 0,
+      tasks: Array.isArray(tasks) ? tasks.filter((t) => !t.done).length : 0,
+      portal_messages: 0,
+      signup_requests: Array.isArray(tenants) ? tenants.filter((t) => (t as { status?: string }).status === "pending_approval").length : 0,
     });
   }
 

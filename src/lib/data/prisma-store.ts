@@ -265,6 +265,19 @@ function mapNotificationRow(r: any): Notification {
 
 // ─── PrismaStore ────────────────────────────────────────────────────────────
 
+// AUDIT18: interface-parity stubs for modules that exist only on the Supabase
+// backend (LOIs, commissions, letterheads/seals, security-session writes,
+// FX revaluation). Previously these methods were entirely ABSENT, so any
+// route touching them crashed with "store.listLois is not a function"
+// (opaque 500). Now they fail with an actionable message instead. Production
+// (DB_BACKEND=supabase / Vercel) is unaffected — SupabaseStore implements all
+// of them for real.
+function unsupported(op: string, store: string): Error {
+  return new Error(
+    `${op}() is not implemented on the ${store} backend. This module requires the Supabase store — set DB_BACKEND=supabase (the production default). The Prisma/Mock stores are legacy development fallbacks and were never extended with this module's tables.`,
+  );
+}
+
 export class PrismaStore implements Store {
 
   // ─── Auth ───────────────────────────────────────────────────────────────
@@ -975,36 +988,38 @@ export class PrismaStore implements Store {
   // ─── Settings ───────────────────────────────────────────────────────────
 
   async getSetting<T = unknown>(key: string, tenantId: string | null = null): Promise<T | null> {
-    // Prisma schema might not have tenant_id in the composite key. Best-effort:
-    // include it in the key name so tenants don't collide. Callers that need
-    // real DB-level scoping should be on SupabaseStore.
-    const scopedKey = tenantId ? `${tenantId}::${key}` : key;
-    const r = await db.setting.findUnique({ where: { key: scopedKey } });
+    // AUDIT18 (live E2E finding): Setting has a COMPOUND unique key
+    // (tenant_id, key) → `where: { key }` alone is invalid for findUnique and
+    // threw on every call, breaking login/bootstrap settings reads. Use the
+    // real columns (same semantics as SupabaseStore) instead of the old
+    // "::"-scoped-key hack.
+    const r = await db.setting.findUnique({
+      where: { tenant_id_key: { tenant_id: tenantId, key } },
+    });
     if (!r) return null;
     try { return JSON.parse(r.value as string) as T; } catch { return r.value as unknown as T; }
   }
 
   async setSetting(key: string, value: unknown, tenantId: string | null = null): Promise<void> {
+    // AUDIT18: same compound-key fix as getSetting — the upsert below
+    // previously used `where: { key: scopedKey }` which is not a valid
+    // unique selector for this model and threw on every settings save.
     const val = typeof value === "string" ? value : JSON.stringify(value);
-    const scopedKey = tenantId ? `${tenantId}::${key}` : key;
     await db.setting.upsert({
-      where: { key: scopedKey },
+      where: { tenant_id_key: { tenant_id: tenantId, key } },
       update: { value: val },
-      create: { key: scopedKey, value: val },
+      create: { tenant_id: tenantId, key, value: val },
     });
   }
 
   async getAllSettings(tenantId: string | null = null): Promise<Setting[]> {
-    const prefix = tenantId ? `${tenantId}::` : null;
+    // AUDIT18: filter on the real tenant_id column (not "::"-prefixed keys).
     const rows = await db.setting.findMany({
-      where: prefix ? { key: { startsWith: prefix } } : {},
+      where: tenantId ? { tenant_id: tenantId } : {},
     });
     return rows
-      .filter((r: any) => (prefix ? true : !r.key.includes("::")))
       .map((r: any) => ({
         ...r,
-        key: prefix ? r.key.slice(prefix.length) : r.key,
-        tenant_id: tenantId,
         created_at: dateToISOOrNow(r.created_at),
         updated_at: dateToISOOrNow(r.updated_at),
       }));
@@ -1012,22 +1027,29 @@ export class PrismaStore implements Store {
 
   // ─── Tasks ──────────────────────────────────────────────────────────────
 
-  async listTasks(_tenantId: string, userId?: string): Promise<UserTask[]> {
-    const where: any = userId ? { assigned_to: userId } : {};
+  async listTasks(tenantId: string, userId?: string): Promise<UserTask[]> {
+    // AUDIT18 (live E2E finding): this queried `assigned_to` — a column that
+    // does not exist in the current Prisma UserTask model (user_id) → every
+    // listTasks() call threw "Unknown argument assigned_to". Aligned with the
+    // schema (user_id + done) and the canonical UserTask type, and scoped by
+    // tenant like SupabaseStore does.
+    const where: any = {};
+    if (tenantId) where.tenant_id = tenantId;
+    if (userId) where.user_id = userId;
     const rows = await db.userTask.findMany({ where, orderBy: { created_at: "desc" } });
     return rows.map(mapUserTaskRow);
   }
 
   async upsertTask(t: Partial<UserTask> & { id?: string }): Promise<UserTask> {
+    // AUDIT18: aligned with the current schema (user_id/done/priority) — the
+    // old body wrote assigned_to/status/completed_at which do not exist.
     const data: any = {
       tenant_id: t.tenant_id ?? "",
+      user_id: t.user_id ?? "",
       title: t.title ?? "",
-      description: t.description ?? null,
-      assigned_to: t.assigned_to ?? null,
+      done: t.done ?? false,
       priority: t.priority ?? "medium",
-      status: t.status ?? "pending",
       due_date: t.due_date ? new Date(t.due_date) : null,
-      completed_at: t.completed_at ? new Date(t.completed_at) : null,
       entity_type: t.entity_type ?? null,
       entity_id: t.entity_id ?? null,
     };
@@ -1266,13 +1288,18 @@ export class PrismaStore implements Store {
     await db.securitySession.update({ where: { id }, data: { revoked: true, current: false } });
   }
 
-  async createSession(s: { user_id: string; ip?: string | null; user_agent?: string | null; country?: string | null; expires_at: string; current?: boolean }): Promise<SecuritySession> {
+  async createSession(s: { user_id: string; tenant_id?: string; ip?: string | null; user_agent?: string | null; country?: string | null; expires_at: string; current?: boolean }): Promise<SecuritySession> {
     // If current=true, unset any other current sessions for this user first
     if (s.current) {
       await db.securitySession.updateMany({ where: { user_id: s.user_id, current: true }, data: { current: false } });
     }
+    // AUDIT18: tenant_id is NOT NULL in the Prisma schema — resolve it from
+    // the passed value (auth routes provide it) or the user row.
+    const tenantId = s.tenant_id ?? (await db.user.findUnique({ where: { id: s.user_id }, select: { tenant_id: true } }))?.tenant_id;
+    if (!tenantId) throw new Error("createSession: unable to resolve tenant_id");
     const r = await db.securitySession.create({
       data: {
+        tenant_id: tenantId,
         user_id: s.user_id,
         ip: s.ip ?? null,
         user_agent: s.user_agent ?? null,
@@ -1331,7 +1358,7 @@ export class PrismaStore implements Store {
     await db.knownIp.delete({ where: { id } });
   }
 
-  async upsertKnownIp(ip: { user_id: string; ip: string; country?: string | null; trusted?: boolean }): Promise<KnownIp> {
+  async upsertKnownIp(ip: { user_id: string; tenant_id?: string; ip: string; country?: string | null; trusted?: boolean }): Promise<KnownIp> {
     // Find existing by user_id + ip
     const existing = await db.knownIp.findFirst({ where: { user_id: ip.user_id, ip: ip.ip } });
     if (existing) {
@@ -1345,8 +1372,13 @@ export class PrismaStore implements Store {
       });
       return { ...r, first_seen: dateToISOOrNow(r.first_seen), last_seen: dateToISOOrNow(r.last_seen) };
     }
+    // AUDIT18: tenant_id is NOT NULL in the Prisma schema — resolve it from
+    // the passed value (auth routes provide it) or the user row.
+    const tenantId = ip.tenant_id ?? (await db.user.findUnique({ where: { id: ip.user_id }, select: { tenant_id: true } }))?.tenant_id;
+    if (!tenantId) throw new Error("upsertKnownIp: unable to resolve tenant_id");
     const r = await db.knownIp.create({
       data: {
+        tenant_id: tenantId,
         user_id: ip.user_id,
         ip: ip.ip,
         country: ip.country ?? null,
@@ -1370,7 +1402,7 @@ export class PrismaStore implements Store {
     await db.trustedDevice.update({ where: { id }, data: { revoked: true } });
   }
 
-  async upsertTrustedDevice(d: { user_id: string; device_name: string; fingerprint: string; ip?: string | null }): Promise<TrustedDevice> {
+  async upsertTrustedDevice(d: { user_id: string; tenant_id?: string; device_name: string; fingerprint: string; ip?: string | null }): Promise<TrustedDevice> {
     const existing = await db.trustedDevice.findFirst({ where: { user_id: d.user_id, fingerprint: d.fingerprint } });
     if (existing) {
       const r = await db.trustedDevice.update({
@@ -1379,8 +1411,15 @@ export class PrismaStore implements Store {
       });
       return { ...r, last_used: dateToISOOrNow(r.last_used), created_at: dateToISOOrNow(r.created_at) };
     }
+    // AUDIT18: tenant_id is NOT NULL in the Prisma schema — resolve it from
+    // the passed value (auth routes provide it) or the user row. Previously
+    // the create() omitted it entirely → PrismaClientValidationError on every
+    // local/Prisma login's trust-device step.
+    const tenantId = d.tenant_id ?? (await db.user.findUnique({ where: { id: d.user_id }, select: { tenant_id: true } }))?.tenant_id;
+    if (!tenantId) throw new Error("upsertTrustedDevice: unable to resolve tenant_id");
     const r = await db.trustedDevice.create({
       data: {
+        tenant_id: tenantId,
         user_id: d.user_id,
         device_name: d.device_name,
         fingerprint: d.fingerprint,
@@ -1390,7 +1429,41 @@ export class PrismaStore implements Store {
     return { ...r, last_used: dateToISOOrNow(r.last_used), created_at: dateToISOOrNow(r.created_at) };
   }
 
-  // ─── Mail Queue ─────────────────────────────────────────────────────────
+  
+
+  async listLois(tenantId: string, params?: ListParams) { throw unsupported("listLois", "PrismaStore"); }
+  async getLoi(id: string) { throw unsupported("getLoi", "PrismaStore"); }
+  async upsertLoi(l: Partial<LetterOfIntent> & { id?: string }) { throw unsupported("upsertLoi", "PrismaStore"); }
+  async deleteLoi(id: string) { throw unsupported("deleteLoi", "PrismaStore"); }
+  async listLowStockProducts(tenantId: string, params?: ListParams) { throw unsupported("listLowStockProducts", "PrismaStore"); }
+  async listCommissionAgents(tenantId: string, params?: ListParams) { throw unsupported("listCommissionAgents", "PrismaStore"); }
+  async getCommissionAgent(id: string) { throw unsupported("getCommissionAgent", "PrismaStore"); }
+  async getCommissionAgentByPartner(partnerId: string) { throw unsupported("getCommissionAgentByPartner", "PrismaStore"); }
+  async upsertCommissionAgent(a: Partial<CommissionAgent> & { id?: string }) { throw unsupported("upsertCommissionAgent", "PrismaStore"); }
+  async deleteCommissionAgent(id: string) { throw unsupported("deleteCommissionAgent", "PrismaStore"); }
+  async listDealCommissions(tenantId: string, params?: ListParams) { throw unsupported("listDealCommissions", "PrismaStore"); }
+  async listDealCommissionsByDeal(dealId: string) { throw unsupported("listDealCommissionsByDeal", "PrismaStore"); }
+  async listDealCommissionsByAgent(agentId: string) { throw unsupported("listDealCommissionsByAgent", "PrismaStore"); }
+  async getDealCommission(id: string) { throw unsupported("getDealCommission", "PrismaStore"); }
+  async upsertDealCommission(c: Partial<DealCommission> & { id?: string }) { throw unsupported("upsertDealCommission", "PrismaStore"); }
+  async deleteDealCommission(id: string) { throw unsupported("deleteDealCommission", "PrismaStore"); }
+  async approveDealCommission(id: string, approvedBy: string) { throw unsupported("approveDealCommission", "PrismaStore"); }
+  async markDealCommissionPaid(id: string, payoutReference?: string) { throw unsupported("markDealCommissionPaid", "PrismaStore"); }
+  async listCommissionPayouts(tenantId: string, params?: ListParams) { throw unsupported("listCommissionPayouts", "PrismaStore"); }
+  async getCommissionPayout(id: string) { throw unsupported("getCommissionPayout", "PrismaStore"); }
+  async upsertCommissionPayout(p: Partial<CommissionPayout> & { id?: string }) { throw unsupported("upsertCommissionPayout", "PrismaStore"); }
+  async deleteCommissionPayout(id: string) { throw unsupported("deleteCommissionPayout", "PrismaStore"); }
+  async getCommissionSummaries(tenantId: string) { throw unsupported("getCommissionSummaries", "PrismaStore"); }
+  async calculateCommission(agentId: string, dealValue: number, dealProfit: number, dealQuantity: number, dealUnit: string, currency: string) { throw unsupported("calculateCommission", "PrismaStore"); }
+  async createFxRevaluation(
+    tenantId: string,
+    revalDate: string,
+    baseCurrency: string,
+    adjustments: FxRevaluationAdjustment[],
+    createdBy: string,
+  ) { throw unsupported("createFxRevaluation", "PrismaStore"); }
+
+// ─── Mail Queue ─────────────────────────────────────────────────────────
 
   async listMailQueue(_tenantId: string, params?: ListParams): Promise<ListResult<MailQueueEntry>> {
     let where: any = {};

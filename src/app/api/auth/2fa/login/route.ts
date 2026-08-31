@@ -197,7 +197,7 @@ export async function POST(req: NextRequest) {
           country,
           expires_at: new Date(Date.now() + SESSION_TTL_MS).toISOString(),
           current: true,
-        } as any);
+        });
       } catch (e) {
         console.error("[2fa.login] createSession failed:", e);
       }
@@ -223,7 +223,7 @@ export async function POST(req: NextRequest) {
           tenant_id: user.tenant_id,
           ip,
           country,
-        } as any);
+        });
       } catch (e) {
         console.error("[2fa.login] upsertKnownIp failed:", e);
       }
@@ -235,7 +235,7 @@ export async function POST(req: NextRequest) {
           device_name: deriveDeviceName(userAgent),
           fingerprint: deviceFingerprint(userAgent, ip),
           ip,
-        } as any);
+        });
       } catch (e) {
         console.error("[2fa.login] upsertTrustedDevice failed:", e);
       }

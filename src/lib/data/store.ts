@@ -316,12 +316,19 @@ export interface Store {
   deleteSeal(id: string): Promise<void>;
 
   // ---- security (write methods) ----
-  createSession(s: { user_id: string; ip?: string | null; user_agent?: string | null; country?: string | null; expires_at: string; current?: boolean }): Promise<SecuritySession>;
+  // AUDIT18: tenant_id added — auth routes always passed it (cast `as any`);
+  // PrismaStore requires it (schema NOT NULL) → local/Prisma login failed at
+  // securitySession.create() before the JWT was ever minted.
+  createSession(s: { user_id: string; tenant_id?: string; ip?: string | null; user_agent?: string | null; country?: string | null; expires_at: string; current?: boolean }): Promise<SecuritySession>;
   revokeSessionById(id: string): Promise<void>;
   touchSession(id: string): Promise<void>;
   recordLoginHistory(e: { user_id: string; username: string; ip?: string | null; user_agent?: string | null; country?: string | null; success: boolean; reason?: string | null }): Promise<LoginHistoryEntry>;
-  upsertKnownIp(ip: { user_id: string; ip: string; country?: string | null; trusted?: boolean }): Promise<KnownIp>;
-  upsertTrustedDevice(d: { user_id: string; device_name: string; fingerprint: string; ip?: string | null }): Promise<TrustedDevice>;
+  upsertKnownIp(ip: { user_id: string; tenant_id?: string; ip: string; country?: string | null; trusted?: boolean }): Promise<KnownIp>;
+  // AUDIT18: tenant_id added to the signature — the auth login routes have
+  // always passed it (cast `as any` because the interface lacked it), and
+  // PrismaStore.create() requires it (schema NOT NULL) → every local/Prisma
+  // login failed to persist trusted devices.
+  upsertTrustedDevice(d: { user_id: string; tenant_id?: string; device_name: string; fingerprint: string; ip?: string | null }): Promise<TrustedDevice>;
   revokeTrustedDeviceById(id: string): Promise<void>;
 
   // ---- document verification ----
