@@ -4,12 +4,20 @@ import { hashPassword } from "@/lib/auth/password";
 import { validatePasswordWithPlatformPolicy } from "@/lib/auth/password-policy";
 import { consumePasswordReset } from "@/lib/auth/password-reset";
 import { getIp } from "@/lib/api/helpers";
+// AUDIT15 / EMAIL-ADDR — portal_email is encrypted at rest; decrypt before
+// using it as the confirmation email's To: address.
+import { decryptField, isEncrypted } from "@/lib/crypto/field-encryption";
 // FIX-AUDIT4-SEC / Fix 4 — per-IP rate limit. The reset-token is a single-
 // use hashed value, but a malicious actor who harvested a list of valid
 // reset tokens (e.g. from intercepted email links) could probe the
 // endpoint to discover which tokens are still valid. 10 attempts / 15
 // min per IP matches the budget the platform uses elsewhere.
 import { checkRateLimit } from "@/lib/security/rate-limiter";
+// AUDIT15 / EMAIL-NOTIF — the user requires a notification whenever a
+// client's password changes. This is the completion of the forgot-password
+// flow: the owner just proved control of the mailbox, so the confirmation
+// lands in the same mailbox. Fire-and-forget — never blocks the reset.
+import { sendEmail, passwordChangedEmail } from "@/lib/email/service";
 
 export const runtime = "nodejs";
 
@@ -100,6 +108,36 @@ export async function POST(req: NextRequest) {
       ip: getIp(req),
       user_agent: req.headers.get("user-agent") || null,
     });
+
+    // AUDIT15 / EMAIL-NOTIF — send the password-change confirmation email.
+    // `current.portal_email` is the encrypted at-rest value; decrypt it so
+    // the To: address is the real mailbox. The tenant context comes from
+    // the reset token itself (result.tenantId) so the email goes out through
+    // the TENANT'S OWN provider config (per-tenant isolation). Skipped when
+    // the address can't be decrypted or the tenant was deleted — the reset
+    // itself has already succeeded and must not be blocked by the email.
+    try {
+      const confirmEmail = decryptField(current.portal_email || "");
+      const tenantForEmail = result.tenantId ? await store.getTenant(result.tenantId) : null;
+      if (confirmEmail && !isEncrypted(confirmEmail) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(confirmEmail)) {
+        const { subject, html } = passwordChangedEmail({
+          accountName: confirmEmail,
+          tenantName: tenantForEmail?.name || "VELOS",
+          kind: "reset",
+          ip: getIp(req),
+          userAgent: req.headers.get("user-agent") || null,
+          supportUrl: process.env.APP_BASE_URL ? `${process.env.APP_BASE_URL}/portal/login` : undefined,
+        });
+        void sendEmail({
+          to: confirmEmail,
+          subject,
+          html,
+          tenantId: result.tenantId || undefined,
+        }).catch((e) => console.warn("[portal.reset-password] confirmation email failed:", e));
+      }
+    } catch (confirmErr) {
+      console.warn("[portal.reset-password] confirmation email skipped:", confirmErr);
+    }
 
     return NextResponse.json({ ok: true, message: "Password reset successfully. You can now log in." });
   } catch (e: any) {

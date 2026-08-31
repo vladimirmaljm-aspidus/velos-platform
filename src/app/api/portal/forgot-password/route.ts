@@ -94,6 +94,16 @@ export async function POST(req: NextRequest) {
 
     if (!access) return genericOk;
 
+    // AUDIT15 — the access row exists but its tenant is gone (deleted
+    // tenant). Previously `tenant.id` below threw a TypeError → 500 "Server
+    // error", which leaks that the address exists (differs from the generic
+    // 200) and pollutes the logs. Treat it exactly like a miss: generic OK,
+    // no token, no email.
+    if (!tenant) {
+      console.warn(`[portal.forgot-password] portal_access ${access.id} references missing tenant ${access.tenant_id}; returning generic response`);
+      return genericOk;
+    }
+
     const ua = req.headers.get("user-agent") || null;
 
     const { token, expiresAt } = await createPasswordReset({

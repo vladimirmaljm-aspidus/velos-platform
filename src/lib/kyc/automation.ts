@@ -1,6 +1,19 @@
 import { sendEmail, kycStatusEmail } from "@/lib/email/service";
 import type { KycSubmission, Partner, PortalAccess, Tenant } from "@/lib/supabase/types";
 import { getTierMeta } from "@/lib/portal/tiers";
+// AUDIT15 / EMAIL-ADDR — portal_email (and partner contact_email) are
+// encrypted at rest with `enc:`-prefixed AES-256-GCM ciphertext (P0-3 /
+// Feature 2, applied by the API route layer on write). Store reads return
+// the rows AS STORED, so any email address coming out of a store read must
+// be decrypted before it is used as a To: address. decryptField is a
+// no-op on plaintext (legacy rows) and returns the raw string on failure,
+// so the guard in the send path also catches undecryptable values.
+import {
+  encryptField,
+  decryptField,
+  hmacField,
+  isEncrypted,
+} from "@/lib/crypto/field-encryption";
 
 /**
  * Automated actions that fire after a KYC decision.
@@ -34,7 +47,16 @@ export async function onKycApproved(ctx: KycAutomationContext) {
 
   // 1. Send the KYC-approved email
   const tier = ctx.preferredTier || "business";
-  const emailTarget = partner.email || partner.contact_email || submission.contact_email || "";
+  // AUDIT15 / EMAIL-ADDR — `partner.contact_email` is encrypted at rest;
+  // `partner.email` (legacy column) is plaintext. Decrypt whichever value
+  // we end up using so the To: address is a real address, not an `enc:`
+  // ciphertext (which Postmark/Resend/SMTP all reject).
+  const resolvedContactEmail = decryptField(partner.contact_email || "");
+  const emailTarget =
+    partner.email ||
+    (resolvedContactEmail && !isEncrypted(resolvedContactEmail) ? resolvedContactEmail : "") ||
+    submission.contact_email ||
+    "";
 
   if (emailTarget) {
     const { subject, html } = kycStatusEmail({
@@ -64,6 +86,17 @@ export async function onKycApproved(ctx: KycAutomationContext) {
   if (!access && emailTarget) {
     // Create a new PortalAccess row in "invited" status — admin can still
     // adjust the tier / send the welcome email later.
+    //
+    // AUDIT15 / EMAIL-ADDR — encrypt portal_email + set the HMAC search
+    // token at creation, mirroring what the portal-access API route does
+    // on write (P0-3 / Feature 2). Previously this path wrote the email in
+    // PLAINTEXT (bypassing the API-layer encryption): the row was then
+    // readable by the login flow's legacy plaintext-equality fallback, but
+    // it was inconsistent with every other portal row and — worse — the
+    // in-memory object returned by the upsert carried the plaintext into
+    // the welcome-email block below, which assumed DB rows are encrypted.
+    // Now both paths see the same shape: stored `enc:` ciphertext, and the
+    // send path decrypts explicitly.
     access = await store.upsertPortalAccess({
       tenant_id: submission.tenant_id,
       partner_id: partner.id,
@@ -83,13 +116,25 @@ export async function onKycApproved(ctx: KycAutomationContext) {
       exempt_location_share: !getTierMeta(tier).requiresLocation,
       status: "invited",
       invited_at: new Date().toISOString(),
-      portal_email: emailTarget,
+      portal_email: encryptField(emailTarget),
+      portal_email_hmac: hmacField(emailTarget),
       must_set_password: true,
       welcome_email_sent: false,
     } as Partial<PortalAccess> & { id?: string });
   }
 
-  if (access && !access.welcome_email_sent && access.portal_email) {
+  // AUDIT15 / EMAIL-ADDR — `access` may be an EXISTING row read from the
+  // store (lines above), whose portal_email is `enc:`-encrypted. The
+  // freshly-created row above also carries encrypted portal_email. Decrypt
+  // once here; every use below (To: address + the body copy) needs the
+  // plaintext. Legacy plaintext rows pass through untouched. If decryption
+  // fails (rotated key), skip the welcome email rather than sending to a
+  // ciphertext address — the admin can fix the email via Portal Access UI.
+  const accessEmail = decryptField(access?.portal_email || "");
+  const accessEmailUsable =
+    !!access && !!accessEmail && !isEncrypted(accessEmail) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(accessEmail);
+
+  if (access && accessEmailUsable && !access.welcome_email_sent) {
     // 3. Send the portal welcome email with password-setup link
     // Audit F-6/P1-3: mint a single-use, 7-day-expiring setup token instead
     // of embedding the permanent `access_id` UUID in the email link. Same
@@ -113,7 +158,7 @@ export async function onKycApproved(ctx: KycAutomationContext) {
     }
     const { subject: wSub, html: wHtml } = welcomePortalEmail({
       partnerName: partner.name,
-      portalEmail: access.portal_email,
+      portalEmail: accessEmail,
       accessId: access.id,
       tenantName: tenant?.name || "VELOS",
       baseUrl,
@@ -121,7 +166,7 @@ export async function onKycApproved(ctx: KycAutomationContext) {
       setupToken,
     });
     await sendEmail({
-      to: access.portal_email,
+      to: accessEmail,
       subject: wSub,
       html: wHtml,
       tenantId: submission.tenant_id,

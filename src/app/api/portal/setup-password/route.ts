@@ -7,6 +7,11 @@ import { consumePasswordReset } from "@/lib/auth/password-reset";
 import { getIp } from "@/lib/api/helpers";
 import { checkRateLimit } from "@/lib/security/rate-limiter";
 import { getRateLimitConfig } from "@/lib/security/rate-limit-config";
+// AUDIT15 / EMAIL-NOTIF — account-activation confirmation email (user
+// requirement: the client must receive a notification after completing
+// the invite flow). portal_email is encrypted at rest — decrypt for To:.
+import { sendEmail, passwordChangedEmail } from "@/lib/email/service";
+import { decryptField, isEncrypted } from "@/lib/crypto/field-encryption";
 
 export const runtime = "nodejs";
 
@@ -207,6 +212,36 @@ export async function POST(req: NextRequest) {
     }
 
     const { password_hash: _, ...safe } = updated as any;
+
+    // AUDIT15 / EMAIL-NOTIF — the invite flow's final step now notifies the
+    // client that their account is active (this is the email the user asked
+    // for: "pozivni mejl da se uloguje" + confirmation that setup succeeded).
+    // `updated.portal_email` is the encrypted at-rest value — decrypt before
+    // send. Sent through the tenant's own provider (per-tenant isolation).
+    // Fire-and-forget: the setup + auto-login have already succeeded.
+    try {
+      const confirmEmail = decryptField((updated as any).portal_email || "");
+      if (confirmEmail && !isEncrypted(confirmEmail) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(confirmEmail)) {
+        const tenantForEmail = await store.getTenant(updated.tenant_id);
+        const { subject, html } = passwordChangedEmail({
+          accountName: confirmEmail,
+          tenantName: tenantForEmail?.name || "VELOS",
+          kind: "setup",
+          ip: getIp(req),
+          userAgent: req.headers.get("user-agent") || null,
+          supportUrl: process.env.APP_BASE_URL ? `${process.env.APP_BASE_URL}/portal/login` : undefined,
+        });
+        void sendEmail({
+          to: confirmEmail,
+          subject,
+          html,
+          tenantId: updated.tenant_id,
+        }).catch((e) => console.warn("[portal.setup-password] confirmation email failed:", e));
+      }
+    } catch (confirmErr) {
+      console.warn("[portal.setup-password] confirmation email skipped:", confirmErr);
+    }
+
     return NextResponse.json({ ok: true, access: safe, auto_signed_in: !staffAuthorized });
   } catch (e) {
     console.error("[portal.setup]", e);

@@ -21,6 +21,11 @@ import { checkRateLimit } from "@/lib/security/rate-limiter";
 // setup-password route's post-upsert pattern: create a new session with
 // the new token_version and set the cookie so the user stays signed in.
 import { createSession, setSessionCookie } from "@/lib/auth/session";
+// AUDIT15 / EMAIL-NOTIF — password-change confirmation email (user
+// requirement: a client must be notified when their password changes).
+// portal_email is encrypted at rest — decrypt before using as To:.
+import { sendEmail, passwordChangedEmail } from "@/lib/email/service";
+import { decryptField, isEncrypted } from "@/lib/crypto/field-encryption";
 
 export const runtime = "nodejs";
 
@@ -170,6 +175,35 @@ export async function POST(req: NextRequest) {
       ip: getIp(req) || "unknown",
       user_agent: req.headers.get("user-agent") || null,
     });
+
+    // AUDIT15 / EMAIL-NOTIF — security confirmation to the client's own
+    // mailbox: "your password was changed; if this wasn't you, act now".
+    // Sent through the TENANT'S provider (tenantId = access.tenant_id) so
+    // every tenant's clients get their notifications from their own email
+    // setup — never another tenant's. Fire-and-forget: the password change
+    // has already succeeded; a mail outage must not turn it into a 500.
+    try {
+      const confirmEmail = decryptField(access.portal_email || "");
+      if (confirmEmail && !isEncrypted(confirmEmail) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(confirmEmail)) {
+        const tenantForEmail = await store.getTenant(access.tenant_id);
+        const { subject, html } = passwordChangedEmail({
+          accountName: confirmEmail,
+          tenantName: tenantForEmail?.name || "VELOS",
+          kind: "change",
+          ip: getIp(req),
+          userAgent: req.headers.get("user-agent") || null,
+          supportUrl: process.env.APP_BASE_URL ? `${process.env.APP_BASE_URL}/portal/login` : undefined,
+        });
+        void sendEmail({
+          to: confirmEmail,
+          subject,
+          html,
+          tenantId: access.tenant_id,
+        }).catch((e) => console.warn("[portal.change-password] confirmation email failed:", e));
+      }
+    } catch (confirmErr) {
+      console.warn("[portal.change-password] confirmation email skipped:", confirmErr);
+    }
 
     return NextResponse.json({ ok: true, message: "Password changed successfully." });
   } catch (e: any) {

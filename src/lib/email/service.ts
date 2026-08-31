@@ -959,3 +959,104 @@ export function twoFactorActivatedEmail(opts: {
   `;
   return { subject, html };
 }
+
+/**
+ * Security confirmation email sent whenever an account's password is
+ * set, reset, or changed.
+ *
+ * AUDIT15 / EMAIL-NOTIF — the user explicitly requires a notification
+ * when a client changes their password. Without this email, an attacker
+ * who completes a takeover (or knows the current password) can change
+ * the password silently — the legitimate owner only finds out when they
+ * can no longer log in. The confirmation email is the standard defense:
+ * the real owner sees "your password was changed" immediately and can
+ * react (request a reset / contact the account manager).
+ *
+ * Used by (all fire-and-forget, never blocking the password flow):
+ *   - /api/portal/setup-password   (kind: "setup"  — first password set)
+ *   - /api/portal/reset-password   (kind: "reset"  — via emailed reset link)
+ *   - /api/portal/change-password  (kind: "change" — logged-in change)
+ *   - /api/auth/change-password    (kind: "change" — staff/admin change)
+ *
+ * `ip` / `userAgent` are optional and rendered only when known
+ * (anonymous token flows always have them; they help the owner
+ * recognize "was that me?").
+ */
+export function passwordChangedEmail(opts: {
+  accountName: string;
+  tenantName: string;
+  kind: "setup" | "reset" | "change";
+  ip?: string | null;
+  userAgent?: string | null;
+  supportUrl?: string;
+}): { subject: string; html: string } {
+  const kindCopy: Record<typeof opts.kind, { title: string; lead: string }> = {
+    setup: {
+      title: "Your portal account is now active",
+      lead:
+        "Your password has been set and your client portal account is now " +
+        "active. You can sign in any time with your email and the password " +
+        "you just chose.",
+    },
+    reset: {
+      title: "Your password has been reset",
+      lead:
+        "Your password was just reset using the reset link. You can now " +
+        "sign in with your email and the new password.",
+    },
+    change: {
+      title: "Your password was changed",
+      lead:
+        "The password on your account was just changed. If this was you, " +
+        "no further action is needed.",
+    },
+  };
+  const copy = kindCopy[opts.kind];
+  const subject =
+    opts.kind === "change"
+      ? `Password changed — ${opts.tenantName} portal`
+      : opts.kind === "setup"
+        ? `Your ${opts.tenantName} portal account is active`
+        : `Password reset — ${opts.tenantName} portal`;
+  const actorLine = opts.ip
+    ? `<tr><td style="padding:6px 0;color:#888;width:140px;">IP address</td><td style="padding:6px 0;font-family:monospace;font-size:13px;">${escapeHtml(opts.ip)}</td></tr>`
+    : "";
+  const uaLine = opts.userAgent
+    ? `<tr><td style="padding:6px 0;color:#888;width:140px;">Device</td><td style="padding:6px 0;font-family:monospace;font-size:13px;">${escapeHtml(opts.userAgent.slice(0, 120))}</td></tr>`
+    : "";
+  const supportUrl = opts.supportUrl || `${process.env.APP_BASE_URL || ""}/portal/login`;
+  const html = `
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:560px;margin:0 auto;padding:32px 20px;">
+      <div style="background:#0f766e;color:white;padding:24px 28px;border-radius:12px 12px 0 0;">
+        <h1 style="margin:0;font-size:18px;font-weight:600;">${copy.title}</h1>
+        <p style="margin:6px 0 0;opacity:0.9;font-size:13px;">${escapeHtml(opts.tenantName)} Client Portal</p>
+      </div>
+      <div style="background:white;padding:28px;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 12px 12px;">
+        <p style="color:#333;font-size:14px;">Hello ${escapeHtml(opts.accountName)},</p>
+        <p style="color:#555;font-size:14px;line-height:1.6;">${copy.lead}</p>
+        <table style="width:100%;font-size:13px;color:#555;margin:16px 0;border-collapse:collapse;">
+          <tr><td style="padding:6px 0;color:#888;width:140px;">Account</td><td style="padding:6px 0;font-family:monospace;font-size:13px;">${escapeHtml(opts.accountName)}</td></tr>
+          <tr><td style="padding:6px 0;color:#888;width:140px;">Time</td><td style="padding:6px 0;font-family:monospace;font-size:13px;">${new Date().toISOString().replace("T", " ").slice(0, 19)} UTC</td></tr>
+          ${actorLine}
+          ${uaLine}
+        </table>
+        ${
+          opts.kind === "change"
+            ? `<p style="color:#555;font-size:14px;line-height:1.6;">
+                 If you did <strong>not</strong> change your password, your account may have been
+                 compromised. Use the "Forgot password" link on the sign-in page immediately to
+                 reset it, and contact your account manager.
+               </p>`
+            : ""
+        }
+        <div style="text-align:center;margin:24px 0;">
+          <a href="${escapeHtml(supportUrl)}" style="background:#0f766e;color:white;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block;font-size:14px;">Sign in to the portal</a>
+        </div>
+        <p style="color:#888;font-size:12px;line-height:1.5;">
+          This is an automated security notification from ${escapeHtml(opts.tenantName)}.
+        </p>
+      </div>
+    </div>
+  `;
+  return { subject, html };
+}

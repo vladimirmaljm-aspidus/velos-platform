@@ -180,6 +180,27 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     tenantId: access.tenant_id,
   });
 
+  // AUDIT15 / EMAIL-STATE — on a successful send, mark the welcome email
+  // as sent. The route above resets `welcome_email_sent: false` before
+  // sending (so a failed attempt shows as "Not sent" and the admin can
+  // retry), but it previously NEVER flipped the flag back to true on
+  // success. Production evidence: 5 of 8 portal_access rows were stuck
+  // on "Not sent" in the partners UI even though their invites had gone
+  // out — inviting the admin to re-send (and spam the client). KYC
+  // automation and the change-email route already set this correctly;
+  // this is the one path that didn't. Best-effort: a failure here must
+  // not fail the (already-sent) invite response.
+  if (result.success) {
+    try {
+      await auth.store.upsertPortalAccess({
+        id: access.id,
+        welcome_email_sent: true,
+      } as any);
+    } catch (flagErr) {
+      console.error("[portal.invite] welcome_email_sent flag update failed:", flagErr);
+    }
+  }
+
   await audit(auth.store, auth.user, req, "portal.invite", "portal_access", id, {
     email: portalEmail,
     sent: result.success,

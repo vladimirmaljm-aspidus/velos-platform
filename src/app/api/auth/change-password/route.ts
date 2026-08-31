@@ -8,6 +8,11 @@ import {
   rotateUserSessions,
 } from "@/lib/auth/session";
 import { reportSecurityEvent } from "@/lib/monitoring/security-alerts";
+// AUDIT15 / EMAIL-NOTIF — password-change confirmation email for staff /
+// admin accounts (mirrors the portal-side notification). users.email is
+// stored plaintext (set at registration), so no decryption is needed —
+// only a basic address sanity check.
+import { sendEmail, passwordChangedEmail } from "@/lib/email/service";
 
 export const runtime = "nodejs";
 
@@ -256,6 +261,35 @@ export async function POST(req: NextRequest) {
       details: { reason: "password_changed", method: "self_change" },
       severity: "info",
     });
+
+    // AUDIT15 / EMAIL-NOTIF — confirmation email to the user's own mailbox
+    // ("your password was changed; if this wasn't you, act now"). Routed
+    // through the TENANT'S provider config when the user belongs to a
+    // tenant (per-tenant isolation); super-admins (no tenant) fall back to
+    // the platform-level comms config. Fire-and-forget — the change has
+    // already succeeded and must not fail because of a mail outage.
+    try {
+      const userEmail = (user as any).email;
+      if (userEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userEmail)) {
+        const tenantForEmail = user.tenant_id ? await auth.store.getTenant(user.tenant_id) : null;
+        const { subject, html } = passwordChangedEmail({
+          accountName: user.username || userEmail,
+          tenantName: tenantForEmail?.name || "VELOS",
+          kind: "change",
+          ip: auth.ip,
+          userAgent: req.headers.get("user-agent") || null,
+          supportUrl: process.env.APP_BASE_URL ? `${process.env.APP_BASE_URL}/login` : undefined,
+        });
+        void sendEmail({
+          to: userEmail,
+          subject,
+          html,
+          tenantId: user.tenant_id || undefined,
+        }).catch((e) => console.warn("[auth.change-password] confirmation email failed:", e));
+      }
+    } catch (confirmErr) {
+      console.warn("[auth.change-password] confirmation email skipped:", confirmErr);
+    }
 
     return NextResponse.json({ ok: true });
   } catch (e) {

@@ -3,6 +3,11 @@ import { requireAuth, audit } from "@/lib/api/helpers";
 import { insertMessage, sanitizeMessageBody, markThreadRead, listThread } from "@/lib/portal/messages";
 import { sendEmail, newMessageEmail } from "@/lib/email/service";
 import { notifyNewMessage } from "@/lib/realtime/notify";
+// AUDIT15 / EMAIL-ADDR — portal_email is encrypted at rest (enc: prefix,
+// P0-3 / Feature 2). `getPortalAccessById` returns the row as stored, so
+// the email must be decrypted before it is used as the To: address (and
+// in the greeting). Legacy plaintext rows pass through untouched.
+import { decryptField } from "@/lib/crypto/field-encryption";
 
 export const runtime = "nodejs";
 
@@ -93,16 +98,27 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       } catch (e) { console.warn("[admin.message notify]", e); }
 
       if (send_email && access.portal_email) {
-        const tenant = await auth.store.getTenant(access.tenant_id);
-        const { subject, html } = newMessageEmail({
-          toName: access.portal_email,
-          fromName: tenant?.name || "VELOS",
-          preview: body,
-          tenantName: tenant?.name || "VELOS",
-          portalUrl: `${process.env.APP_BASE_URL || "https://aspidus.onrender.com"}/portal/login`,
-          direction: "admin_to_portal",
-        });
-        await sendEmail({ to: access.portal_email, subject, html, tenantId: access.tenant_id }).catch((e) => console.warn("[admin.message.email]", e));
+        // AUDIT15 / EMAIL-ADDR — decrypt before send; an `enc:` ciphertext
+        // in the To: field is rejected by every provider (Postmark/Resend/
+        // SMTP) which silently killed admin→client message emails for
+        // every portal account created through the (encrypting) API route.
+        const clientEmail = decryptField(access.portal_email);
+        if (clientEmail && !clientEmail.startsWith("enc:")) {
+          const tenant = await auth.store.getTenant(access.tenant_id);
+          const { subject, html } = newMessageEmail({
+            toName: clientEmail,
+            fromName: tenant?.name || "VELOS",
+            preview: body,
+            tenantName: tenant?.name || "VELOS",
+            // AUDIT15 — the hardcoded aspidus.onrender.com fallback was a
+            // sandbox artifact; production sets APP_BASE_URL. Fall back to
+            // a relative-free empty string is never OK for a link, so we
+            // only send the email when a base URL is actually configured.
+            portalUrl: process.env.APP_BASE_URL ? `${process.env.APP_BASE_URL}/portal/login` : "",
+            direction: "admin_to_portal",
+          });
+          await sendEmail({ to: clientEmail, subject, html, tenantId: access.tenant_id }).catch((e) => console.warn("[admin.message.email]", e));
+        }
       }
 
       await audit(auth.store, auth.user, req, "admin.message.sent", "portal_access", id, { partner_id: access.partner_id, preview: body.slice(0, 200) });
