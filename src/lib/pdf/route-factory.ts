@@ -39,6 +39,7 @@ import {
   hasPermission,
   getIp,
   type AuthContext,
+  getAuthUser,
   type ApiKeyAuthContext,
 } from "@/lib/api/helpers";
 import { generatePdf, type GeneratePdfResult } from "@/lib/pdf/generator";
@@ -80,10 +81,6 @@ function pdfResponse(
   return new NextResponse(new Uint8Array(result.buffer), { status: 200, headers });
 }
 
-function getAuthUser(auth: AuthContext | ApiKeyAuthContext) {
-  if ("user" in auth) return auth.user;
-  return { id: `api:${auth.apiKeyId}`, username: auth.apiKeyName, tenant_id: auth.tenantId };
-}
 
 // ─── Admin PDF route factory ────────────────────────────────────────────────
 

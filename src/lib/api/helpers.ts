@@ -859,6 +859,4 @@ export function sanitizeError(e: unknown): string {
  *     return NextResponse.json({ error: sanitizeError(e) }, { status: 500 });
  *   }
  */
-export function sanitizeErrorMessage(e: unknown): string {
-  return sanitizeError(e);
-}
+// AUDIT18: sanitizeErrorMessage alias removed — zero callers, use sanitizeError.
