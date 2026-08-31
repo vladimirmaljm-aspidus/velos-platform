@@ -94,7 +94,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       const requester = await auth.store.getUserById(requesterId);
       if (requester?.email) {
         const tenant = await auth.store.getTenant((current as any).tenant_id);
-        const baseUrl = process.env.APP_BASE_URL || "https://aspidus.onrender.com";
+        // AUDIT16 — drop the stale hardcoded aspidus.onrender.com fallback
+        // (SEC-L6 sandbox artifact). APP_BASE_URL unset → relative link.
+        const baseUrl = process.env.APP_BASE_URL || "";
         const { sendEmail } = await import("@/lib/email/service");
         const approved = decision === "approve";
         const subject = approved

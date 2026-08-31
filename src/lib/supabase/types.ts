@@ -847,6 +847,15 @@ export interface MailQueueEntry {
   error: string | null;
   sent_at: string | null;
   created_at: string;
+  /**
+   * AUDIT16 (migration 077) — optional reference to the business document
+   * this email belongs to (invoice / proforma / offer / loi). Set by the
+   * document send routes so the mail-queue Retry endpoint can REGENERATE
+   * the PDF attachment (buffers are never persisted) instead of re-sending
+   * "please find attached…" with no attachment.
+   */
+  entity_type?: string | null;
+  entity_id?: string | null;
 }
 
 // ============================================================

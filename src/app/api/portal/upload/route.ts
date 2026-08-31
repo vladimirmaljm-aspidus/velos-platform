@@ -15,6 +15,9 @@ import { MAX_UPLOAD_SIZE } from "@/lib/upload/constants";
 // A/C IS a party to negotiation X. This closes the "forge description to
 // leak bait files into other negotiations" vector at the source.
 import { getSupabase } from "@/lib/supabase/client";
+// AUDIT16 — portal_email is encrypted at rest; decrypt for the stored
+// uploaded_by_email + audit username (no-op on legacy plaintext rows).
+import { decryptField } from "@/lib/crypto/field-encryption";
 
 export const runtime = "nodejs";
 
@@ -204,7 +207,13 @@ export async function POST(req: NextRequest) {
       storage_path: uploadResult.path,
       mime_type: verifiedMime,
       size_bytes: file.size,
-      uploaded_by_email: access.portal_email || null,
+      // AUDIT16 — decrypt the uploader's email: the "Uploaded by" column
+      // in the admin portal-uploads view showed the enc: ciphertext for
+      // every API-created portal row (the row itself stays auditable;
+      // the plaintext is what the UI is meant to display).
+      uploaded_by_email: access.portal_email
+        ? decryptField(access.portal_email) || access.portal_email
+        : null,
       description,
     });
 
@@ -220,7 +229,11 @@ export async function POST(req: NextRequest) {
         store,
         {
           id: undefined,
-          username: access.portal_email || `portal:${access.id}`,
+          // AUDIT16 — audit usernames must be the DECRYPTED email, not the
+          // enc: blob (audit15 pattern).
+          username: access.portal_email
+            ? decryptField(access.portal_email) || `portal:${access.id}`
+            : `portal:${access.id}`,
           tenant_id: access.tenant_id,
         },
         req,

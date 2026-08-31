@@ -140,7 +140,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // If `email` is provided in the body, generate a PDF and email it to the
     // recipient. If `email` is missing, we skip the email step and only mark
     // the invoice as sent + push a portal notification.
-    let emailResult: { success: boolean; skipped?: boolean; error?: string } = { success: true, skipped: true };
+    let emailResult: { success: boolean; skipped?: boolean; error?: string; queued?: boolean } = { success: true, skipped: true };
     if (toEmail) {
       const result = await generatePdf({ docType: "invoice", docId: id, tenantId });
       const pdfBuffer = Buffer.from(result.buffer);
@@ -160,6 +160,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         subject,
         html,
         tenantId,
+        // AUDIT16 — persist the entity reference on the mail_queue row so
+        // the Retry endpoint can regenerate the PDF attachment, and the
+        // queued flag tells us below whether it was actually delivered.
+        entityType: "invoice",
+        entityId: id,
         attachments: [{
           filename: `invoice-${invoice.number || id}.pdf`,
           content: pdfBuffer,
@@ -169,7 +174,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     // Promote status draft→sent and stamp sent_at (only on first successful send).
-    if (emailResult.success) {
+    // AUDIT16 — a queued email (no provider configured) is NOT a delivery:
+    // don't flip the invoice to "sent" / stamp sent_at / notify the portal
+    // that the invoice went out. Previously the dev-queue path returned
+    // success:true and the invoice was marked sent even though the client
+    // never received anything.
+    const delivered = emailResult.success && !emailResult.queued;
+    if (delivered) {
       try {
         // Validate the status transition (Re-Audit-2 N4) — only allow
         // draft→sent via this send endpoint. Other transitions (e.g.
@@ -199,7 +210,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     // ─── Portal notification ───
     // Notify the partner's portal client that a new invoice is available.
-    if (emailResult.success && invoice.partner_id) {
+    // (AUDIT16: only when actually delivered — see `delivered` above.)
+    if (delivered && invoice.partner_id) {
       try {
         await notify({
           tenantId: invoice.tenant_id,

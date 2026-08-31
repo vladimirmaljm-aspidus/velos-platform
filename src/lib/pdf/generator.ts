@@ -223,6 +223,10 @@ export async function generatePdf(opts: GeneratePdfOptions): Promise<GeneratePdf
     if (p.phone && typeof p.phone === "string" && isEncrypted(p.phone)) {
       try { p.phone = decryptField(p.phone); } catch { /* leave as-is */ }
     }
+    // AUDIT16 — contact_phone parity (portal profile PUT encrypts it).
+    if (p.contact_phone && typeof p.contact_phone === "string" && isEncrypted(p.contact_phone)) {
+      try { p.contact_phone = decryptField(p.contact_phone); } catch { /* leave as-is */ }
+    }
     // Strip internal HMAC columns (never shown in PDF)
     delete p.tax_id_hmac;
     delete p.vat_number_hmac;

@@ -10,6 +10,8 @@ import { audit } from "@/lib/api/helpers";
 // admin + notification insert + audit log entry. 20/min is well above
 // any legit human typing speed.
 import { checkRateLimit } from "@/lib/security/rate-limiter";
+// AUDIT16 — decrypt the portal client's email (encrypted at rest).
+import { decryptField } from "@/lib/crypto/field-encryption";
 
 export const runtime = "nodejs";
 
@@ -100,13 +102,21 @@ export async function POST(req: NextRequest) {
   const safeAttachmentUrl = sanitizeAttachmentUrl(raw?.attachment_url);
 
   try {
+    // AUDIT16 — decrypt the portal client's email ONCE for every
+    // downstream use (sender_username, audit username, notification title,
+    // email From-name): portal_email is encrypted at rest, and the raw
+    // enc: blob was leaking into all of those surfaces.
+    const senderEmail =
+      access.portal_email && access.portal_email.startsWith("enc:")
+        ? decryptField(access.portal_email) || access.portal_email
+        : access.portal_email || "";
     const msg = await insertMessage({
       tenant_id: access.tenant_id,
       partner_id: access.partner_id,
       portal_access_id: access.id,
       direction: "portal_to_admin",
       body,
-      sender_username: `portal:${access.portal_email || access.id}`,
+      sender_username: `portal:${senderEmail || access.id}`,
       sender_user_id: null,
       attachment_url: safeAttachmentUrl,
       attachment_name: raw?.attachment_name || null,
@@ -118,7 +128,7 @@ export async function POST(req: NextRequest) {
       const auditStore = await getStore();
       await audit(
         auditStore,
-        { id: undefined, username: access.portal_email || `portal:${access.id}`, tenant_id: access.tenant_id },
+        { id: undefined, username: senderEmail || `portal:${access.id}`, tenant_id: access.tenant_id },
         req,
         "portal.message_sent",
         "portal_message",
@@ -140,7 +150,7 @@ export async function POST(req: NextRequest) {
         user_id: null,
         partner_id: access.partner_id,
         type: "portal_message" as any,
-        title: `New message from ${partner?.name || access.portal_email}`,
+        title: `New message from ${partner?.name || senderEmail}`,
         message: body.slice(0, 200),
         entity_type: "portal_access",
         entity_id: access.id,
@@ -153,13 +163,21 @@ export async function POST(req: NextRequest) {
       if (notifyTo) {
         const { subject, html } = newMessageEmail({
           toName: tenant?.name || "Team",
-          fromName: partner?.name || access.portal_email || "Portal client",
+          fromName: partner?.name || senderEmail || "Portal client",
           preview: body,
           tenantName: tenant?.name || "VELOS",
           portalUrl: `${process.env.APP_BASE_URL || ""}/portal-access?open=${access.id}`,
           direction: "portal_to_admin",
         });
-        await sendEmail({ to: notifyTo, subject, html, tenantId: access.tenant_id }).catch(() => {});
+        // AUDIT16 — a silent `.catch(() => {})` meant a failed notification
+        // email vanished without ANY trace (no log, no mail_queue row from
+        // sendEmail's own catch — sendEmail queues only when IT throws; a
+        // network-level rejection inside sendViaSmtp is caught internally,
+        // but a rejection BEFORE the provider call lands here). Log it so
+        // the failure is at least diagnosable.
+        await sendEmail({ to: notifyTo, subject, html, tenantId: access.tenant_id }).catch((e) =>
+          console.warn("[portal.messages.POST] tenant notification email failed:", e),
+        );
       }
     } catch (e) { console.warn("[portal.messages.POST notify]", e); }
 

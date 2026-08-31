@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, audit } from "@/lib/api/helpers";
+import { encryptField, hmacField, isEncrypted, decryptField } from "@/lib/crypto/field-encryption";
 
 export const runtime = "nodejs";
 
@@ -39,12 +40,20 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     // Whitelist permission fields
+    // AUDIT16: portal_email was written RAW here (no encryptField, no
+    // hmacField) — a plaintext PII write that bypasses at-rest encryption,
+    // and worse it left the row's OLD portal_email_hmac STALE: the OLD
+    // email kept matching the login lookup while the new one didn't. It
+    // is now removed from the raw whitelist and handled explicitly below
+    // with encrypt + hmac (parity with the change-email route). Use
+    // /api/portal-access/[id]/change-email for a proper change (it also
+    // notifies the client).
     const allowedFields = [
       "can_view_offers", "can_view_documents", "can_view_catalog",
       "can_view_invoices", "can_view_profile", "can_view_company_info",
-      "can_submit_rfq", "can_download_pdf",
+      "can_submit_rfqs", "can_submit_rfq", "can_download_pdf",
       "exempt_kyc", "exempt_document_upload", "exempt_location_share",
-      "tier", "status", "portal_email", "portal_level",
+      "tier", "status", "portal_level",
     ];
 
     const update: Record<string, unknown> = {};
@@ -54,7 +63,25 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       }
     }
 
-    if (Object.keys(update).length === 0) {
+    // AUDIT16 — explicit, encrypted portal_email handling (see comment
+    // above). Idempotent for already-encrypted values.
+    let emailChanged = false;
+    let emailRoundTrip = false;
+    if (typeof body.portal_email === "string" && body.portal_email.trim() !== "") {
+      const newEmail = body.portal_email.trim();
+      if (!isEncrypted(newEmail)) {
+        update.portal_email = encryptField(newEmail);
+        update.portal_email_hmac = hmacField(newEmail);
+        emailChanged = true;
+      } else {
+        // Already-encrypted blob passed back unchanged — no-op (the admin
+        // UI round-trips the encrypted value it loaded). Do NOT treat the
+        // request as empty: other clients send portal_email alone.
+        emailRoundTrip = true;
+      }
+    }
+
+    if (Object.keys(update).length === 0 && !emailRoundTrip) {
       return NextResponse.json({ error: "No valid fields to update." }, { status: 400 });
     }
 
@@ -66,9 +93,22 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         return NextResponse.json({ error: "Portal access not found." }, { status: 404 });
       }
       const updated = await auth.store.upsertPortalAccess({ id, ...update });
-      await audit(auth.store, auth.user, req, "portal_access.permissions_update", "portal_access", id, update);
+      // Audit rows must never carry ciphertext or HMAC tokens (audit15/16
+      // pattern) — log the action, not the encrypted blob.
+      const { portal_email: _pe, portal_email_hmac: _ph, ...auditDetails } = update;
+      await audit(auth.store, auth.user, req, "portal_access.permissions_update", "portal_access", id, {
+        ...auditDetails,
+        ...(emailChanged ? { portal_email_updated: true } : {}),
+      });
 
-      return NextResponse.json({ ...updated, password_hash: undefined });
+      // AUDIT16 — response hygiene: decrypt the email for the admin UI and
+      // NEVER leak the internal portal_email_hmac search token (parity with
+      // the GET route / portal-access POST).
+      const { portal_email_hmac: _leak, password_hash: _pw, ...safe } = updated as any;
+      return NextResponse.json({
+        ...safe,
+        ...(updated.portal_email ? { portal_email: decryptField(updated.portal_email) } : {}),
+      });
     } catch (e: any) {
       return NextResponse.json({ error: e.message }, { status: 500 });
     }

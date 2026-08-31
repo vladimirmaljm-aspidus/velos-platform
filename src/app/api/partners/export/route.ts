@@ -56,6 +56,10 @@ export async function GET(req: NextRequest) {
     if (rest.phone && typeof rest.phone === "string") {
       rest.phone = decryptField(rest.phone);
     }
+    // AUDIT16 — contact_phone parity (portal profile PUT encrypts it).
+    if (rest.contact_phone && typeof rest.contact_phone === "string") {
+      rest.contact_phone = decryptField(rest.contact_phone);
+    }
     if (rest.tax_id && typeof rest.tax_id === "string") {
       rest.tax_id = decryptField(rest.tax_id);
     }

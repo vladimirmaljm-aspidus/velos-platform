@@ -155,9 +155,23 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         if (becameQuoted && data.quoted_price != null) {
           try {
             const partner = await store.getPartner(data.partner_id);
-            if (partner?.email) {
+            // AUDIT16 — `partner.email` is the legacy plaintext column and
+            // is often empty; `contact_email` is encrypted at rest (P0-3).
+            // Previously only partner?.email was used, so partners whose
+            // only address is the encrypted contact_email silently got NO
+            // quote email (the audit15/16 encrypted-To bug class). Decrypt
+            // and guard it the same way.
+            const { decryptField, isEncrypted } = await import("@/lib/crypto/field-encryption");
+            const rawEmail = partner?.email || decryptField(partner?.contact_email || "");
+            const partnerEmail =
+              rawEmail && !isEncrypted(rawEmail) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail) ? rawEmail : "";
+            if (partner && partnerEmail) {
               const tenant = await store.getTenant(data.tenant_id);
-              const baseUrl = process.env.APP_BASE_URL || "https://aspidus.onrender.com";
+              // AUDIT16 — drop the stale hardcoded aspidus.onrender.com
+              // fallback (SEC-L6 sandbox artifact; every other route was
+              // scrubbed of it). No configured APP_BASE_URL → link to the
+              // login page path only, which still works via redirect.
+              const baseUrl = process.env.APP_BASE_URL || "";
               const { logisticsQuoteReadyEmail, sendEmail } = await import("@/lib/email/service");
               const route = `${data.origin_city || data.origin_country || "?"} → ${data.destination_city || data.destination_country || "?"}`;
               const { subject, html } = logisticsQuoteReadyEmail({
@@ -172,7 +186,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
                 tenantName: tenant?.name || "VELOS",
                 portalUrl: `${baseUrl}/portal/logistics`,
               });
-              await sendEmail({ to: partner.email, subject, html, tenantId: data.tenant_id });
+              await sendEmail({ to: partnerEmail, subject, html, tenantId: data.tenant_id });
             }
           } catch (e) { console.warn("[logistics.PATCH email]", e); }
         }

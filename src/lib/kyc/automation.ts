@@ -41,22 +41,36 @@ export interface KycAutomationContext {
   baseUrl: string;
 }
 
+/**
+ * AUDIT16 / EMAIL-ADDR — resolve the best usable To: address for a
+ * partner-facing email. `partner.email` is the legacy plaintext column;
+ * `partner.contact_email` (and in some flows `submission.contact_email`)
+ * may be encrypted at rest (P0-3). Every value is passed through
+ * decryptField (a no-op on plaintext) and rejected if it is still an
+ * `enc:` blob after decryption (rotated key) — providers reject ciphertext
+ * To: addresses. Used by approved/rejected/resubmit so all three KYC
+ * decisions behave identically (audit15 fixed only the approved path).
+ */
+function resolvePartnerContactEmail(partner: Partner, submission: KycSubmission): string {
+  const legacy = partner.email || "";
+  if (legacy && !isEncrypted(legacy)) return legacy;
+  const contact = decryptField(partner.contact_email || "");
+  if (contact && !isEncrypted(contact)) return contact;
+  const submissionContact = decryptField(submission.contact_email || "");
+  if (submissionContact && !isEncrypted(submissionContact)) return submissionContact;
+  // Last resort — a legacy plaintext value that decryptField could not
+  // process (returns raw on failure). Still better than dropping the send.
+  return legacy || "";
+}
+
 /** Send the KYC approved email + auto-provision portal access + welcome email. */
 export async function onKycApproved(ctx: KycAutomationContext) {
   const { store, submission, partner, tenant, baseUrl } = ctx;
 
   // 1. Send the KYC-approved email
   const tier = ctx.preferredTier || "business";
-  // AUDIT15 / EMAIL-ADDR — `partner.contact_email` is encrypted at rest;
-  // `partner.email` (legacy column) is plaintext. Decrypt whichever value
-  // we end up using so the To: address is a real address, not an `enc:`
-  // ciphertext (which Postmark/Resend/SMTP all reject).
-  const resolvedContactEmail = decryptField(partner.contact_email || "");
-  const emailTarget =
-    partner.email ||
-    (resolvedContactEmail && !isEncrypted(resolvedContactEmail) ? resolvedContactEmail : "") ||
-    submission.contact_email ||
-    "";
+  // AUDIT15/16 / EMAIL-ADDR — see resolvePartnerContactEmail above.
+  const emailTarget = resolvePartnerContactEmail(partner, submission);
 
   if (emailTarget) {
     const { subject, html } = kycStatusEmail({
@@ -188,7 +202,11 @@ export async function onKycRejected(
   }
 ) {
   const { submission, partner, tenant, reason } = ctx;
-  const emailTarget = partner.email || partner.contact_email || submission.contact_email;
+  // AUDIT16 / EMAIL-ADDR — was `partner.email || partner.contact_email ||
+  // submission.contact_email` RAW: for partners whose only address is the
+  // encrypted contact_email, the rejection email went out To: `enc:…`
+  // (rejected by every provider, then retried forever from mail_queue).
+  const emailTarget = resolvePartnerContactEmail(partner, submission);
   if (!emailTarget) return;
 
   const { subject, html } = kycStatusEmail({
@@ -213,7 +231,8 @@ export async function onKycResubmit(
   }
 ) {
   const { submission, partner, tenant, note } = ctx;
-  const emailTarget = partner.email || partner.contact_email || submission.contact_email;
+  // AUDIT16 / EMAIL-ADDR — same ciphertext-To bug as onKycRejected above.
+  const emailTarget = resolvePartnerContactEmail(partner, submission);
   if (!emailTarget) return;
 
   const { subject, html } = kycStatusEmail({

@@ -60,10 +60,23 @@ export async function GET() {
       setup_token,
       ...safeAccess
     } = access as any;
+    // AUDIT16 — decrypt the client's own email (parity with every admin
+    // read path; the portal client obviously knows their own address, and
+    // the UI previously risked rendering the enc: blob for it).
+    if (safeAccess.portal_email && typeof safeAccess.portal_email === "string") {
+      const { decryptField } = await import("@/lib/crypto/field-encryption");
+      safeAccess.portal_email = decryptField(safeAccess.portal_email);
+    }
     return NextResponse.json({ access: safeAccess });
   } catch (e) {
     console.error("[portal/me] Error:", e);
-    return NextResponse.json({ access: null }, { status: 200 });
+    // AUDIT16 — DB outage ≠ "not authenticated" (same fix as /api/auth/me):
+    // 503 instead of 200, so the portal shell can retry instead of
+    // bouncing the client to the login screen over a transient DB blip.
+    return NextResponse.json(
+      { access: null, error: "db_connection_failed" },
+      { status: 503, headers: { "Retry-After": "5" } },
+    );
   }
 }
 

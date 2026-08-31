@@ -49,6 +49,24 @@ export async function POST(req: NextRequest) {
     const auth = await requireAuth(req);
     if (auth instanceof NextResponse) return auth;
 
+    // AUDIT16 / MEDIUM-3 — rate-limit the TOTP verification itself.
+    // /api/auth/2fa/login and /recovery are throttled (5/5min) but this
+    // activation endpoint was not: an attacker with a stolen session
+    // could brute-force the 6-digit code at high request rate and
+    // ACTIVATE 2FA on the victim's account (locking the owner out of
+    // recovery). 5 attempts / 5 minutes mirrors the sibling routes.
+    const { checkRateLimit } = await import("@/lib/security/rate-limiter");
+    const rl = await checkRateLimit(`2fa:verify:${auth.user.id}`, 5, 5 * 60 * 1000);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: "Too many 2FA verification attempts. Please try again in a few minutes." },
+        {
+          status: 429,
+          headers: rl.retryAfter ? { "Retry-After": String(Math.ceil(rl.retryAfter / 1000)) } : {},
+        },
+      );
+    }
+
     // Refetch the user — `auth.user` is the SafeUser view that strips
     // totp_secret. We need the raw secret to verify the token.
     const user = await auth.store.getUserById(auth.user.id);

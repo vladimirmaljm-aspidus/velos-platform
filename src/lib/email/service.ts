@@ -3,6 +3,8 @@ import { getStore } from "@/lib/data/store";
 import {
   decryptSensitiveFields,
   COMMS_SENSITIVE_KEYS,
+  decryptField,
+  isEncrypted,
 } from "@/lib/crypto/field-encryption";
 
 /**
@@ -43,6 +45,22 @@ interface EmailAttachment {
   contentType: string;
 }
 
+interface SendEmailResult {
+  success: boolean;
+  error?: string;
+  messageId?: string;
+  provider?: EmailProvider;
+  /**
+   * AUDIT16 — true when the email was NOT actually delivered: no provider
+   * is configured and the message was parked in mail_queue instead.
+   * Callers that flip business state on "sent" (invoice/proforma/offer
+   * status→sent, sent_at stamp) MUST check this flag — previously the
+   * dev-queue path returned success:true and documents were marked "sent"
+   * even though nothing was ever emailed to the client.
+   */
+  queued?: boolean;
+}
+
 interface SendEmailOptions {
   to: string;
   subject: string;
@@ -50,6 +68,17 @@ interface SendEmailOptions {
   text?: string;
   tenantId?: string;
   attachments?: EmailAttachment[];
+  /**
+   * AUDIT16 — mail-queue metadata. When a send fails (or is queued with
+   * no provider configured), these are persisted on the mail_queue row so
+   * the Retry endpoint can (a) UPDATE the same row instead of inserting a
+   * duplicate failed row, and (b) REGENERATE the document PDF attachment
+   * (the original Buffer is never persisted). Set by the document send
+   * routes (invoice / proforma / offer / LOI).
+   */
+  queueEntryId?: string;
+  entityType?: string;
+  entityId?: string;
   /**
    * Optional per-message Reply-To address. Overrides the comms blob's
    * `reply_to` field when set — used by the breach-notification
@@ -330,7 +359,7 @@ export async function getEmailConfig(tenantId?: string): Promise<EmailConfig | n
  * Send an email using the configured provider.
  * Falls back to queueing in mail_queue if no provider is set up.
  */
-export async function sendEmail(opts: SendEmailOptions): Promise<{ success: boolean; error?: string; messageId?: string; provider?: EmailProvider }> {
+export async function sendEmail(opts: SendEmailOptions): Promise<SendEmailResult> {
   const config = await getEmailConfig(opts.tenantId);
 
   // No provider configured — queue for later
@@ -360,13 +389,20 @@ export async function sendEmail(opts: SendEmailOptions): Promise<{ success: bool
     // (filtered as `tenant_id = 'SYSTEM'`) rather than being a NULL
     // orphan that no query surfaces.
     await store.upsertMailQueueEntry({
+      // AUDIT16 — when a queued/failed row is being re-sent, update it in
+      // place (id set → UPDATE path in smartUpsert) instead of inserting
+      // yet another row. entity_type/entity_id let the Retry endpoint
+      // regenerate the PDF attachment (see migration 077).
+      ...(opts.queueEntryId ? { id: opts.queueEntryId } : {}),
       to_email: opts.to,
       subject: opts.subject,
       body: opts.html,
       status: "queued",
+      ...(opts.entityType ? { entity_type: opts.entityType } : {}),
+      ...(opts.entityId ? { entity_id: opts.entityId } : {}),
       tenant_id: opts.tenantId || "SYSTEM",
     } as any);
-    return { success: true, messageId: "dev-queued", provider: "none" };
+    return { success: true, messageId: "dev-queued", provider: "none", queued: true };
   }
 
   try {
@@ -395,12 +431,20 @@ export async function sendEmail(opts: SendEmailOptions): Promise<{ success: bool
     let queueEntryId: string | undefined;
     try {
       const entry = await store.upsertMailQueueEntry({
+        // AUDIT16 — pass through the caller's queueEntryId (retry flow) so
+        // the failed retry UPDATES the original row (attempts/error) —
+        // previously every failed retry ALSO inserted a brand-new failed
+        // row, duplicating the queue (audit finding: "duplicate rows on
+        // every failed retry").
+        ...(opts.queueEntryId ? { id: opts.queueEntryId } : {}),
         to_email: opts.to,
         subject: opts.subject,
         body: opts.html,
         status: "failed",
         attempts: 1,
         error: e.message,
+        ...(opts.entityType ? { entity_type: opts.entityType } : {}),
+        ...(opts.entityId ? { entity_id: opts.entityId } : {}),
         // P1 mail_queue orphan fix (task C-5 Fix 3): same sentinel
         // pattern as the no-provider branch above — a NULL tenant_id
         // here would create an invisible orphan row. The notification
@@ -410,7 +454,7 @@ export async function sendEmail(opts: SendEmailOptions): Promise<{ success: bool
         // same gate.
         tenant_id: opts.tenantId || "SYSTEM",
       } as any);
-      queueEntryId = (entry as any)?.id;
+      queueEntryId = (entry as any)?.id ?? opts.queueEntryId;
     } catch (queueErr) {
       console.error("[email] failed to persist mail_queue entry:", queueErr);
     }
@@ -444,6 +488,19 @@ export async function sendEmail(opts: SendEmailOptions): Promise<{ success: bool
 
     return { success: false, error: e.message, provider: config.provider };
   }
+}
+
+/**
+ * AUDIT16 — is this To: address usable? Providers reject `enc:` ciphertext
+ * (the audit15/16 bug class: values encrypted at rest passed straight
+ * through as To:). decryptField is a no-op on plaintext, so run every
+ * stored address through it before sending; if the result is still `enc:`
+ * (rotated key) the row is undecryptable and must not be retried blindly.
+ */
+export function resolveQueueToAddress(raw: string): { to: string; usable: boolean } {
+  const to = decryptField(raw || "");
+  const usable = !!to && !isEncrypted(to) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to);
+  return { to: usable ? to : raw, usable };
 }
 
 // ============================================================

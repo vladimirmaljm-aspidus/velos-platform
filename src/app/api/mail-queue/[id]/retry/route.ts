@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, audit } from "@/lib/api/helpers";
-import { sendEmail } from "@/lib/email/service";
+import { sendEmail, resolveQueueToAddress } from "@/lib/email/service";
 
 export const runtime = "nodejs";
 
@@ -9,6 +9,23 @@ export const runtime = "nodejs";
  *
  * Manually re-attempt sending a queued or failed mail_queue entry. Triggered by
  * an admin via the "Retry" button in the Mail Queue view.
+ *
+ * AUDIT16 fixes applied here (see also migration 077 + sendEmail opts):
+ *   1. TO-ADDRESS DECRYPT — rows queued by the pre-audit15/16 bugs stored the
+ *      `enc:` ciphertext as to_email (every provider rejects it, so the retry
+ *      failed forever). The stored address now runs through decryptField
+ *      (no-op on plaintext); if it is still `enc:` after that (rotated key)
+ *      the retry is refused with a clear, actionable error instead of
+ *      silently failing again.
+ *   2. NO DUPLICATE ROWS — queueEntryId is passed into sendEmail, so a failed
+ *      retry UPDATES this row (attempts/error) rather than ALSO inserting a
+ *      brand-new failed row (the old catch in sendEmail always inserted).
+ *   3. ATTACHMENT REGENERATION — for rows carrying entity_type/entity_id
+ *      (document emails), the PDF is regenerated fresh and re-attached.
+ *      Previously a retried document email re-sent
+ *      "Please find attached your invoice…" with NO attachment (buffers are
+ *      never persisted). Legacy rows without the reference keep the old
+ *      body-only behaviour.
  *
  * Idempotency: this route does NOT auto-retry (per Re-Audit-2 N9 / rule 5).
  * Each call attempts one send. If the send fails again, the queue entry is
@@ -65,19 +82,89 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       );
     }
 
+    // ── AUDIT16 / fix 1 — resolve a usable To: address ────────────────────
+    // Pre-audit15/16 rows may hold the `enc:` ciphertext (queued by the
+    // encrypted-To bugs). Decrypt (no-op for plaintext) and refuse clearly
+    // if the row is undecryptable — retrying a garbage address forever was
+    // the exact "email keeps failing with correct settings" symptom.
+    const { to: toAddress, usable: toUsable } = resolveQueueToAddress((entry as any).to_email);
+    if (!toUsable) {
+      const badAddrMsg =
+        "This queued email's recipient address is unreadable (it was stored encrypted and cannot be decrypted with the current key). " +
+        "Fix the contact's email address (Partners / Portal Access) and send the email again — this queue row cannot be retried.";
+      let badUpdate = sb
+        .from("mail_queue")
+        .update({ status: "failed", error: badAddrMsg })
+        .eq("id", id);
+      if (!auth.isSuperAdmin && tid) badUpdate = badUpdate.eq("tenant_id", tid);
+      await badUpdate;
+      return NextResponse.json({ error: badAddrMsg }, { status: 422 });
+    }
+
+    // ── AUDIT16 / fix 3 — regenerate the PDF attachment when the row
+    // references a business document (migration 077 columns). ──────────────
+    let attachments: { filename: string; content: Buffer; contentType: string }[] | undefined;
+    const entityType = ((entry as any).entity_type as string | null | undefined) || undefined;
+    const entityId = ((entry as any).entity_id as string | null | undefined) || undefined;
+    if (entityType && entityId) {
+      const docTypes = new Set(["offer", "invoice", "proforma", "loi"]);
+      if (docTypes.has(entityType)) {
+        try {
+          const { generatePdf } = await import("@/lib/pdf/generator");
+          const tenantIdForPdf = (entry as any).tenant_id || tid;
+          if (!tenantIdForPdf || tenantIdForPdf === "SYSTEM") {
+            return NextResponse.json(
+              { error: "Cannot regenerate the attachment: this queue row has no tenant owner. Re-send the document from its detail page instead." },
+              { status: 422 },
+            );
+          }
+          const result = await generatePdf({ docType: entityType as any, docId: entityId, tenantId: tenantIdForPdf });
+          attachments = [{
+            filename: `${entityType}-${entityId}.pdf`,
+            content: Buffer.from(result.buffer),
+            contentType: "application/pdf",
+          }];
+        } catch (pdfErr: any) {
+          // The document may have been deleted since the email was queued —
+          // retry WITHOUT the attachment rather than hard-failing (matches
+          // the legacy body-only behaviour), but tell the admin.
+          console.error("[mail-queue retry] PDF regeneration failed:", pdfErr);
+        }
+      }
+    }
+
     // Try to resend.
     try {
       const result = await sendEmail({
-        to: (entry as any).to_email,
+        to: toAddress,
         subject: (entry as any).subject,
         html: (entry as any).body,
         tenantId: (entry as any).tenant_id || tid,
+        // AUDIT16 / fix 2 — failures update THIS row (attempts/error),
+        // they no longer insert a duplicate failed row.
+        queueEntryId: id,
+        ...(entityType ? { entityType } : {}),
+        ...(entityId ? { entityId } : {}),
+        attachments,
       });
 
       if (!result.success) {
         // sendEmail() already updated the queue entry (attempts+1, new error)
         // and re-broadcast the failure notification — surface the error.
         return NextResponse.json({ error: result.error || "Retry failed." }, { status: 500 });
+      }
+
+      // Queued again (still no provider configured) — do NOT mark sent.
+      if (result.queued) {
+        return NextResponse.json(
+          {
+            ok: false,
+            queued: true,
+            error:
+              "No email provider is configured for this tenant (Settings → Communications). The email stays queued — configure a provider, then retry.",
+          },
+          { status: 409 },
+        );
       }
 
       // Mark as sent in the queue (sendEmail may have already updated it for
@@ -102,7 +189,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
       try {
         await audit(auth.store, auth.user, req, "mail.retry_sent", "mail_queue", id, {
-          to: (entry as any).to_email,
+          to: toAddress,
           subject: (entry as any).subject,
         });
       } catch (auditErr) {
@@ -115,6 +202,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       // attempts counter so the UI shows the latest retry attempt count.
       // Mark status as "failed" so the queue view shows the row as failed
       // (not silently stuck on "queued"). (Audit finding M-6.)
+      // AUDIT16: sendEmail's own catch ALSO updated this row (queueEntryId),
+      // so this is now a safety net rather than the primary writer.
       const nextAttempts = (Number((entry as any).attempts) || 0) + 1;
       let failedUpdate = sb
         .from("mail_queue")

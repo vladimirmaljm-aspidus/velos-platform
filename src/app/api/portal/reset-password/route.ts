@@ -97,14 +97,20 @@ export async function POST(req: NextRequest) {
       locked_until: null,
     });
 
+    // AUDIT16 — audit rows must carry the DECRYPTED email, not the enc:
+    // ciphertext (the Audit Log view renders `username` verbatim).
+    const auditEmail = (() => {
+      const d = decryptField(current.portal_email || "");
+      return d && !isEncrypted(d) ? d : "";
+    })();
     await store.appendAudit({
       tenant_id: result.tenantId || null,
       user_id: null,
-      username: `portal:${current.portal_email || result.targetId}`,
+      username: `portal:${auditEmail || result.targetId}`,
       action: "portal.password_reset_completed",
       entity_type: "portal_access",
       entity_id: result.targetId!,
-      details: { email: current.portal_email },
+      details: { email: auditEmail || "[unreadable]" },
       ip: getIp(req),
       user_agent: req.headers.get("user-agent") || null,
     });

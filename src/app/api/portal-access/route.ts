@@ -78,6 +78,24 @@ export async function POST(req: NextRequest) {
     body.portal_email = encryptField(body.portal_email);
   }
 
+  // ── AUDIT16 / MEDIUM-5 — partner ownership validation ──────────────────
+  // `body.partner_id` was written to the portal_access row WITHOUT checking
+  // that the partner belongs to the caller's tenant (the service-role
+  // store bypasses RLS). A tenant admin could bind a portal account to a
+  // FOREIGN tenant's partner — in the cross-tenant marketplace community
+  // (groups/Q&A/reviews) partner_id IS the identity, enabling masquerading.
+  if (body.partner_id) {
+    const partner = await auth.store.getPartner(body.partner_id);
+    if (!partner) {
+      return NextResponse.json({ error: "Partner not found." }, { status: 404 });
+    }
+    if (!auth.isSuperAdmin && partner.tenant_id !== tenantId) {
+      return NextResponse.json({ error: "Partner not found." }, { status: 404 });
+    }
+    // Keep the fetched row for the auto-fill below (avoids a second read).
+    (req as any)._partnerRow = partner;
+  }
+
   // ── Fresh-create defaults (id absent) ─────────────────────────────────
   if (!body.id) {
     // Auto-fill portal_email from the partner record if the admin didn't
@@ -89,7 +107,7 @@ export async function POST(req: NextRequest) {
     // but contact_email is set, fall back to contact_email (which IS
     // encrypted at rest, so decrypt it first).
     if (!body.portal_email && body.partner_id) {
-      const partner = await auth.store.getPartner(body.partner_id);
+      const partner = ((req as any)._partnerRow as any) || await auth.store.getPartner(body.partner_id);
       if (partner?.email) {
         body.portal_email = partner.email;
       } else if (partner?.contact_email) {

@@ -187,6 +187,13 @@ async function _get(req: NextRequest) {
       if (rest.phone && typeof rest.phone === "string") {
         rest.phone = decryptField(rest.phone);
       }
+      // AUDIT16 — contact_phone: encrypted by the portal profile PUT
+      // (B4) but never decrypted on ANY read path — after a client edited
+      // their profile, every admin view rendered the enc: blob. Decrypt
+      // here (no-op on plaintext).
+      if (rest.contact_phone && typeof rest.contact_phone === "string") {
+        rest.contact_phone = decryptField(rest.contact_phone);
+      }
       if (rest.tax_id && typeof rest.tax_id === "string") {
         rest.tax_id = decryptField(rest.tax_id);
       }
@@ -376,6 +383,15 @@ async function _post(req: NextRequest) {
     if (body.phone != null) {
       if (typeof body.phone === "string" && body.phone !== "" && !isEncrypted(body.phone)) {
         body.phone = encryptField(body.phone);
+      }
+    }
+    // AUDIT16 — contact_phone: the portal profile PUT already encrypts it
+    // (B4), so the admin write path must too — otherwise the same column
+    // ends up with a MIX of plaintext (admin-created) and ciphertext
+    // (client-edited) rows.
+    if (body.contact_phone != null) {
+      if (typeof body.contact_phone === "string" && body.contact_phone !== "" && !isEncrypted(body.contact_phone)) {
+        body.contact_phone = encryptField(body.contact_phone);
       }
     }
     if (body.tax_id != null) {

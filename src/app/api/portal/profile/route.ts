@@ -38,6 +38,12 @@ export async function GET() {
   if (safePartner.phone && typeof safePartner.phone === "string") {
     safePartner.phone = decryptField(safePartner.phone);
   }
+  // AUDIT16 — contact_phone: this route's own PUT ENCRYPTS it, but the GET
+  // never decrypted it — after a client saved their profile, the portal
+  // profile page itself rendered the enc: blob back to them.
+  if (safePartner.contact_phone && typeof safePartner.contact_phone === "string") {
+    safePartner.contact_phone = decryptField(safePartner.contact_phone);
+  }
   if (safePartner.tax_id && typeof safePartner.tax_id === "string") {
     safePartner.tax_id = decryptField(safePartner.tax_id);
   }

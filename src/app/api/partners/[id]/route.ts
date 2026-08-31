@@ -59,6 +59,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     if (safePartner.phone && typeof safePartner.phone === "string") {
       safePartner.phone = decryptField(safePartner.phone);
     }
+    // AUDIT16 — decrypt contact_phone (parity with the list route; the
+    // portal profile PUT encrypts it).
+    if (safePartner.contact_phone && typeof safePartner.contact_phone === "string") {
+      safePartner.contact_phone = decryptField(safePartner.contact_phone);
+    }
     if (safePartner.tax_id && typeof safePartner.tax_id === "string") {
       safePartner.tax_id = decryptField(safePartner.tax_id);
     }

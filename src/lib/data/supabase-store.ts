@@ -39,7 +39,7 @@ import { createHash } from "crypto";
 // encrypted with AES-256-GCM (random IV per row — no equality leakage).
 // See migration 042_field_encryption_hmac.sql and the docstring at the
 // bottom of src/lib/crypto/field-encryption.ts.
-import { hmacField } from "@/lib/crypto/field-encryption";
+import { hmacField, encryptField, isEncrypted } from "@/lib/crypto/field-encryption";
 
 type SupaRow = Record<string, unknown>;
 
@@ -2657,9 +2657,9 @@ export class SupabaseStore implements Store {
       updated_at: new Date().toISOString(),
     };
     // Transfer address & contact fields if present
+    // (tax_id / vat_number / contact_email / contact_phone are transferred
+    // encrypted below — AUDIT16 — do NOT assign them here in plaintext.)
     if (sub.legal_name) partnerUpdate.name = sub.legal_name;
-    if (sub.tax_id) partnerUpdate.tax_id = sub.tax_id;
-    if (sub.vat_number) partnerUpdate.vat_number = sub.vat_number;
     if (sub.registration_number) partnerUpdate.registration_number = sub.registration_number;
     if (sub.company_website) partnerUpdate.website = sub.company_website;
     if (sub.address_line) partnerUpdate.address_line = sub.address_line;
@@ -2668,8 +2668,31 @@ export class SupabaseStore implements Store {
     if (sub.postal_code) partnerUpdate.postal_code = sub.postal_code;
     if (sub.country) partnerUpdate.country = sub.country;
     if (sub.contact_name) partnerUpdate.contact_name = sub.contact_name;
-    if (sub.contact_email) partnerUpdate.contact_email = sub.contact_email;
-    if (sub.contact_phone) partnerUpdate.contact_phone = sub.contact_phone;
+    // AUDIT16 / P0-3 — the KYC approve flow runs INSIDE the store, bypassing
+    // the API-layer encryption that partners POST/PUT applies (audit15
+    // pattern). Previously these fields were transferred to the partner row
+    // in PLAINTEXT: every KYC-approved partner silently lost at-rest
+    // encryption, and tax_id/vat_number rows lacked the HMAC search token
+    // the duplicate-check relies on. Mirror the partners-route encryption
+    // exactly (enc: prefix + hmac columns, idempotent on re-approve).
+    if (sub.contact_email) {
+      partnerUpdate.contact_email = isEncrypted(sub.contact_email)
+        ? sub.contact_email
+        : encryptField(sub.contact_email);
+    }
+    if (sub.contact_phone) {
+      partnerUpdate.contact_phone = isEncrypted(sub.contact_phone)
+        ? sub.contact_phone
+        : encryptField(sub.contact_phone);
+    }
+    if (sub.tax_id) {
+      partnerUpdate.tax_id_hmac = hmacField(sub.tax_id);
+      partnerUpdate.tax_id = isEncrypted(sub.tax_id) ? sub.tax_id : encryptField(sub.tax_id);
+    }
+    if (sub.vat_number) {
+      partnerUpdate.vat_number_hmac = hmacField(sub.vat_number);
+      partnerUpdate.vat_number = isEncrypted(sub.vat_number) ? sub.vat_number : encryptField(sub.vat_number);
+    }
     if (sub.bank_name) partnerUpdate.bank_name = sub.bank_name;
     if (sub.bank_account) partnerUpdate.bank_account = sub.bank_account;
     if (sub.bank_iban) partnerUpdate.bank_iban = sub.bank_iban;

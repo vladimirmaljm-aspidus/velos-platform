@@ -5,6 +5,8 @@ import { audit, getIp } from "@/lib/api/helpers";
 import { lookupIp } from "@/lib/utils/geo-ip";
 import { checkRateLimit, resetRateLimit } from "@/lib/security/rate-limiter";
 import { getRateLimitConfig } from "@/lib/security/rate-limit-config";
+// AUDIT16 — decrypt portal_email for the response (encrypted at rest).
+import { decryptField } from "@/lib/crypto/field-encryption";
 
 export const runtime = "nodejs";
 
@@ -218,7 +220,7 @@ export async function POST(req: NextRequest) {
       try {
         await audit(
           store,
-          { id: undefined, username: access.portal_email, tenant_id: access.tenant_id },
+          { id: undefined, username: email || access.portal_email, tenant_id: access.tenant_id },
           req,
           "portal.login_failed",
           "portal_access",
@@ -236,7 +238,7 @@ export async function POST(req: NextRequest) {
       try {
         await audit(
           store,
-          { id: undefined, username: access.portal_email, tenant_id: access.tenant_id },
+          { id: undefined, username: email || access.portal_email, tenant_id: access.tenant_id },
           req,
           "portal.login_failed",
           "portal_access",
@@ -256,7 +258,7 @@ export async function POST(req: NextRequest) {
       try {
         await audit(
           store,
-          { id: undefined, username: access.portal_email, tenant_id: access.tenant_id },
+          { id: undefined, username: email || access.portal_email, tenant_id: access.tenant_id },
           req,
           "portal.login_failed",
           "portal_access",
@@ -270,7 +272,7 @@ export async function POST(req: NextRequest) {
       try {
         await audit(
           store,
-          { id: undefined, username: access.portal_email, tenant_id: access.tenant_id },
+          { id: undefined, username: email || access.portal_email, tenant_id: access.tenant_id },
           req,
           "portal.login_failed",
           "portal_access",
@@ -283,7 +285,12 @@ export async function POST(req: NextRequest) {
 
     const token = await createSession({
       sub: `portal:${access.id}`,
-      username: access.portal_email || "",
+      // AUDIT16 — session username must be the PLAINTEXT email the client
+      // typed (`email` from the body), not the encrypted-at-rest
+      // portal_email: this value lands in login_history.username, which
+      // the "Portal Locations" admin view filters with `.includes("@")`
+      // — ciphertext usernames made that user's login history vanish.
+      username: email || "",
       role: "portal_client",
       token_version: access.token_version || 0,
       tenant_id: access.tenant_id,
@@ -320,7 +327,7 @@ export async function POST(req: NextRequest) {
     try {
       await audit(
         store,
-        { id: undefined, username: access.portal_email, tenant_id: access.tenant_id },
+        { id: undefined, username: email || access.portal_email, tenant_id: access.tenant_id },
         req,
         "portal.login",
         "portal_access",
@@ -329,7 +336,18 @@ export async function POST(req: NextRequest) {
       );
     } catch (e) { console.error("[audit]", e); }
 
-    return NextResponse.json({ access: { ...access, password_hash: undefined } });
+    // AUDIT16 — response hygiene: strip the internal portal_email_hmac
+    // search token (only /api/portal/me used to strip it) and decrypt
+    // portal_email so the portal shell renders a real address instead of
+    // the enc: blob.
+    const {
+      password_hash: _pw, portal_email_hmac: _hmac, failed_attempts: _fa,
+      locked_until: _lu, recovery_codes: _rc, setup_token: _st, ...safeAccess
+    } = access as any;
+    if (safeAccess.portal_email && typeof safeAccess.portal_email === "string") {
+      safeAccess.portal_email = decryptField(safeAccess.portal_email);
+    }
+    return NextResponse.json({ access: safeAccess });
   } catch (e) {
     console.error("[portal.login]", e);
     return NextResponse.json({ error: "Server error." }, { status: 500 });

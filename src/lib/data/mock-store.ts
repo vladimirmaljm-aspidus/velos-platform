@@ -8,6 +8,8 @@
 import { Store, ListParams, ListResult } from "./store";
 import * as mock from "./mock";
 import { ensureStarterTemplates } from "./starter-templates";
+// AUDIT16 — encryption parity with the API layer (see SupabaseStore).
+import { encryptField, decryptField, hmacField, isEncrypted } from "@/lib/crypto/field-encryption";
 import {
   User, Partner, Product, Deal, Offer, Demand, SharedDocument,
   AuditLog, Setting, UserTask, InventoryMovement, EntityNote,
@@ -991,8 +993,18 @@ export class MockStore implements Store {
   async getPortalAccessByPartner(partnerId: string): Promise<PortalAccess | null> {
     return mock.portalAccess.find((p) => p.partner_id === partnerId) || null;
   }
+  // AUDIT16 — portal rows created through the API layer (portal-access
+  // POST, KYC automation) store portal_email ENCRYPTED + portal_email_hmac.
+  // Equality lookups must match via the HMAC token too, or those rows are
+  // unfindable (login/duplicate-check silently broken in mock/dev flows).
+  // Mirrors the SupabaseStore lookup strategy (see its 2126-2319 block).
+  private matchPortalEmail(p: PortalAccess, email: string): boolean {
+    if (p.portal_email === email) return true;
+    const hmac = (p as any).portal_email_hmac as string | undefined;
+    return !!hmac && hmac === hmacField(email);
+  }
   async getPortalAccessByEmail(tenantId: string, email: string): Promise<PortalAccess | null> {
-    return mock.portalAccess.find((p) => p.tenant_id === tenantId && p.portal_email === email) || null;
+    return mock.portalAccess.find((p) => p.tenant_id === tenantId && this.matchPortalEmail(p, email)) || null;
   }
   async getPortalAccessById(id: string): Promise<PortalAccess | null> {
     return mock.portalAccess.find((p) => p.id === id) || null;
@@ -1021,7 +1033,10 @@ export class MockStore implements Store {
       status: p.status || "pending_approval", approved_by: p.approved_by || null,
       approved_at: p.approved_at || null, invited_at: p.invited_at || null,
       welcome_email_sent: p.welcome_email_sent ?? false,
-      portal_email: p.portal_email || null, password_hash: p.password_hash || null,
+      // AUDIT16 — persist the HMAC search token on CREATE (the explicit
+      // field list used to drop it, breaking lookups for encrypted rows).
+      portal_email: p.portal_email || null, portal_email_hmac: (p as any).portal_email_hmac ?? null,
+      password_hash: p.password_hash || null,
       must_set_password: p.must_set_password ?? true, last_login_at: null, last_login_ip: null,
       failed_attempts: 0, locked_until: null, token_version: 0,
       created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
@@ -1032,7 +1047,7 @@ export class MockStore implements Store {
     const idx = mock.portalAccess.findIndex((p) => p.id === id); if (idx >= 0) mock.portalAccess.splice(idx, 1);
   }
   async verifyPortalCredentials(tenantId: string, email: string, password: string): Promise<PortalAccess | null> {
-    const pa = mock.portalAccess.find((p) => p.tenant_id === tenantId && p.portal_email === email && p.password_hash);
+    const pa = mock.portalAccess.find((p) => p.tenant_id === tenantId && this.matchPortalEmail(p, email) && p.password_hash);
     if (!pa) return null;
     if (pa.status !== "active") return null;
     if (pa.password_hash === mock.mockHash(password)) {
@@ -1043,7 +1058,7 @@ export class MockStore implements Store {
   }
 
   async verifyPortalCredentialsByEmail(email: string, password: string): Promise<PortalAccess | null> {
-    const pa = mock.portalAccess.find((p) => p.portal_email === email && p.password_hash);
+    const pa = mock.portalAccess.find((p) => this.matchPortalEmail(p, email) && p.password_hash);
     if (!pa) return null;
     if (pa.status !== "active") return null;
     if (pa.password_hash === mock.mockHash(password)) {
@@ -1053,10 +1068,10 @@ export class MockStore implements Store {
     return null;
   }
   async getPortalAccessByEmailAnyTenant(email: string): Promise<PortalAccess | null> {
-    return mock.portalAccess.find((p) => p.portal_email === email) || null;
+    return mock.portalAccess.find((p) => this.matchPortalEmail(p, email)) || null;
   }
   async listPortalAccessByEmail(email: string): Promise<PortalAccess[]> {
-    return mock.portalAccess.filter((p) => p.portal_email === email);
+    return mock.portalAccess.filter((p) => this.matchPortalEmail(p, email));
   }
 
   // ---- document templates ----
@@ -1223,8 +1238,6 @@ export class MockStore implements Store {
     if (partner) {
       partner.entity_type = sub.entity_type;
       if (sub.legal_name) partner.name = sub.legal_name;
-      if (sub.tax_id) partner.tax_id = sub.tax_id;
-      if (sub.vat_number) partner.vat_number = sub.vat_number;
       if (sub.registration_number) partner.registration_number = sub.registration_number;
       if (sub.address_line) partner.address_line = sub.address_line;
       if (sub.city) partner.city = sub.city;
@@ -1232,8 +1245,28 @@ export class MockStore implements Store {
       if (sub.postal_code) partner.postal_code = sub.postal_code;
       if (sub.country) partner.country = sub.country;
       if (sub.contact_name) partner.contact_name = sub.contact_name;
-      if (sub.contact_email) partner.contact_email = sub.contact_email;
-      if (sub.contact_phone) partner.contact_phone = sub.contact_phone;
+      // AUDIT16 / P0-3 — encrypt PII on transfer, mirroring SupabaseStore
+      // (the partners API layer encrypts on every write; this store path
+      // used to be the only plaintext one). Idempotent: a re-approve of the
+      // SAME value keeps the existing ciphertext (no churn).
+      const sameValue = (current: unknown, plain: string) => {
+        if (typeof current !== "string" || !current) return false;
+        return isEncrypted(current) ? decryptField(current) === plain : current === plain;
+      };
+      if (sub.contact_email && !sameValue(partner.contact_email, sub.contact_email)) {
+        partner.contact_email = isEncrypted(sub.contact_email) ? sub.contact_email : encryptField(sub.contact_email);
+      }
+      if (sub.contact_phone && !sameValue(partner.contact_phone, sub.contact_phone)) {
+        partner.contact_phone = isEncrypted(sub.contact_phone) ? sub.contact_phone : encryptField(sub.contact_phone);
+      }
+      if (sub.tax_id && !sameValue(partner.tax_id, sub.tax_id)) {
+        partner.tax_id_hmac = hmacField(sub.tax_id);
+        partner.tax_id = isEncrypted(sub.tax_id) ? sub.tax_id : encryptField(sub.tax_id);
+      }
+      if (sub.vat_number && !sameValue(partner.vat_number, sub.vat_number)) {
+        partner.vat_number_hmac = hmacField(sub.vat_number);
+        partner.vat_number = isEncrypted(sub.vat_number) ? sub.vat_number : encryptField(sub.vat_number);
+      }
       if (sub.bank_name) partner.bank_name = sub.bank_name;
       if (sub.bank_account) partner.bank_account = sub.bank_account;
       if (sub.bank_iban) partner.bank_iban = sub.bank_iban;

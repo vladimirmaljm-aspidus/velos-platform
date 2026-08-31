@@ -152,7 +152,8 @@ export async function POST(req: NextRequest) {
     try {
       const token = await createSession({
         sub: `portal:${access.id}`,
-        username: access.portal_email || "",
+        // AUDIT16 — plaintext session username (login_history renders it).
+        username: decryptField(access.portal_email || "") || "",
         role: "portal_client",
         token_version: nextTokenVersion,
         tenant_id: access.tenant_id,
@@ -163,14 +164,21 @@ export async function POST(req: NextRequest) {
     }
 
     // Audit log the password change
+    // AUDIT16 — audit rows carry the DECRYPTED email (username and details
+    // are rendered verbatim in the Audit Log view — ciphertext there was
+    // unreadable noise).
+    const auditEmail = (() => {
+      const d = decryptField(access.portal_email || "");
+      return d && !isEncrypted(d) ? d : "";
+    })();
     await store.appendAudit({
       tenant_id: access.tenant_id,
       user_id: null,
-      username: `portal:${access.portal_email || access.id}`,
+      username: `portal:${auditEmail || access.id}`,
       action: "portal.password_changed",
       entity_type: "portal_access",
       entity_id: access.id,
-      details: { email: access.portal_email },
+      details: { email: auditEmail || "[unreadable]" },
       // Audit F-6/S-1: use getIp() (reads last XFF entry, not the spoofable first).
       ip: getIp(req) || "unknown",
       user_agent: req.headers.get("user-agent") || null,

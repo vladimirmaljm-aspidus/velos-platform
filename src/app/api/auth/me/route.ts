@@ -71,7 +71,14 @@ export async function GET() {
     return NextResponse.json({ user: safeUser, default_locale: defaultLocale });
   } catch (e) {
     console.error("[auth/me] Error:", e);
-    // Return null user instead of crashing — app will show login page
-    return NextResponse.json({ user: null, error: "db_connection_failed" }, { status: 200 });
+    // AUDIT16 — a DB outage was masked as HTTP 200 {user:null}, so every
+    // logged-in user got silently "logged out" (redirected to login) while
+    // their session cookie was still perfectly valid — a transient DB
+    // blip looked like an auth failure. 503 lets the frontend distinguish
+    // "backend down" from "not authenticated" and retry instead.
+    return NextResponse.json(
+      { user: null, error: "db_connection_failed" },
+      { status: 503, headers: { "Retry-After": "5" } },
+    );
   }
 }

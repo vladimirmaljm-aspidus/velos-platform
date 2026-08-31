@@ -124,7 +124,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // If `email` is provided in the body, generate a PDF and email it to the
     // recipient. If `email` is missing, we skip the email step and only mark
     // the proforma as sent + push a portal notification.
-    let emailResult: { success: boolean; skipped?: boolean; error?: string } = { success: true, skipped: true };
+    let emailResult: { success: boolean; skipped?: boolean; error?: string; queued?: boolean } = { success: true, skipped: true };
     if (toEmail) {
       const result = await generatePdf({ docType: "proforma", docId: id, tenantId });
       const pdfBuffer = Buffer.from(result.buffer);
@@ -144,6 +144,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         subject,
         html,
         tenantId,
+        // AUDIT16 — entity reference for PDF regeneration on retry +
+        // queued flag so we don't mark the proforma sent when the email
+        // was only parked in the queue (no provider configured).
+        entityType: "proforma",
+        entityId: id,
         attachments: [{
           filename: `proforma-${proforma.number || id}.pdf`,
           content: pdfBuffer,
@@ -153,7 +158,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     // Promote status draft→sent and stamp sent_at (only on first successful send).
-    if (emailResult.success) {
+    // AUDIT16 — queued ≠ delivered (see invoice send route for rationale).
+    const delivered = emailResult.success && !emailResult.queued;
+    if (delivered) {
       try {
         // Validate the status transition (Re-Audit-2 N4) — only allow
         // draft→sent via this send endpoint. Super-admins bypass.
@@ -179,7 +186,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     // ─── Portal notification ───
     // Notify the partner's portal client that a new proforma is available.
-    if (emailResult.success && proforma.partner_id) {
+    // (AUDIT16: only when actually delivered.)
+    if (delivered && proforma.partner_id) {
       try {
         await notify({
           tenantId: proforma.tenant_id,

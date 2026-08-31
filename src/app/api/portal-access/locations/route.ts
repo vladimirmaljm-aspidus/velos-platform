@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, resolveTenantId } from "@/lib/api/helpers";
 import { getSupabase } from "@/lib/supabase/client";
 import { lookupIp } from "@/lib/utils/geo-ip";
+// AUDIT16 — portal_email is encrypted at rest; decrypt before returning to
+// the admin UI (the "Portal Locations" page rendered enc: blobs for every
+// API-created portal row).
+import { decryptField } from "@/lib/crypto/field-encryption";
 
 export const runtime = "nodejs";
 
@@ -121,7 +125,8 @@ export async function GET(req: NextRequest) {
 
     locations.push({
       portal_access_id: pa.id,
-      email: pa.portal_email,
+      // AUDIT16 — decrypt (no-op on legacy plaintext rows).
+      email: decryptField(pa.portal_email || "") || pa.portal_email,
       partner_id: pa.partner_id,
       ip: pa.last_login_ip,
       country: geo.country,
@@ -145,9 +150,27 @@ export async function GET(req: NextRequest) {
   }
 
   // Portal users log in with their email as the username — filter to that.
-  const portalLoginHistory = (loginHistory || []).filter(
-    (h) => typeof h.username === "string" && h.username.includes("@")
-  );
+  // AUDIT16 — post-audit15 login/audit rows store the DECRYPTED email in
+  // `username`; pre-audit15 rows for encrypted emails stored the enc: blob
+  // (which failed the `.includes("@")` test and silently dropped that
+  // portal user's login history). Keep the @-filter but let enc: usernames
+  // through so the table can render them (they decrypt to nothing useful,
+  // but the row still shows IP/time — previously the whole entry vanished).
+  const portalLoginHistory = (loginHistory || [])
+    .filter(
+      (h) =>
+        (typeof h.username === "string" && h.username.includes("@")) ||
+        (typeof h.username === "string" && h.username.startsWith("enc:"))
+    )
+    // AUDIT16 — decrypt any ciphertext usernames so the admin table shows
+    // real emails (best-effort: undecryptable blobs pass through as-is).
+    .map((h) => ({
+      ...h,
+      username:
+        typeof h.username === "string" && h.username.startsWith("enc:")
+          ? decryptField(h.username) || h.username
+          : h.username,
+    }));
 
   return NextResponse.json({
     locations,

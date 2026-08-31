@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, audit, sanitizeError } from "@/lib/api/helpers";
 import { notifyKycApproved } from "@/lib/notif/helper";
 import { onKycApproved } from "@/lib/kyc/automation";
+// AUDIT16 — decrypt the transferred PII before returning it to the admin.
+import { decryptField } from "@/lib/crypto/field-encryption";
 
 export const runtime = "nodejs";
 
@@ -88,11 +90,33 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       baseUrl,
     });
 
+    // AUDIT16 — response hygiene: the raw partner row contains encrypted
+    // PII (contact_email/phone/tax_id/vat_number — contact_phone added by
+    // audit16) and the raw portal_access row leaks the internal
+    // portal_email_hmac. Decrypt the PII (admin UI expects plaintext, same
+    // as /api/partners/[id] GET) and strip the HMAC column.
+    const {
+      tax_id_hmac: _ptid, vat_number_hmac: _pvn, portal_token: _ptok, ...safePartner
+    } = partner as any;
+    for (const k of ["contact_email", "phone", "contact_phone", "tax_id", "vat_number"] as const) {
+      if (typeof safePartner[k] === "string" && safePartner[k]) {
+        safePartner[k] = decryptField(safePartner[k] as string);
+      }
+    }
+    let safeAccess: any = null;
+    if (access) {
+      const { password_hash: _pw, portal_email_hmac: _hmac, ...rest } = access as any;
+      if (rest.portal_email && typeof rest.portal_email === "string") {
+        rest.portal_email = decryptField(rest.portal_email);
+      }
+      safeAccess = rest;
+    }
+
     return NextResponse.json({
       submission,
-      partner,
+      partner: safePartner,
       transferred: true,
-      portal_access: access ? { ...access, password_hash: undefined } : null,
+      portal_access: safeAccess,
     });
   } catch (e: any) {
     console.error("[kyc.approve]", e);

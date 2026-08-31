@@ -220,14 +220,26 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
 
-    // Persist the template to the database via the store
+    // AUDIT16 / HIGH-1 (cross-tenant write): `...body` used to come LAST,
+    // letting a tenant admin override tenant_id / created_by / id and
+    // insert/update ANOTHER tenant's document_templates row through the
+    // service-role store (RLS bypassed) — templates render into the victim
+    // tenant's PDFs/emails, so this was also a content-injection vector.
+    // The trusted keys now come AFTER the spread and the body's privileged
+    // keys are stripped entirely (mirrors memorandum-settings / the 25
+    // other routes that use the safe {...body, tenant_id} order).
+    const {
+      tenant_id: _bt, created_by: _bc, ...bodySafe
+    } = body || {};
     const templateData = {
-      tenant_id: tenantId,
+      ...bodySafe,
       name: body.name || "Custom Template",
       type: body.type || "generic",
       is_default: body.isDefault || false,
+      // Trusted keys AFTER the spread — client-supplied values can never
+      // override these.
+      tenant_id: tenantId,
       created_by: auth.user.id,
-      ...body,
     };
 
     const created = await auth.store.upsertDocumentTemplate(templateData);
