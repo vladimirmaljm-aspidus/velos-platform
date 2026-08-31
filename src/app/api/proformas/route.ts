@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuthOrApiKey, resolveTenantId, hasPermission, audit, sanitizeError, type AuthContext, type ApiKeyAuthContext } from "@/lib/api/helpers";
+import { requireAuthOrApiKey, resolveTenantId, hasPermission, audit, sanitizeError, type AuthContext, type ApiKeyAuthContext, getAuthUser } from "@/lib/api/helpers";
 import { getSupabase } from "@/lib/supabase/client";
 // FIX-PRODUCTS-DOCS / Fix 4 — XSS prevention on free-text fields (parity
 // with offers POST). Proforma PDFs render subject/notes/payment_terms via
@@ -7,11 +7,6 @@ import { getSupabase } from "@/lib/supabase/client";
 import { sanitizeFields } from "@/lib/security/sanitize-input";
 
 export const runtime = "nodejs";
-
-function getAuthUser(auth: AuthContext | ApiKeyAuthContext) {
-  if ("user" in auth) return auth.user;
-  return { id: `api:${auth.apiKeyId}`, username: auth.apiKeyName, tenant_id: auth.tenantId };
-}
 
 export async function GET(req: NextRequest) {
   try {

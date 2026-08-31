@@ -2,22 +2,25 @@ import React from "react";
 import { Document, Page, Text, View, StyleSheet, Image, Font } from "@react-pdf/renderer";
 import type { Offer, Invoice, Proforma, LetterOfIntent, OfferLineItem, Partner, Tenant, MemorandumSettings, TenantSeal } from "@/lib/supabase/types";
 
-// ── Country name resolver ──────────────────────────────────────────────────
-// Partners + tenants store country as ISO alpha-2 (e.g. "AE", "ET"). The
-// PDF must show the full name ("United Arab Emirates", "Ethiopia") — not
-// the cryptic 2-letter code. We import the countries list once and build
-// a lookup map.
-import { COUNTRIES } from "@/lib/data/geo/countries";
-const COUNTRY_BY_CODE: Record<string, string> = (() => {
-  const m: Record<string, string> = {};
-  for (const c of COUNTRIES) m[c.code.toUpperCase()] = c.name;
-  return m;
-})();
-function countryName(code?: string | null): string {
-  if (!code) return "—";
-  const upper = String(code).toUpperCase().trim();
-  return COUNTRY_BY_CODE[upper] || upper;
-}
+// ── Shared helpers (audit12 dedup) ─────────────────────────────────────────
+// mmToPoints, mapFont, boldVariant, lightenHex, fmtMoney, amountInWords,
+// countryName, the ISO date formatter, the Watermark component and the
+// watermark-status resolver now live in src/lib/pdf/shared.ts — the single
+// source of truth shared with packing-list.ts and marketplace/document-pdf.ts
+// so all three PDF template families are uniform by construction.
+import {
+  fmtQty,
+  mmToPoints,
+  mapFont,
+  boldVariant,
+  lightenHex,
+  fmtMoney,
+  amountInWords,
+  countryName,
+  fmtDateIso as fmtDate,
+  Watermark,
+  tradeWatermarkText,
+} from "@/lib/pdf/shared";
 
 // Allow very long "words" (SKUs, HS codes like 1006.30.10.00, IBANs) to break
 // across lines. Short words are kept intact so normal prose still looks clean.
@@ -59,163 +62,8 @@ interface PdfDocData {
   };
 }
 
-const mmToPoints = (mm: number) => mm * 2.83465;
-
-/**
- * Map a CSS font stack (e.g. "Inter, system-ui, sans-serif") to a single
- * PDF-safe family. react-pdf only ships Helvetica, Times-Roman and Courier
- * built-in — any custom font would need Font.register() first.
- */
-const FONT_MAP: Record<string, string> = {
-  "helvetica": "Helvetica",
-  "inter": "Helvetica",
-  "system-ui": "Helvetica",
-  "sans-serif": "Helvetica",
-  "arial": "Helvetica",
-  "times": "Times-Roman",
-  "times-new-roman": "Times-Roman",
-  "serif": "Times-Roman",
-  "courier": "Courier",
-  "monospace": "Courier",
-};
-
-function mapFont(fontStack: string | null | undefined, fallback = "Helvetica"): string {
-  if (!fontStack) return fallback;
-  const first = fontStack.split(",")[0].trim().replace(/['"]/g, "").toLowerCase();
-  return FONT_MAP[first] || fallback;
-}
-
-/** Derive the heading variant of a font family (e.g. "Helvetica" → "Helvetica-Bold"). */
-function boldVariant(family: string): string {
-  return family.endsWith("Bold") || family.endsWith("Italic") ? family : `${family}-Bold`;
-}
-
-/**
- * Lighten a hex color by blending it towards white.
- * amount=0 returns the original color, amount=1 returns pure white.
- * Used to derive stripe-row backgrounds from the table header color so
- * zebra striping matches the document's branding instead of a flat grey.
- */
-function lightenHex(hex: string, amount: number): string {
-  const h = (hex || "#ffffff").replace("#", "");
-  if (h.length !== 6) return hex;
-  const r = parseInt(h.slice(0, 2), 16);
-  const g = parseInt(h.slice(2, 4), 16);
-  const b = parseInt(h.slice(4, 6), 16);
-  if ([r, g, b].some((n) => Number.isNaN(n))) return hex;
-  const lr = Math.round(r + (255 - r) * amount);
-  const lg = Math.round(g + (255 - g) * amount);
-  const lb = Math.round(b + (255 - b) * amount);
-  const toHex = (n: number) => n.toString(16).padStart(2, "0");
-  return `#${toHex(lr)}${toHex(lg)}${toHex(lb)}`;
-}
-
-/**
- * Format a money value with exactly 2 decimal places.
- * Falls back to 0.00 when the value is null/undefined/NaN.
- * Uses the document's currency symbol when available.
- */
-function fmtMoney(n: number | null | undefined, currency = "USD"): string {
-  const v = typeof n === "number" && isFinite(n) ? n : 0;
-  try {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(v);
-  } catch {
-    // Fallback if currency code is invalid
-    return `${v.toFixed(2)} ${currency}`;
-  }
-}
-
-/**
- * Convert a numeric amount into English words (e.g. 171000 → "ONE HUNDRED
- * SEVENTY-ONE THOUSAND"). Used by the "Amount in Words" line that
- * international trade documents (invoices, proformas, offers) legally
- * require. Handles up to billions, negative values, and cents.
- */
-function amountInWords(amount: number, currency = "USD"): string {
-  const currName =
-    currency === "USD" ? "US DOLLARS"
-    : currency === "EUR" ? "EUROS"
-    : currency === "GBP" ? "POUNDS STERLING"
-    : currency === "CHF" ? "SWISS FRANCS"
-    : currency === "AED" ? "UAE DIRHAMS"
-    : currency === "CNY" ? "CHINESE YUAN"
-    : currency === "INR" ? "INDIAN RUPEES"
-    : currency === "RUB" ? "RUSSIAN RUBLES"
-    : currency === "JPY" ? "JAPANESE YEN"
-    : currency === "SAR" ? "SAUDI RIYALS"
-    : currency === "BRL" ? "BRAZILIAN REAL"
-    : currency === "ZAR" ? "SOUTH AFRICAN RAND"
-    : currency === "TRY" ? "TURKISH LIRA"
-    : currency === "SGD" ? "SINGAPORE DOLLARS"
-    : currency === "HKD" ? "HONG KONG DOLLARS"
-    : currency;
-
-  const ones = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine"];
-  const teens = ["Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"];
-  const tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
-
-  function threeDigitsToWords(n: number): string {
-    if (n === 0) return "";
-    let str = "";
-    const hundred = Math.floor(n / 100);
-    const remainder = n % 100;
-    if (hundred > 0) {
-      str += ones[hundred] + " Hundred";
-    }
-    if (remainder > 0) {
-      if (str) str += " ";
-      if (remainder < 10) {
-        str += ones[remainder];
-      } else if (remainder < 20) {
-        str += teens[remainder - 10];
-      } else {
-        const t = Math.floor(remainder / 10);
-        const o = remainder % 10;
-        str += tens[t];
-        if (o > 0) str += "-" + ones[o];
-      }
-    }
-    return str;
-  }
-
-  if (!isFinite(amount)) {
-    return `SAY: ZERO ${currName} ONLY`;
-  }
-
-  const negative = amount < 0;
-  const absAmount = Math.abs(amount);
-  const whole = Math.floor(absAmount);
-  const cents = Math.round((absAmount - whole) * 100);
-
-  let words: string;
-  if (whole === 0) {
-    words = "Zero";
-  } else {
-    const billions = Math.floor(whole / 1000000000);
-    const millions = Math.floor((whole % 1000000000) / 1000000);
-    const thousands = Math.floor((whole % 1000000) / 1000);
-    const remainder = whole % 1000;
-
-    const parts: string[] = [];
-    if (billions > 0) parts.push(threeDigitsToWords(billions) + " Billion");
-    if (millions > 0) parts.push(threeDigitsToWords(millions) + " Million");
-    if (thousands > 0) parts.push(threeDigitsToWords(thousands) + " Thousand");
-    if (remainder > 0) parts.push(threeDigitsToWords(remainder));
-    words = parts.join(" ");
-  }
-
-  let result = `SAY: ${negative ? "NEGATIVE " : ""}${words} ${currName}`;
-  if (cents > 0) {
-    result += ` AND ${cents}/100`;
-  }
-  result += " ONLY";
-  return result;
-}
+// mmToPoints / mapFont / boldVariant / lightenHex / fmtMoney / amountInWords
+// moved to @/lib/pdf/shared.ts (audit12 dedup).
 
 export function buildPdfDocument({
   doc,
@@ -335,13 +183,26 @@ export function buildPdfDocument({
   const styles = StyleSheet.create({
     page: {
       fontSize,
-      lineHeight,
+      // audit12 CRITICAL FIX: lineHeight removed from the PAGE style. Any
+      // lineHeight in a render-prop Text's ancestry chain silently breaks
+      // @react-pdf/renderer's `render` prop — the render function runs but
+      // its output never reaches the PDF. This is why "Page X of Y" NEVER
+      // rendered on offers/invoices/proformas/LOIs (the footer's render-prop
+      // Text inherited the page's lineHeight). The body line height now
+      // lives on the bodyBlock wrapper below (header/footer don't need it —
+      // their Texts are single-line and carry their own styles).
       paddingTop,
       paddingBottom,
       paddingLeft: marginLeft,
       paddingRight: marginRight,
       fontFamily,
       color: bodyTextColor,
+    },
+
+    // Body wrapper carries the configured line height for all body text
+    // (moved off the page style — see the audit12 note above).
+    bodyBlock: {
+      lineHeight,
     },
 
     // ── HEADER (memorandum — repeats on every page) ────────────────────
@@ -800,12 +661,6 @@ export function buildPdfDocument({
       ? "This Letter of Intent is a non-binding expression of intent to purchase. It does not constitute a legally binding contract until a definitive purchase agreement is executed by both parties."
       : "This offer is valid until the date specified above. Prices are subject to confirmation at time of order.";
 
-  // Format an ISO date as "06 Aug 2026"
-  const fmtDate = (iso?: string | null) =>
-    iso
-      ? new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
-      : "—";
-
   // Verification code lives ONLY in the PDF metadata (subject/keywords) — never visible.
   const verificationMeta = verificationCode ? ` Verification: ${verificationCode}.` : "";
 
@@ -820,44 +675,16 @@ export function buildPdfDocument({
     >
       <Page size={pageSize} style={styles.page}>
         {/* 2g-F2: status watermark — stamps DRAFT/PAID/VOID/CANCELLED/OVERDUE
+            (or PRICE NOT CONFIRMED for marketplace target-price-derived docs)
             across every page so the document's legal standing is unmissable.
-            IMPORTANT: always render the <View fixed> (never conditionally) so
-            react-pdf keeps the fixed signal on pages 2+. The Text inside is
-            empty when the status doesn't warrant a watermark. */}
-        <View
-          fixed
-          style={{
-            position: "absolute",
-            top: "40%",
-            left: "50%",
-            transform: "translate(-50%, -50%)",
-            opacity: 0.12,
-            zIndex: 0,
-          }}
-        >
-          <Text
-            style={{
-              fontSize: 80,
-              fontFamily: "Helvetica-Bold",
-              color: "#999999",
-              textAlign: "center",
-            }}
-          >
-            {(() => {
-              const st = String((doc as any).status || "").toUpperCase();
-              // 2g-F26: marketplace auto-generated docs whose unit_price was
-              // derived from post.target_price (buyer's ceiling) carry a
-              // priceUnconfirmed flag in their document_data. Surface it as
-              // a "PRICE NOT CONFIRMED" warning so the reader knows the price
-              // is a ceiling, not the agreed sale price.
-              const priceUnconfirmed = (doc as any).document_data?.priceUnconfirmed === true;
-              if (priceUnconfirmed) return "PRICE NOT CONFIRMED";
-              return ["DRAFT", "PAID", "VOID", "CANCELLED", "OVERDUE"].includes(st)
-                ? st
-                : "";
-            })()}
-          </Text>
-        </View>
+            audit12: the shared <Watermark /> component keeps this pixel-identical
+            to the packing-list and marketplace templates. */}
+        <Watermark
+          text={tradeWatermarkText(
+            (doc as any).status,
+            (doc as any).document_data?.priceUnconfirmed === true,
+          )}
+        />
         {/* ── HEADER (memorandum — fixed, repeats on every page) ────────
             IMPORTANT: header + footer MUST be inlined directly as
             <View fixed> children of <Page>. @react-pdf/renderer only
@@ -876,6 +703,12 @@ export function buildPdfDocument({
             </View>
           ) : null}
         </View>
+
+        {/* audit12: body wrapper — carries the line height that used to sit
+            on the page style. Everything between the fixed header and the
+            fixed footer (title block, parties, trade terms, tables, totals,
+            signatures, notices) renders inside it. */}
+        <View style={styles.bodyBlock}>
 
         {/* Document title + meta block */}
         <View style={styles.docTitleRow}>
@@ -1063,7 +896,7 @@ export function buildPdfDocument({
                 <Text style={[styles.td, { flex: 1.1 }]}>{(item as any).hs_code || "—"}</Text>
                 <Text style={[styles.td, { flex: 0.9 }]}>{countryName((item as any).origin_country)}</Text>
                 <Text style={[styles.td, { flex: 1.1 }]}>
-                  {item.quantity} {item.unit || "kg"}
+                  {fmtQty(item.quantity)} {item.unit || "kg"}
                 </Text>
                 <Text style={[styles.td, { flex: 1, textAlign: "right" }]}>
                   {fmtMoney(item.unit_price, currency)}
@@ -1305,7 +1138,7 @@ export function buildPdfDocument({
                     ) : null}
                     <View style={styles.specRow}>
                       <Text style={styles.specName}>Quantity</Text>
-                      <Text style={styles.specValue}>{loi.quantity} {loi.unit}</Text>
+                      <Text style={styles.specValue}>{fmtQty(loi.quantity)} {loi.unit}</Text>
                     </View>
                     <View style={styles.specRow}>
                       <Text style={styles.specName}>Unit Price</Text>
@@ -1458,6 +1291,7 @@ export function buildPdfDocument({
         {/* DOCUMENT NOTICE — legally required disclaimer per doc type */}
         <View style={styles.noticeBox} wrap={false}>
           <Text style={styles.noticeText}>{docNotice}</Text>
+        </View>
         </View>
 
         {/* ── FOOTER (memorandum — fixed, repeats on every page) ─────────

@@ -676,6 +676,16 @@ export function resolveTenantId(auth: AuthContext | ApiKeyAuthContext, req: Next
   return auth.tenantId;
 }
 
+/**
+ * Resolve the audit "user" object from either auth context flavour.
+ * audit12: previously copy-pasted verbatim in 13 API route files — now the
+ * single canonical export (routes import it instead of redefining).
+ */
+export function getAuthUser(auth: AuthContext | ApiKeyAuthContext) {
+  if ("user" in auth) return auth.user;
+  return { id: `api:${auth.apiKeyId}`, username: auth.apiKeyName, tenant_id: auth.tenantId };
+}
+
 export function getIp(req?: NextRequest | Request): string {
   // F-FINAL / P1: the previous implementation returned the LAST entry of
   // `X-Forwarded-For`, which worked when the deployment was Render-only

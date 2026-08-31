@@ -1,20 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  requireAuthOrApiKey,
-  resolveTenantId,
-  hasPermission,
-  audit,
-  sanitizeError,
-  type AuthContext,
-  type ApiKeyAuthContext,
-} from "@/lib/api/helpers";
+import { requireAuthOrApiKey, resolveTenantId, hasPermission, audit, sanitizeError, type AuthContext, type ApiKeyAuthContext, getAuthUser } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
-
-function getAuthUser(auth: AuthContext | ApiKeyAuthContext) {
-  if ("user" in auth) return auth.user;
-  return { id: `api:${auth.apiKeyId}`, username: auth.apiKeyName, tenant_id: auth.tenantId };
-}
 
 type ProductBulkAction = "activate" | "deactivate" | "show_in_portal" | "hide_from_portal" | "delete";
 

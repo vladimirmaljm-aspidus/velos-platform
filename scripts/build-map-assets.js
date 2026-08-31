@@ -13,7 +13,12 @@
  * own copy and pointing `maplibregl.setWorkerUrl()` at it sidesteps that.
  *
  * Re-run this after bumping the `maplibre-gl` or `world-atlas` version.
+ *
+ * Note: this is a plain CommonJS Node script (run via `bun run map:assets`),
+ * so it deliberately uses require() — eslint's no-require-imports rule is
+ * disabled for the whole file below.
  */
+/* eslint-disable @typescript-eslint/no-require-imports */
 const fs = require("fs");
 const path = require("path");
 const topojson = require("topojson-client");

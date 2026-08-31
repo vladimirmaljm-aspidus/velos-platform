@@ -1,5 +1,16 @@
 import React from "react";
 import { renderToBuffer, Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
+// audit12: shared helpers + components (fmtValue, sumRows, Watermark,
+// logisticsWatermarkText, base styles) — single source of truth shared with
+// templates.tsx and marketplace/document-pdf.ts.
+import {
+  fmtValue as fmt,
+  fmtQty,
+  sumRows,
+  Watermark,
+  logisticsWatermarkText,
+  createBaseStyles,
+} from "@/lib/pdf/shared";
 
 export interface PackingLine {
   description?: string;
@@ -67,28 +78,15 @@ export interface PackingListInput {
   specialInstructions?: string | null;
 }
 
-// F-FINAL: VELOS brand palette — copper (#B45309) + lighter copper tint
-// for section titles. Replaces the previous hardcoded teal (#0f766e)
-// that didn't match the rest of the brand.
-const COPPER = "#B45309";
-const COPPER_SOFT = "#92400E";
+// audit12: base styles (page / headerBar / sections / tables / totals /
+// notes) live in @/lib/pdf/shared.ts — previously a near-identical 40-line
+// StyleSheet was copy-pasted here and in marketplace/document-pdf.ts with
+// tiny drift. Only the packing-list-specific column widths and badges remain
+// local.
+const base = createBaseStyles();
 
 const styles = StyleSheet.create({
-  page: { padding: 30, fontSize: 9, fontFamily: "Helvetica", color: "#111" },
-  headerBar: { backgroundColor: COPPER, color: "white", padding: 12, marginBottom: 16, borderRadius: 3 },
-  h1: { fontSize: 16, fontWeight: 700 },
-  small: { fontSize: 9, opacity: 0.85 },
-  section: { marginBottom: 10 },
-  sectionTitle: { fontSize: 10, fontWeight: 700, marginBottom: 4, textTransform: "uppercase", color: COPPER_SOFT },
-  twoCol: { flexDirection: "row", gap: 12 },
-  col: { flex: 1, border: "1pt solid #d1d5db", borderRadius: 3, padding: 8 },
-  label: { fontSize: 8, color: "#6b7280", marginBottom: 1 },
-  value: { fontSize: 10, marginBottom: 3 },
-  table: { border: "1pt solid #d1d5db", borderRadius: 3, marginTop: 4 },
-  tr: { flexDirection: "row", borderBottom: "1pt solid #e5e7eb" },
-  trHead: { backgroundColor: "#f3f4f6", flexDirection: "row", borderBottom: "1pt solid #d1d5db" },
-  th: { fontSize: 8, fontWeight: 700, padding: 5, color: "#374151" },
-  td: { fontSize: 8, padding: 5 },
+  ...base,
   colDesc: { flex: 3 },
   colHs: { width: 45 },
   colPkg: { width: 30, textAlign: "right" },
@@ -96,11 +94,22 @@ const styles = StyleSheet.create({
   colKg: { width: 40, textAlign: "right" },
   colDims: { width: 60, textAlign: "right" },
   colQty: { width: 40, textAlign: "right" },
-  totals: { flexDirection: "row", justifyContent: "flex-end", gap: 20, marginTop: 8, paddingTop: 8, borderTop: "1pt solid #d1d5db" },
-  totalBlock: { alignItems: "flex-end" },
-  totalLabel: { fontSize: 8, color: "#6b7280" },
-  totalValue: { fontSize: 11, fontWeight: 700 },
-  footer: { position: "absolute", bottom: 20, left: 30, right: 30, textAlign: "center", fontSize: 8, color: "#9ca3af", borderTop: "1pt solid #e5e7eb", paddingTop: 8 },
+  // audit12: footerFixed matches the marketplace template's footerFixed
+  // (fixed View + two Text children: lead-in + render-prop page number).
+  footerFixed: {
+    position: "absolute",
+    bottom: 20,
+    left: 30,
+    right: 30,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    fontSize: 8,
+    color: "#9ca3af",
+    borderTop: "1pt solid #e5e7eb",
+    paddingTop: 8,
+    gap: 4,
+  },
   badges: { flexDirection: "row", gap: 4, marginTop: 4 },
   badge: { fontSize: 8, backgroundColor: "#fee2e2", color: "#991b1b", padding: 3, borderRadius: 2 },
   badgeNeutral: { fontSize: 8, backgroundColor: "#e0e7ff", color: "#3730a3", padding: 3, borderRadius: 2 },
@@ -111,33 +120,58 @@ function addr(a: PackingListInput["origin"]): string {
   const parts = [a.address_line, [a.postal_code, a.city].filter(Boolean).join(" "), a.country].filter(Boolean);
   return parts.join(", ") || "—";
 }
-function fmt(v: unknown): string {
-  if (v === null || v === undefined || v === "") return "—";
-  return String(v);
+
+// ─── Logistics request row → PackingListInput (audit12 dedup) ───────────────
+//
+// The admin route (/api/logistics-requests/[id]/packing-list.pdf) and the
+// portal route (/api/portal/logistics/[id]/packing-list.pdf) previously each
+// hand-mapped the same ~25 LR columns into PackingListInput. Extracted here
+// so the mapping is identical for both callers by construction.
+export function buildPackingListInput(lr: any, tenantName: string): PackingListInput {
+  return {
+    tenantName,
+    requestNumber: lr.number,
+    mode: lr.mode,
+    containerType: lr.container_type,
+    incoterm: lr.incoterm,
+    createdAt: lr.created_at,
+    targetPickupDate: lr.target_pickup_date,
+    targetDeliveryDate: lr.target_delivery_date,
+    origin: {
+      company: lr.origin_company, address_line: lr.origin_address_line,
+      city: lr.origin_city, postal_code: lr.origin_postal_code, country: lr.origin_country,
+      port: lr.origin_port, contact_name: lr.origin_contact_name, contact_phone: lr.origin_contact_phone,
+    },
+    destination: {
+      company: lr.destination_company, address_line: lr.destination_address_line,
+      city: lr.destination_city, postal_code: lr.destination_postal_code, country: lr.destination_country,
+      port: lr.destination_port, contact_name: lr.destination_contact_name, contact_phone: lr.destination_contact_phone,
+    },
+    cargo: {
+      description: lr.cargo_description, hs_codes: lr.hs_codes,
+      is_hazardous: lr.is_hazardous, is_temperature_controlled: lr.is_temperature_controlled,
+      temperature_range: lr.temperature_range, insurance_required: lr.insurance_required,
+      cargo_value: lr.cargo_value, cargo_currency: lr.cargo_currency,
+      total_weight_kg: lr.total_weight_kg, total_volume_cbm: lr.total_volume_cbm, total_packages: lr.total_packages,
+    },
+    packingList: Array.isArray(lr.packing_list) ? lr.packing_list : [],
+    specialInstructions: lr.special_instructions,
+  };
 }
 
 export async function renderPackingListPdf(input: PackingListInput): Promise<Buffer> {
-  const totalWeight = input.cargo.total_weight_kg ?? sum(input.packingList, (l) => Number(l.unit_weight_kg || 0) * Number(l.packages || 0));
-  const totalVolume = input.cargo.total_volume_cbm ?? sum(input.packingList, (l) => (Number(l.length_cm || 0) * Number(l.width_cm || 0) * Number(l.height_cm || 0) * Number(l.packages || 0)) / 1_000_000);
-  const totalPackages = input.cargo.total_packages ?? sum(input.packingList, (l) => Number(l.packages || 0));
+  const totalWeight = input.cargo.total_weight_kg ?? sumRows(input.packingList, (l) => Number(l.unit_weight_kg || 0) * Number(l.packages || 0));
+  const totalVolume = input.cargo.total_volume_cbm ?? sumRows(input.packingList, (l) => (Number(l.length_cm || 0) * Number(l.width_cm || 0) * Number(l.height_cm || 0) * Number(l.packages || 0)) / 1_000_000);
+  const totalPackages = input.cargo.total_packages ?? sumRows(input.packingList, (l) => Number(l.packages || 0));
 
   // 9a-N6: synthesize a logistics status watermark for parity with the
-  // offer/invoice/proforma/LOI/marketplace templates (which all have a
-  // large semi-transparent DRAFT/PAID/etc. watermark per c90c218).
-  // packing-list.ts was the only template the c90c218 commit message
-  // claimed to cover but actually MISSED. We derive the status from the
-  // LR's date fields:
-  //   • targetDeliveryDate in the past → DELIVERED
-  //   • targetPickupDate in the past (no delivery yet) → IN TRANSIT
-  //   • any pickup/delivery scheduled (both future) → SCHEDULED
-  //   • no dates at all → DRAFT
-  const now = Date.now();
-  const pickupTs = input.targetPickupDate ? new Date(input.targetPickupDate).getTime() : NaN;
-  const deliveryTs = input.targetDeliveryDate ? new Date(input.targetDeliveryDate).getTime() : NaN;
-  let _status = "DRAFT";
-  if (Number.isFinite(deliveryTs) && now > deliveryTs) _status = "DELIVERED";
-  else if (Number.isFinite(pickupTs) && now > pickupTs) _status = "IN TRANSIT";
-  else if (Number.isFinite(pickupTs) || Number.isFinite(deliveryTs)) _status = "SCHEDULED";
+  // offer/invoice/proforma/LOI/marketplace templates. packing-list.ts was
+  // the only template the c90c218 commit message claimed to cover but
+  // actually MISSED. audit12: the status derivation now lives in
+  // shared.ts (logisticsWatermarkText) and the rendering uses the shared
+  // <Watermark /> component — pixel-identical to every other template
+  // (previously this one rotated −30° while the others were straight).
+  const _status = logisticsWatermarkText(input.targetPickupDate, input.targetDeliveryDate);
 
   const doc = React.createElement(
     Document,
@@ -145,14 +179,8 @@ export async function renderPackingListPdf(input: PackingListInput): Promise<Buf
     React.createElement(
       Page,
       { size: "A4", style: styles.page },
-      // 9a-N6: status watermark — fixed View, absolute positioning, low opacity.
-      // Matches the templates.tsx watermark style: top 40%, left 50%, opacity 0.12,
-      // rotated -30deg, fontSize 80.
-      React.createElement(
-        View,
-        { style: { position: "absolute", top: "40%", left: "50%", transform: "translate(-50%, -50%) rotate(-30deg)", opacity: 0.12, zIndex: 0 }, fixed: true },
-        React.createElement(Text, { style: { fontSize: 80, fontWeight: "bold", color: "#1f2937" } }, _status),
-      ),
+      // Status watermark — shared component, fixed View, low opacity.
+      React.createElement(Watermark, { text: _status }),
       // Header
       React.createElement(
         View,
@@ -162,7 +190,7 @@ export async function renderPackingListPdf(input: PackingListInput): Promise<Buf
           Text,
           { style: styles.small },
           `${input.mode.toUpperCase()}${input.containerType ? " · " + input.containerType : ""}${input.incoterm ? " · " + input.incoterm : ""}`
-            + (input.createdAt ? ` · Issued ${new Date(input.createdAt).toLocaleDateString()}` : ""),
+            + (input.createdAt ? ` · Issued ${new Date(input.createdAt).toLocaleDateString("en-GB")}` : ""),
         ),
         React.createElement(Text, { style: styles.small }, `Issuer: ${input.tenantName}`),
       ),
@@ -240,7 +268,7 @@ export async function renderPackingListPdf(input: PackingListInput): Promise<Buf
                   { key: `line-${i}`, style: styles.tr },
                   React.createElement(Text, { style: [styles.td, styles.colDesc] }, fmt(l.description)),
                   React.createElement(Text, { style: [styles.td, styles.colHs] }, fmt(l.hs_code)),
-                  React.createElement(Text, { style: [styles.td, styles.colPkg] }, fmt(l.packages)),
+                  React.createElement(Text, { style: [styles.td, styles.colPkg] }, fmtQty(l.packages)),
                   React.createElement(Text, { style: [styles.td, styles.colType] }, fmt(l.package_type)),
                   React.createElement(Text, { style: [styles.td, styles.colKg] }, fmt(l.unit_weight_kg)),
                   React.createElement(Text, { style: [styles.td, styles.colDims] }, [l.length_cm, l.width_cm, l.height_cm].filter(Boolean).join("×") || "—"),
@@ -287,33 +315,34 @@ export async function renderPackingListPdf(input: PackingListInput): Promise<Buf
             ),
           )
         : null,
-      React.createElement(
-        Text,
-        { style: styles.footer, fixed: true },
-        // 2g-F5 fix (round 4): use the issue date (input.createdAt), not new Date() (regen date).
-        // 2g-F4 fix (round 4): real "Page X of Y" via the react-pdf render prop — was hardcoded
-        // "Page rendered <date>" on every page.
-        `${input.tenantName} · Packing List ${input.requestNumber}` +
-          (input.createdAt ? ` · Issued ${new Date(input.createdAt).toLocaleDateString("en-GB")}` : "") +
-          ` · Page `,
-      ),
-      // 2g-F4 fix (round 4): the <Text render> prop must be a child of a <View fixed>
-      // (a direct child of <Page>) so react-pdf recognises it on every page. The
-      // footer text above is the lead-in; the page-number Text below is the
-      // variable part.
+      // ── Footer (audit12 uniformity fix) ─────────────────────────────────
+      // 2g-F4 fix (round 4): real "Page X of Y" via the react-pdf render prop.
+      // Previously the lead-in ("… · Page ") was one fixed <Text> and the
+      // "X of Y" part was a SECOND absolutely-positioned View hardcoded to
+      // `left: 540` — fragile (breaks if the A4 padding changes) and visually
+      // misaligned. Now both parts live in ONE fixed View, matching the
+      // marketplace template's footer structure.
+      // 2g-F5 fix (round 4): the issue date is input.createdAt (original issue),
+      // not new Date() (regen date).
       React.createElement(
         View,
-        { style: { position: "absolute", bottom: 20, left: 540, right: 30, fontSize: 8, color: "#9ca3af" }, fixed: true },
+        { style: styles.footerFixed, fixed: true },
         React.createElement(
           Text,
-          { render: ({ pageNumber, totalPages }: { pageNumber: number; totalPages: number }) => `${pageNumber} of ${totalPages}` },
+          { style: { fontSize: 8, color: "#9ca3af" } },
+          `${input.tenantName} · Packing List ${input.requestNumber}`
+            + (input.createdAt ? ` · Issued ${new Date(input.createdAt).toLocaleDateString("en-GB")}` : "")
+            + ` · Page `,
+        ),
+        React.createElement(
+          Text,
+          {
+            style: { fontSize: 8, color: "#9ca3af" },
+            render: ({ pageNumber, totalPages }: { pageNumber: number; totalPages: number }) => `${pageNumber} of ${totalPages}`,
+          },
         ),
       ),
     ),
   );
   return await renderToBuffer(doc as any);
-}
-
-function sum<T>(rows: T[], f: (r: T) => number): number {
-  return Math.round(rows.reduce((a, r) => a + f(r), 0) * 100) / 100;
 }

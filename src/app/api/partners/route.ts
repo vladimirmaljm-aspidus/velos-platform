@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuthOrApiKey, resolveTenantId, hasPermission, audit, type AuthContext, type ApiKeyAuthContext, sanitizeError } from "@/lib/api/helpers";
+import { requireAuthOrApiKey, resolveTenantId, hasPermission, audit, type AuthContext, type ApiKeyAuthContext, sanitizeError, getAuthUser } from "@/lib/api/helpers";
 import { triggerWebhooks } from "@/lib/webhooks/deliver";
 import { withApm } from "@/lib/monitoring/apm";
 // FIX-ALL-2 / Fix 1 — strip KYC / bank / vat / tax fields from API-key responses.
@@ -21,11 +21,6 @@ import {
 } from "@/lib/crypto/field-encryption";
 
 export const runtime = "nodejs";
-
-function getAuthUser(auth: AuthContext | ApiKeyAuthContext) {
-  if ("user" in auth) return auth.user;
-  return { id: `api:${auth.apiKeyId}`, username: auth.apiKeyName, tenant_id: auth.tenantId };
-}
 
 /**
  * SEC-M9 (mass-assignment) — strip client-controlled fields that the

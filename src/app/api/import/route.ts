@@ -1,24 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  requireAuthOrApiKey,
-  resolveTenantId,
-  hasPermission,
-  audit,
-  sanitizeError,
-  type AuthContext,
-  type ApiKeyAuthContext,
-} from "@/lib/api/helpers";
+import { requireAuthOrApiKey, resolveTenantId, hasPermission, audit, sanitizeError, type AuthContext, type ApiKeyAuthContext, getAuthUser } from "@/lib/api/helpers";
 // SEC-M11 — partner mass-assignment whitelist (mirrors the POST/PUT
 // partner routes). Reused so the import path can never desync from the
 // interactive create/update paths.
 import { whitelistPartnerFields } from "@/app/api/partners/route";
 
 export const runtime = "nodejs";
-
-function getAuthUser(auth: AuthContext | ApiKeyAuthContext) {
-  if ("user" in auth) return auth.user;
-  return { id: `api:${auth.apiKeyId}`, username: auth.apiKeyName, tenant_id: auth.tenantId };
-}
 
 const SUPPORTED_TYPES = ["products", "partners"] as const;
 type ImportType = (typeof SUPPORTED_TYPES)[number];

@@ -1,22 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  requireAuthOrApiKey,
-  resolveTenantId,
-  hasPermission,
-  audit,
-  sanitizeError,
-  type AuthContext,
-  type ApiKeyAuthContext,
-} from "@/lib/api/helpers";
+import { requireAuthOrApiKey, resolveTenantId, hasPermission, audit, sanitizeError, type AuthContext, type ApiKeyAuthContext, getAuthUser } from "@/lib/api/helpers";
 import { validateStatusTransition } from "@/lib/api/status-validator";
 import { triggerWebhooks } from "@/lib/webhooks/deliver";
 
 export const runtime = "nodejs";
-
-function getAuthUser(auth: AuthContext | ApiKeyAuthContext) {
-  if ("user" in auth) return auth.user;
-  return { id: `api:${auth.apiKeyId}`, username: auth.apiKeyName, tenant_id: auth.tenantId };
-}
 
 type InvoiceBulkAction = "send" | "mark_sent" | "cancel" | "delete";
 

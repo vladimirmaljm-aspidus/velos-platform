@@ -1,0 +1,416 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// PDF shared helpers + components (audit12 / uniformity).
+//
+// Single source of truth for everything the three PDF template families use
+// in common:
+//   • src/lib/pdf/templates.tsx        (offer / invoice / proforma / LOI)
+//   • src/lib/pdf/packing-list.ts      (logistics packing list)
+//   • src/lib/marketplace/document-pdf.ts (marketplace trade documents)
+//
+// Before this module existed, fmtMoney was copy-pasted in 2 files, `fmt` in
+// 2, the COPPER brand palette in 2, amountInWords / countryName / mmToPoints
+// inlined in templates.tsx, and each template hand-rolled its own watermark
+// and page-number footer with subtle visual deviations (opacity 0.10 vs
+// 0.12, rotated vs straight, hardcoded `left: 540` page-number positioning).
+// Every helper here is the ONE canonical implementation — templates import
+// from this file and are visually uniform by construction.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import React from "react";
+import { Text, View, StyleSheet } from "@react-pdf/renderer";
+
+// ─── Geometry ───────────────────────────────────────────────────────────────
+
+/** Convert millimetres to PDF points (1 mm = 2.83465 pt). */
+export const mmToPoints = (mm: number) => mm * 2.83465;
+
+// ─── Brand palette ──────────────────────────────────────────────────────────
+
+// VELOS brand palette — copper (#B45309) + softer copper for section titles.
+// Used by the packing-list and marketplace templates; the memorandum template
+// (templates.tsx) is tenant-configurable via memorandum_settings and defaults
+// to teal (#0d9488) — that's per-tenant branding, NOT a platform deviation.
+export const COPPER = "#B45309";
+export const COPPER_SOFT = "#92400E";
+
+// ─── Country resolver ───────────────────────────────────────────────────────
+
+// Partners + tenants store country as ISO alpha-2 (e.g. "AE", "ET"). PDFs
+// must show the full name ("United Arab Emirates") — not the cryptic 2-letter
+// code. The lookup map is built once at module load.
+import { COUNTRIES } from "@/lib/data/geo/countries";
+
+const COUNTRY_BY_CODE: Record<string, string> = (() => {
+  const m: Record<string, string> = {};
+  for (const c of COUNTRIES) m[c.code.toUpperCase()] = c.name;
+  return m;
+})();
+
+/** ISO alpha-2 code → full country name. Unknown/missing → em-dash or the raw code. */
+export function countryName(code?: string | null): string {
+  if (!code) return "—";
+  const upper = String(code).toUpperCase().trim();
+  return COUNTRY_BY_CODE[upper] || upper;
+}
+
+// ─── Formatters ─────────────────────────────────────────────────────────────
+
+/**
+ * Format a money value with exactly 2 decimal places.
+ * Falls back to 0.00 when the value is null/undefined/NaN.
+ * Uses the document's currency symbol when available.
+ */
+export function fmtMoney(n: number | null | undefined, currency = "USD"): string {
+  const v = typeof n === "number" && isFinite(n) ? n : 0;
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(v);
+  } catch {
+    // Fallback if currency code is invalid
+    return `${v.toFixed(2)} ${currency}`;
+  }
+}
+
+/** Null/undefined/empty-string → em-dash; everything else → String(v). */
+export function fmtValue(v: unknown): string {
+  if (v === null || v === undefined || v === "") return "—";
+  return String(v);
+}
+
+/**
+ * Format a QUANTITY with thousands separators (e.g. 25000 → "25,000").
+ * audit12 uniformity: money was always formatted with separators
+ * ($38,750.00) while quantities rendered raw ("25000 kg") in the same
+ * table — inconsistent within a single document. Every PDF template now
+ * formats quantities through this helper so all numeric columns are
+ * uniformly separated. Up to 2 decimals (fractional quantities like
+ * 0.5 stay readable).
+ */
+export function fmtQty(n: number | string | null | undefined): string {
+  const v = typeof n === "number" && isFinite(n) ? n : Number(n);
+  if (!isFinite(v) || n === null || n === undefined || n === "") return "—";
+  return v.toLocaleString("en-US", { maximumFractionDigits: 2 });
+}
+
+/** Weight with thousands separators + unit suffix (e.g. "1,234.50 kg"). */
+export function fmtWeight(n: number | null | undefined, unit = "kg"): string {
+  const v = typeof n === "number" && isFinite(n) ? n : 0;
+  return `${v.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${unit}`;
+}
+
+/** Format an ISO date as "06 Aug 2026" (en-GB, day-first — trade-document convention). */
+export function fmtDateIso(iso?: string | null): string {
+  return iso
+    ? new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+    : "—";
+}
+
+/** Round-off a numeric sum to 2 decimals (avoids 0.30000000000000004 artefacts). */
+export function sumRows<T>(rows: T[], f: (r: T) => number): number {
+  return Math.round(rows.reduce((a, r) => a + f(r), 0) * 100) / 100;
+}
+
+// ─── Amount in words ────────────────────────────────────────────────────────
+
+const CURRENCY_NAMES: Record<string, string> = {
+  USD: "US DOLLARS",
+  EUR: "EUROS",
+  GBP: "POUNDS STERLING",
+  CHF: "SWISS FRANCS",
+  AED: "UAE DIRHAMS",
+  CNY: "CHINESE YUAN",
+  INR: "INDIAN RUPEES",
+  RUB: "RUSSIAN RUBLES",
+  JPY: "JAPANESE YEN",
+  SAR: "SAUDI RIYALS",
+  BRL: "BRAZILIAN REAL",
+  ZAR: "SOUTH AFRICAN RAND",
+  TRY: "TURKISH LIRA",
+  SGD: "SINGAPORE DOLLARS",
+  HKD: "HONG KONG DOLLARS",
+};
+
+const ONES = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine"];
+const TEENS = ["Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"];
+const TENS = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
+
+function threeDigitsToWords(n: number): string {
+  if (n === 0) return "";
+  let str = "";
+  const hundred = Math.floor(n / 100);
+  const remainder = n % 100;
+  if (hundred > 0) str += ONES[hundred] + " Hundred";
+  if (remainder > 0) {
+    if (str) str += " ";
+    if (remainder < 10) str += ONES[remainder];
+    else if (remainder < 20) str += TEENS[remainder - 10];
+    else {
+      const t = Math.floor(remainder / 10);
+      const o = remainder % 10;
+      str += TENS[t];
+      if (o > 0) str += "-" + ONES[o];
+    }
+  }
+  return str;
+}
+
+/**
+ * Convert a numeric amount into English words (e.g. 171000 → "SAY: ONE
+ * HUNDRED SEVENTY-ONE THOUSAND US DOLLARS ONLY"). Used by the "Amount in
+ * Words" line that international trade documents (invoices, proformas,
+ * offers) legally require. Handles up to billions, negative values, cents.
+ */
+export function amountInWords(amount: number, currency = "USD"): string {
+  const currName = CURRENCY_NAMES[currency] ?? currency;
+
+  if (!isFinite(amount)) {
+    return `SAY: ZERO ${currName} ONLY`;
+  }
+
+  const negative = amount < 0;
+  const absAmount = Math.abs(amount);
+  const whole = Math.floor(absAmount);
+  const cents = Math.round((absAmount - whole) * 100);
+
+  let words: string;
+  if (whole === 0) {
+    words = "Zero";
+  } else {
+    const billions = Math.floor(whole / 1000000000);
+    const millions = Math.floor((whole % 1000000000) / 1000000);
+    const thousands = Math.floor((whole % 1000000) / 1000);
+    const remainder = whole % 1000;
+
+    const parts: string[] = [];
+    if (billions > 0) parts.push(threeDigitsToWords(billions) + " Billion");
+    if (millions > 0) parts.push(threeDigitsToWords(millions) + " Million");
+    if (thousands > 0) parts.push(threeDigitsToWords(thousands) + " Thousand");
+    if (remainder > 0) parts.push(threeDigitsToWords(remainder));
+    words = parts.join(" ");
+  }
+
+  let result = `SAY: ${negative ? "NEGATIVE " : ""}${words} ${currName}`;
+  if (cents > 0) result += ` AND ${cents}/100`;
+  result += " ONLY";
+  return result;
+}
+
+// ─── Colour + font utilities (memorandum template) ─────────────────────────
+
+/**
+ * Lighten a hex colour by blending it towards white.
+ * amount=0 returns the original colour, amount=1 returns pure white.
+ */
+export function lightenHex(hex: string, amount: number): string {
+  const h = (hex || "#ffffff").replace("#", "");
+  if (h.length !== 6) return hex;
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  if ([r, g, b].some((n) => Number.isNaN(n))) return hex;
+  const lr = Math.round(r + (255 - r) * amount);
+  const lg = Math.round(g + (255 - g) * amount);
+  const lb = Math.round(b + (255 - b) * amount);
+  const toHex = (n: number) => n.toString(16).padStart(2, "0");
+  return `#${toHex(lr)}${toHex(lg)}${toHex(lb)}`;
+}
+
+/**
+ * Map a CSS font stack (e.g. "Inter, system-ui, sans-serif") to a single
+ * PDF-safe family. react-pdf only ships Helvetica, Times-Roman and Courier
+ * built-in — any custom font would need Font.register() first.
+ */
+const FONT_MAP: Record<string, string> = {
+  "helvetica": "Helvetica",
+  "inter": "Helvetica",
+  "system-ui": "Helvetica",
+  "sans-serif": "Helvetica",
+  "arial": "Helvetica",
+  "times": "Times-Roman",
+  "times-new-roman": "Times-Roman",
+  "serif": "Times-Roman",
+  "courier": "Courier",
+  "monospace": "Courier",
+};
+
+export function mapFont(fontStack: string | null | undefined, fallback = "Helvetica"): string {
+  if (!fontStack) return fallback;
+  const first = fontStack.split(",")[0].trim().replace(/['"]/g, "").toLowerCase();
+  return FONT_MAP[first] || fallback;
+}
+
+/** Derive the heading variant of a font family (e.g. "Helvetica" → "Helvetica-Bold"). */
+export function boldVariant(family: string): string {
+  return family.endsWith("Bold") || family.endsWith("Italic") ? family : `${family}-Bold`;
+}
+
+// ─── Shared react-pdf components ────────────────────────────────────────────
+
+/**
+ * Uniform status watermark — stamps DRAFT / PAID / VOID / … across EVERY page
+ * of the document so its legal standing is unmissable.
+ *
+ * Canonical style (audit12): full-width band starting at 40% page height,
+ * centred text, opacity 0.12, grey (#999999), Helvetica-Bold, NO rotation.
+ * Before audit12 the three template families each hand-rolled a slightly
+ * different watermark (packing-list rotated −30°, marketplace used opacity
+ * 0.10) — they're now pixel-identical by construction.
+ *
+ * audit12 CRITICAL FIX: the old implementation used `left: "50%"` +
+ * `transform: "translate(-50%, -50%)"` — but @react-pdf/renderer does NOT
+ * apply percentage translate the way browsers do, so the watermark was NOT
+ * centred: it started at the page's horizontal midpoint and every word
+ * wider than half a page got CLIPPED at the right edge. Verified clipping
+ * in production: "CANCELLED" rendered as "CANCELL", "DELIVERED" as
+ * "DELIVERE", "PRICE NOT CONFIRMED" as "PRICE N CONFIRM". The fix spans
+ * the View across the full page width (left: 0, right: 0) and centres the
+ * Text with textAlign — no transform needed, clipping impossible.
+ *
+ * Adaptive font size: 80pt for short statuses (DRAFT/PAID/…), 50pt for
+ * long ones (≥14 chars) so "PRICE NOT CONFIRMED" fits on a single line.
+ *
+ * IMPORTANT: always render the <View fixed> (never conditionally) so
+ * react-pdf keeps the fixed signal on pages 2+. The Text inside is empty
+ * when the status doesn't warrant a watermark.
+ */
+export function Watermark({ text }: { text: string }) {
+  const fontSize = text.length >= 14 ? 50 : 80;
+  return React.createElement(
+    View,
+    {
+      fixed: true,
+      style: {
+        position: "absolute",
+        top: "40%",
+        left: 0,
+        right: 0,
+        opacity: 0.12,
+        zIndex: 0,
+      },
+    },
+    React.createElement(
+      Text,
+      {
+        style: {
+          fontSize,
+          fontFamily: "Helvetica-Bold",
+          color: "#999999",
+          textAlign: "center",
+        },
+      },
+      text,
+    ),
+  );
+}
+
+/**
+ * Uniform page-number footer element. Uses react-pdf's `render` prop so every
+ * page shows the correct "Page X of Y" (the pre-audit12 packing-list template
+ * hardcoded `left: 540` to position its page number — fragile and visually
+ * misaligned; this is the canonical replacement).
+ *
+ * Must be rendered INSIDE a <View fixed> that is a direct child of <Page> —
+ * the factory callers below already do that. Returns a Text element whose
+ * content is evaluated per-page by the renderer.
+ */
+export function PageNumberText({ prefix = "Page " }: { prefix?: string }) {
+  return React.createElement(Text, {
+    render: ({ pageNumber, totalPages }: { pageNumber: number; totalPages: number }) =>
+      `${prefix}${pageNumber} of ${totalPages}`,
+  });
+}
+
+/**
+ * Which statuses earn a watermark, per document family.
+ *   • Trade docs (offer/invoice/proforma/LOI): DRAFT/PAID/VOID/CANCELLED/OVERDUE
+ *   • Marketplace trade documents: DRAFT/REJECTED/SENT/SIGNED
+ * Anything else renders an empty (invisible) watermark to keep the `fixed`
+ * View present on every page.
+ */
+const TRADE_WATERMARK_STATUSES = ["DRAFT", "PAID", "VOID", "CANCELLED", "OVERDUE"];
+const MARKETPLACE_WATERMARK_STATUSES = ["DRAFT", "REJECTED", "SENT", "SIGNED"];
+
+export function tradeWatermarkText(status: string | null | undefined, priceUnconfirmed = false): string {
+  if (priceUnconfirmed) return "PRICE NOT CONFIRMED";
+  const st = String(status || "").toUpperCase();
+  return TRADE_WATERMARK_STATUSES.includes(st) ? st : "";
+}
+
+export function marketplaceWatermarkText(status: string | null | undefined): string {
+  const st = String(status || "").toUpperCase();
+  return MARKETPLACE_WATERMARK_STATUSES.includes(st) ? st : "";
+}
+
+/**
+ * Logistics watermark — packing lists have no `status` column, so the status
+ * is derived from the request's date fields:
+ *   • targetDeliveryDate in the past → DELIVERED
+ *   • targetPickupDate in the past (no delivery yet) → IN TRANSIT
+ *   • any pickup/delivery scheduled (both future) → SCHEDULED
+ *   • no dates at all → DRAFT
+ */
+export function logisticsWatermarkText(
+  targetPickupDate?: string | null,
+  targetDeliveryDate?: string | null,
+  now = Date.now(),
+): string {
+  const pickupTs = targetPickupDate ? new Date(targetPickupDate).getTime() : NaN;
+  const deliveryTs = targetDeliveryDate ? new Date(targetDeliveryDate).getTime() : NaN;
+  if (Number.isFinite(deliveryTs) && now > deliveryTs) return "DELIVERED";
+  if (Number.isFinite(pickupTs) && now > pickupTs) return "IN TRANSIT";
+  if (Number.isFinite(pickupTs) || Number.isFinite(deliveryTs)) return "SCHEDULED";
+  return "DRAFT";
+}
+
+// ─── Shared base styles (packing-list + marketplace families) ───────────────
+
+/**
+ * The packing-list and marketplace templates share an identical visual
+ * language (copper header bar, bordered two-column blocks, grey-striped
+ * tables). Before audit12 both files carried a near-identical 60-line
+ * StyleSheet with tiny drift; this is the single canonical sheet. Templates
+ * that need extra styles (marketplace adds signature rows etc.) spread this
+ * base and add their own keys.
+ */
+export function createBaseStyles() {
+  return StyleSheet.create({
+    page: { padding: 30, fontSize: 9, fontFamily: "Helvetica", color: "#111" },
+    headerBar: { backgroundColor: COPPER, color: "white", padding: 12, marginBottom: 16, borderRadius: 3 },
+    h1: { fontSize: 16, fontWeight: 700 },
+    small: { fontSize: 9, opacity: 0.85 },
+    section: { marginBottom: 10 },
+    sectionTitle: { fontSize: 10, fontWeight: 700, marginBottom: 4, textTransform: "uppercase", color: COPPER_SOFT },
+    twoCol: { flexDirection: "row", gap: 12 },
+    col: { flex: 1, border: "1pt solid #d1d5db", borderRadius: 3, padding: 8 },
+    label: { fontSize: 8, color: "#6b7280", marginBottom: 1 },
+    value: { fontSize: 10, marginBottom: 3 },
+    table: { border: "1pt solid #d1d5db", borderRadius: 3, marginTop: 4 },
+    tr: { flexDirection: "row", borderBottom: "1pt solid #e5e7eb" },
+    trHead: { backgroundColor: "#f3f4f6", flexDirection: "row", borderBottom: "1pt solid #d1d5db" },
+    th: { fontSize: 8, fontWeight: 700, padding: 5, color: "#374151" },
+    td: { fontSize: 8, padding: 5 },
+    totals: {
+      flexDirection: "row",
+      justifyContent: "flex-end",
+      gap: 20,
+      marginTop: 8,
+      paddingTop: 8,
+      borderTop: "1pt solid #d1d5db",
+    },
+    totalBlock: { alignItems: "flex-end" },
+    totalLabel: { fontSize: 8, color: "#6b7280" },
+    totalValue: { fontSize: 11, fontWeight: 700 },
+    notes: {
+      border: "1pt solid #d1d5db",
+      borderRadius: 3,
+      padding: 8,
+      backgroundColor: "#f9fafb",
+      marginTop: 4,
+      fontSize: 9,
+    },
+  });
+}

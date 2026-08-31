@@ -68,6 +68,13 @@ vi.mock("@/lib/api/helpers", () => ({
     NextResponse.json({ error: "API key required." }, { status: 401 }),
   ),
   getIp: vi.fn(() => "127.0.0.1"),
+  // audit12: getAuthUser moved from a per-route private copy into the
+  // helpers module — mirror the real implementation for the mocked routes.
+  getAuthUser: vi.fn((auth: any) =>
+    "user" in auth
+      ? auth.user
+      : { id: `api:${auth.apiKeyId}`, username: auth.apiKeyName, tenant_id: auth.tenantId },
+  ),
 }));
 
 vi.mock("@/lib/api/feature-guard", () => ({

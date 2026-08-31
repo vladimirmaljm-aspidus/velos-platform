@@ -62,7 +62,7 @@ async function _get(req: NextRequest, ctx: { params: Promise<{ id: string }> }) 
       const tenant = await store.getTenant(access.tenant_id);
       if (tenant?.name) issuerName = tenant.name;
     } catch (e) {
-      console.warn("[marketplace.documents.pdf] tenant lookup failed:", e);
+      console.warn("[m[marketplace.documents.pdf] tenant lookup failed:", e);
     }
 
     // Render the PDF.
@@ -74,7 +74,7 @@ async function _get(req: NextRequest, ctx: { params: Promise<{ id: string }> }) 
         { issuerName },
       );
     } catch (e: any) {
-      console.error("[marketplace.documents.pdf] render failed:", e);
+      console.error("[m[marketplace.documents.pdf] render failed:", e);
       return NextResponse.json(
         { error: "Failed to render PDF: " + (e?.message || "unknown error") },
         { status: 500 },
@@ -92,7 +92,7 @@ async function _get(req: NextRequest, ctx: { params: Promise<{ id: string }> }) 
           generated_pdf_url: "inline:pdf",
         });
       } catch (e) {
-        console.warn("[marketplace.documents.pdf] generated_pdf_url update failed:", e);
+        console.warn("[m[marketplace.documents.pdf] generated_pdf_url update failed:", e);
       }
     }
 
@@ -109,7 +109,7 @@ async function _get(req: NextRequest, ctx: { params: Promise<{ id: string }> }) 
         { document_type: doc.document_type, reference_number: doc.reference_number },
       );
     } catch (e) {
-      console.error("[marketplace.documents.pdf] audit failed:", e);
+      console.error("[m[marketplace.documents.pdf] audit failed:", e);
     }
 
     // 9a-N2: use shared safeFilename — strips CRLF / quotes / control chars.
@@ -135,7 +135,7 @@ async function _get(req: NextRequest, ctx: { params: Promise<{ id: string }> }) 
       },
     });
   } catch (e: any) {
-    console.error("[marketplace.documents.pdf]", e);
+    console.error("[m[marketplace.documents.pdf]", e);
     return NextResponse.json({ error: "Failed to generate PDF." }, { status: 500 });
   }
 }

@@ -27,6 +27,20 @@ import type {
   TradeDocumentParty,
   TradeDocumentLineItem,
 } from "@/lib/marketplace/document-generators";
+// audit12: shared helpers + components (fmtValue, fmtMoney, fmtWeight,
+// Watermark, marketplaceWatermarkText, base styles) live in
+// @/lib/pdf/shared.ts — single source of truth shared with templates.tsx
+// and packing-list.ts. The COPPER palette and the 40-line base StyleSheet
+// previously copy-pasted here were removed.
+import {
+  fmtValue as fmt,
+  fmtQty,
+  fmtMoney,
+  fmtWeight,
+  Watermark,
+  marketplaceWatermarkText,
+  createBaseStyles,
+} from "@/lib/pdf/shared";
 
 // ─── Public API ───────────────────────────────────────────────────────────
 
@@ -95,33 +109,14 @@ function sortKeys(value: unknown): unknown {
 
 // ─── PDF component tree ────────────────────────────────────────────────────
 
-// VELOS brand palette — copper (#B45309). Matches the brand colour used by
-// the existing offer/invoice/proforma PDFs (see src/lib/pdf/packing-list.ts).
-const COPPER = "#B45309";
-const COPPER_SOFT = "#92400E";
+// audit12: base styles (page / headerBar / sections / tables / totals /
+// notes) come from @/lib/pdf/shared.ts. Only marketplace-specific styles
+// (signature rows, reverse-charge legend, column widths, fixed footer)
+// remain local.
+const base = createBaseStyles();
 
 const styles = StyleSheet.create({
-  page: { padding: 30, fontSize: 9, fontFamily: "Helvetica", color: "#111" },
-  headerBar: { backgroundColor: COPPER, color: "white", padding: 12, marginBottom: 16, borderRadius: 3 },
-  h1: { fontSize: 16, fontWeight: 700 },
-  small: { fontSize: 9, opacity: 0.85 },
-  section: { marginBottom: 10 },
-  sectionTitle: {
-    fontSize: 10,
-    fontWeight: 700,
-    marginBottom: 4,
-    textTransform: "uppercase",
-    color: COPPER_SOFT,
-  },
-  twoCol: { flexDirection: "row", gap: 12 },
-  col: { flex: 1, border: "1pt solid #d1d5db", borderRadius: 3, padding: 8 },
-  label: { fontSize: 8, color: "#6b7280", marginBottom: 1 },
-  value: { fontSize: 10, marginBottom: 3 },
-  table: { border: "1pt solid #d1d5db", borderRadius: 3, marginTop: 4 },
-  tr: { flexDirection: "row", borderBottom: "1pt solid #e5e7eb" },
-  trHead: { backgroundColor: "#f3f4f6", flexDirection: "row", borderBottom: "1pt solid #d1d5db" },
-  th: { fontSize: 8, fontWeight: 700, padding: 5, color: "#374151" },
-  td: { fontSize: 8, padding: 5 },
+  ...base,
   colLine: { width: 24, textAlign: "right" },
   colDesc: { flex: 3 },
   colHs: { width: 50 },
@@ -129,36 +124,14 @@ const styles = StyleSheet.create({
   colUnit: { width: 30, textAlign: "right" },
   colPkg: { width: 30, textAlign: "right" },
   colWt: { width: 45, textAlign: "right" },
-  totals: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    gap: 20,
-    marginTop: 8,
-    paddingTop: 8,
-    borderTop: "1pt solid #d1d5db",
-  },
-  totalBlock: { alignItems: "flex-end" },
-  totalLabel: { fontSize: 8, color: "#6b7280" },
-  totalValue: { fontSize: 11, fontWeight: 700 },
   signatureRow: { flexDirection: "row", gap: 24, marginTop: 30, justifyContent: "space-between" },
   signBlock: { flex: 1 },
   signLine: { borderTop: "1pt solid #111", marginTop: 40, paddingTop: 4, fontSize: 8, color: "#374151" },
   signValue: { fontSize: 10, marginBottom: 4 },
-  footer: {
-    position: "absolute",
-    bottom: 20,
-    left: 30,
-    right: 30,
-    textAlign: "center",
-    fontSize: 8,
-    color: "#9ca3af",
-    borderTop: "1pt solid #e5e7eb",
-    paddingTop: 8,
-  },
   // 2h-F6 fix (round 4): a `fixed` View variant of the footer so it repeats
-  // on every page. Inline-styled by TradeDocumentRoot (the parent <View fixed>
-  // sets the position; the children inherit the look). The legacy `footer`
-  // style is kept for backward compat with packing-list.ts / other callers.
+  // on every page. The lead-in + render-prop page-number Text children are
+  // inlined by TradeDocumentRoot. audit12: packing-list.ts now uses the
+  // same footerFixed structure — the two templates are pixel-identical.
   footerFixed: {
     position: "absolute",
     bottom: 20,
@@ -176,9 +149,11 @@ const styles = StyleSheet.create({
   // 2h-F2 fix (round 4): reverse-charge legend for marketplace commercial
   // invoices with tax_rate=0 (B2B cross-border). The legend lives in a
   // totals-row so it visually substitutes for the missing Tax line.
+  // audit12: full-width reverse-charge legend row (rendered right after the
+  // totals section, right-aligned — no longer a squeezed flex child).
   reverseChargeRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "flex-end",
     paddingTop: 2,
     paddingBottom: 2,
   },
@@ -186,16 +161,6 @@ const styles = StyleSheet.create({
     fontSize: 8,
     color: "#6b7280",
     fontStyle: "italic",
-    flex: 1,
-    textAlign: "right",
-  },
-  notes: {
-    border: "1pt solid #d1d5db",
-    borderRadius: 3,
-    padding: 8,
-    backgroundColor: "#f9fafb",
-    marginTop: 4,
-    fontSize: 9,
   },
 });
 
@@ -213,12 +178,12 @@ function TradeDocumentRoot({ type, data, issuerName }: TradeDocumentRootProps) {
 
   // 2g-F2 fix (round 4): status watermark. Marketplace trade documents have
   // a `status` field on the parent row (draft/generated/sent/signed/rejected).
-  // Stamp DRAFT / REJECTED on every page so the document's standing is
-  // unmissable (a draft commercial invoice should NOT be presented to a bank
-  // for L/C issuance — without the watermark a draft looks identical to a
-  // signed original).
-  const statusRaw = String(data.status || data.meta?.status || "").toUpperCase();
-  const watermarkText = ["DRAFT", "REJECTED", "SENT", "SIGNED"].includes(statusRaw) ? statusRaw : "";
+  // Stamp DRAFT / REJECTED / SENT / SIGNED on every page so the document's
+  // standing is unmissable (a draft commercial invoice should NOT be
+  // presented to a bank for L/C issuance — without the watermark a draft
+  // looks identical to a signed original). audit12: the status resolution
+  // moved to shared.ts (marketplaceWatermarkText) so all templates share it.
+  const watermarkText = marketplaceWatermarkText(data.status || data.meta?.status);
 
   // 2g-F23 fix (round 4): compute the document fingerprint (SHA-256 over
   // the JSONB) and surface it in the footer so a counterparty can verify
@@ -236,21 +201,12 @@ function TradeDocumentRoot({ type, data, issuerName }: TradeDocumentRootProps) {
     React.createElement(
       Page,
       { size: "A4", style: styles.page },
-      // 2g-F2 fix (round 4): status watermark — absolutely positioned,
-      // always rendered (empty string when no status) so the `fixed` prop
-      // is preserved across all pages.
-      React.createElement(
-        View,
-        { fixed: true, style: {
-            position: "absolute",
-            top: "40%",
-            left: "50%",
-            transform: "translate(-50%, -50%)",
-            opacity: 0.10,
-            zIndex: 0,
-          } },
-        React.createElement(Text, { style: { fontSize: 80, fontFamily: "Helvetica-Bold", color: "#999999", textAlign: "center" } }, watermarkText),
-      ),
+      // 2g-F2 fix (round 4): status watermark — always rendered (empty string
+      // when no status) so the `fixed` prop is preserved across all pages.
+      // audit12: uses the shared <Watermark /> component — pixel-identical to
+      // the memorandum and packing-list templates (previously this one used
+      // opacity 0.10 while the others used 0.12).
+      React.createElement(Watermark, { text: watermarkText }),
       // Letterhead
       React.createElement(
         View,
@@ -352,30 +308,6 @@ function PartyBlock({
   );
 }
 
-function fmt(v: unknown): string {
-  if (v === null || v === undefined || v === "") return "—";
-  return String(v);
-}
-
-function fmtMoney(n: number | null | undefined, currency = "USD"): string {
-  const v = typeof n === "number" && isFinite(n) ? n : 0;
-  try {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(v);
-  } catch {
-    return `${v.toFixed(2)} ${currency}`;
-  }
-}
-
-function fmtWeight(n: number | null | undefined, unit = "kg"): string {
-  const v = typeof n === "number" && isFinite(n) ? n : 0;
-  return `${v.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${unit}`;
-}
-
 // ─── Commercial invoice ────────────────────────────────────────────────────
 
 function CommercialInvoiceBody(data: Record<string, any>) {
@@ -451,7 +383,7 @@ function CommercialInvoiceBody(data: Record<string, any>) {
             React.createElement(Text, { style: [styles.td, styles.colLine] }, String(idx + 1)),
             React.createElement(Text, { style: [styles.td, styles.colDesc] }, fmt(it.description)),
             React.createElement(Text, { style: [styles.td, styles.colHs] }, fmt(it.hs_code)),
-            React.createElement(Text, { style: [styles.td, styles.colNum] }, fmt(it.quantity)),
+            React.createElement(Text, { style: [styles.td, styles.colNum] }, fmtQty(it.quantity)),
             React.createElement(Text, { style: [styles.td, styles.colUnit] }, fmt(it.unit)),
             React.createElement(Text, { style: [styles.td, styles.colNum] }, fmtMoney(it.unit_price, data.currency)),
             React.createElement(Text, { style: [styles.td, styles.colNum] }, fmtMoney(it.total_price, data.currency)),
@@ -476,16 +408,7 @@ function CommercialInvoiceBody(data: Record<string, any>) {
             React.createElement(Text, { style: styles.totalLabel }, `Tax (${data.tax_rate}%)`),
             React.createElement(Text, { style: styles.totalValue }, fmtMoney(data.tax_amount, data.currency)),
           )
-        : // 2h-F2 fix (round 4): when tax_rate=0 on a commercial invoice,
-          // this is the B2B cross-border reverse-charge scenario. Tax
-          // authorities require the legend — omitting it makes the
-          // document look like a tax-exempt consumer sale. Mirror the
-          // 2g-F11 fix from templates.tsx.
-          React.createElement(
-            View,
-            { style: styles.reverseChargeRow },
-            React.createElement(Text, { style: styles.reverseChargeText }, "VAT: Reverse charge — settled by recipient"),
-          ),
+        : null,
       typeof data.shipping_cost === "number" && data.shipping_cost > 0
         ? React.createElement(
             View,
@@ -501,6 +424,20 @@ function CommercialInvoiceBody(data: Record<string, any>) {
         React.createElement(Text, { style: styles.totalValue }, fmtMoney(data.total, data.currency)),
       ),
     ),
+    // 2h-F2 fix (round 4): when tax_rate=0 on a commercial invoice, this is
+    // the B2B cross-border reverse-charge scenario. Tax authorities require
+    // the legend — omitting it makes the document look like a tax-exempt
+    // consumer sale. Mirrors the 2g-F11 fix from templates.tsx.
+    // audit12: rendered as a full-width line BELOW the totals row — the old
+    // in-row variant squeezed the long legend into a narrow flex column and
+    // hyphenated it ("Re-verse charge") which looked broken on the PDF.
+    typeof data.tax_rate === "number" && data.tax_rate > 0
+      ? null
+      : React.createElement(
+          View,
+          { style: styles.reverseChargeRow },
+          React.createElement(Text, { style: styles.reverseChargeText }, "VAT: Reverse charge — VAT settled by the recipient"),
+        ),
     // Notes
     data.notes
       ? React.createElement(
@@ -678,7 +615,7 @@ function CertificateOfOriginBody(data: Record<string, any>) {
             React.createElement(Text, { style: [styles.td, styles.colLine] }, String(idx + 1)),
             React.createElement(Text, { style: [styles.td, styles.colDesc] }, fmt(p.description)),
             React.createElement(Text, { style: [styles.td, styles.colHs] }, fmt(p.hs_code)),
-            React.createElement(Text, { style: [styles.td, styles.colNum] }, fmt(p.quantity)),
+            React.createElement(Text, { style: [styles.td, styles.colNum] }, fmtQty(p.quantity)),
             React.createElement(Text, { style: [styles.td, styles.colUnit] }, fmt(p.unit)),
             React.createElement(Text, { style: [styles.td, styles.colWt] }, fmtWeight(p.gross_weight_kg)),
             React.createElement(Text, { style: [styles.td, styles.colWt] }, fmtWeight(p.net_weight_kg)),
@@ -904,7 +841,7 @@ function ProformaInvoiceBody(data: Record<string, any>) {
             React.createElement(Text, { style: [styles.td, styles.colLine] }, String(idx + 1)),
             React.createElement(Text, { style: [styles.td, styles.colDesc] }, fmt(it.description)),
             React.createElement(Text, { style: [styles.td, styles.colHs] }, fmt(it.hs_code)),
-            React.createElement(Text, { style: [styles.td, styles.colNum] }, fmt(it.quantity)),
+            React.createElement(Text, { style: [styles.td, styles.colNum] }, fmtQty(it.quantity)),
             React.createElement(Text, { style: [styles.td, styles.colUnit] }, fmt(it.unit)),
             React.createElement(Text, { style: [styles.td, styles.colNum] }, fmtMoney(it.unit_price, data.currency)),
             React.createElement(Text, { style: [styles.td, styles.colNum] }, fmtMoney(it.total_price, data.currency)),
