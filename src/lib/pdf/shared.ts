@@ -46,11 +46,160 @@ const COUNTRY_BY_CODE: Record<string, string> = (() => {
   return m;
 })();
 
-/** ISO alpha-2 code → full country name. Unknown/missing → em-dash or the raw code. */
+/**
+ * ISO alpha-2 code → full country name. Unknown/missing → em-dash.
+ * audit13 fix: a FULL NAME input ("Argentina", "United Kingdom" — how some
+ * partner rows store it) used to come back SHOUTED ("ARGENTINA") because the
+ * lookup uppercased everything; now full names pass through as written and
+ * only bare ISO codes are uppercased by convention.
+ */
 export function countryName(code?: string | null): string {
   if (!code) return "—";
-  const upper = String(code).toUpperCase().trim();
-  return COUNTRY_BY_CODE[upper] || upper;
+  const raw = String(code).trim();
+  const upper = raw.toUpperCase();
+  const resolved = COUNTRY_BY_CODE[upper];
+  if (resolved) return resolved;
+  return upper.length <= 3 ? upper : raw;
+}
+
+// ─── Address dedup (audit13) ───────────────────────────────────────────────
+
+/**
+ * Common country abbreviations people bake into free-text address lines
+ * ("JLT Cluster C, Dubai, UAE") that differ from every ISO form.
+ */
+const COUNTRY_ABBREVIATIONS: Record<string, string[]> = {
+  AE: ["UAE"],
+  US: ["USA", "U.S.A.", "US"],
+  GB: ["UK", "U.K.", "BRITAIN", "GREAT BRITAIN"],
+  SA: ["KSA"],
+  RU: ["RF", "RUS"],
+  KR: ["KOR", "S KOREA"],
+  CN: ["PRC", "CHINA PRC"],
+  NL: ["HOLLAND"],
+  CH: ["SUI", "SWISS"],
+  DE: ["FRG"],
+  TZ: ["TANZANIA"],
+  CD: ["DRC", "DR CONGO"],
+  CI: ["COTE D IVOIRE", "IVORY COAST"],
+  TW: ["ROC", "TAIWAN"],
+  MK: ["FYROM"],
+};
+
+/**
+ * Word-boundary, case-insensitive "contains" check for address dedup.
+ * Tolerates punctuation ("Dubai," matches "Dubai") and dotted forms
+ * ("U.A.E." matches "UAE").
+ */
+function containsWord(haystack: string, needle: string): boolean {
+  const n = String(needle || "").trim();
+  if (!n) return false;
+  const h = String(haystack || "");
+  if (!h) return false;
+  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const norm = (s: string) =>
+    s.toLowerCase().replace(/[\s]*\.[\s]*/g, ".").replace(/,/g, " ");
+  const hNorm = norm(h);
+  const nNorm = norm(n);
+  // Direct word match ("dubai" in "…cluster c, dubai, uae")
+  if (new RegExp(`(^|[\\s])${esc(nNorm)}($|[\\s])`).test(hNorm)) return true;
+  // Dotted-alias match: strip dots from both ("u.a.e" → "uae")
+  const hDots = hNorm.replace(/\./g, "");
+  const nDots = nNorm.replace(/\./g, "");
+  if (nDots && new RegExp(`(^|[\\s])${esc(nDots)}($|[\\s])`).test(hDots)) return true;
+  // Leading-dot tolerance: "u.s.a" already handled above; also allow the
+  // needle to match with its trailing period stripped in the haystack.
+  if (new RegExp(`(^|[\\s])${esc(nNorm.replace(/\.$/, ""))}($|[\\s]|\.)`).test(hNorm)) return true;
+  return false;
+}
+
+/**
+ * All the textual tokens that identify a country in free text: full name,
+ * official name, ISO alpha-2, ISO alpha-3, common abbreviations. Accepts
+ * either an ISO code ("AE") or a full name ("United Arab Emirates",
+ * "Argentina") — whatever the calling table stores.
+ */
+function countryTokens(country: string): string[] {
+  const raw = String(country || "").trim();
+  if (!raw) return [];
+  const upper = raw.toUpperCase();
+  const tokens = new Set<string>([raw]);
+  const c = COUNTRIES.find((x) => x.code.toUpperCase() === upper);
+  if (c) {
+    tokens.add(c.name);
+    if (c.officialName) tokens.add(c.officialName);
+    tokens.add(c.code.toUpperCase());
+    if (c.code3) tokens.add(c.code3.toUpperCase());
+    for (const abbr of COUNTRY_ABBREVIATIONS[c.code.toUpperCase()] || []) tokens.add(abbr);
+  } else {
+    // Full name given — reverse-lookup the ISO record for codes + aliases
+    const byName = COUNTRIES.find(
+      (x) => x.name.toLowerCase() === raw.toLowerCase() || x.officialName?.toLowerCase() === raw.toLowerCase(),
+    );
+    if (byName) {
+      tokens.add(byName.code.toUpperCase());
+      if (byName.code3) tokens.add(byName.code3.toUpperCase());
+      for (const abbr of COUNTRY_ABBREVIATIONS[byName.code.toUpperCase()] || []) tokens.add(abbr);
+    }
+    if (upper.length === 2 || upper.length === 3) tokens.add(upper);
+  }
+  return [...tokens].filter(Boolean);
+}
+
+/**
+ * Split the city/postal/country extras into the parts NOT already present
+ * in the free-text address line (word-boundary, alias-aware).
+ *
+ * audit13 root cause: tenants/partners store e.g.
+ *   address_line = "GoldCrest Executive Tower, 1002-A, JLT Cluster C, Dubai, UAE"
+ *   city = "Dubai", country = "AE"
+ * and every template naively appended city + country → "…, Dubai, UAE, Dubai,
+ * United Arab Emirates" in the FROM/TO boxes AND the memorandum footer.
+ */
+function dedupeAddressParts(
+  addressLine: string | null | undefined,
+  extra?: { postal?: string | null; city?: string | null; country?: string | null },
+): string[] {
+  const line = String(addressLine || "").trim();
+  const appends: string[] = [];
+  const postal = String(extra?.postal || "").trim();
+  const city = String(extra?.city || "").trim();
+  const country = String(extra?.country || "").trim();
+  if (postal && !containsWord(line, postal)) appends.push(postal);
+  if (city && !containsWord(line, city)) appends.push(city);
+  if (country) {
+    const full = countryName(country);
+    const alreadyMentioned = countryTokens(country).some((t) => containsWord(line, t));
+    if (!alreadyMentioned && !appends.includes(full)) appends.push(full);
+  }
+  return appends;
+}
+
+/**
+ * Full one-line address: the free-text line + only the city/postal/country
+ * parts it doesn't already contain. "…, Dubai, UAE" + city "Dubai" +
+ * country "AE" → "…, Dubai, UAE" (nothing appended — no duplication).
+ */
+export function joinAddressParts(
+  addressLine: string | null | undefined,
+  extra?: { postal?: string | null; city?: string | null; country?: string | null },
+): string {
+  const line = String(addressLine || "").trim();
+  const parts = [line, ...dedupeAddressParts(addressLine, extra)].filter(Boolean);
+  return parts.join(", ");
+}
+
+/**
+ * ONLY the remaining parts (postal/city/country) that the free-text address
+ * line doesn't already mention — for two-line party boxes where line 1 is
+ * the address and line 2 the city/country row. Returns "" when everything
+ * is already covered (render nothing instead of a duplicate line).
+ */
+export function remainingAddressParts(
+  addressLine: string | null | undefined,
+  extra?: { postal?: string | null; city?: string | null; country?: string | null },
+): string {
+  return dedupeAddressParts(addressLine, extra).join(", ");
 }
 
 // ─── Formatters ─────────────────────────────────────────────────────────────
@@ -220,11 +369,18 @@ export function lightenHex(hex: string, amount: number): string {
 }
 
 /**
- * Map a CSS font stack (e.g. "Inter, system-ui, sans-serif") to a single
- * PDF-safe family. react-pdf only ships Helvetica, Times-Roman and Courier
+ * Map a CSS font stack OR a react-pdf font name (what the memorandum settings
+ * UI stores: "Helvetica", "Times-Roman", "Courier") to a valid react-pdf
+ * base family. react-pdf only ships Helvetica, Times-Roman and Courier
  * built-in — any custom font would need Font.register() first.
+ *
+ * audit13 fix: the settings UI saves the EXACT react-pdf names ("Times-Roman"),
+ * but the old map only knew CSS stack names ("times", "times-new-roman") —
+ * so "Times-Roman" fell through to the fallback and the memorandum header
+ * silently rendered in Helvetica instead of the configured serif font.
  */
 const FONT_MAP: Record<string, string> = {
+  // CSS stack names (web preview → PDF)
   "helvetica": "Helvetica",
   "inter": "Helvetica",
   "system-ui": "Helvetica",
@@ -234,18 +390,54 @@ const FONT_MAP: Record<string, string> = {
   "times-new-roman": "Times-Roman",
   "serif": "Times-Roman",
   "courier": "Courier",
+  "courier-new": "Courier",
   "monospace": "Courier",
+  // Exact react-pdf names (memorandum settings UI values + style variants)
+  "times-roman": "Times-Roman",
+  "times-bold": "Times-Bold",
+  "times-italic": "Times-Italic",
+  "times-bold-italic": "Times-BoldItalic",
+  "timesbolditalic": "Times-BoldItalic",
+  "helvetica-bold": "Helvetica-Bold",
+  "helvetica-oblique": "Helvetica-Oblique",
+  "helvetica-boldoblique": "Helvetica-BoldOblique",
+  "courier-bold": "Courier-Bold",
+  "courier-oblique": "Courier-Oblique",
+  "courier-boldoblique": "Courier-BoldOblique",
 };
 
 export function mapFont(fontStack: string | null | undefined, fallback = "Helvetica"): string {
   if (!fontStack) return fallback;
   const first = fontStack.split(",")[0].trim().replace(/['"]/g, "").toLowerCase();
-  return FONT_MAP[first] || fallback;
+  // audit13: normalise spaces to hyphens so "'Times New Roman', Times, serif"
+  // (a CSS stack with spaces in the family name) resolves to Times-Roman —
+  // it previously fell through to the fallback.
+  const key = first.replace(/\s+/g, "-");
+  return FONT_MAP[key] || FONT_MAP[first] || fallback;
 }
 
-/** Derive the heading variant of a font family (e.g. "Helvetica" → "Helvetica-Bold"). */
+/**
+ * Derive the bold variant of a react-pdf base family.
+ * audit13 fix: "Times-Roman" + "-Bold" = "Times-Roman-Bold" which is NOT a
+ * valid built-in font (the real name is "Times-Bold") — an invalid family
+ * makes @react-pdf/renderer throw or silently fall back. Explicit table for
+ * every built-in base + style variant; unknown families keep the legacy
+ * suffix behaviour.
+ */
+const BOLD_VARIANT: Record<string, string> = {
+  "Times-Roman": "Times-Bold",
+  "Times-Italic": "Times-BoldItalic",
+  "Helvetica": "Helvetica-Bold",
+  "Helvetica-Oblique": "Helvetica-BoldOblique",
+  "Courier": "Courier-Bold",
+  "Courier-Oblique": "Courier-BoldOblique",
+};
+
 export function boldVariant(family: string): string {
-  return family.endsWith("Bold") || family.endsWith("Italic") ? family : `${family}-Bold`;
+  if (!family) return "Helvetica-Bold";
+  if (BOLD_VARIANT[family]) return BOLD_VARIANT[family];
+  if (family.endsWith("Bold") || family.endsWith("BoldItalic")) return family;
+  return `${family}-Bold`;
 }
 
 // ─── Shared react-pdf components ────────────────────────────────────────────

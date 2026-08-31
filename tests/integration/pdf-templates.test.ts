@@ -205,9 +205,14 @@ describe("PDF template rendering — offer", () => {
     const { pdf, pages } = await renderAndExtract(renderTradeDoc(offer, "offer"));
     const all = pages.join("\n");
     expect(pdf.numPages).toBeGreaterThanOrEqual(1);
-    // document identity
+    // document identity. audit13: the docTitle renders UPPERCASE
+    // ("OFFER") — the old title-case "Offer" existed only in the footer's
+    // doc-type prefix, which audit13 removed (number prefix already encodes
+    // the type; the old line also wrapped in the narrow footer column).
     expect(all).toContain("OF-2026-0001");
-    expect(all).toContain("Offer");
+    expect(all).toContain("OFFER");
+    // footer identifier: number + issue date, single line:
+    expect(all).toContain("OF-2026-0001 · 01 Aug 2026");
     // parties
     expect(all).toContain("Aspidus Trading FZE LLC");
     expect(all).toContain("Horn of Africa Import Export PLC");
@@ -268,8 +273,10 @@ describe("PDF template rendering — invoice", () => {
   it("shows the VAT line when tax > 0", async () => {
     const { pdf, pages } = await renderAndExtract(renderTradeDoc(invoice, "invoice"));
     const all = pages.join("\n");
-    expect(all).toContain("Commercial Invoice");
+    // audit13: docTitle renders uppercase; footer shows number + date only.
+    expect(all.toUpperCase()).toContain("COMMERCIAL INVOICE");
     expect(all).toContain("INV-2026-0001");
+    expect(all).toContain("INV-2026-0001 · 01 Aug 2026");
     expect(all).toContain("VAT:");
     expect(all).toContain("$1,937.50");
     expect(all).toContain("$40,687.50");

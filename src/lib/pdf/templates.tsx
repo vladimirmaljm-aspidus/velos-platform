@@ -17,6 +17,8 @@ import {
   fmtMoney,
   amountInWords,
   countryName,
+  joinAddressParts,
+  remainingAddressParts,
   fmtDateIso as fmtDate,
   Watermark,
   tradeWatermarkText,
@@ -128,6 +130,8 @@ export function buildPdfDocument({
   // turned off OR when the tenant has neither a name nor a logo to show.
   const headerEnabled = m?.header_enabled !== false;
   const headerHeightPts = headerEnabled ? mmToPoints(m?.header_height_mm ?? 22) : 0;
+  // audit13: apply the header_bg_color setting the UI saves (white default).
+  const headerBgColor = m?.header_bg_color || "#ffffff";
 
   // ── Logo (header right column) ──────────────────────────────────────
   // Logo is NEVER distorted — objectFit: "contain" preserves aspect ratio.
@@ -146,6 +150,16 @@ export function buildPdfDocument({
   // renders cleanly).
   const footerEnabled = m?.footer_enabled !== false;
   const footerHeightPts = footerEnabled ? mmToPoints(m?.footer_height_mm ?? 18) : 0;
+  // audit13: apply the footer_bg_color / footer_center_alignment settings the
+  // UI saves — previously stored but silently ignored by the PDF renderer.
+  const footerBgColor = m?.footer_bg_color || "#ffffff";
+  const footerCenterAlign =
+    m?.footer_center_alignment === "left" || m?.footer_center_alignment === "right"
+      ? m.footer_center_alignment
+      : "center";
+  // audit13: apply the QR position offsets (mm) the UI saves.
+  const qrOffsetXPts = mmToPoints(m?.qr_position_x_mm ?? 0);
+  const qrOffsetYPts = mmToPoints(m?.qr_position_y_mm ?? 0);
 
   const rawL = m?.footer_left_width_pct ?? 25;
   const rawC = m?.footer_center_width_pct ?? 50;
@@ -221,6 +235,9 @@ export function buildPdfDocument({
       paddingBottom: 8,
       borderBottomWidth: 2,
       borderBottomColor: primaryColor,
+      // audit13: header_bg_color setting (white default → no visual change
+      // for existing tenants, but configured values now actually apply).
+      backgroundColor: headerBgColor,
     },
     headerLeft: {
       flex: 1,
@@ -271,6 +288,8 @@ export function buildPdfDocument({
       borderTopColor: accentColor,
       flexDirection: "row",
       alignItems: "flex-start",
+      // audit13: footer_bg_color setting.
+      backgroundColor: footerBgColor,
     },
     footerColLeft: {
       flexDirection: "column",
@@ -301,13 +320,17 @@ export function buildPdfDocument({
       flexDirection: "column",
       alignItems: "center",
       gap: 2,
+      // audit13: qr_position_x_mm / qr_position_y_mm settings.
+      marginLeft: qrOffsetXPts,
+      marginTop: qrOffsetYPts,
     },
-    footerQrLabel: { fontSize: 5.5, color: "#aaa", textAlign: "center" },
+    footerQrLabel: { fontSize: 6, color: "#aaa", textAlign: "center" },
     footerAddrLine: {
       fontSize: footerCenterFontSize,
       color: footerCenterFontColor,
       fontFamily: footerCenterFontFamily,
-      textAlign: "center",
+      // audit13: footer_center_alignment setting (left/center/right).
+      textAlign: footerCenterAlign as "left" | "center" | "right",
       marginBottom: 1,
     },
     footerPage: {
@@ -633,12 +656,16 @@ export function buildPdfDocument({
       </View>
       <View style={styles.partyBody}>
         <Text style={styles.partyName}>{name}</Text>
+        {/* audit13: dedup — line 2 carries ONLY the postal/city/country parts
+            the free-text address line doesn't already contain. Production
+            data e.g. "GoldCrest …, Dubai, UAE" + city "Dubai" + country "AE"
+            used to render a second "Dubai, United Arab Emirates" line under
+            an address that already ended with "Dubai, UAE". */}
         {addressLine && <Text style={styles.partyAddr}>{addressLine}</Text>}
-        {(postal || city || country) && (
-          <Text style={styles.partyAddr}>
-            {[postal, city, country ? countryName(country) : null].filter(Boolean).join(", ")}
-          </Text>
-        )}
+        {(() => {
+          const rest = remainingAddressParts(addressLine, { postal, city, country });
+          return rest ? <Text style={styles.partyAddr}>{rest}</Text> : null;
+        })()}
         {reg && <Text style={styles.partyAddr}>Reg#: {reg}</Text>}
         {taxId && <Text style={styles.partyAddr}>Tax ID: {taxId}</Text>}
         {vat && <Text style={styles.partyAddr}>VAT#: {vat}</Text>}
@@ -1105,15 +1132,24 @@ export function buildPdfDocument({
               }
               return (
                 <View>
-                  {/* Introductory paragraph / full LOI body */}
+                  {/* Introductory paragraph / full LOI body.
+                      audit13: no "Letter of Intent" section header here — the
+                      document title block at the top of page 1 already reads
+                      "LETTER OF INTENT" in 18pt; repeating it mid-body made
+                      the title appear 3× per page (title + body header +
+                      footer). The salutation ("Dear X") reads naturally on
+                      its own, like a real letter. */}
                   <View style={styles.termsBox}>
-                    <Text style={styles.sectionHeader} wrap={false}>Letter of Intent</Text>
                     <Text style={styles.termsText}>{loi.terms_text || defaultIntro}</Text>
                   </View>
 
-                  {/* Product Specifications — single product, key/value rows */}
-                  <Text style={styles.sectionHeader}>Product Specifications</Text>
-                  <View style={styles.specTable} wrap={false}>
+                  {/* Product Specifications — single product, key/value rows.
+                      audit13: header + table wrapped in a wrap={false} View so
+                      the section header can never be orphaned at the bottom of
+                      a page while its table starts on the next. */}
+                  <View wrap={false}>
+                    <Text style={styles.sectionHeader}>Product Specifications</Text>
+                    <View style={styles.specTable} wrap={false}>
                     <View style={styles.specRow}>
                       <Text style={styles.specName}>Product Name</Text>
                       <Text style={styles.specValue}>{loi.product_name}</Text>
@@ -1151,10 +1187,12 @@ export function buildPdfDocument({
                       </Text>
                     </View>
                   </View>
+                  </View>
 
-                  {/* COA (Certificate of Analysis) — rendered only when data exists */}
+                  {/* COA (Certificate of Analysis) — rendered only when data
+                      exists. audit13: keep header + table together. */}
                   {coaEntries.length > 0 ? (
-                    <View>
+                    <View wrap={false}>
                       <Text style={styles.sectionHeader}>Certificate of Analysis (COA)</Text>
                       <View style={styles.specTable} wrap={false}>
                         {coaEntries.map(([key, val], idx) => (
@@ -1167,9 +1205,10 @@ export function buildPdfDocument({
                     </View>
                   ) : null}
 
-                  {/* Technical Specifications — rendered only when data exists */}
+                  {/* Technical Specifications — rendered only when data
+                      exists. audit13: keep header + table together. */}
                   {specEntries.length > 0 ? (
-                    <View>
+                    <View wrap={false}>
                       <Text style={styles.sectionHeader}>Technical Specifications</Text>
                       <View style={styles.specTable} wrap={false}>
                         {specEntries.map(([key, val], idx) => (
@@ -1182,7 +1221,10 @@ export function buildPdfDocument({
                     </View>
                   ) : null}
 
-                  {/* Delivery & Payment Terms */}
+                  {/* Delivery & Payment Terms. audit13: keep header + table
+                      together (was orphaned at the bottom of page 1 with its
+                      table on page 2). */}
+                  <View wrap={false}>
                   <Text style={styles.sectionHeader}>Delivery &amp; Payment Terms</Text>
                   <View style={styles.specTable} wrap={false}>
                     <View style={styles.specRow}>
@@ -1201,6 +1243,7 @@ export function buildPdfDocument({
                       <Text style={styles.specName}>Valid Until</Text>
                       <Text style={styles.specValue}>{validUntilStr}</Text>
                     </View>
+                  </View>
                   </View>
 
                   {/* Optional Notes */}
@@ -1320,15 +1363,19 @@ export function buildPdfDocument({
 
             {/* Center column — tenant address + website/email only.
                 Company name is NOT repeated here — it's already in the
-                header (memorandum). */}
+                header (memorandum).
+                audit13: joinAddressParts dedups city/country against the
+                free-text address line — "…, Dubai, UAE" + city "Dubai" +
+                country "AE" no longer renders "…, Dubai, UAE, Dubai,
+                United Arab Emirates" (this was the duplication every
+                document carried in production). */}
             <View style={styles.footerColCenter}>
               {(() => {
-                const addrParts: string[] = [];
-                if (tenant?.address_line) addrParts.push(tenant.address_line);
-                const cityBits = [tenant?.postal_code, tenant?.city].filter(Boolean).join(" ");
-                if (cityBits) addrParts.push(cityBits);
-                if (tenant?.country) addrParts.push(countryName(tenant.country));
-                const addrLine = addrParts.join(", ");
+                const addrLine = joinAddressParts(tenant?.address_line, {
+                  postal: tenant?.postal_code,
+                  city: tenant?.city,
+                  country: tenant?.country,
+                });
                 const contactParts = [
                   tenant?.website,
                   tenant?.email,
@@ -1347,27 +1394,23 @@ export function buildPdfDocument({
               })()}
             </View>
 
-            {/* Right column — page number + issued-date line.
+            {/* Right column — page number + document identifier.
                 2g-F4 fix (round 4): react-pdf v4 supports the `render` prop on <Text>
                 elements inside a `fixed` View — use it for "Page X of Y"
-                (was hardcoded "Page 1" on every page). Also mirrored to
-                `packing-list.ts` and `marketplace/document-pdf.ts` so all
-                three PDF templates render correct page numbers.
-                2g-F5 fix (round 4): stamp the document's issue_date (original issue),
-                not new Date() (regen time). Falls back to created_at, then now.
-                2g-F22 fix (round 4): drop the redundant "Issued by VELOS CRM"
-                sub-line — the company is already in the header (memorandum) +
-                the doc title block says "Commercial Invoice X · <tenant name>".
-                Replaced with the document number so the footer is self-identifying
-                when the page is torn off + photocopied (legal-trade-document
-                convention). */}
+                (was hardcoded "Page 1" on every page).
+                audit13: the identifier line is now just the document NUMBER +
+                issue date — the old "{docTitle} {number} · {date}" repeated the
+                document title that's already the big top-of-page heading AND
+                wrapped to two lines in the 25% right column ("… · 29 / Aug
+                2026"). The number prefix already encodes the doc type
+                (LOI-…, INV-…, PRF-…, OFF-…), so no information is lost. */}
             <View style={styles.footerColRight}>
               <Text
                 style={styles.footerPage}
                 render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`}
               />
               <Text style={styles.footerSys}>
-                {docTitleMap[docType]} {doc.number} · {fmtDate((doc as any).issue_date || doc.created_at)}
+                {doc.number} · {fmtDate((doc as any).issue_date || doc.created_at)}
               </Text>
             </View>
         </View>

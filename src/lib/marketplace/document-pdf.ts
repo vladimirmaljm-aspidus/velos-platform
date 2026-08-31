@@ -39,6 +39,7 @@ import {
   fmtWeight,
   Watermark,
   marketplaceWatermarkText,
+  remainingAddressParts,
   createBaseStyles,
 } from "@/lib/pdf/shared";
 
@@ -284,18 +285,20 @@ function PartyBlock({
   title: string;
   party?: TradeDocumentParty | null;
 }) {
+  // audit13: dedup — only show the postal/city/country parts the free-text
+  // address line doesn't already mention (aliases like "UAE" count).
+  const rest = remainingAddressParts(party?.address_line, {
+    postal: party?.postal_code,
+    city: party?.city,
+    country: party?.country,
+  });
   return React.createElement(
     View,
     { style: styles.col },
     React.createElement(Text, { style: styles.label }, title),
     React.createElement(Text, { style: styles.value }, party?.name || "—"),
     party?.address_line ? React.createElement(Text, { style: styles.label }, party.address_line) : null,
-    React.createElement(
-      Text,
-      { style: styles.label },
-      [party?.postal_code, party?.city].filter(Boolean).join(" ") || "—",
-    ),
-    party?.country ? React.createElement(Text, { style: styles.label }, party.country) : null,
+    rest ? React.createElement(Text, { style: styles.label }, rest) : null,
     party?.tax_id ? React.createElement(Text, { style: styles.label }, `Tax ID: ${party.tax_id}`) : null,
     party?.contact_name
       ? React.createElement(

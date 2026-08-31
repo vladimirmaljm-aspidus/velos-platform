@@ -9,6 +9,7 @@ import {
   sumRows,
   Watermark,
   logisticsWatermarkText,
+  joinAddressParts,
   createBaseStyles,
 } from "@/lib/pdf/shared";
 
@@ -117,8 +118,15 @@ const styles = StyleSheet.create({
 });
 
 function addr(a: PackingListInput["origin"]): string {
-  const parts = [a.address_line, [a.postal_code, a.city].filter(Boolean).join(" "), a.country].filter(Boolean);
-  return parts.join(", ") || "—";
+  // audit13: joinAddressParts — only append the city/postal/country parts the
+  // free-text address line doesn't already mention (word-boundary, alias-
+  // aware: "UAE" covers "United Arab Emirates").
+  const joined = joinAddressParts(a.address_line, {
+    postal: a.postal_code,
+    city: a.city,
+    country: a.country,
+  });
+  return joined || "—";
 }
 
 // ─── Logistics request row → PackingListInput (audit12 dedup) ───────────────
