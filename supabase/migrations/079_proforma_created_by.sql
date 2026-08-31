@@ -28,7 +28,7 @@ ALTER TABLE public.proformas
 -- ─── Backfill from audit_logs (first proforma.create entry per proforma) ──
 UPDATE public.proformas pro
 SET created_by = (
-  SELECT a.user_id
+  SELECT a.user_id::uuid
   FROM public.audit_logs a
   WHERE a.action = 'proforma.create'
     AND a.entity_type = 'proforma'
