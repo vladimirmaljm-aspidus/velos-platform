@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth } from "@/lib/api/helpers";
+import { requireAuth, sanitizeError } from "@/lib/api/helpers";
 import { validateIBAN, lookupBankByIBAN, getAccountHolderType, getRequiredKycDocuments } from "@/lib/banking/iban";
 
 export const runtime = "nodejs";
@@ -62,6 +62,6 @@ export async function POST(req: NextRequest) {
     });
   } catch (e: any) {
     console.error("[banking.validate-iban.POST]", e);
-    return NextResponse.json({ error: e?.message || "Internal server error." }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e)}, { status: 500 });
   }
 }

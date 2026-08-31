@@ -4,6 +4,7 @@ import { requireKycApproved } from "@/lib/portal/kyc-gate";
 import { requireGpsVerified } from "@/lib/portal/require-gps";
 import { getStore } from "@/lib/data/store";
 import { redactListForPortal } from "@/lib/portal/redact";
+import { sanitizeError } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
 
@@ -58,6 +59,6 @@ export async function GET(req: NextRequest) {
   // fetching once the store returns a short page.
   return NextResponse.json(redactListForPortal({ ...result, items: visible, total: result.total }));
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(error)}, { status: 500 });
   }
 }

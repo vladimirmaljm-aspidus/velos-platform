@@ -3,7 +3,7 @@ import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { requireKycApproved } from "@/lib/portal/kyc-gate";
 import { listNegotiations, createNegotiation } from "@/lib/data/marketplace-store";
 import { getSupabase } from "@/lib/supabase/client";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { withApm } from "@/lib/monitoring/apm";
 
@@ -153,7 +153,7 @@ async function _post(req: NextRequest) {
     return NextResponse.json(created);
   } catch (e: any) {
     console.error("[marketplace.negotiations.create]", e);
-    const msg = e?.message || "Failed to create negotiation.";
+    const msg = sanitizeError(e);
     const status = /not found/i.test(msg) ? 404 : 500;
     return NextResponse.json({ error: msg }, { status });
   }

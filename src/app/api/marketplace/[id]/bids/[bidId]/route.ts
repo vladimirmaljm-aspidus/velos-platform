@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { withdrawBid } from "@/lib/data/marketplace-auction-store";
 import { getSupabase } from "@/lib/supabase/client";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { withApm } from "@/lib/monitoring/apm";
 
@@ -193,7 +193,7 @@ async function _delete(req: NextRequest, ctx: { params: Promise<{ id: string; bi
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     console.error("[marketplace.bids.delete]", e);
-    const msg = e?.message || "Failed to withdraw bid.";
+    const msg = sanitizeError(e);
     // 8d-10 / 8d-11: the new route-level pre-checks (ownership 404 +
     // winning-bid 409) short-circuit BEFORE the try block, so the
     // store-level backstop errors here only fire on a race (e.g. the

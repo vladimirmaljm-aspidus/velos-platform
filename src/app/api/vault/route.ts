@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, audit, resolveTenantId, getIp } from "@/lib/api/helpers";
+import { requireAuth, audit, resolveTenantId, getIp, sanitizeError } from "@/lib/api/helpers";
 import { encrypt, decrypt, currentKeyVersion } from "@/lib/api/vault-crypto";
 // P0-2 (Monitoring) — fire `vault.read` when a caller explicitly requests the
 // decrypted secret value (reveal=true). This is the high-sensitivity
@@ -82,7 +82,7 @@ export async function GET(req: NextRequest) {
   } catch (e: any) {
     console.error("[vault GET]", e);
     return NextResponse.json(
-      { error: e.message || "Internal server error" },
+      { error: sanitizeError(e)},
       { status: 500 },
     );
   }
@@ -173,7 +173,7 @@ export async function POST(req: NextRequest) {
   } catch (e: any) {
     console.error("[vault POST]", e);
     return NextResponse.json(
-      { error: e.message || "Internal server error" },
+      { error: sanitizeError(e)},
       { status: 500 },
     );
   }

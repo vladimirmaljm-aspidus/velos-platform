@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromCookie, clearSessionCookie, SESSION_COOKIE_NAME } from "@/lib/auth/session";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getSupabase } from "@/lib/supabase/client";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 
@@ -155,6 +155,6 @@ export async function PUT(req: NextRequest) {
 
     return NextResponse.json({ ok: true });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "Internal server error." }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e)}, { status: 500 });
   }
 }

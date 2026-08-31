@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, audit } from "@/lib/api/helpers";
+import { requireAuth, audit, sanitizeError } from "@/lib/api/helpers";
 import { checkRateLimit } from "@/lib/security/rate-limiter";
 
 export const runtime = "nodejs";
@@ -34,7 +34,7 @@ export async function GET() {
     }
     return NextResponse.json({ items: prefs, map });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(error)}, { status: 500 });
   }
 }
 
@@ -106,6 +106,6 @@ export async function PUT(req: NextRequest) {
     } catch (e) { console.error("[audit]", e); }
     return NextResponse.json({ ok: true, preference: pref });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(error)}, { status: 500 });
   }
 }

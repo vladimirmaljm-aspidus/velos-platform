@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { listLogisticsEvents } from "@/lib/logistics/events";
 import { getSupabase } from "@/lib/supabase/client";
+import { sanitizeError } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
 
@@ -30,6 +31,6 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   // internal notes elsewhere. Filter here later if needed.
   return NextResponse.json({ items: events });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(error)}, { status: 500 });
   }
 }

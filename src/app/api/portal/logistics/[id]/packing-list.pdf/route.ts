@@ -5,7 +5,7 @@ import { requireGpsVerified } from "@/lib/portal/require-gps";
 import { getSupabase } from "@/lib/supabase/client";
 import { getStore } from "@/lib/data/store";
 import { renderPackingListPdf, buildPackingListInput } from "@/lib/pdf/packing-list";
-import { getIp } from "@/lib/api/helpers";
+import { getIp, sanitizeError } from "@/lib/api/helpers";
 // 8b-8: sanitise the LR number before interpolating into
 // Content-Disposition — closes a header-injection vector.
 import { safeFilename } from "@/lib/security/safe-filename";
@@ -73,6 +73,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     },
   });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(error)}, { status: 500 });
   }
 }

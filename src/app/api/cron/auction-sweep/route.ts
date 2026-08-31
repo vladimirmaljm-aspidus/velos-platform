@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import { authorizeCron } from "@/lib/api/cron-auth";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { processAuctionEnd } from "@/lib/data/marketplace-auction-store";
 import { triggerWebhooks } from "@/lib/webhooks/deliver";
@@ -244,6 +244,6 @@ export async function GET(req: NextRequest) {
     });
   } catch (e: any) {
     console.error("[cron/auction-sweep]", e);
-    return NextResponse.json({ error: e?.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e)}, { status: 500 });
   }
 }

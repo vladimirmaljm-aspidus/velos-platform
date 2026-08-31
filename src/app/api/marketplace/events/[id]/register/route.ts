@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { registerForEvent, unregisterFromEvent } from "@/lib/data/marketplace-community-store";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { withApm } from "@/lib/monitoring/apm";
 import { getSupabase } from "@/lib/supabase/client";
@@ -85,7 +85,7 @@ async function _post(req: NextRequest, ctx: RouteCtx) {
     });
   } catch (e: any) {
     console.error("[marketplace.community.events.register]", e);
-    const msg = e?.message || "Failed to register for event.";
+    const msg = sanitizeError(e);
     const status = /not found/i.test(msg) ? 404 : 500;
     return NextResponse.json({ error: msg }, { status });
   }

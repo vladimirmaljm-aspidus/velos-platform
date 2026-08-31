@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, resolveTenantId } from "@/lib/api/helpers";
+import { requireAuth, resolveTenantId, sanitizeError } from "@/lib/api/helpers";
 import { getSupabase } from "@/lib/supabase/client";
 
 export const runtime = "nodejs";
@@ -42,6 +42,6 @@ export async function GET(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ items: data || [], total: count || 0 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(error)}, { status: 500 });
   }
 }

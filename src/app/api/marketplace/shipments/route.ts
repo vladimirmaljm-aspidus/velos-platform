@@ -9,7 +9,7 @@ import {
   createShipment,
   listShipments,
 } from "@/lib/data/marketplace-logistics-store";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { withApm } from "@/lib/monitoring/apm";
 import type { ContainerType, ShipmentStatus } from "@/lib/supabase/marketplace-logistics-types";
@@ -109,7 +109,7 @@ async function _post(req: NextRequest) {
     return NextResponse.json(created);
   } catch (e: any) {
     console.error("[marketplace.shipments.create]", e);
-    const msg = e?.message || "Failed to create shipment.";
+    const msg = sanitizeError(e);
     const status = /not found/i.test(msg) ? 404 : 500;
     return NextResponse.json({ error: msg }, { status });
   }

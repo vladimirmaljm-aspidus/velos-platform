@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { updateMilestone } from "@/lib/data/marketplace-finance-store";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { withApm } from "@/lib/monitoring/apm";
 import type { MilestoneStatus } from "@/lib/supabase/marketplace-finance-types";
@@ -72,7 +72,7 @@ async function _put(req: NextRequest, ctx: { params: Promise<{ id: string; payme
     return NextResponse.json(updated);
   } catch (e: any) {
     console.error("[marketplace.finance.milestones.update]", e);
-    const msg = e?.message || "Failed to update milestone.";
+    const msg = sanitizeError(e);
     const status = /cannot transition/i.test(msg) ? 400 : /invalid|must be/i.test(msg) ? 400 : 500;
     return NextResponse.json({ error: msg }, { status });
   }

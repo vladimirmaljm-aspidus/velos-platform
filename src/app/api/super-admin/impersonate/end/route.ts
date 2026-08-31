@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 // the target), so the strict helper always 403s — the End-Impersonation button
 // in the ImpersonateBanner was non-functional and a super_admin could only
 // escape via full logout (losing the matching `impersonate.end` audit event).
-import { requireSuperAdminOrImpersonating, audit, getIp } from "@/lib/api/helpers";
+import { requireSuperAdminOrImpersonating, audit, getIp, sanitizeError } from "@/lib/api/helpers";
 import { createSession, setSessionCookie, getSessionFromCookie } from "@/lib/auth/session";
 // P0-2 (Monitoring) — fire `impersonate.stop` for Sentry / IDS / webhook
 // fan-out. Pure reporting call; never blocks the super-admin.
@@ -74,6 +74,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(error)}, { status: 500 });
   }
 }

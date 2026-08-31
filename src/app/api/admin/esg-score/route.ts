@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireSuperAdmin } from "@/lib/api/helpers";
+import { requireSuperAdmin, sanitizeError } from "@/lib/api/helpers";
 import {
   calculateESGScore,
   upsertESGScore,
@@ -148,7 +148,7 @@ async function _post(req: NextRequest) {
     return NextResponse.json({ score: updated });
   } catch (e: any) {
     console.error("[admin.esg-score]", e);
-    const msg = e?.message || "Failed to set ESG score.";
+    const msg = sanitizeError(e);
     const status = /invalid|must be/i.test(msg) ? 400 : 500;
     return NextResponse.json({ error: msg }, { status });
   }

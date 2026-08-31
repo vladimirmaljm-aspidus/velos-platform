@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import { authorizeCron } from "@/lib/api/cron-auth";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 
 export const runtime = "nodejs";
@@ -171,6 +171,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: true, updated: updated.length, failed: failures.length });
   } catch (e: any) {
     console.error("[cron/proforma-overdue]", e);
-    return NextResponse.json({ error: e?.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e)}, { status: 500 });
   }
 }

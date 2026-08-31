@@ -89,7 +89,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       // If we can't re-fetch the entry to validate, fail closed — never
       // post an entry we couldn't verify.
       return NextResponse.json(
-        { error: `Failed to re-validate entry balance before posting: ${e?.message || e}` },
+        { error: `Failed to re-validate entry balance before posting: ${sanitizeError(e)}` },
         { status: 500 },
       );
     }

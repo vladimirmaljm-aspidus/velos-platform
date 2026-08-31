@@ -5,7 +5,7 @@ import {
   sanitisePublicShipment,
   updateShipment,
 } from "@/lib/data/marketplace-logistics-store";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { triggerWebhooks } from "@/lib/webhooks/deliver";
 import { withApm } from "@/lib/monitoring/apm";
@@ -141,7 +141,7 @@ async function _put(req: NextRequest, ctx: { params: Promise<{ id: string }> }) 
     return NextResponse.json(updated);
   } catch (e: any) {
     console.error("[marketplace.shipments.update]", e);
-    const msg = e?.message || "Failed to update shipment.";
+    const msg = sanitizeError(e);
     const status = /cannot transition/i.test(msg) ? 400 : 500;
     return NextResponse.json({ error: msg }, { status });
   }

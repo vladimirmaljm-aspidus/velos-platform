@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
-import { requireSuperAdmin } from "@/lib/api/helpers";
+import { requireSuperAdmin, sanitizeError } from "@/lib/api/helpers";
 import {
   deleteSustainabilityCert,
   patchSustainabilityCert,
@@ -85,7 +85,7 @@ async function _put(req: NextRequest, ctx: RouteCtx) {
       return NextResponse.json(updated);
     } catch (e: any) {
       console.error("[marketplace.esg.certs.verify]", e);
-      const msg = e?.message || "Failed to update cert.";
+      const msg = sanitizeError(e);
       const status = /invalid|must be/i.test(msg) ? 400 : 500;
       return NextResponse.json({ error: msg }, { status });
     }
@@ -139,7 +139,7 @@ async function _put(req: NextRequest, ctx: RouteCtx) {
     return NextResponse.json(updated);
   } catch (e: any) {
     console.error("[marketplace.esg.certs.update]", e);
-    const msg = e?.message || "Failed to update cert.";
+    const msg = sanitizeError(e);
     const status = /invalid|must be/i.test(msg) ? 400 : 500;
     return NextResponse.json({ error: msg }, { status });
   }

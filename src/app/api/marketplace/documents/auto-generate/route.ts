@@ -15,7 +15,7 @@ import type {
 } from "@/lib/marketplace/document-generators";
 import { getSupabase } from "@/lib/supabase/client";
 import { getStore } from "@/lib/data/store";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 // 8c-9: per-portal-access rate limit — auto-generate is the most
 // expensive write path in the platform (renders a PDF, computes a
 // SHA-256 fingerprint, inserts into document_register + marketplace_
@@ -364,7 +364,7 @@ async function _post(req: NextRequest) {
     return NextResponse.json(created, { status: 201 });
   } catch (e: any) {
     console.error("[marketplace.documents.auto-generate]", e);
-    const msg = e?.message || "Failed to auto-generate document.";
+    const msg = sanitizeError(e);
     const status = /not found/i.test(msg) ? 404 : 500;
     return NextResponse.json({ error: msg }, { status });
   }

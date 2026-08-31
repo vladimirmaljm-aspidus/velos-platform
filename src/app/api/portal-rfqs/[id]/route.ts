@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, audit } from "@/lib/api/helpers";
+import { requireAuth, audit, sanitizeError } from "@/lib/api/helpers";
 import { notify } from "@/lib/notif/helper";
 
 export const runtime = "nodejs";
@@ -54,7 +54,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json(updated);
   } catch (e: any) {
     console.error("[portal-rfqs.PUT]", e);
-    return NextResponse.json({ error: e?.message || "Internal server error." }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e)}, { status: 500 });
   }
 }
 
@@ -83,6 +83,6 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     console.error("[portal-rfqs.DELETE]", e);
-    return NextResponse.json({ error: e?.message || "Internal server error." }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e)}, { status: 500 });
   }
 }

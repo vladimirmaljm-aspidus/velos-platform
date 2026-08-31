@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireSuperAdmin } from "@/lib/api/helpers";
+import { requireSuperAdmin, sanitizeError } from "@/lib/api/helpers";
 import { getSupabase } from "@/lib/supabase/client";
 
 export const runtime = "nodejs";
@@ -71,6 +71,6 @@ export async function GET(_req: NextRequest) {
 
   return NextResponse.json({ items, totals });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(error)}, { status: 500 });
   }
 }

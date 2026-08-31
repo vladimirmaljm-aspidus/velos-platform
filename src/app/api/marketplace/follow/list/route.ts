@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { listFollowing, listFollowers } from "@/lib/data/marketplace-profile-store";
 import { withApm } from "@/lib/monitoring/apm";
+import { sanitizeError } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
 
@@ -42,7 +43,7 @@ async function _get(req: NextRequest) {
     });
   } catch (e: any) {
     console.error("[marketplace.follow.list]", e);
-    return NextResponse.json({ error: e.message || "Failed to load follows." }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e)}, { status: 500 });
   }
 }
 

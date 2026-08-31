@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, audit, resolveTenantId } from "@/lib/api/helpers";
+import { requireAuth, audit, resolveTenantId, sanitizeError } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
 
@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
   } catch (e: any) {
     console.error("[seals GET]", e);
     return NextResponse.json(
-      { error: e.message || "Internal server error" },
+      { error: sanitizeError(e)},
       { status: 500 },
     );
   }
@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
   } catch (e: any) {
     console.error("[seals POST]", e);
     return NextResponse.json(
-      { error: e.message || "Internal server error" },
+      { error: sanitizeError(e)},
       { status: 500 },
     );
   }

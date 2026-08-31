@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { getReview, respondToReview } from "@/lib/data/marketplace-profile-store";
 import { sanitizeFields } from "@/lib/security/sanitize-input";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { withApm } from "@/lib/monitoring/apm";
 
@@ -79,7 +79,7 @@ async function _put(req: NextRequest, ctx: { params: Promise<{ id: string }> }) 
     return NextResponse.json({ review: updated });
   } catch (e: any) {
     console.error("[marketplace.reviews.put]", e);
-    const msg = e?.message || "Failed to respond to review.";
+    const msg = sanitizeError(e);
     let status = 500;
     if (/not found/i.test(msg)) status = 404;
     else if (/only the reviewed company/i.test(msg)) status = 403;

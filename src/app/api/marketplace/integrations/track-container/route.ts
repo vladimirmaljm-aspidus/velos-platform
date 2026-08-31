@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { trackContainer, SUPPORTED_CARRIERS } from "@/lib/marketplace/integrations";
 import { withApm } from "@/lib/monitoring/apm";
+import { sanitizeError } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
 
@@ -61,7 +62,7 @@ async function _post(req: NextRequest) {
     return NextResponse.json({ tracking });
   } catch (e: any) {
     console.error("[marketplace.integrations.track-container]", e);
-    return NextResponse.json({ error: e?.message || "Failed to track container." }, { status: 502 });
+    return NextResponse.json({ error: sanitizeError(e)}, { status: 502 });
   }
 }
 

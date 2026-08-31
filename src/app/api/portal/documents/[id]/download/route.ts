@@ -4,7 +4,7 @@ import { requireKycApproved } from "@/lib/portal/kyc-gate";
 import { requireGpsVerified } from "@/lib/portal/require-gps";
 import { getStore } from "@/lib/data/store";
 import { getSupabase } from "@/lib/supabase/client";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
 
@@ -69,6 +69,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   return NextResponse.redirect(data.signedUrl, 302);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(error)}, { status: 500 });
   }
 }

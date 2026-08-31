@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { listBids, placeBid, getCurrentHighestBid, processAuctionEnd } from "@/lib/data/marketplace-auction-store";
 import { getSupabase } from "@/lib/supabase/client";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { notify } from "@/lib/notif/helper";
 import { triggerWebhooks } from "@/lib/webhooks/deliver";
@@ -225,7 +225,7 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
     return NextResponse.json(bid);
   } catch (e: any) {
     console.error("[marketplace.bids.post]", e);
-    const msg = e?.message || "Failed to place bid.";
+    const msg = sanitizeError(e);
     const status = /not found|not an auction|own auction/i.test(msg) ? 400 :
       /already (placed|closed|ended)/i.test(msg) ? 409 : 500;
     return NextResponse.json({ error: msg }, { status });

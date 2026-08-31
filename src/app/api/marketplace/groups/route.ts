@@ -10,7 +10,7 @@ import {
   listGroups,
   slugify,
 } from "@/lib/data/marketplace-community-store";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { withApm } from "@/lib/monitoring/apm";
 
@@ -106,7 +106,7 @@ async function _post(req: NextRequest) {
     return NextResponse.json(created, { status: 201 });
   } catch (e: any) {
     console.error("[marketplace.community.groups.create]", e);
-    const msg = e?.message || "Failed to create group.";
+    const msg = sanitizeError(e);
     const status = /authorised/i.test(msg) ? 403
       : /slug|name|invalid|must be/i.test(msg) ? 400
       : /unique/i.test(msg) ? 409

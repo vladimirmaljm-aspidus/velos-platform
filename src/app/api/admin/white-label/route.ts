@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireSuperAdmin, audit } from "@/lib/api/helpers";
+import { requireSuperAdmin, audit, sanitizeError } from "@/lib/api/helpers";
 import { getWhiteLabelConfig, setWhiteLabelConfig, DEFAULT_WHITE_LABEL, type WhiteLabelConfig } from "@/lib/marketplace/white-label";
 import { withApm } from "@/lib/monitoring/apm";
 
@@ -38,7 +38,7 @@ async function _get(req: NextRequest) {
     return NextResponse.json({ config, defaults: DEFAULT_WHITE_LABEL });
   } catch (e: any) {
     console.error("[admin.white-label.get]", e);
-    return NextResponse.json({ error: e?.message || "Failed to load white-label config." }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e)}, { status: 500 });
   }
 }
 
@@ -84,7 +84,7 @@ async function _put(req: NextRequest) {
     return NextResponse.json({ config: saved });
   } catch (e: any) {
     console.error("[admin.white-label.put]", e);
-    return NextResponse.json({ error: e?.message || "Failed to save white-label config." }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e)}, { status: 500 });
   }
 }
 

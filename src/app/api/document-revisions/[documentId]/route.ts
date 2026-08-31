@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth } from "@/lib/api/helpers";
+import { requireAuth, sanitizeError } from "@/lib/api/helpers";
 import { getSupabase } from "@/lib/supabase/client";
 
 export const runtime = "nodejs";
@@ -52,7 +52,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ doc
   } catch (e: any) {
     console.error("[document-revisions/[documentId]]", e);
     return NextResponse.json(
-      { error: e?.message || "Internal server error" },
+      { error: sanitizeError(e)},
       { status: 500 },
     );
   }

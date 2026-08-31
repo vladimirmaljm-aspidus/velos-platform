@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { deleteQuestion, getQuestion, updateQuestion } from "@/lib/data/marketplace-community-store";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { withApm } from "@/lib/monitoring/apm";
 
@@ -81,7 +81,7 @@ async function _put(req: NextRequest, ctx: RouteCtx) {
     return NextResponse.json(updated);
   } catch (e: any) {
     console.error("[marketplace.community.questions.update]", e);
-    const msg = e?.message || "Failed to update question.";
+    const msg = sanitizeError(e);
     const status = /authorised/i.test(msg) ? 403 : /invalid|must be/i.test(msg) ? 400 : 500;
     return NextResponse.json({ error: msg }, { status });
   }
@@ -116,7 +116,7 @@ async function _delete(req: NextRequest, ctx: RouteCtx) {
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     console.error("[marketplace.community.questions.delete]", e);
-    const msg = e?.message || "Failed to delete question.";
+    const msg = sanitizeError(e);
     const status = /authorised/i.test(msg) ? 403 : 500;
     return NextResponse.json({ error: msg }, { status });
   }

@@ -6,7 +6,7 @@ import {
   updateInstrument,
   updateInstrumentStatus,
 } from "@/lib/data/marketplace-finance-store";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { withApm } from "@/lib/monitoring/apm";
 import type {
@@ -164,7 +164,7 @@ async function _put(req: NextRequest, ctx: { params: Promise<{ id: string }> }) 
     return NextResponse.json(updated);
   } catch (e: any) {
     console.error("[marketplace.finance.update]", e);
-    const msg = e?.message || "Failed to update instrument.";
+    const msg = sanitizeError(e);
     const status = /cannot transition/i.test(msg) ? 400 : /invalid|must be/i.test(msg) ? 400 : 500;
     return NextResponse.json({ error: msg }, { status });
   }

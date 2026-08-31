@@ -4,7 +4,7 @@ import { requireKycApproved } from "@/lib/portal/kyc-gate";
 import { getStore } from "@/lib/data/store";
 import { notifyRfqReceived } from "@/lib/notif/helper";
 import { notifyPortalActivity } from "@/lib/realtime/notify";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { nextDocNumber } from "@/lib/api/doc-number";
 
 export const runtime = "nodejs";
@@ -157,6 +157,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(created);
   } catch (e: any) {
     console.error("[portal.rfqs.create]", e);
-    return NextResponse.json({ error: e.message || "Failed to create RFQ." }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e)}, { status: 500 });
   }
 }

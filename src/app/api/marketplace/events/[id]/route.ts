@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { deleteEvent, getEvent, isRegisteredForEvent, updateEvent } from "@/lib/data/marketplace-community-store";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { withApm } from "@/lib/monitoring/apm";
 import type { EventType } from "@/lib/supabase/marketplace-community-types";
@@ -101,7 +101,7 @@ async function _put(req: NextRequest, ctx: RouteCtx) {
     return NextResponse.json(updated);
   } catch (e: any) {
     console.error("[marketplace.community.events.update]", e);
-    const msg = e?.message || "Failed to update event.";
+    const msg = sanitizeError(e);
     const status = /authorised/i.test(msg) ? 403 : /invalid|must be|after/i.test(msg) ? 400 : 500;
     return NextResponse.json({ error: msg }, { status });
   }
@@ -136,7 +136,7 @@ async function _delete(req: NextRequest, ctx: RouteCtx) {
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     console.error("[marketplace.community.events.delete]", e);
-    const msg = e?.message || "Failed to delete event.";
+    const msg = sanitizeError(e);
     const status = /authorised/i.test(msg) ? 403 : 500;
     return NextResponse.json({ error: msg }, { status });
   }

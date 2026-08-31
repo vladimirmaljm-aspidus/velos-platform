@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, audit } from "@/lib/api/helpers";
+import { requireAuth, audit, sanitizeError } from "@/lib/api/helpers";
 import { getSupabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import { db } from "@/lib/db";
 
@@ -27,7 +27,7 @@ export async function GET(_req: NextRequest) {
     });
     return NextResponse.json({ items: plans });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(error)}, { status: 500 });
   }
 }
 
@@ -52,6 +52,6 @@ export async function POST(req: NextRequest) {
     await audit(auth.store, auth.user, req, "plan.create", "plan", created.id, { name: created.name });
     return NextResponse.json(created);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(error)}, { status: 500 });
   }
 }

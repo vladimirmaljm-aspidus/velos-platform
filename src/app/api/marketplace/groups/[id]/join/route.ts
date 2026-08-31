@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { joinGroup, leaveGroup } from "@/lib/data/marketplace-community-store";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { withApm } from "@/lib/monitoring/apm";
 
@@ -40,7 +40,7 @@ async function _post(req: NextRequest, ctx: RouteCtx) {
     });
   } catch (e: any) {
     console.error("[marketplace.community.groups.join]", e);
-    const msg = e?.message || "Failed to join group.";
+    const msg = sanitizeError(e);
     const status = /not found/i.test(msg) ? 404 : 500;
     return NextResponse.json({ error: msg }, { status });
   }
@@ -72,7 +72,7 @@ async function _delete(req: NextRequest, ctx: RouteCtx) {
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     console.error("[marketplace.community.groups.leave]", e);
-    const msg = e?.message || "Failed to leave group.";
+    const msg = sanitizeError(e);
     const status = /authorised/i.test(msg) ? 403 : 500;
     return NextResponse.json({ error: msg }, { status });
   }

@@ -9,7 +9,7 @@ import {
 } from "@/lib/data/marketplace-store";
 import { getSupabase } from "@/lib/supabase/client";
 import { sanitizeFields } from "@/lib/security/sanitize-input";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { withApm } from "@/lib/monitoring/apm";
 
@@ -189,7 +189,7 @@ async function _put(req: NextRequest, ctx: { params: Promise<{ id: string }> }) 
     return NextResponse.json({ post: updated });
   } catch (e: any) {
     console.error("[marketplace.put]", e);
-    return NextResponse.json({ error: e.message || "Failed to update post." }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e)}, { status: 500 });
   }
 }
 
@@ -237,7 +237,7 @@ async function _delete(req: NextRequest, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     console.error("[marketplace.delete]", e);
-    return NextResponse.json({ error: e.message || "Failed to delete post." }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e)}, { status: 500 });
   }
 }
 

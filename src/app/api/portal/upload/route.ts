@@ -4,7 +4,7 @@ import { getStore } from "@/lib/data/store";
 import { uploadPortalFile } from "@/lib/upload/service";
 import { verifyPortalUpload } from "@/lib/upload/verify-file";
 import { recordPortalUpload, PortalUploadCategory } from "@/lib/portal/uploads";
-import { audit, getIp } from "@/lib/api/helpers";
+import { audit, getIp, sanitizeError } from "@/lib/api/helpers";
 import { MAX_UPLOAD_SIZE } from "@/lib/upload/constants";
 // 8c-4: when the description field encodes a marketplace negotiation
 // (`description = "Negotiation <uuid>"`), the uploader MUST be a party to
@@ -256,6 +256,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(row);
   } catch (e: any) {
     console.error("[portal.upload.POST]", e);
-    return NextResponse.json({ error: e?.message || "Internal server error." }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e)}, { status: 500 });
   }
 }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { getStore } from "@/lib/data/store";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { randomBytes, createHash } from "crypto";
 import { triggerWebhooks } from "@/lib/webhooks/deliver";
 import { withApm } from "@/lib/monitoring/apm";
@@ -152,7 +152,7 @@ async function _post(req: NextRequest) {
     return NextResponse.json({ ...safe, full_key: raw });
   } catch (e: any) {
     console.error("[marketplace.api-keys.create]", e);
-    return NextResponse.json({ error: e.message || "Failed to create API key." }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e)}, { status: 500 });
   }
 }
 
@@ -213,7 +213,7 @@ async function _delete(req: NextRequest) {
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     console.error("[marketplace.api-keys.delete]", e);
-    return NextResponse.json({ error: e.message || "Failed to revoke API key." }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e)}, { status: 500 });
   }
 }
 

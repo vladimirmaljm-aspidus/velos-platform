@@ -22,6 +22,7 @@ import { notify } from "@/lib/notif/helper";
 import { getStore } from "@/lib/data/store";
 import { triggerWebhooks } from "@/lib/webhooks/deliver";
 import { withApm } from "@/lib/monitoring/apm";
+import { sanitizeError } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
 
@@ -300,7 +301,7 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
     return NextResponse.json(created);
   } catch (e: any) {
     console.error("[marketplace.messages.create]", e);
-    const msg = e?.message || "Failed to send message.";
+    const msg = sanitizeError(e);
     const status = /not found|negotiation not found/i.test(msg) ? 404 : 500;
     return NextResponse.json({ error: msg }, { status });
   }

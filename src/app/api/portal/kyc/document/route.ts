@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { getStore } from "@/lib/data/store";
 import { uploadKycDocument, deleteFile } from "@/lib/upload/service";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { verifyKycUpload } from "@/lib/upload/verify-file";
 import { getSupabase } from "@/lib/supabase/client";
 import { MAX_KYC_UPLOAD_SIZE, KYC_ALLOWED_MIME_TYPES } from "@/lib/upload/constants";
@@ -153,6 +153,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(doc);
   } catch (e: any) {
     console.error("[portal.kyc.document.POST]", e);
-    return NextResponse.json({ error: e?.message || "Internal server error." }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e)}, { status: 500 });
   }
 }

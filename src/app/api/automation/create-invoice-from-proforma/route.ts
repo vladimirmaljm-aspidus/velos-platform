@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, audit, resolveTenantId } from "@/lib/api/helpers";
+import { requireAuth, audit, resolveTenantId, sanitizeError } from "@/lib/api/helpers";
 import { nextDocNumber, formatDocNumber } from "@/lib/api/doc-number";
 import { getSupabase } from "@/lib/supabase/client";
 
@@ -250,7 +250,7 @@ export async function POST(req: NextRequest) {
   } catch (e: any) {
     console.error("[automation/create-invoice-from-proforma]", e);
     return NextResponse.json(
-      { error: e?.message || "Failed to create invoice from proforma." },
+      { error: sanitizeError(e)},
       { status: 500 },
     );
   }

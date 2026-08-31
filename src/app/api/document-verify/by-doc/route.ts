@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, resolveTenantId } from "@/lib/api/helpers";
+import { requireAuth, resolveTenantId, sanitizeError } from "@/lib/api/helpers";
 import { createHash } from "crypto";
 
 export const runtime = "nodejs";
@@ -29,6 +29,6 @@ export async function GET(req: NextRequest) {
   if (!v) return NextResponse.json({ verification: null });
   return NextResponse.json({ verification: v });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(error)}, { status: 500 });
   }
 }

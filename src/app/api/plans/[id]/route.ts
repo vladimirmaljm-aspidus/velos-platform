@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, audit, hasPermission } from "@/lib/api/helpers";
+import { requireAuth, audit, hasPermission, sanitizeError } from "@/lib/api/helpers";
 import { getSupabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import { db } from "@/lib/db";
 
@@ -41,7 +41,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     await audit(auth.store, auth.user, req, "plan.update", "plan", id, { name: updated.name });
     return NextResponse.json(updated);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(error)}, { status: 500 });
   }
 }
 
@@ -63,6 +63,6 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     await audit(auth.store, auth.user, req, "plan.delete", "plan", id);
     return NextResponse.json({ ok: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(error)}, { status: 500 });
   }
 }

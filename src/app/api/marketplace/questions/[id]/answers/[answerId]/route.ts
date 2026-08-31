@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { acceptAnswer, upvoteAnswer } from "@/lib/data/marketplace-community-store";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { withApm } from "@/lib/monitoring/apm";
 
@@ -70,7 +70,7 @@ async function _put(req: NextRequest, ctx: RouteCtx) {
     return NextResponse.json(updated);
   } catch (e: any) {
     console.error("[marketplace.community.answers.patch]", e);
-    const msg = e?.message || "Failed to update answer.";
+    const msg = sanitizeError(e);
     const status = /authorised/i.test(msg) ? 403 : /not found/i.test(msg) ? 404 : 500;
     return NextResponse.json({ error: msg }, { status });
   }

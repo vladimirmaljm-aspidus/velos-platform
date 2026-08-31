@@ -10,7 +10,7 @@
  *   ?q=sugar          — search HS code descriptions
  */
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth } from "@/lib/api/helpers";
+import { requireAuth, sanitizeError } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
 
@@ -143,6 +143,6 @@ export async function GET(req: NextRequest) {
     source: "embedded-wco-hs + wits-integration",
   });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(error)}, { status: 500 });
   }
 }

@@ -148,7 +148,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       } catch (e: any) {
         console.error("[record-payment] bank account validation threw:", e);
         return NextResponse.json(
-          { error: `Bank account validation failed: ${e.message || e}` },
+          { error: `Bank account validation failed: ${sanitizeError(e)}` },
           { status: 500 },
         );
       }
@@ -250,12 +250,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         p_exchange_rate: exchangeRate,
       });
       if (error) {
-        rpcError = error.message || String(error);
+        rpcError = sanitizeError(error);
       } else {
         rpcResult = (data ?? null) as RpcResult | null;
       }
     } catch (e: any) {
-      rpcError = e?.message || String(e);
+      rpcError = sanitizeError(e);
     }
 
     // ── RPC unavailable → fall back to legacy non-atomic cascade ──────
@@ -459,7 +459,7 @@ async function legacyNonAtomicCascade(opts: {
     } catch (e: any) {
       console.error("[record-payment:legacy] bank txn insert failed:", e);
       return NextResponse.json(
-        { error: `Failed to record bank transaction: ${e.message || e}` },
+        { error: `Failed to record bank transaction: ${sanitizeError(e)}` },
         { status: 500 },
       );
     }
@@ -521,7 +521,7 @@ async function legacyNonAtomicCascade(opts: {
   } catch (e: any) {
     console.error("[record-payment:legacy] invoice update failed:", e);
     return NextResponse.json(
-      { error: `Failed to update invoice: ${e.message || e}` },
+      { error: `Failed to update invoice: ${sanitizeError(e)}` },
       { status: 500 },
     );
   }

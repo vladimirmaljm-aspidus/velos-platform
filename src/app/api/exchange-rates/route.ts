@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuthOrApiKey } from "@/lib/api/helpers";
+import { requireAuthOrApiKey, sanitizeError } from "@/lib/api/helpers";
 import { getRateMap } from "@/lib/utils/exchange-rates";
 
 export const runtime = "nodejs";
@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(result);
   } catch (e: any) {
     return NextResponse.json(
-      { error: e?.message || "Failed to fetch exchange rates." },
+      { error: sanitizeError(e)},
       { status: 502 },
     );
   }

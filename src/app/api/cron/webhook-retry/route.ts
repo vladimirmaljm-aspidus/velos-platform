@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getStore } from "@/lib/data/store";
 import { retryFailedDeliveries } from "@/lib/webhooks/deliver";
 import { authorizeCron } from "@/lib/api/cron-auth";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
 
@@ -79,6 +79,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: true, ...result });
   } catch (e: any) {
     console.error("[cron/webhook-retry]", e);
-    return NextResponse.json({ error: e?.message || "Failed" }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e)}, { status: 500 });
   }
 }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, requireAuthOrApiKey, requireAuthOrApiKeyPermission, audit, resolveTenantId } from "@/lib/api/helpers";
+import { requireAuth, requireAuthOrApiKey, requireAuthOrApiKeyPermission, audit, resolveTenantId, sanitizeError } from "@/lib/api/helpers";
 import { nextDocNumber, formatDocNumber } from "@/lib/api/doc-number";
 import type { OfferLineItem } from "@/lib/supabase/types";
 
@@ -188,7 +188,7 @@ export async function POST(req: NextRequest) {
   } catch (e: any) {
     console.error("[automation/create-offer-from-deal]", e);
     return NextResponse.json(
-      { error: e.message || "Failed to create offer from deal." },
+      { error: sanitizeError(e)},
       { status: 500 }
     );
   }

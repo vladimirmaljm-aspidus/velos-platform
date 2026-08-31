@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireSuperAdmin } from "@/lib/api/helpers";
+import { requireSuperAdmin, sanitizeError } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
 
@@ -84,7 +84,7 @@ export async function GET(_req: NextRequest) {
   } catch (e: any) {
     console.error("[signup-requests.list]", e);
     return NextResponse.json(
-      { error: e?.message || "Internal server error" },
+      { error: sanitizeError(e)},
       { status: 500 },
     );
   }

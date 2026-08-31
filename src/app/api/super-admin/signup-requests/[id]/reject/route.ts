@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireSuperAdmin, audit } from "@/lib/api/helpers";
+import { requireSuperAdmin, audit, sanitizeError } from "@/lib/api/helpers";
 import { sendEmail } from "@/lib/email/service";
 import { escapeHtml } from "@/lib/security/escape-html";
 
@@ -162,7 +162,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   } catch (e: any) {
     console.error("[signup-requests.reject]", e);
     return NextResponse.json(
-      { error: e?.message || "Internal server error" },
+      { error: sanitizeError(e)},
       { status: 500 },
     );
   }

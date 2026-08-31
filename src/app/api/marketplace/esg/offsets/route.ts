@@ -5,7 +5,7 @@ import {
   createCarbonOffset,
   listCarbonOffsets,
 } from "@/lib/data/marketplace-esg-store";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { withApm } from "@/lib/monitoring/apm";
 import type { CarbonOffsetType } from "@/lib/supabase/marketplace-esg-types";
@@ -120,7 +120,7 @@ async function _post(req: NextRequest) {
     return NextResponse.json(created, { status: 201 });
   } catch (e: any) {
     console.error("[marketplace.esg.offsets.create]", e);
-    const msg = e?.message || "Failed to create carbon offset.";
+    const msg = sanitizeError(e);
     const status = /invalid|must be/i.test(msg) ? 400 : 500;
     return NextResponse.json({ error: msg }, { status });
   }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { getInstrumentIfAuthorised, addMilestone } from "@/lib/data/marketplace-finance-store";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { withApm } from "@/lib/monitoring/apm";
 import type { TriggerCondition } from "@/lib/supabase/marketplace-finance-types";
@@ -101,7 +101,7 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
     return NextResponse.json(created, { status: 201 });
   } catch (e: any) {
     console.error("[marketplace.finance.milestones.create]", e);
-    const msg = e?.message || "Failed to add milestone.";
+    const msg = sanitizeError(e);
     const status = /not found/i.test(msg) ? 404 : /invalid|must be|can only/i.test(msg) ? 400 : 500;
     return NextResponse.json({ error: msg }, { status });
   }

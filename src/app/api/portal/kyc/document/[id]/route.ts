@@ -3,7 +3,7 @@ import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { getStore } from "@/lib/data/store";
 import { getPortalUpload } from "@/lib/portal/uploads";
 import { deleteFile } from "@/lib/upload/service";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getSupabase } from "@/lib/supabase/client";
 
 export const runtime = "nodejs";
@@ -64,7 +64,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ url: signed.signedUrl, name: upload.filename });
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || "Internal server error" },
+      { error: sanitizeError(error)},
       { status: 500 },
     );
   }
@@ -138,6 +138,6 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
   return NextResponse.json({ ok: true });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(error)}, { status: 500 });
   }
 }

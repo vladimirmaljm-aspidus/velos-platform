@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, requireAuthOrApiKey, requireAuthOrApiKeyPermission, audit, resolveTenantId } from "@/lib/api/helpers";
+import { requireAuth, requireAuthOrApiKey, requireAuthOrApiKeyPermission, audit, resolveTenantId, sanitizeError } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
 
@@ -92,7 +92,7 @@ export async function POST(req: NextRequest) {
     created = await auth.store.upsertSupplierOffer(body);
   } catch (e) {
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Failed to save supplier offer" },
+      { error: sanitizeError(e) },
       { status: 500 },
     );
   }

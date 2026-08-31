@@ -3,7 +3,7 @@ import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { requireKycApproved } from "@/lib/portal/kyc-gate";
 import { updateContractDelivery } from "@/lib/data/marketplace-auction-store";
 import { getSupabase } from "@/lib/supabase/client";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { withApm } from "@/lib/monitoring/apm";
 import type { ContractDeliveryStatus } from "@/lib/supabase/marketplace-auction-types";
@@ -138,7 +138,7 @@ async function _put(
     return NextResponse.json({ delivery: updated });
   } catch (e: any) {
     console.error("[marketplace.contract.delivery.put]", e);
-    const msg = e?.message || "Failed to update delivery.";
+    const msg = sanitizeError(e);
     const status = /not found/i.test(msg) ? 404 : 500;
     return NextResponse.json({ error: msg }, { status });
   }

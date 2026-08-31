@@ -4,7 +4,7 @@ import { requireKycApproved } from "@/lib/portal/kyc-gate";
 import { createReview, listReviews } from "@/lib/data/marketplace-profile-store";
 import { getSupabase } from "@/lib/supabase/client";
 import { sanitizeFields } from "@/lib/security/sanitize-input";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { withApm } from "@/lib/monitoring/apm";
 
@@ -138,7 +138,7 @@ async function _post(req: NextRequest) {
     return NextResponse.json({ review: created });
   } catch (e: any) {
     console.error("[marketplace.reviews.create]", e);
-    const msg = e?.message || "Failed to create review.";
+    const msg = sanitizeError(e);
     let status = 500;
     if (/cannot review your own/i.test(msg)) status = 400;
     else if (/already reviewed/i.test(msg)) status = 409;

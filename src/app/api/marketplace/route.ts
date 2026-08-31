@@ -4,7 +4,7 @@ import { requireKycApproved } from "@/lib/portal/kyc-gate";
 import { validateStatusTransition } from "@/lib/api/status-validator";
 import { listMarketplacePosts, createMarketplacePost } from "@/lib/data/marketplace-store";
 import { sanitizeFields } from "@/lib/security/sanitize-input";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { triggerWebhooks } from "@/lib/webhooks/deliver";
 import { withApm } from "@/lib/monitoring/apm";
@@ -210,7 +210,7 @@ async function _post(req: NextRequest) {
     return NextResponse.json(created);
   } catch (e: any) {
     console.error("[marketplace.create]", e);
-    return NextResponse.json({ error: e.message || "Failed to create post." }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e)}, { status: 500 });
   }
 }
 

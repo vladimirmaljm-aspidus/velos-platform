@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, resolveTenantId } from "@/lib/api/helpers";
+import { requireAuth, resolveTenantId, sanitizeError } from "@/lib/api/helpers";
 import { getSupabase } from "@/lib/supabase/client";
 import { lookupIp } from "@/lib/utils/geo-ip";
 // AUDIT16 — portal_email is encrypted at rest; decrypt before returning to
@@ -178,6 +178,6 @@ export async function GET(req: NextRequest) {
     portal_logins: portalLogins || [],
   });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(error)}, { status: 500 });
   }
 }

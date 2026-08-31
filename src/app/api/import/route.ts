@@ -206,7 +206,7 @@ export async function POST(req: NextRequest) {
           row: rowNum,
           identifier,
           success: false,
-          error: e instanceof Error ? e.message : "Unknown error",
+          error: sanitizeError(e),
         });
       }
     }

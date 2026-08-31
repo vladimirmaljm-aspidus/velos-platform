@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { updateMarketplaceResponseStatus } from "@/lib/data/marketplace-store";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { notify } from "@/lib/notif/helper";
 import { triggerWebhooks } from "@/lib/webhooks/deliver";
@@ -117,7 +117,7 @@ async function _put(
     return NextResponse.json(updated);
   } catch (e: any) {
     console.error("[marketplace.response.put]", e);
-    const msg = e?.message || "Failed to update response.";
+    const msg = sanitizeError(e);
     // Surface ownership errors as 403, not-found as 404, invalid
     // status-transition errors as 409 (AUDIT4-PATHS / Fix 4 — the store
     // throws an error whose message starts with "Cannot change

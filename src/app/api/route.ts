@@ -3,6 +3,7 @@
  * Returns API version and available endpoints.
  */
 import { NextResponse } from "next/server";
+import { sanitizeError } from "@/lib/api/helpers";
 
 export async function GET() {
   try {
@@ -28,6 +29,6 @@ export async function GET() {
       timestamp: new Date().toISOString(),
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(error)}, { status: 500 });
   }
 }

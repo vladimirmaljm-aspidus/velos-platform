@@ -6,7 +6,7 @@ import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 // commitments that affect counterparty's downstream flows.
 import { requireKycApproved } from "@/lib/portal/kyc-gate";
 import { createAnswer, listAnswers } from "@/lib/data/marketplace-community-store";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { getSupabase } from "@/lib/supabase/client";
 import { notifyMarketplaceAnswerPosted } from "@/lib/notif/helper";
@@ -110,7 +110,7 @@ async function _post(req: NextRequest, ctx: RouteCtx) {
     return NextResponse.json(created, { status: 201 });
   } catch (e: any) {
     console.error("[marketplace.community.answers.create]", e);
-    const msg = e?.message || "Failed to create answer.";
+    const msg = sanitizeError(e);
     const status = /not found/i.test(msg) ? 404 : /invalid|must be/i.test(msg) ? 400 : 500;
     return NextResponse.json({ error: msg }, { status });
   }

@@ -5,7 +5,7 @@ import {
   createInstrument,
   listInstruments,
 } from "@/lib/data/marketplace-finance-store";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { withApm } from "@/lib/monitoring/apm";
 import type {
@@ -212,7 +212,7 @@ async function _post(req: NextRequest) {
     return NextResponse.json(created, { status: 201 });
   } catch (e: any) {
     console.error("[marketplace.finance.create]", e);
-    const msg = e?.message || "Failed to create instrument.";
+    const msg = sanitizeError(e);
     const status = /not found/i.test(msg) ? 404 : /invalid/i.test(msg) ? 400 : 500;
     return NextResponse.json({ error: msg }, { status });
   }

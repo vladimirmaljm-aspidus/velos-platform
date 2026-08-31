@@ -3,7 +3,7 @@ import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { requireKycApproved } from "@/lib/portal/kyc-gate";
 import { requireGpsVerified } from "@/lib/portal/require-gps";
 import { getStore } from "@/lib/data/store";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { notify } from "@/lib/notif/helper";
 import { validateStatusTransition } from "@/lib/api/status-validator";
 
@@ -148,6 +148,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ ok: true, status: newStatus });
   } catch (e: any) {
     console.error("[portal.proforma.respond]", e);
-    return NextResponse.json({ error: e.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e)}, { status: 500 });
   }
 }

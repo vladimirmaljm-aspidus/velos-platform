@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { releaseEscrow } from "@/lib/data/marketplace-finance-store";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { withApm } from "@/lib/monitoring/apm";
 import { notifyEscrowReleased } from "@/lib/notif/helper";
@@ -98,7 +98,7 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
     return NextResponse.json(instrument);
   } catch (e: any) {
     console.error("[marketplace.finance.release]", e);
-    const msg = e?.message || "Failed to release escrow.";
+    const msg = sanitizeError(e);
     const status = /cannot release|not an escrow/i.test(msg) ? 400 : 500;
     return NextResponse.json({ error: msg }, { status });
   }

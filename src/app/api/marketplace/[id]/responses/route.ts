@@ -7,7 +7,7 @@ import {
 } from "@/lib/data/marketplace-store";
 import { getSupabase } from "@/lib/supabase/client";
 import { sanitizeFields } from "@/lib/security/sanitize-input";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { notify } from "@/lib/notif/helper";
 import { triggerWebhooks } from "@/lib/webhooks/deliver";
@@ -205,7 +205,7 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
     return NextResponse.json(created);
   } catch (e: any) {
     console.error("[marketplace.response.create]", e);
-    const msg = e?.message || "Failed to create response.";
+    const msg = sanitizeError(e);
     // Surface "post not found" / "post expired" / "not active" / "own post" /
     // "5 times in the last 24 hours" (rate cap from the store) as 400, not 500.
     const status = /not found|expired|not active|own post|last 24 hours/i.test(msg) ? 400 : 500;

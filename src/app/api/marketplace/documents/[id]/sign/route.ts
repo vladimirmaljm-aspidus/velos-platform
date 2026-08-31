@@ -7,7 +7,7 @@ import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { requireKycApproved } from "@/lib/portal/kyc-gate";
 import { getDocument, signDocument } from "@/lib/data/marketplace-trade-documents-store";
 import { computeDocumentFingerprint } from "@/lib/marketplace/document-pdf";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { triggerWebhooks } from "@/lib/webhooks/deliver";
 import { withApm } from "@/lib/monitoring/apm";
@@ -247,7 +247,7 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
     });
   } catch (e: any) {
     console.error("[marketplace.documents.sign]", e);
-    const msg = e?.message || "Failed to sign document.";
+    const msg = sanitizeError(e);
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

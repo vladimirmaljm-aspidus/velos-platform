@@ -5,6 +5,7 @@ import { requireGpsVerified } from "@/lib/portal/require-gps";
 import { getStore } from "@/lib/data/store";
 import { redactListForPortal } from "@/lib/portal/redact";
 import type { Product, ProductCatalogEntry } from "@/lib/supabase/types";
+import { sanitizeError } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
 
@@ -98,7 +99,7 @@ export async function GET() {
   } catch (e: any) {
     console.error("[portal/catalog]", e);
     return NextResponse.json(
-      { error: e.message || "Internal server error" },
+      { error: sanitizeError(e)},
       { status: 500 },
     );
   }

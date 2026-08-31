@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, resolveTenantId } from "@/lib/api/helpers";
+import { requireAuth, resolveTenantId, sanitizeError } from "@/lib/api/helpers";
 import { getSupabase } from "@/lib/supabase/client";
 import { buildRoutePlan, type AddressInput } from "@/lib/logistics/route-plan";
 
@@ -63,6 +63,6 @@ export async function POST(req: NextRequest) {
     const plan = await buildRoutePlan(origin, destination);
     return NextResponse.json({ plan });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Failed to build route plan" }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(error)}, { status: 500 });
   }
 }

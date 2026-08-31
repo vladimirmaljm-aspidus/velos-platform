@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, audit } from "@/lib/api/helpers";
+import { requireAuth, audit, sanitizeError } from "@/lib/api/helpers";
 import { insertMessage, sanitizeMessageBody, markThreadRead, listThread } from "@/lib/portal/messages";
 import { sendEmail, newMessageEmail } from "@/lib/email/service";
 import { notifyNewMessage } from "@/lib/realtime/notify";
@@ -144,6 +144,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
   } catch (e: any) {
     console.error("[portal-access.message.POST]", e);
-    return NextResponse.json({ error: e?.message || "Internal server error." }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e)}, { status: 500 });
   }
 }

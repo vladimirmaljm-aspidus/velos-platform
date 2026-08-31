@@ -6,7 +6,7 @@ import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 // commitments that affect counterparty's downstream flows.
 import { requireKycApproved } from "@/lib/portal/kyc-gate";
 import { createBlogPost, listBlogPosts } from "@/lib/data/marketplace-community-store";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { withApm } from "@/lib/monitoring/apm";
 import type { BlogPostStatus } from "@/lib/supabase/marketplace-community-types";
@@ -118,7 +118,7 @@ async function _post(req: NextRequest) {
     return NextResponse.json(created, { status: 201 });
   } catch (e: any) {
     console.error("[marketplace.community.blog.create]", e);
-    const msg = e?.message || "Failed to create blog post.";
+    const msg = sanitizeError(e);
     const status = /slug|name|invalid|must be/i.test(msg) ? 400
       : /unique/i.test(msg) ? 409
       : 500;

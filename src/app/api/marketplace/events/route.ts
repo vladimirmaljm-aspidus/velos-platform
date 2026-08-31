@@ -6,7 +6,7 @@ import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 // commitments that affect counterparty's downstream flows.
 import { requireKycApproved } from "@/lib/portal/kyc-gate";
 import { createEvent, listEvents } from "@/lib/data/marketplace-community-store";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { withApm } from "@/lib/monitoring/apm";
 import type { EventType } from "@/lib/supabase/marketplace-community-types";
@@ -118,7 +118,7 @@ async function _post(req: NextRequest) {
     return NextResponse.json(created, { status: 201 });
   } catch (e: any) {
     console.error("[marketplace.community.events.create]", e);
-    const msg = e?.message || "Failed to create event.";
+    const msg = sanitizeError(e);
     const status = /invalid|must be|after/i.test(msg) ? 400 : 500;
     return NextResponse.json({ error: msg }, { status });
   }

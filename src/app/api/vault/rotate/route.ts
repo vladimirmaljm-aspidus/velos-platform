@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireSuperAdmin, audit } from "@/lib/api/helpers";
+import { requireSuperAdmin, audit, sanitizeError } from "@/lib/api/helpers";
 import { rotateAllVaultSecrets, currentKeyVersion } from "@/lib/api/vault-crypto";
 import { getSupabase } from "@/lib/supabase/client";
 
@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
   } catch (e: any) {
     console.error("[vault rotate]", e);
     return NextResponse.json(
-      { error: e?.message || "Internal server error" },
+      { error: sanitizeError(e)},
       { status: 500 },
     );
   }

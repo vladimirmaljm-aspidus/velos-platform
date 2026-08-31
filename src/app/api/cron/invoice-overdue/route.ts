@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getStore } from "@/lib/data/store";
 import { getSupabase } from "@/lib/supabase/client";
 import { authorizeCron } from "@/lib/api/cron-auth";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { emailInvoiceOverdue } from "@/lib/notif/helper";
 
 export const runtime = "nodejs";
@@ -118,6 +118,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: true, updated: updated.length });
   } catch (e: any) {
     console.error("[cron/invoice-overdue]", e);
-    return NextResponse.json({ error: e?.message || "Failed" }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e)}, { status: 500 });
   }
 }

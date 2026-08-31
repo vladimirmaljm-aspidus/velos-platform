@@ -7,7 +7,7 @@ import {
   isValidDocumentStatus,
 } from "@/lib/data/marketplace-trade-documents-store";
 import { getSupabase } from "@/lib/supabase/client";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { withApm } from "@/lib/monitoring/apm";
 
@@ -109,7 +109,7 @@ async function _put(req: NextRequest, ctx: { params: Promise<{ id: string }> }) 
     return NextResponse.json(updated);
   } catch (e: any) {
     console.error("[marketplace.documents.update]", e);
-    const msg = e?.message || "Failed to update document.";
+    const msg = sanitizeError(e);
     const status = /signed and cannot be modified/i.test(msg)
       ? 409
       : /not found/i.test(msg)

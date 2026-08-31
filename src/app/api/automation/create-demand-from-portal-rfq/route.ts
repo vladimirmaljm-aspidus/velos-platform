@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, requireAuthOrApiKey, requireAuthOrApiKeyPermission, audit, resolveTenantId } from "@/lib/api/helpers";
+import { requireAuth, requireAuthOrApiKey, requireAuthOrApiKeyPermission, audit, resolveTenantId, sanitizeError } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
 
@@ -139,7 +139,7 @@ export async function POST(req: NextRequest) {
   } catch (e: any) {
     console.error("[automation/create-demand-from-portal-rfq]", e);
     return NextResponse.json(
-      { error: e.message || "Failed to create demand from portal RFQ." },
+      { error: sanitizeError(e)},
       { status: 500 }
     );
   }

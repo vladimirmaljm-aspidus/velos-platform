@@ -3,7 +3,7 @@ import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { getStore } from "@/lib/data/store";
 import { getPortalUpload } from "@/lib/portal/uploads";
 import { getSupabase } from "@/lib/supabase/client";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
 
@@ -182,7 +182,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.redirect(signedData.signedUrl, 302);
   } catch (e: any) {
     console.error("[portal.attachments.GET]", e);
-    return NextResponse.json({ error: e?.message || "Internal server error." }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e)}, { status: 500 });
   }
 }
 

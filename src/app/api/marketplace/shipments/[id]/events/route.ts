@@ -5,7 +5,7 @@ import {
   getShipmentIfAuthorised,
 } from "@/lib/data/marketplace-logistics-store";
 import { sanitizeFields } from "@/lib/security/sanitize-input";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { triggerWebhooks } from "@/lib/webhooks/deliver";
 import { withApm } from "@/lib/monitoring/apm";
@@ -111,7 +111,7 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
     return NextResponse.json(evt);
   } catch (e: any) {
     console.error("[marketplace.shipment_events.add]", e);
-    const msg = e?.message || "Failed to add tracking event.";
+    const msg = sanitizeError(e);
     const status = /not found/i.test(msg) ? 404 : /cannot transition|invalid/i.test(msg) ? 400 : 500;
     return NextResponse.json({ error: msg }, { status });
   }

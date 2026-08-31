@@ -3,7 +3,7 @@ import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { requireKycApproved } from "@/lib/portal/kyc-gate";
 import { createContract, getContract } from "@/lib/data/marketplace-auction-store";
 import { getSupabase } from "@/lib/supabase/client";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { withApm } from "@/lib/monitoring/apm";
 import { notifyContractCreated } from "@/lib/notif/helper";
@@ -190,7 +190,7 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
     return NextResponse.json({ contract });
   } catch (e: any) {
     console.error("[marketplace.contract.post]", e);
-    const msg = e?.message || "Failed to create contract.";
+    const msg = sanitizeError(e);
     const status = /not found|not a contract|already exists/i.test(msg) ? 400 : 500;
     return NextResponse.json({ error: msg }, { status });
   }

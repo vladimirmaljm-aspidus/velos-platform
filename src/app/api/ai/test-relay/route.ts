@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireSuperAdmin } from "@/lib/api/helpers";
+import { requireSuperAdmin, sanitizeError } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
       relayUrl,
       testUrl,
       ms: Date.now() - t0,
-      error: e instanceof Error ? e.message : String(e),
+      error: sanitizeError(e),
       cause: (e as any)?.cause?.message || (e as any)?.cause?.code || "none",
     });
   }

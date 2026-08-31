@@ -5,7 +5,7 @@ import {
   upsertCompanyProfile,
 } from "@/lib/data/marketplace-profile-store";
 import { sanitizeFields } from "@/lib/security/sanitize-input";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { withApm } from "@/lib/monitoring/apm";
 
@@ -152,7 +152,7 @@ async function _put(req: NextRequest) {
     return NextResponse.json({ profile: updated });
   } catch (e: any) {
     console.error("[marketplace.profile.me.put]", e);
-    return NextResponse.json({ error: e.message || "Failed to update profile." }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e)}, { status: 500 });
   }
 }
 

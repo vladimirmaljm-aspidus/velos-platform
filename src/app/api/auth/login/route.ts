@@ -9,7 +9,7 @@ import {
 } from "@/lib/auth/session";
 import { lookupIp } from "@/lib/utils/geo-ip";
 import { createHash } from "crypto";
-import { getIp } from "@/lib/api/helpers";
+import { getIp, sanitizeError } from "@/lib/api/helpers";
 import { checkRateLimit, resetRateLimit } from "@/lib/security/rate-limiter";
 import { getRateLimitConfig } from "@/lib/security/rate-limit-config";
 // P0-2 (Monitoring) — security event reporting for login attempts.
@@ -132,7 +132,7 @@ export async function POST(req: NextRequest) {
           action: "login.failed",
           entity_type: "auth",
           entity_id: null,
-          details: { reason: "user_lookup_threw", error: lookupErr instanceof Error ? lookupErr.message : String(lookupErr) },
+          details: { reason: "user_lookup_threw", error: sanitizeError(lookupErr) },
           ip: ip0,
           user_agent: req.headers.get("user-agent") || null,
         });

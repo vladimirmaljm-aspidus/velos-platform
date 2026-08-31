@@ -9,7 +9,7 @@ import {
   type DocumentMimeType,
 } from "@/lib/marketplace/document-parser";
 import { withApm } from "@/lib/monitoring/apm";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { checkRateLimit } from "@/lib/security/rate-limiter";
 
@@ -222,7 +222,7 @@ async function _post(req: NextRequest) {
       // friendly "AI service unavailable" message.
       console.error("[marketplace.parse-document] parser error:", e.message);
       return NextResponse.json(
-        { error: e.message || "AI vision service is unavailable." },
+        { error: sanitizeError(e)},
         { status: 503 },
       );
     }

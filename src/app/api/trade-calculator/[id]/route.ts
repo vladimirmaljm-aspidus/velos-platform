@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuthOrApiKey, requireAuthOrApiKeyPermission, audit, resolveTenantId } from "@/lib/api/helpers";
+import { requireAuthOrApiKey, requireAuthOrApiKeyPermission, audit, resolveTenantId, sanitizeError } from "@/lib/api/helpers";
 import { TradeCostLine } from "@/lib/supabase/types";
 import { TRADE_COST_TYPES } from "@/lib/data/reference";
 import { getExchangeRate } from "@/lib/utils/exchange-rates";
@@ -232,7 +232,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json(updated);
   } catch (e: any) {
     console.error("[trade-calculator PUT]", e);
-    return NextResponse.json({ error: e.message || "Failed to update trade calculation." }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e)}, { status: 500 });
   }
 }
 

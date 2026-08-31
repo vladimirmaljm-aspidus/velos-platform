@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { getBlogPost, incrementViews, updateBlogPost } from "@/lib/data/marketplace-community-store";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { withApm } from "@/lib/monitoring/apm";
 import type { BlogPostStatus } from "@/lib/supabase/marketplace-community-types";
@@ -110,7 +110,7 @@ async function _put(req: NextRequest, ctx: RouteCtx) {
     return NextResponse.json(updated);
   } catch (e: any) {
     console.error("[marketplace.community.blog.update]", e);
-    const msg = e?.message || "Failed to update blog post.";
+    const msg = sanitizeError(e);
     const status = /authorised/i.test(msg) ? 403 : /invalid|must be/i.test(msg) ? 400 : 500;
     return NextResponse.json({ error: msg }, { status });
   }

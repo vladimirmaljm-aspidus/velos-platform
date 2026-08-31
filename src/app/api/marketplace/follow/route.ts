@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { followPartner, unfollowPartner } from "@/lib/data/marketplace-profile-store";
 import { getSupabase } from "@/lib/supabase/client";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { withApm } from "@/lib/monitoring/apm";
 
@@ -68,7 +68,7 @@ async function _post(req: NextRequest) {
     return NextResponse.json({ ok: true, follow });
   } catch (e: any) {
     console.error("[marketplace.follow.create]", e);
-    return NextResponse.json({ error: e.message || "Failed to follow." }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e)}, { status: 500 });
   }
 }
 
@@ -105,7 +105,7 @@ async function _delete(req: NextRequest) {
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     console.error("[marketplace.follow.delete]", e);
-    return NextResponse.json({ error: e.message || "Failed to unfollow." }, { status: 500 });
+    return NextResponse.json({ error: sanitizeError(e)}, { status: 500 });
   }
 }
 

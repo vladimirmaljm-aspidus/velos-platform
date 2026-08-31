@@ -228,7 +228,7 @@ export async function POST(req: NextRequest) {
         results.push({
           id,
           success: false,
-          error: e instanceof Error ? e.message : "Unknown error",
+          error: sanitizeError(e),
         });
       }
     }
