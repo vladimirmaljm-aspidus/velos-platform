@@ -3,6 +3,10 @@ import nodemailer from "nodemailer";
 import { requireAdmin, audit, sanitizeError, getIp } from "@/lib/api/helpers";
 import { getStore, getStoreSync } from "@/lib/data/store";
 import { checkRateLimit } from "@/lib/security/rate-limiter";
+import {
+  decryptSensitiveFields,
+  COMMS_SENSITIVE_KEYS,
+} from "@/lib/crypto/field-encryption";
 
 export const runtime = "nodejs";
 
@@ -96,7 +100,13 @@ export async function POST(req: NextRequest) {
   } | null = null;
 
   const store = getStoreSync() ?? (await getStore());
-  const comms = await store.getSetting<any>("comms");
+  let comms = await store.getSetting<any>("comms");
+  // EMAIL-FIX: decrypt the at-rest secrets (`enc:` …) before using them —
+  // the settings PUT encrypts smtp_password on save. Without this the
+  // verify() call authenticates with the ciphertext and fails.
+  if (comms) {
+    comms = decryptSensitiveFields(comms as Record<string, unknown>, COMMS_SENSITIVE_KEYS) as typeof comms;
+  }
 
   if (comms) {
     smtp = {

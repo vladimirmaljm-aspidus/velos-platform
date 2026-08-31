@@ -4,6 +4,10 @@ import { requireAdmin, audit, sanitizeError, getIp } from "@/lib/api/helpers";
 import { getStore, getStoreSync } from "@/lib/data/store";
 import type { EmailProvider } from "@/lib/email/service";
 import { checkRateLimit } from "@/lib/security/rate-limiter";
+import {
+  decryptSensitiveFields,
+  COMMS_SENSITIVE_KEYS,
+} from "@/lib/crypto/field-encryption";
 
 export const runtime = "nodejs";
 
@@ -104,6 +108,13 @@ export async function POST(req: NextRequest) {
   const store = getStoreSync() ?? (await getStore());
   const comms = await store.getSetting<any>("comms");
   if (comms) saved = comms;
+  // EMAIL-FIX: the comms blob stores secrets encrypted at rest (`enc:` …).
+  // Without decrypting here, the test send would hand the provider the
+  // ciphertext as the credential and fail with "Request does not contain a
+  // valid Server token." — the exact bug that made every test email fail
+  // even though the saved settings were correct. Plaintext legacy values
+  // pass through untouched.
+  saved = decryptSensitiveFields(saved as Record<string, unknown>, COMMS_SENSITIVE_KEYS) as Record<string, any>;
 
   const provider: EmailProvider = body.provider || saved.email_provider || "smtp";
   const fromName = body.from_name || saved.from_name || "VELOS CRM";

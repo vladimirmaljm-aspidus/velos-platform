@@ -180,12 +180,13 @@ describe("audit13 — production LOI regression (memorandum + footer)", () => {
     // The exact duplication the user saw:
     expect(all).not.toContain("Dubai, UAE, Dubai");
     expect(all).not.toContain("Dubai, United");
-    // The deduped address renders: 1× in the FROM party box (page 1) +
-    // 1× per page footer (2 pages) = 3 total — and NEVER with a duplicated
-    // city/country appended:
+    // audit14: the footer no longer carries the tenant address at all — it
+    // duplicated the FROM/TO party boxes on every page of a multi-page
+    // document ("same information 6 times"). The deduped address now
+    // renders EXACTLY ONCE, in the party box on page 1:
     const footerAddr = "GoldCrest Executive Tower, 1002-A, JLT Cluster C, Dubai, UAE";
     const occurrences = all.split(footerAddr).length - 1;
-    expect(occurrences).toBe(3);
+    expect(occurrences).toBe(1);
     // Partner box: city "Dubai" is inside "Dubai Silicon Oasis" → not
     // appended; country appended once:
     expect(all).toContain("IFZA Business Park, Building A2, Dubai Silicon Oasis");
@@ -201,9 +202,19 @@ describe("audit13 — production LOI regression (memorandum + footer)", () => {
     expect(pages[1]).toMatch(/Page 2 of \d+/);
   });
 
-  it("footer identifier is number + date only (no repeated doc title, no wrap)", async () => {
-    const { all } = await renderAndExtract(renderLoi());
-    expect(all).toContain("LOI-2026-000005 · 29 Aug 2026");
+  it("footer carries NO duplicated document identifier (number/date live in the title meta)", async () => {
+    const { all, pages } = await renderAndExtract(renderLoi());
+    // The number + issue date render ONCE, in the title meta block
+    // ("Document No.:" / "Date of Issue:") on page 1:
+    expect(pages[0]).toContain("LOI-2026-000005");
+    expect(pages[0]).toContain("29 Aug 2026");
+    // audit14: the footer identifier line is GONE entirely — every page
+    // used to repeat "LOI-2026-000005 · 29 Aug 2026" at the bottom:
+    expect(all).not.toContain("LOI-2026-000005 · 29 Aug 2026");
+    // …and page 2 carries NEITHER the number NOR the date (only its own
+    // page number):
+    expect(pages[1]).not.toContain("LOI-2026-000005");
+    expect(pages[1]).not.toContain("29 Aug 2026");
     // The old footer repeated the title before the number:
     expect(all).not.toContain("LETTER OF INTENT LOI-2026-000005");
   });
@@ -234,9 +245,14 @@ describe("audit13 — production LOI regression (memorandum + footer)", () => {
     expect(pages[tablePage]).toContain("DELIVERY & PAYMENT TERMS");
   });
 
-  it("contact line still renders (website) and QR label renders when QR provided", async () => {
-    const { all } = await renderAndExtract(renderLoi());
+  it("contact line still renders once (website) in the party box — footer is clean", async () => {
+    const { all, pages } = await renderAndExtract(renderLoi());
+    // audit14: the website renders ONCE (party box, page 1) — the footer
+    // used to repeat it on every page:
     expect(all).toContain("www.aspidus.co");
+    const webCount = all.split("www.aspidus.co").length - 1;
+    expect(webCount).toBe(1);
+    expect(pages[1]).not.toContain("www.aspidus.co");
   });
 
   it("offer documents get the same deduped footer (uniformity)", async () => {
@@ -266,8 +282,9 @@ describe("audit13 — production LOI regression (memorandum + footer)", () => {
     expect(all).not.toContain("Dubai, UAE, Dubai");
     expect(all).toContain("OFF-2026-000009");
     expect(all).toContain("Page 1 of");
-    // Footer identifier: number + date, no "Offer" title prefix:
-    expect(all).toContain("OFF-2026-000009 · 29 Aug 2026");
+    // audit14: footer carries no doc identifier at all — the number lives
+    // in the title meta block and is NOT repeated in the footer:
+    expect(all).not.toContain("OFF-2026-000009 · 29 Aug 2026");
     expect(all).not.toContain("OFFER OFF-2026-000009");
   });
 });

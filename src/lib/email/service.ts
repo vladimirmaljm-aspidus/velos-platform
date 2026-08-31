@@ -1,5 +1,9 @@
 import nodemailer from "nodemailer";
 import { getStore } from "@/lib/data/store";
+import {
+  decryptSensitiveFields,
+  COMMS_SENSITIVE_KEYS,
+} from "@/lib/crypto/field-encryption";
 
 /**
  * Escape HTML special characters to prevent XSS in email templates.
@@ -237,6 +241,17 @@ export async function getEmailConfig(tenantId?: string): Promise<EmailConfig | n
   let comms = tenantId ? await store.getSetting<any>("comms", tenantId) : null;
   if (!comms) comms = await store.getSetting<any>("comms", null);
   if (!comms) return null;
+
+  // P0-3 / EMAIL-FIX: the settings PUT route encrypts the sensitive comms
+  // sub-keys (smtp_password, resend_api_key, postmark_server_token) at rest
+  // with `encryptField` (`enc:`-prefixed ciphertext). The doc contract in
+  // settings/route.ts says "the email service decrypts at use" — but it
+  // never did. Every send therefore handed the provider the raw `enc:…`
+  // blob as the credential: Postmark answered "Request does not contain a
+  // valid Server token." for every single email the tenant sent (the
+  // exact production failure in mail_queue). Decrypt here, once, right
+  // after load — plaintext legacy values pass through untouched.
+  comms = decryptSensitiveFields(comms as Record<string, unknown>, COMMS_SENSITIVE_KEYS) as typeof comms;
 
   const provider: EmailProvider = comms.email_provider || (comms.smtp_host ? "smtp" : "none");
   const fromName = comms.from_name || "VELOS CRM";

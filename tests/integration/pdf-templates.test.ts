@@ -211,8 +211,12 @@ describe("PDF template rendering — offer", () => {
     // the type; the old line also wrapped in the narrow footer column).
     expect(all).toContain("OF-2026-0001");
     expect(all).toContain("OFFER");
-    // footer identifier: number + issue date, single line:
-    expect(all).toContain("OF-2026-0001 · 01 Aug 2026");
+    // audit14: number + issue date render in the TITLE META block
+    // ("Document No.:" / "Date of Issue:") — the footer no longer repeats
+    // them on every page:
+    expect(all).toContain("Date of Issue:");
+    expect(all).toContain("01 Aug 2026");
+    expect(all).not.toContain("OF-2026-0001 · 01 Aug 2026");
     // parties
     expect(all).toContain("Aspidus Trading FZE LLC");
     expect(all).toContain("Horn of Africa Import Export PLC");
@@ -273,10 +277,12 @@ describe("PDF template rendering — invoice", () => {
   it("shows the VAT line when tax > 0", async () => {
     const { pdf, pages } = await renderAndExtract(renderTradeDoc(invoice, "invoice"));
     const all = pages.join("\n");
-    // audit13: docTitle renders uppercase; footer shows number + date only.
+    // audit13/audit14: docTitle renders uppercase; the footer carries no
+    // doc identifier — number + date live in the title meta block only.
     expect(all.toUpperCase()).toContain("COMMERCIAL INVOICE");
     expect(all).toContain("INV-2026-0001");
-    expect(all).toContain("INV-2026-0001 · 01 Aug 2026");
+    expect(all).toContain("Date of Issue:");
+    expect(all).not.toContain("INV-2026-0001 · 01 Aug 2026");
     expect(all).toContain("VAT:");
     expect(all).toContain("$1,937.50");
     expect(all).toContain("$40,687.50");

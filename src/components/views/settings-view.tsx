@@ -1797,23 +1797,12 @@ const FIT_MODE_OPTIONS = [
   { label: "Fill (stretches)", value: "fill" },
 ];
 
-const ALIGN_OPTIONS = [
-  { label: "Left", value: "left" },
-  { label: "Center", value: "center" },
-  { label: "Right", value: "right" },
-];
-
 /** Map a PDF font family to a CSS-equivalent stack for the live preview. */
 function fontCss(pdfFont: string): string {
   return (
     FONT_FAMILY_OPTIONS.find((f) => f.value === pdfFont)?.css ??
     "Helvetica, Arial, sans-serif"
   );
-}
-
-/** Convert a CSS alignment string to a literal union type. */
-function alignCss(a: string): "left" | "center" | "right" {
-  return a === "left" ? "left" : a === "right" ? "right" : "center";
 }
 
 // A4 page is 210mm wide × 297mm tall. We render the preview in a container
@@ -2244,31 +2233,13 @@ function MemorandumTab() {
                   )}
 
                   <Separator />
-                  <p className="text-xs font-medium text-muted-foreground">
-                    Address (center column)
-                  </p>
-                  <FontField
-                    label="Font"
-                    value={settings.footer_center_font_family}
-                    onChange={(v) => set("footer_center_font_family", v)}
-                  />
-                  <SliderField
-                    label={`Size (${settings.footer_center_font_size}pt)`}
-                    min={6} max={12} step={1}
-                    value={settings.footer_center_font_size}
-                    onChange={(v) => set("footer_center_font_size", v)}
-                  />
-                  <ColorField
-                    label="Color"
-                    value={settings.footer_center_font_color}
-                    onChange={(v) => set("footer_center_font_color", v)}
-                  />
-                  <SelectField
-                    label="Alignment"
-                    value={settings.footer_center_alignment}
-                    options={ALIGN_OPTIONS}
-                    onChange={(v) => set("footer_center_alignment", v)}
-                  />
+                  <div className="text-xs text-muted-foreground/90 rounded-md border border-dashed border-border/60 p-3 leading-relaxed">
+                    The center column is intentionally left empty. The tenant
+                    address & contact details print once — in the FROM/TO
+                    party boxes of the document — so they are no longer
+                    repeated in the footer of every page of a multi-page
+                    document (duplication fix).
+                  </div>
 
                   <Separator />
                   <p className="text-xs font-medium text-muted-foreground">
@@ -2403,14 +2374,8 @@ function MemorandumPreview({
   const logoUrl = tenant?.logo_url
     ? resolveLogoUrlForDisplay(tenant.logo_url)
     : null;
-  const addrLine1 =
-    [tenant?.address_line, tenant?.city].filter(Boolean).join(", ") ||
-    "Office 1234, DMCC, Dubai";
-  const addrLine2 = tenant?.website || "www.example.com";
-  const addrLine3 = tenant?.email || "info@example.com";
 
   const headerLeftFont = fontCss(settings.header_left_font_family);
-  const footerCenterFont = fontCss(settings.footer_center_font_family);
   const footerRightFont = fontCss(settings.footer_right_font_family);
   const bodyFont = fontCss(settings.body_font_family);
 
@@ -2579,23 +2544,12 @@ function MemorandumPreview({
                   </div>
                 )}
               </div>
-              {/* Center: address */}
-              <div
-                className="flex flex-col justify-center"
-                style={{
-                  width: colC,
-                  padding: mm(3),
-                  fontFamily: footerCenterFont,
-                  fontSize: pt(settings.footer_center_font_size),
-                  color: settings.footer_center_font_color,
-                  textAlign: alignCss(settings.footer_center_alignment),
-                  lineHeight: 1.3,
-                }}
-              >
-                <div>{addrLine1}</div>
-                <div>{addrLine2}</div>
-                <div>{addrLine3}</div>
-              </div>
+              {/* Center: empty spacer (audit14). The tenant address &
+                  contact details are printed ONCE, in the document's
+                  FROM/TO party boxes — the footer no longer repeats them
+                  on every page (they duplicated the same information
+                  across multi-page documents). */}
+              <div style={{ width: colC }} />
               {/* Right: page number */}
               <div
                 className="flex flex-col justify-center items-end"

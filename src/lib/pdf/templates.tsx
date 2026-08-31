@@ -17,7 +17,6 @@ import {
   fmtMoney,
   amountInWords,
   countryName,
-  joinAddressParts,
   remainingAddressParts,
   fmtDateIso as fmtDate,
   Watermark,
@@ -103,10 +102,10 @@ export function buildPdfDocument({
   const companyNameColor = m?.header_left_font_color || primaryColor;
   const companyNameSize = m?.header_left_font_size ?? 14;
 
-  // Footer column fonts (footer_center_* / footer_right_*).
-  const footerCenterFontFamily = mapFont(m?.footer_center_font_family, fontFamily);
-  const footerCenterFontSize = m?.footer_center_font_size ?? 8;
-  const footerCenterFontColor = m?.footer_center_font_color || "#666666";
+  // Footer column fonts (footer_right_* — the page-number column).
+  // audit14: footer_center_* fonts no longer drive any rendered text —
+  // the center column is an empty spacer now (the address/contact it used
+  // to carry duplicated the party boxes on every page).
   const footerRightFontFamily = mapFont(m?.footer_right_font_family, fontFamily);
   const footerRightFontSize = m?.footer_right_font_size ?? 8;
   const footerRightFontColor = m?.footer_right_font_color || "#666666";
@@ -144,30 +143,35 @@ export function buildPdfDocument({
   const showLogo = logoEnabled && !!logoUrl;
 
   // ── Footer (memorandum — repeats on every page) ────────────────────
-  // 3 columns: QR (left) + tenant address/website/email (center) + page#
-  // (right). Column widths are percentages of the footer content width and
-  // are normalised so they always sum to 1 (a misconfigured tenant still
-  // renders cleanly).
+  // audit14 — two fixes the user reported from production:
+  //   1. POSITION: the footer View flowed with the body content, so on any
+  //      page where the content ended early (typically page 2+) the footer
+  //      landed mid-page instead of at the bottom. It is now absolutely
+  //      positioned at bottom:0 — pinned to the bottom edge of EVERY page,
+  //      exactly like the header is pinned at top:0 (and like the packing-
+  //      list / marketplace footers, which always worked).
+  //   2. CONTENT: the footer carried the tenant address + website + email +
+  //      phone (duplicating the FROM/TO party boxes) AND the document
+  //      number + issue date (duplicating the title meta block) — on EVERY
+  //      page of a multi-page document. That's the "same information 6
+  //      times in one document" complaint. The footer now contains only
+  //      what is NOT already elsewhere: the QR verification code (left)
+  //      and "Page X of Y" (right).
   const footerEnabled = m?.footer_enabled !== false;
   const footerHeightPts = footerEnabled ? mmToPoints(m?.footer_height_mm ?? 18) : 0;
-  // audit13: apply the footer_bg_color / footer_center_alignment settings the
-  // UI saves — previously stored but silently ignored by the PDF renderer.
+  // audit13: apply the footer_bg_color setting the UI saves.
   const footerBgColor = m?.footer_bg_color || "#ffffff";
-  const footerCenterAlign =
-    m?.footer_center_alignment === "left" || m?.footer_center_alignment === "right"
-      ? m.footer_center_alignment
-      : "center";
   // audit13: apply the QR position offsets (mm) the UI saves.
   const qrOffsetXPts = mmToPoints(m?.qr_position_x_mm ?? 0);
   const qrOffsetYPts = mmToPoints(m?.qr_position_y_mm ?? 0);
 
-  const rawL = m?.footer_left_width_pct ?? 25;
-  const rawC = m?.footer_center_width_pct ?? 50;
-  const rawR = m?.footer_right_width_pct ?? 25;
-  const sumPct = Math.max(1, rawL + rawC + rawR);
-  const footerLeftPct = rawL / sumPct;
-  const footerCenterPct = rawC / sumPct;
-  const footerRightPct = rawR / sumPct;
+  // audit14: two content columns (QR left, page# right) with a flexible
+  // spacer between. The percentages are used raw (left / center-spacer /
+  // right default to 25 / 50 / 25); the spacer's flexGrow/Shrink absorbs
+  // any misconfiguration so the footer always renders cleanly.
+  const footerLeftPct = Math.max(0, m?.footer_left_width_pct ?? 25);
+  const footerSpacerPct = Math.max(0, m?.footer_center_width_pct ?? 50);
+  const footerRightPct = Math.max(0, m?.footer_right_width_pct ?? 25);
 
   // ── QR code (footer left column) ───────────────────────────────────
   const qrEnabled = m?.qr_enabled !== false;
@@ -273,15 +277,18 @@ export function buildPdfDocument({
       objectFit: "contain",
     },
 
-    // ── FOOTER (memorandum — fixed, repeats on every page) ────────────
-    // 3 columns: [QR]  [Address / Website / Email]  [Page X of Y]
-    // NOTE: this View has the `fixed` prop set at render time (line ~754)
-    // so it's absolutely positioned + repeats on every page. We don't use
-    // marginTop: "auto" here because that only works in normal flow, not
-    // in fixed/absolute positioning — and it can prevent the page-number
-    // Text (which uses the `render` prop) from rendering correctly.
+    // ── FOOTER (memorandum — pinned to the bottom, repeats on every page)
+    // audit14: absolute bottom:0 anchoring — the footer used to flow after
+    // the body content (mid-page whenever the last content block ended
+    // above the bottom, e.g. every "page 2+"). Mirrors the header's
+    // absolute top:0 and the packing-list/marketplace footerFixed pattern.
+    // Content: [QR] …spacer… [Page X of Y] — nothing that duplicates the
+    // party boxes (address/contact) or the title meta block (number/date).
     footer: {
-      width: "100%",
+      position: "absolute",
+      bottom: 0,
+      left: marginLeft,
+      right: marginRight,
       height: footerHeightPts,
       paddingTop: 6,
       borderTopWidth: 1,
@@ -299,14 +306,17 @@ export function buildPdfDocument({
       flexGrow: 0,
       flexShrink: 0,
     },
+    // audit14: the center column no longer renders the tenant address /
+    // contact details (they duplicate the FROM/TO party boxes on every
+    // page). It remains as a flexible spacer so the left (QR) and right
+    // (page number) columns keep their configured anchor widths.
     footerColCenter: {
       flexDirection: "column",
       alignItems: "center",
       justifyContent: "center",
-      flexBasis: `${footerCenterPct * 100}%`,
+      flexBasis: `${footerSpacerPct * 100}%`,
       flexGrow: 1,
       flexShrink: 1,
-      paddingHorizontal: 4,
     },
     footerColRight: {
       flexDirection: "column",
@@ -325,25 +335,10 @@ export function buildPdfDocument({
       marginTop: qrOffsetYPts,
     },
     footerQrLabel: { fontSize: 6, color: "#aaa", textAlign: "center" },
-    footerAddrLine: {
-      fontSize: footerCenterFontSize,
-      color: footerCenterFontColor,
-      fontFamily: footerCenterFontFamily,
-      // audit13: footer_center_alignment setting (left/center/right).
-      textAlign: footerCenterAlign as "left" | "center" | "right",
-      marginBottom: 1,
-    },
     footerPage: {
       fontSize: footerRightFontSize,
       color: footerRightFontColor,
       fontFamily: footerRightFontFamily,
-      textAlign: "right",
-    },
-    footerSys: {
-      fontSize: Math.max(5, footerRightFontSize - 1.5),
-      color: "#aaa",
-      fontStyle: "italic",
-      marginTop: 2,
       textAlign: "right",
     },
 
@@ -1337,13 +1332,18 @@ export function buildPdfDocument({
         </View>
         </View>
 
-        {/* ── FOOTER (memorandum — fixed, repeats on every page) ─────────
+        {/* ── FOOTER (memorandum — pinned to the bottom, repeats on every page)
             Inlined directly as <View fixed> (NOT wrapped in a component,
             NOT conditionally rendered) so @react-pdf/renderer recognizes
             the fixed prop on ALL pages. The page-number Text render prop
-            only works inside a fixed View that's a direct child of Page. */}
+            only works inside a fixed View that's a direct child of Page.
+            audit14: absolute bottom:0 pinning + the content is minimal by
+            design — QR (left) and Page X of Y (right). The address/contact
+            that used to sit in the center column duplicated the party
+            boxes on every page, and the doc number + date in the right
+            column duplicated the title meta block. */}
         <View style={styles.footer} fixed>
-            {/* Left column — QR code */}
+            {/* Left column — QR code (verification; unique to the footer) */}
             <View style={styles.footerColLeft}>
               {showQr && qrCodeDataUrl ? (
                 <View style={styles.footerQrWrap}>
@@ -1361,57 +1361,24 @@ export function buildPdfDocument({
               ) : null}
             </View>
 
-            {/* Center column — tenant address + website/email only.
-                Company name is NOT repeated here — it's already in the
-                header (memorandum).
-                audit13: joinAddressParts dedups city/country against the
-                free-text address line — "…, Dubai, UAE" + city "Dubai" +
-                country "AE" no longer renders "…, Dubai, UAE, Dubai,
-                United Arab Emirates" (this was the duplication every
-                document carried in production). */}
-            <View style={styles.footerColCenter}>
-              {(() => {
-                const addrLine = joinAddressParts(tenant?.address_line, {
-                  postal: tenant?.postal_code,
-                  city: tenant?.city,
-                  country: tenant?.country,
-                });
-                const contactParts = [
-                  tenant?.website,
-                  tenant?.email,
-                  tenant?.phone,
-                ].filter(Boolean);
-                return (
-                  <View>
-                    {addrLine ? (
-                      <Text style={styles.footerAddrLine}>{addrLine}</Text>
-                    ) : null}
-                    {contactParts.length > 0 ? (
-                      <Text style={styles.footerAddrLine}>{contactParts.join("  ·  ")}</Text>
-                    ) : null}
-                  </View>
-                );
-              })()}
-            </View>
+            {/* Center column — empty spacer (audit14). The tenant address /
+                website / email / phone were REMOVED: they duplicate the
+                FROM/TO party boxes, and on a multi-page document the footer
+                repeated them on every page ("same information 6 times"). */}
+            <View style={styles.footerColCenter} />
 
-            {/* Right column — page number + document identifier.
-                2g-F4 fix (round 4): react-pdf v4 supports the `render` prop on <Text>
-                elements inside a `fixed` View — use it for "Page X of Y"
-                (was hardcoded "Page 1" on every page).
-                audit13: the identifier line is now just the document NUMBER +
-                issue date — the old "{docTitle} {number} · {date}" repeated the
-                document title that's already the big top-of-page heading AND
-                wrapped to two lines in the 25% right column ("… · 29 / Aug
-                2026"). The number prefix already encodes the doc type
-                (LOI-…, INV-…, PRF-…, OFF-…), so no information is lost. */}
+            {/* Right column — page number only (audit14).
+                2g-F4 fix (round 4): react-pdf v4 supports the `render` prop
+                on <Text> elements inside a `fixed` View — use it for
+                "Page X of Y" (was hardcoded "Page 1" on every page).
+                audit13→audit14: the identifier line ("LOI-2026-000005 · 29
+                Aug 2026") was removed — the document number and issue date
+                are already in the title meta block on page 1. */}
             <View style={styles.footerColRight}>
               <Text
                 style={styles.footerPage}
                 render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`}
               />
-              <Text style={styles.footerSys}>
-                {doc.number} · {fmtDate((doc as any).issue_date || doc.created_at)}
-              </Text>
             </View>
         </View>
       </Page>
