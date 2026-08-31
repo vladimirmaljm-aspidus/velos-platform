@@ -52,6 +52,7 @@ import { useDebounced } from "@/lib/hooks/use-debounced";
 import { usePageSize } from "@/lib/hooks/use-page-size";
 import { PageSizeSelector } from "@/components/common/page-size-selector";
 import { downloadPdf } from "@/lib/utils/download";
+import { recomputeDocTotals, lineTotal as docLineTotal } from "@/lib/utils/doc-totals";
 
 const STATUS_LABEL_KEYS: Record<ProformaStatus, string> = {
   draft: "fin-status-draft",
@@ -85,28 +86,18 @@ function StatusBadge({ status }: { status: ProformaStatus }) {
   return <Badge className={STATUS_STYLES[status]}>{label}</Badge>;
 }
 
+// AUDIT18 — canonical totals (lib/utils/doc-totals.ts): the previous local
+// implementations summed UNROUNDED floats (client displayed totals could
+// disagree with the stored/PDF totals by a cent on penny-edge cases —
+// audit17/F1 fixed the server, this aligns the client math).
 function lineTotal(it: OfferLineItem): number {
-  const line = (Number(it.quantity) || 0) * (Number(it.unit_price) || 0);
-  const disc = line * (Number(it.discount) || 0) / 100;
-  const net = line - disc;
-  const tax = net * (Number(it.tax_rate) || 0) / 100;
-  return net + tax;
+  return docLineTotal(it);
 }
 
 function computeTotals(items: OfferLineItem[]) {
-  let subtotal = 0, discount_total = 0, tax_total = 0, total = 0;
-  for (const it of items) {
-    const line = (Number(it.quantity) || 0) * (Number(it.unit_price) || 0);
-    const disc = line * (Number(it.discount) || 0) / 100;
-    const net = line - disc;
-    const tax = net * (Number(it.tax_rate) || 0) / 100;
-    subtotal += line;
-    discount_total += disc;
-    tax_total += tax;
-    total += net + tax;
-  }
-  return { subtotal, discount_total, tax_total, total };
+  return recomputeDocTotals(items);
 }
+
 
 function isExpired(proforma: Proforma): boolean {
   if (proforma.status === "expired" || proforma.status === "paid") return proforma.status === "expired";
@@ -1264,7 +1255,8 @@ function ProformaFormDialog({
       const body = {
         ...form,
         subject: form.subject || t("fin-proforma-for-partner").replace("${name}", selectedPartner?.name || "partner"),
-        items: (form.items || []).map((it) => ({ ...it, total: lineTotal(it) })),
+        // AUDIT18: recomputeDocTotals returns items (with per-line total set)
+        // + the rounded header totals — the old code set `items` twice.
         ...computeTotals(form.items || []),
       };
       const r = await fetch(url, {

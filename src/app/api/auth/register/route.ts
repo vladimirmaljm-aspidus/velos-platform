@@ -12,6 +12,7 @@ import { reportSecurityEvent } from "@/lib/monitoring/security-alerts";
 import { sendEmail } from "@/lib/email/service";
 import { notifySuperAdminsOfSignupRequest } from "@/lib/notif/helper";
 import { escapeHtml } from "@/lib/security/escape-html";
+import { EMAIL_RE } from "@/lib/validation/email";
 
 export const runtime = "nodejs";
 
@@ -36,7 +37,6 @@ export const runtime = "nodejs";
  */
 
 const TRIAL_DAYS = 14;
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // F-7: 5 registrations per IP per hour. Tight enough to stop throwaway
 // tenant farming + email enumeration, loose enough that a real office

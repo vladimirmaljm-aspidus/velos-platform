@@ -97,10 +97,15 @@ const OFFER_STATUS_LABEL_KEYS: Record<string, string> = {
   accepted: "crm-accepted",
   rejected: "crm-rejected",
   expired: "crm-expired",
+  // AUDIT18: `countered` offers rendered with no label/color here (the
+  // offers-view and portal-offers maps both carry it) — a countered offer
+  // showed an empty badge in the partner-360 timeline.
+  countered: "marketplace-response-status-countered",
 };
 
 function offerStatusClass(status: string): string {
   switch (status) {
+    case "countered": return "border-transparent bg-primary/15 text-primary"; // AUDIT18: countered badge (was missing)
     case "accepted": return "border-transparent bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200";
     case "rejected": return "border-transparent bg-destructive text-white";
     case "sent": return "border-transparent bg-primary/15 text-primary";

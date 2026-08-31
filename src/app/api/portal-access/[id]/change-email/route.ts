@@ -8,6 +8,7 @@ import { createPasswordReset } from "@/lib/auth/password-reset";
 // the OLD email for the audit trail, writes the NEW email encrypted, and
 // recomputes the HMAC. See src/lib/crypto/field-encryption.ts.
 import { encryptField, decryptField, hmacField } from "@/lib/crypto/field-encryption";
+import { isValidEmail } from "@/lib/validation/email";
 
 export const runtime = "nodejs";
 
@@ -45,7 +46,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
     }
     const { new_email, send_reset_link = true, silent = false } = body;
-    if (!new_email || typeof new_email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(new_email)) {
+    if (!new_email || typeof new_email !== "string" || !isValidEmail(new_email)) {
       return NextResponse.json({ error: "Valid email is required." }, { status: 400 });
     }
 

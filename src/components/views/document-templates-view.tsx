@@ -70,6 +70,7 @@ import {
   type StarterTemplate,
 } from "@/lib/data/starter-templates";
 import { useT } from "@/lib/i18n/store";
+import { MAX_LOGO_UPLOAD_SIZE } from "@/lib/upload/constants";
 
 // ============================================================
 // Constants
@@ -1375,7 +1376,7 @@ function LetterheadEditorDialog({
   }
 
   async function handleLogoUpload(file: File) {
-    if (file.size > 1_500_000) {
+    if (file.size > MAX_LOGO_UPLOAD_SIZE) { // AUDIT18: server contract is 2MB (lib/upload/constants); a local 1.5MB constant made valid uploads fail client-side
       toast.error(t("doc-logo-too-large-toast"));
       return;
     }
@@ -1946,7 +1947,7 @@ function SealEditorDialog({
   }
 
   async function handleImageUpload(file: File) {
-    if (file.size > 1_500_000) {
+    if (file.size > MAX_LOGO_UPLOAD_SIZE) { // AUDIT18: server contract is 2MB (lib/upload/constants); a local 1.5MB constant made valid uploads fail client-side
       toast.error(t("doc-image-too-large-toast"));
       return;
     }

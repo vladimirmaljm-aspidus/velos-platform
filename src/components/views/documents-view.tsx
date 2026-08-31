@@ -38,6 +38,7 @@ import { useApiUrl, useTenantKey } from "@/lib/hooks/use-api-url";
 import { useDebounced } from "@/lib/hooks/use-debounced";
 import { useT } from "@/lib/i18n/store";
 import { PartnerPicker } from "@/components/common/partner-picker";
+import { downloadPdf } from "@/lib/utils/download";
 
 type DocCategory = SharedDocument["category"];
 
@@ -358,12 +359,9 @@ function DocumentDetail({
       <div className="flex flex-wrap gap-2 pt-3 border-t">
         <Button variant="default" size="sm" onClick={() => {
           if (doc.storage_path) {
-            const a = document.createElement("a");
-            a.href = `/api/documents/${doc.id}/download`;
-            a.download = doc.filename || "download";
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
+            // AUDIT18: downloadPdf checks the content-type before saving —
+            // the naive <a download> saved an error JSON blob as "file".
+            downloadPdf(`/api/documents/${doc.id}/download`, doc.filename || "download").catch((e) => toast.error(e.message));
           } else {
             toast.error(t("doc-no-file-toast"));
           }

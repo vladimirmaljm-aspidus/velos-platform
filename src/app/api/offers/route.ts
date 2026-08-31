@@ -7,6 +7,7 @@ import { withApm } from "@/lib/monitoring/apm";
 import { redactOfferFields } from "@/lib/api/redact";
 // FIX-ALL-2 / Fix 6 — XSS prevention on free-text fields.
 import { sanitizeFields } from "@/lib/security/sanitize-input";
+import { recomputeDocTotals } from "@/lib/utils/doc-totals";
 
 export const runtime = "nodejs";
 
@@ -236,31 +237,15 @@ async function _post(req: NextRequest) {
   // client-supplied totals (FLOW-7: previously skipped when body.total was
   // present, allowing tampered totals to disagree with line items).
   if (Array.isArray(body.items) && body.items.length > 0) {
-    let subtotal = 0, discountTotal = 0, taxTotal = 0;
-    for (const it of body.items) {
-      const line = it.quantity * it.unit_price;
-      const disc = line * (it.discount || 0) / 100;
-      const net = line - disc;
-      const tax = net * (it.tax_rate || 0) / 100;
-      // AUDIT17 / F1 — round each line component to 2dp BEFORE aggregating so
-      // the header sums the same rounded values the lines print (see the
-      // invoices route for the full VAT-rejection rationale).
-      const rLine = Math.round(line * 100) / 100;
-      const rDisc = Math.round(disc * 100) / 100;
-      const rTax = Math.round(tax * 100) / 100;
-      const rNet = Math.round(net * 100) / 100;
-      subtotal += rLine;
-      discountTotal += rDisc;
-      taxTotal += rTax;
-      // Round each line total to 2 decimals to prevent floating-point
-      // drift (e.g. 32199.999999999996 → 32200.00). Audit fix P2-15.
-      it.total = Math.round((rNet + rTax) * 100) / 100;
+      // AUDIT18 — canonical totals (lib/utils/doc-totals.ts): replaces the
+      // inline quantity×price−disc+tax loop that was copy-pasted across 6
+      // routes (and drifted from the client views' math on rounding).
+      const totals = recomputeDocTotals(body.items);
+      body.subtotal = totals.subtotal;
+      body.discount_total = totals.discount_total;
+      body.tax_total = totals.tax_total;
+      body.total = totals.total;
     }
-    body.subtotal = Math.round(subtotal * 100) / 100;
-    body.discount_total = Math.round(discountTotal * 100) / 100;
-    body.tax_total = Math.round(taxTotal * 100) / 100;
-    body.total = Math.round((subtotal - discountTotal + taxTotal) * 100) / 100;
-  }
   if (!body.id) {
     const isSA = !("apiKeyId" in auth) && auth.isSuperAdmin;
     const { enforceQuota } = await import("@/lib/api/plan-limits");

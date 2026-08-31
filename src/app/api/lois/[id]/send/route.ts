@@ -5,6 +5,7 @@ import { sendEmail } from "@/lib/email/service";
 import { checkRateLimit } from "@/lib/security/rate-limiter";
 import { decryptField, isEncrypted } from "@/lib/crypto/field-encryption";
 import { escapeHtml } from "@/lib/security/escape-html";
+import { isValidEmail } from "@/lib/validation/email";
 
 export const runtime = "nodejs";
 
@@ -97,7 +98,7 @@ export async function POST(
     // blob on failure (rotated key); refuse to "send" to an enc: ciphertext
     // (the audit15/16 bug class) with a clear admin-facing error instead.
     const partnerEmailRaw = decryptField(partner.email || partner.contact_email || "");
-    const partnerEmail = partnerEmailRaw && !isEncrypted(partnerEmailRaw) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(partnerEmailRaw)
+    const partnerEmail = partnerEmailRaw && !isEncrypted(partnerEmailRaw) && isValidEmail(partnerEmailRaw)
       ? partnerEmailRaw
       : "";
     if (!partnerEmail) {

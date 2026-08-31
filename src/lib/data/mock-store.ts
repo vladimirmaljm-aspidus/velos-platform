@@ -1755,18 +1755,38 @@ export class MockStore implements Store {
     });
   }
 
-  async calculateCommission(agentId: string, dealValue: number, dealProfit: number, dealQuantity: number, dealUnit: string, currency: string): Promise<number> {
+  async calculateCommission(agentId: string, dealValue: number, dealProfit: number, dealQuantity: number, dealUnit: string, dealCurrency: string): Promise<number> {
+    // AUDIT18 (parity with SupabaseStore, audit P1-4/P1-5): the mock
+    // implementation had drifted from the production one — it lacked the
+    // FX conversion to the agent's commission_currency AND the
+    // no-negative-commission guard, so dev/test computed different
+    // commissions than production (negative commissions on loss deals).
     const agent = mock.commissionAgents.find((a) => a.id === agentId);
     if (!agent) return 0;
+    const agentCurrency = agent.commission_currency || dealCurrency || "USD";
+    let convertedDealValue = dealValue;
+    let convertedDealProfit = dealProfit;
+    if (dealCurrency && agentCurrency && dealCurrency.toUpperCase() !== agentCurrency.toUpperCase()) {
+      try {
+        const { getExchangeRate } = await import("@/lib/utils/exchange-rates");
+        const rate = await getExchangeRate(dealCurrency.toUpperCase(), agentCurrency.toUpperCase());
+        if (rate && rate > 0) {
+          convertedDealValue = Math.round(dealValue * rate * 100) / 100;
+          convertedDealProfit = Math.round(dealProfit * rate * 100) / 100;
+        }
+      } catch {
+        // Rate fetch failed — best effort in the deal's currency.
+      }
+    }
     switch (agent.commission_type) {
       case "profit_percent":
-        return dealProfit * (agent.commission_rate / 100);
+        return Math.max(0, convertedDealProfit) * (agent.commission_rate / 100);
       case "revenue_percent":
-        return dealValue * (agent.commission_rate / 100);
+        return convertedDealValue * (agent.commission_rate / 100);
       case "fixed":
         return agent.commission_rate;
       case "per_unit":
-        return agent.commission_per_unit * dealQuantity;
+        return (agent.commission_per_unit || 0) * dealQuantity;
       case "custom":
         return agent.commission_rate; // fallback, custom formula would need manual calculation
       default:

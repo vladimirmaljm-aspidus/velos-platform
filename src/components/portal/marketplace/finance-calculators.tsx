@@ -45,6 +45,7 @@ import type {
   LCChecklist,
 } from "@/lib/supabase/marketplace-finance-types";
 import { calculateLCChecklist } from "@/lib/data/marketplace-finance-store";
+import { fmtMoney } from "@/lib/utils/format";
 
 const LC_TYPES: LCType[] = [
   "irrevocable", "revocable", "confirmed", "unconfirmed",
@@ -466,9 +467,8 @@ function CalcError({ message }: { message?: string }) {
   );
 }
 
-function fmtMoney(amount: number, currency: string): string {
-  return `${currency} ${amount.toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-}
+// AUDIT18 — canonical fmtMoney (lib/utils/format): the local copy used
+// toLocaleString(undefined) = OS locale, so a German browser rendered
+// "1.234,56 EUR" inside marketplace widgets while the rest of the app
+// showed "$1,234.56" — inconsistent money formatting across the app.
+

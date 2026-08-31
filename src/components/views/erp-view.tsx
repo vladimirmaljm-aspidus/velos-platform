@@ -52,6 +52,24 @@ import type {
 import { useApiUrl, useTenantKey } from "@/lib/hooks/use-api-url";
 import { useT } from "@/lib/i18n/store";
 
+// AUDIT18 — checked JSON fetch: 25 fetch chains in this view called
+// .then(jsonOk) WITHOUT an r.ok check, so a 500 error body
+// ({"error": "..."}) was parsed as data and rendered as garbage rows
+// instead of surfacing the failure. Every chain now funnels through
+// jsonOk, which throws on !ok (react-query shows the real error).
+async function jsonOk<T = any>(r: Response): Promise<T> {
+  if (!r.ok) {
+    let msg = `${r.status} ${r.statusText}`;
+    try {
+      const body = (await r.json()) as { error?: string };
+      if (body?.error) msg = body.error;
+    } catch { /* non-JSON error body */ }
+    throw new Error(msg);
+  }
+  return r.json() as Promise<T>;
+}
+
+
 /* ─── i18n helpers ─────────────────────────────────────────────────────── */
 
 // Maps the internal label keys used throughout this view to the i18n keys
@@ -447,12 +465,12 @@ function ErpDashboard() {
 
   const accountsQ = useQuery({
     queryKey: ["erp-accounts", tenantKey],
-    queryFn: () => fetch(api("/api/erp/accounts")).then((r) => r.json()),
+    queryFn: () => fetch(api("/api/erp/accounts")).then(jsonOk),
   });
 
   const entriesQ = useQuery({
     queryKey: ["erp-journal-entries", tenantKey],
-    queryFn: () => fetch(api("/api/erp/journal-entries")).then((r) => r.json()),
+    queryFn: () => fetch(api("/api/erp/journal-entries")).then(jsonOk),
   });
 
   const initMutation = useMutation({
@@ -461,7 +479,7 @@ function ErpDashboard() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ standard }),
-      }).then((r) => r.json()),
+      }).then(jsonOk),
     onSuccess: () => {
       toast.success(lbl("fin-chart-initialized"));
       qc.invalidateQueries({ queryKey: ["erp-accounts", tenantKey] });
@@ -633,7 +651,7 @@ function ChartOfAccounts() {
       const params = new URLSearchParams();
       if (filterType !== "all") params.set("account_type", filterType);
       if (search) params.set("search", search);
-      return fetch(api(`/api/erp/accounts?${params}`)).then((r) => r.json());
+      return fetch(api(`/api/erp/accounts?${params}`)).then(jsonOk);
     },
   });
 
@@ -645,7 +663,7 @@ function ChartOfAccounts() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
-      }).then((r) => r.json()),
+      }).then(jsonOk),
     onSuccess: () => {
       toast.success(lbl(editAccount ? "fin-account-updated" : "fin-account-created"));
       qc.invalidateQueries({ queryKey: ["erp-accounts", tenantKey] });
@@ -658,7 +676,7 @@ function ChartOfAccounts() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) =>
-      fetch(api(`/api/erp/accounts/${id}`), { method: "DELETE" }).then((r) => r.json()),
+      fetch(api(`/api/erp/accounts/${id}`), { method: "DELETE" }).then(jsonOk),
     onSuccess: () => {
       toast.success(lbl("fin-account-deleted"));
       qc.invalidateQueries({ queryKey: ["erp-accounts", tenantKey] });
@@ -673,7 +691,7 @@ function ChartOfAccounts() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ standard }),
-      }).then((r) => r.json()),
+      }).then(jsonOk),
     onSuccess: () => {
       toast.success(lbl("fin-chart-initialized"));
       qc.invalidateQueries({ queryKey: ["erp-accounts", tenantKey] });
@@ -952,7 +970,7 @@ function JournalEntries() {
 
   const accountsQ = useQuery({
     queryKey: ["erp-accounts", tenantKey],
-    queryFn: () => fetch(api("/api/erp/accounts")).then((r) => r.json()),
+    queryFn: () => fetch(api("/api/erp/accounts")).then(jsonOk),
   });
   const accounts: ErpAccount[] = accountsQ.data?.items ?? accountsQ.data ?? [];
 
@@ -962,7 +980,7 @@ function JournalEntries() {
       const params = new URLSearchParams();
       if (filterStatus !== "all") params.set("status", filterStatus);
       if (search) params.set("search", search);
-      return fetch(api(`/api/erp/journal-entries?${params}`)).then((r) => r.json());
+      return fetch(api(`/api/erp/journal-entries?${params}`)).then(jsonOk);
     },
   });
 
@@ -994,7 +1012,7 @@ function JournalEntries() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
-      }).then((r) => r.json()),
+      }).then(jsonOk),
     onSuccess: () => {
       toast.success(lbl("fin-entry-posted"));
       qc.invalidateQueries({ queryKey: ["erp-journal-entries", tenantKey] });
@@ -1008,7 +1026,7 @@ function JournalEntries() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
-      }).then((r) => r.json()),
+      }).then(jsonOk),
     onSuccess: () => {
       toast.success(lbl("fin-entry-reversed"));
       qc.invalidateQueries({ queryKey: ["erp-journal-entries", tenantKey] });
@@ -1646,7 +1664,7 @@ function GeneralLedger() {
 
   const accountsQ = useQuery({
     queryKey: ["erp-accounts", tenantKey],
-    queryFn: () => fetch(api("/api/erp/accounts")).then((r) => r.json()),
+    queryFn: () => fetch(api("/api/erp/accounts")).then(jsonOk),
   });
   const accounts: ErpAccount[] = accountsQ.data?.items ?? accountsQ.data ?? [];
 
@@ -1659,7 +1677,7 @@ function GeneralLedger() {
       });
       if (dateFrom) params.set("date_from", dateFrom);
       if (dateTo) params.set("date_to", dateTo);
-      return fetch(api(`/api/erp/reports?${params}`)).then((r) => r.json());
+      return fetch(api(`/api/erp/reports?${params}`)).then(jsonOk);
     },
     enabled: !!selectedAccountId,
   });
@@ -1787,13 +1805,13 @@ function BankAccounts() {
 
   const accountsQ = useQuery({
     queryKey: ["erp-accounts", tenantKey],
-    queryFn: () => fetch(api("/api/erp/accounts")).then((r) => r.json()),
+    queryFn: () => fetch(api("/api/erp/accounts")).then(jsonOk),
   });
   const chartAccounts: ErpAccount[] = accountsQ.data?.items ?? accountsQ.data ?? [];
 
   const bankAccountsQ = useQuery({
     queryKey: ["erp-bank-accounts", tenantKey],
-    queryFn: () => fetch(api("/api/erp/bank-accounts")).then((r) => r.json()),
+    queryFn: () => fetch(api("/api/erp/bank-accounts")).then(jsonOk),
   });
   const bankAccounts: ErpBankAccount[] = bankAccountsQ.data?.items ?? bankAccountsQ.data ?? [];
 
@@ -1802,7 +1820,7 @@ function BankAccounts() {
     queryFn: () => {
       const params = new URLSearchParams();
       if (selectedBankAccount?.id) params.set("bank_account_id", selectedBankAccount.id);
-      return fetch(api(`/api/erp/bank-transactions?${params}`)).then((r) => r.json());
+      return fetch(api(`/api/erp/bank-transactions?${params}`)).then(jsonOk);
     },
     enabled: !!selectedBankAccount,
   });
@@ -1814,7 +1832,7 @@ function BankAccounts() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
-      }).then((r) => r.json()),
+      }).then(jsonOk),
     onSuccess: () => {
       toast.success(lbl("fin-bank-account-saved"));
       qc.invalidateQueries({ queryKey: ["erp-bank-accounts", tenantKey] });
@@ -1827,7 +1845,7 @@ function BankAccounts() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) =>
-      fetch(api(`/api/erp/bank-accounts/${id}`), { method: "DELETE" }).then((r) => r.json()),
+      fetch(api(`/api/erp/bank-accounts/${id}`), { method: "DELETE" }).then(jsonOk),
     onSuccess: () => {
       toast.success(lbl("fin-bank-account-deleted"));
       qc.invalidateQueries({ queryKey: ["erp-bank-accounts", tenantKey] });
@@ -1843,7 +1861,7 @@ function BankAccounts() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
-      }).then((r) => r.json()),
+      }).then(jsonOk),
     onSuccess: () => {
       toast.success(lbl("fin-transaction-created"));
       qc.invalidateQueries({ queryKey: ["erp-bank-transactions", tenantKey] });
@@ -2129,19 +2147,19 @@ function ErpReports() {
 
   const trialBalanceQ = useQuery({
     queryKey: ["erp-report-trial-balance", tenantKey, asOfDate],
-    queryFn: () => fetch(api(`/api/erp/reports?type=trial_balance&as_of_date=${asOfDate}`)).then((r) => r.json()),
+    queryFn: () => fetch(api(`/api/erp/reports?type=trial_balance&as_of_date=${asOfDate}`)).then(jsonOk),
     enabled: reportTab === "trial_balance",
   });
 
   const balanceSheetQ = useQuery({
     queryKey: ["erp-report-balance-sheet", tenantKey, asOfDate],
-    queryFn: () => fetch(api(`/api/erp/reports?type=balance_sheet&as_of_date=${asOfDate}`)).then((r) => r.json()),
+    queryFn: () => fetch(api(`/api/erp/reports?type=balance_sheet&as_of_date=${asOfDate}`)).then(jsonOk),
     enabled: reportTab === "balance_sheet",
   });
 
   const profitAndLossQ = useQuery({
     queryKey: ["erp-report-profit-and-loss", tenantKey, periodStart, periodEnd],
-    queryFn: () => fetch(api(`/api/erp/reports?type=profit_and_loss&period_start=${periodStart}&period_end=${periodEnd}`)).then((r) => r.json()),
+    queryFn: () => fetch(api(`/api/erp/reports?type=profit_and_loss&period_start=${periodStart}&period_end=${periodEnd}`)).then(jsonOk),
     enabled: reportTab === "profit_and_loss",
   });
 
@@ -2379,13 +2397,13 @@ function ErpSettings() {
 
   const accountsQ = useQuery({
     queryKey: ["erp-accounts", tenantKey],
-    queryFn: () => fetch(api("/api/erp/accounts")).then((r) => r.json()),
+    queryFn: () => fetch(api("/api/erp/accounts")).then(jsonOk),
   });
   const accounts: ErpAccount[] = accountsQ.data?.items ?? accountsQ.data ?? [];
 
   const settingsQ = useQuery({
     queryKey: ["erp-settings", tenantKey],
-    queryFn: () => fetch(api("/api/erp/settings")).then((r) => r.json()),
+    queryFn: () => fetch(api("/api/erp/settings")).then(jsonOk),
   });
 
   const settings: ErpSetting | null = settingsQ.data?.id ? settingsQ.data : null;
@@ -2423,7 +2441,7 @@ function ErpSettings() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
-      }).then((r) => r.json()),
+      }).then(jsonOk),
     onSuccess: () => {
       toast.success(lbl("fin-settings-saved"));
       qc.invalidateQueries({ queryKey: ["erp-settings", tenantKey] });

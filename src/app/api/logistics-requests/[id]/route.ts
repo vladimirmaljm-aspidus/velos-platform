@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, audit, sanitizeError } from "@/lib/api/helpers";
 import { getSupabase } from "@/lib/supabase/client";
 import { validateStatusTransition } from "@/lib/api/status-validator";
+import { isValidEmail } from "@/lib/validation/email";
 
 export const runtime = "nodejs";
 
@@ -164,7 +165,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             const { decryptField, isEncrypted } = await import("@/lib/crypto/field-encryption");
             const rawEmail = partner?.email || decryptField(partner?.contact_email || "");
             const partnerEmail =
-              rawEmail && !isEncrypted(rawEmail) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail) ? rawEmail : "";
+              rawEmail && !isEncrypted(rawEmail) && isValidEmail(rawEmail) ? rawEmail : "";
             if (partner && partnerEmail) {
               const tenant = await store.getTenant(data.tenant_id);
               // AUDIT16 — drop the stale hardcoded aspidus.onrender.com

@@ -26,6 +26,7 @@ import { createSession, setSessionCookie } from "@/lib/auth/session";
 // portal_email is encrypted at rest — decrypt before using as To:.
 import { sendEmail, passwordChangedEmail } from "@/lib/email/service";
 import { decryptField, isEncrypted } from "@/lib/crypto/field-encryption";
+import { isValidEmail } from "@/lib/validation/email";
 
 export const runtime = "nodejs";
 
@@ -192,7 +193,7 @@ export async function POST(req: NextRequest) {
     // has already succeeded; a mail outage must not turn it into a 500.
     try {
       const confirmEmail = decryptField(access.portal_email || "");
-      if (confirmEmail && !isEncrypted(confirmEmail) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(confirmEmail)) {
+      if (confirmEmail && !isEncrypted(confirmEmail) && isValidEmail(confirmEmail)) {
         const tenantForEmail = await store.getTenant(access.tenant_id);
         const { subject, html } = passwordChangedEmail({
           accountName: confirmEmail,

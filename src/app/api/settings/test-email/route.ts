@@ -9,6 +9,7 @@ import {
   COMMS_SENSITIVE_KEYS,
 } from "@/lib/crypto/field-encryption";
 import { escapeHtml } from "@/lib/security/escape-html";
+import { isValidEmail } from "@/lib/validation/email";
 
 export const runtime = "nodejs";
 
@@ -88,7 +89,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Invalid JSON body." }, { status: 400 });
   }
 
-  if (!body.to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.to)) {
+  if (!body.to || !isValidEmail(body.to)) {
     return NextResponse.json(
       { ok: false, error: "A valid recipient email is required." },
       { status: 400 }

@@ -33,13 +33,13 @@ import {
 } from "lucide-react";
 import { useAppStore } from "@/lib/store/app-store";
 import { useI18nStore, useT } from "@/lib/i18n/store";
+import { EMAIL_RE } from "@/lib/validation/email";
 
 interface RegisterViewProps {
   /** Switch back to the login surface (Sign In link on the homepage). */
   onSwitchToLogin?: () => void;
 }
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function RegisterView({ onSwitchToLogin }: RegisterViewProps) {
   const setUser = useAppStore((s) => s.setUser);

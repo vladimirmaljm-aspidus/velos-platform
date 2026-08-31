@@ -686,40 +686,10 @@ export function getAuthUser(auth: AuthContext | ApiKeyAuthContext) {
   return { id: `api:${auth.apiKeyId}`, username: auth.apiKeyName, tenant_id: auth.tenantId };
 }
 
-export function getIp(req?: NextRequest | Request): string {
-  // F-FINAL / P1: the previous implementation returned the LAST entry of
-  // `X-Forwarded-For`, which worked when the deployment was Render-only
-  // (Render's proxy appended the real client IP at the end of the chain).
-  // The current production deployment has Cloudflare in front of Render
-  // (response headers show `server: cloudflare`, `cf-ray: ...`), so the
-  // LAST XFF entry is now Cloudflare's edge-node IP or Render's internal
-  // container IP — NOT the client. Every audit_logs.ip and rate_limits
-  // bucket ended up keyed on Render-internal IPs (10.x.x.x).
-  //
-  // Resolution order:
-  //   1. `CF-Connecting-IP` — set by Cloudflare to the real client IP.
-  //      Cannot be spoofed by the client (Cloudflare overwrites any
-  //      client-supplied value before reaching origin).
-  //   2. `X-Real-IP` — set by nginx/Caddy in single-proxy deploys.
-  //   3. `X-Forwarded-For` — fall back to the FIRST entry, which is the
-  //      original client (the rest of the chain is intermediate proxies,
-  //      ending with the trusted proxy that last forwarded the request).
-  //      Yes this is attacker-controllable on a non-Cloudflare deploy, but
-  //      we only reach this branch when CF-Connecting-IP and X-Real-IP are
-  //      both absent (i.e. we're NOT behind Cloudflare), so the trusted
-  //      proxy that set XFF is the only writer of the chain.
-  if (!req) return "0.0.0.0";
-  const cfIp = req.headers.get("cf-connecting-ip");
-  if (cfIp) return cfIp.trim();
-  const realIp = req.headers.get("x-real-ip");
-  if (realIp) return realIp.trim();
-  const xff = req.headers.get("x-forwarded-for");
-  if (xff) {
-    const parts = xff.split(",").map((s) => s.trim()).filter(Boolean);
-    if (parts.length > 0) return parts[0];
-  }
-  return "0.0.0.0";
-}
+// AUDIT18: getIp moved to lib/utils/ip.ts (canonical, edge-safe) — the
+// middleware's hand-mirrored copy is gone; both import the same function.
+import { getIp } from "@/lib/utils/ip";
+export { getIp };
 
 export async function audit(
   store: AuthContext["store"],

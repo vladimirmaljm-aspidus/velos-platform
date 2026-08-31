@@ -14,6 +14,7 @@ import {
 // (`src/lib/email/service.ts`) so the save-time + send-time checks
 // can't drift apart.
 import { validateFromEmailStrict } from "@/lib/email/service";
+import { isValidEmail } from "@/lib/validation/email";
 
 export const runtime = "nodejs";
 
@@ -190,7 +191,7 @@ export async function PUT(req: NextRequest) {
       }
       for (const c of candidates) {
         const email = String(c.email || "").trim().toLowerCase();
-        const wellFormed = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+        const wellFormed = isValidEmail(email);
         if (tenantId === null) {
           // Platform-level save: strict allowlist still applies.
           const result = await validateFromEmailStrict(c.email);

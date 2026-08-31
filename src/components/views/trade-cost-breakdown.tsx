@@ -30,6 +30,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useT } from "@/lib/i18n/store";
+import { fmtMoney } from "@/lib/utils/format";
 
 const DISPLAY_CURRENCIES = [
   "USD", "EUR", "GBP", "CHF", "AED", "SAR", "CNY", "INR", "RUB",
@@ -128,19 +129,9 @@ export interface CostBreakdownPanelProps {
   worstCaseProfit: number;
 }
 
-function fmtMoney(n: number, currency = "USD"): string {
-  const v = typeof n === "number" && isFinite(n) ? n : 0;
-  try {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(v);
-  } catch {
-    return `${v.toFixed(2)} ${currency}`;
-  }
-}
+// AUDIT18 — canonical fmtMoney (lib/utils/format): the local copy coerced
+// null→0 and showed "$0.00" where the app-wide formatter shows "—".
+
 
 function fmtPct(n: number): string {
   return `${(n || 0).toFixed(1)}%`;

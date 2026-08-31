@@ -18,6 +18,7 @@ import { checkRateLimit } from "@/lib/security/rate-limiter";
 // flow: the owner just proved control of the mailbox, so the confirmation
 // lands in the same mailbox. Fire-and-forget — never blocks the reset.
 import { sendEmail, passwordChangedEmail } from "@/lib/email/service";
+import { isValidEmail } from "@/lib/validation/email";
 
 export const runtime = "nodejs";
 
@@ -125,7 +126,7 @@ export async function POST(req: NextRequest) {
     try {
       const confirmEmail = decryptField(current.portal_email || "");
       const tenantForEmail = result.tenantId ? await store.getTenant(result.tenantId) : null;
-      if (confirmEmail && !isEncrypted(confirmEmail) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(confirmEmail)) {
+      if (confirmEmail && !isEncrypted(confirmEmail) && isValidEmail(confirmEmail)) {
         const { subject, html } = passwordChangedEmail({
           accountName: confirmEmail,
           tenantName: tenantForEmail?.name || "VELOS",

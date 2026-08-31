@@ -6,6 +6,7 @@ import { getIp } from "@/lib/api/helpers";
 import { checkRateLimit } from "@/lib/security/rate-limiter";
 import { getRateLimitConfig } from "@/lib/security/rate-limit-config";
 import { escapeHtml } from "@/lib/security/escape-html";
+import { isValidEmail } from "@/lib/validation/email";
 
 export const runtime = "nodejs";
 
@@ -36,7 +37,7 @@ export const runtime = "nodejs";
 export async function POST(req: NextRequest) {
   try {
     const { email } = await req.json();
-    if (!email || typeof email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (!email || typeof email !== "string" || !isValidEmail(email)) {
       return NextResponse.json({ error: "Valid email is required." }, { status: 400 });
     }
 

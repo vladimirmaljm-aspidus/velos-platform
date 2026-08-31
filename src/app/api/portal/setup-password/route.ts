@@ -12,6 +12,7 @@ import { getRateLimitConfig } from "@/lib/security/rate-limit-config";
 // the invite flow). portal_email is encrypted at rest — decrypt for To:.
 import { sendEmail, passwordChangedEmail } from "@/lib/email/service";
 import { decryptField, isEncrypted } from "@/lib/crypto/field-encryption";
+import { isValidEmail } from "@/lib/validation/email";
 
 export const runtime = "nodejs";
 
@@ -221,7 +222,7 @@ export async function POST(req: NextRequest) {
     // Fire-and-forget: the setup + auto-login have already succeeded.
     try {
       const confirmEmail = decryptField((updated as any).portal_email || "");
-      if (confirmEmail && !isEncrypted(confirmEmail) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(confirmEmail)) {
+      if (confirmEmail && !isEncrypted(confirmEmail) && isValidEmail(confirmEmail)) {
         const tenantForEmail = await store.getTenant(updated.tenant_id);
         const { subject, html } = passwordChangedEmail({
           accountName: confirmEmail,

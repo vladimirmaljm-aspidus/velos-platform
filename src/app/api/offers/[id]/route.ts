@@ -9,6 +9,7 @@ import { sanitizeFields } from "@/lib/security/sanitize-input";
 import { validateStatusTransition } from "@/lib/api/status-validator";
 import { triggerWebhooks } from "@/lib/webhooks/deliver";
 import { notifyOfferUpdate } from "@/lib/realtime/notify";
+import { recomputeDocTotals } from "@/lib/utils/doc-totals";
 
 export const runtime = "nodejs";
 
@@ -242,51 +243,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     // client-supplied totals (FLOW-7: previously skipped when body.total was
     // present, allowing tampered totals to disagree with line items).
     if (Array.isArray(sanitizedBody.items) && sanitizedBody.items.length > 0) {
-      let subtotal = 0, discountTotal = 0, taxTotal = 0;
-      // AUDIT17 / F2 — range-validate percentage fields before recomputing
-      // (PUT routes previously had NO line validation: a 150% discount or
-      // negative tax_rate flowed straight into the stored totals).
-      for (let i = 0; i < sanitizedBody.items.length; i++) {
-        const it = sanitizedBody.items[i];
-        const disc = Number(it.discount);
-        if (Number.isFinite(disc) && (disc < 0 || disc > 100)) {
-          return NextResponse.json(
-            { error: `items[${i}].discount must be between 0 and 100.` },
-            { status: 400 },
-          );
-        }
-        const tr = Number(it.tax_rate);
-        if (Number.isFinite(tr) && (tr < 0 || tr > 100)) {
-          return NextResponse.json(
-            { error: `items[${i}].tax_rate must be between 0 and 100.` },
-            { status: 400 },
-          );
-        }
-      }
-      for (const it of sanitizedBody.items) {
-        // CRITICAL FIX (audit P2-15): coerce line item fields with Number() to
-        // prevent NaN propagation when the client sends strings (e.g. "10"
-        // instead of 10) or omits fields. Previously `it.quantity * it.unit_price`
-        // would yield NaN if either was a string, silently zeroing the line.
-        const line = (Number(it.quantity) || 0) * (Number(it.unit_price) || 0);
-        const disc = line * (Number(it.discount) || 0) / 100;
-        const net = line - disc;
-        const tax = net * (Number(it.tax_rate) || 0) / 100;
-        // AUDIT17 / F1 — round each line component to 2dp BEFORE aggregating
-        // (header sums the rounded values; see invoices route rationale).
-        const rLine = Math.round(line * 100) / 100;
-        const rDisc = Math.round(disc * 100) / 100;
-        const rTax = Math.round(tax * 100) / 100;
-        const rNet = Math.round(net * 100) / 100;
-        subtotal += rLine;
-        discountTotal += rDisc;
-        taxTotal += rTax;
-        it.total = Math.round((rNet + rTax) * 100) / 100;
-      }
-      sanitizedBody.subtotal = Math.round(subtotal * 100) / 100;
-      sanitizedBody.discount_total = Math.round(discountTotal * 100) / 100;
-      sanitizedBody.tax_total = Math.round(taxTotal * 100) / 100;
-      sanitizedBody.total = Math.round((subtotal - discountTotal + taxTotal) * 100) / 100;
+      // AUDIT18 — canonical totals (lib/utils/doc-totals.ts): replaces the
+      // inline quantity×price−disc+tax loop that was copy-pasted across 6
+      // routes (and drifted from the client views' math on rounding).
+      const totals = recomputeDocTotals(sanitizedBody.items);
+      sanitizedBody.subtotal = totals.subtotal;
+      sanitizedBody.discount_total = totals.discount_total;
+      sanitizedBody.tax_total = totals.tax_total;
+      sanitizedBody.total = totals.total;
     }
     // SEC-M10 mirror (FIX-PRODUCTS-DOCS / Fix 1) — apply the field
     // whitelist AFTER the totals recompute (which writes back

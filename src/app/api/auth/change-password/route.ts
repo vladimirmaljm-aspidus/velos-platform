@@ -13,6 +13,7 @@ import { reportSecurityEvent } from "@/lib/monitoring/security-alerts";
 // stored plaintext (set at registration), so no decryption is needed —
 // only a basic address sanity check.
 import { sendEmail, passwordChangedEmail } from "@/lib/email/service";
+import { isValidEmail } from "@/lib/validation/email";
 
 export const runtime = "nodejs";
 
@@ -270,7 +271,7 @@ export async function POST(req: NextRequest) {
     // already succeeded and must not fail because of a mail outage.
     try {
       const userEmail = (user as any).email;
-      if (userEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userEmail)) {
+      if (userEmail && isValidEmail(userEmail)) {
         const tenantForEmail = user.tenant_id ? await auth.store.getTenant(user.tenant_id) : null;
         const { subject, html } = passwordChangedEmail({
           accountName: user.username || userEmail,

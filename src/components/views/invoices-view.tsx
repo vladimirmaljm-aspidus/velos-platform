@@ -58,6 +58,7 @@ import { PageSizeSelector } from "@/components/common/page-size-selector";
 import { useT } from "@/lib/i18n/store";
 import { Checkbox } from "@/components/ui/checkbox";
 import { BulkActionBar, useRowSelection } from "@/components/common/bulk-action-bar";
+import { recomputeDocTotals, lineTotal as docLineTotal } from "@/lib/utils/doc-totals";
 
 const STATUS_LABEL_KEYS: Record<InvoiceStatus, string> = {
   draft: "fin-status-draft",
@@ -85,28 +86,18 @@ function StatusBadge({ status }: { status: InvoiceStatus }) {
   return <Badge className="border-transparent bg-muted text-muted-foreground">{t(STATUS_LABEL_KEYS[status])}</Badge>;
 }
 
+// AUDIT18 — canonical totals (lib/utils/doc-totals.ts): the previous local
+// implementations summed UNROUNDED floats (client displayed totals could
+// disagree with the stored/PDF totals by a cent on penny-edge cases —
+// audit17/F1 fixed the server, this aligns the client math).
 function lineTotal(it: OfferLineItem): number {
-  const line = (Number(it.quantity) || 0) * (Number(it.unit_price) || 0);
-  const disc = line * (Number(it.discount) || 0) / 100;
-  const net = line - disc;
-  const tax = net * (Number(it.tax_rate) || 0) / 100;
-  return net + tax;
+  return docLineTotal(it);
 }
 
 function computeTotals(items: OfferLineItem[]) {
-  let subtotal = 0, discount_total = 0, tax_total = 0, total = 0;
-  for (const it of items) {
-    const line = (Number(it.quantity) || 0) * (Number(it.unit_price) || 0);
-    const disc = line * (Number(it.discount) || 0) / 100;
-    const net = line - disc;
-    const tax = net * (Number(it.tax_rate) || 0) / 100;
-    subtotal += line;
-    discount_total += disc;
-    tax_total += tax;
-    total += net + tax;
-  }
-  return { subtotal, discount_total, tax_total, total };
+  return recomputeDocTotals(items);
 }
+
 
 function isOverdue(inv: Invoice): boolean {
   if (inv.status === "overdue" || inv.status === "paid" || inv.status === "cancelled") return inv.status === "overdue";
@@ -1837,10 +1828,12 @@ function InvoiceFormDialog({
     try {
       const method = invoice ? "PUT" : "POST";
       const url = invoice ? api(`/api/invoices/${invoice.id}`) : api("/api/invoices");
+      // AUDIT18: recomputeDocTotals returns items (per-line total set) +
+      // the rounded header totals — canonical math shared with the server.
       const computed = computeTotals(form.items || []);
       const body = {
         ...form,
-        items: (form.items || []).map((it) => ({ ...it, total: lineTotal(it) })),
+        items: computed.items,
         subtotal: computed.subtotal,
         discount_total: computed.discount_total,
         tax_total: computed.tax_total,

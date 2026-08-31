@@ -5,6 +5,7 @@ import { getSupabase } from "@/lib/supabase/client";
 // with offers POST). Proforma PDFs render subject/notes/payment_terms via
 // dangerouslySetInnerHTML, so escape <, >, ", ' here.
 import { sanitizeFields } from "@/lib/security/sanitize-input";
+import { recomputeDocTotals } from "@/lib/utils/doc-totals";
 
 export const runtime = "nodejs";
 
@@ -209,33 +210,14 @@ export async function POST(req: NextRequest) {
     // CRITICAL FIX (audit P1-11): recompute totals from line items — never trust
     // client-supplied totals (parity with PUT routes and offers POST).
     if (Array.isArray(body.items) && body.items.length > 0) {
-      let subtotal = 0, discountTotal = 0, taxTotal = 0;
-      for (const it of body.items) {
-        const line = (Number(it.quantity) || 0) * (Number(it.unit_price) || 0);
-        const disc = line * (Number(it.discount) || 0) / 100;
-        const net = line - disc;
-        const tax = net * (Number(it.tax_rate) || 0) / 100;
-        // AUDIT17 / F1 — round each line component to 2dp BEFORE aggregating,
-        // so the stored it.total equals net+tax of the ROUNDED components and
-        // the header sums the same rounded values. Previously the header
-        // summed unrounded amounts (subtotal - discountTotal + taxTotal)
-        // while each printed line was rounded — 2 lines × 10.254 printed as
-        // 10.25 + 10.25 = 20.50 against a header total of 20.51. A VAT
-        // document whose line items don't sum to its total is rejected by
-        // tax authorities.
-        const rLine = Math.round(line * 100) / 100;
-        const rDisc = Math.round(disc * 100) / 100;
-        const rTax = Math.round(tax * 100) / 100;
-        const rNet = Math.round(net * 100) / 100;
-        subtotal += rLine;
-        discountTotal += rDisc;
-        taxTotal += rTax;
-        it.total = Math.round((rNet + rTax) * 100) / 100;
-      }
-      body.subtotal = Math.round(subtotal * 100) / 100;
-      body.discount_total = Math.round(discountTotal * 100) / 100;
-      body.tax_total = Math.round(taxTotal * 100) / 100;
-      body.total = Math.round((subtotal - discountTotal + taxTotal) * 100) / 100;
+      // AUDIT18 — canonical totals (lib/utils/doc-totals.ts): replaces the
+      // inline quantity×price−disc+tax loop that was copy-pasted across 6
+      // routes (and drifted from the client views' math on rounding).
+      const totals = recomputeDocTotals(body.items);
+      body.subtotal = totals.subtotal;
+      body.discount_total = totals.discount_total;
+      body.tax_total = totals.tax_total;
+      body.total = totals.total;
     }
 
     // Auto-generate document number if not provided (e.g. manual "Create" click).

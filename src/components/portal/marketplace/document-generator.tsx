@@ -43,6 +43,7 @@ import type {
 } from "@/lib/marketplace/document-generators";
 import { AUTO_GENERATABLE_TYPES } from "@/lib/marketplace/document-generators";
 import type { TradeDocument } from "@/lib/data/marketplace-trade-documents-store";
+import { downloadPdf } from "@/lib/utils/download";
 
 interface DocumentGeneratorProps {
   /** Marketplace entity to scope the generator to. At least one of these
@@ -183,16 +184,11 @@ export function DocumentGenerator({
   });
 
   // ── Download PDF (open the [id]/pdf endpoint in a new tab) ───────────
-  const downloadPdf = (doc: TradeDocument) => {
-    // Use a hidden <a> + click so browsers treat it as a download.
+  const downloadDocPdf = (doc: TradeDocument) => {
+    // AUDIT18: shared downloadPdf checks the content-type before saving —
+    // the naive <a download> saved an error JSON blob as a .pdf file.
     const url = `/api/marketplace/documents/${doc.id}/pdf`;
-    const a = document.createElement("a");
-    a.href = url;
-    a.rel = "noopener";
-    a.download = `${doc.document_type}_${doc.reference_number || doc.id}.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    void downloadPdf(url, `${doc.document_type}_${doc.reference_number || doc.id}.pdf`);
   };
 
   const items = docsQ.data?.items ?? [];
@@ -298,7 +294,7 @@ export function DocumentGenerator({
                   <Button
                     size="sm"
                     variant="ghost"
-                    onClick={() => downloadPdf(doc)}
+                    onClick={() => downloadDocPdf(doc)}
                   >
                     <Download className="h-3.5 w-3.5" />
                     {t("marketplace-document-pdf")}
