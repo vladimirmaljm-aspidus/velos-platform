@@ -455,9 +455,15 @@ function VerificationRecordView({ v }: { v: DocumentVerification }) {
         <Button
           size="sm"
           variant="outline"
-          onClick={() => {
-            navigator.clipboard?.writeText(code);
-            toast.success(t("admin-verify-code-copied"));
+          onClick={async () => {
+            // AUDIT19 (frontend #9) — await + catch (parity with
+            // api-keys-view): no false "copied" toast on clipboard failure.
+            try {
+              await navigator.clipboard?.writeText(code);
+              toast.success(t("admin-verify-code-copied"));
+            } catch {
+              toast.error(`Copy failed — copy manually: ${code}`);
+            }
           }}
         >
           <ClipboardCopy className="size-3.5 mr-1" /> {t("admin-verify-copy-code")}

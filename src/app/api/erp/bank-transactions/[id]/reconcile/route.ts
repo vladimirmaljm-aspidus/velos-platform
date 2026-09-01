@@ -50,6 +50,34 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "journal_entry_id is required." }, { status: 400 });
     }
 
+    // AUDIT19 / F3 — validate the journal entry belongs to the SAME tenant
+    // before linking. The body-supplied journal_entry_id was passed through
+    // raw: an erp.reconcile user could link a bank transaction to another
+    // tenant's ledger entry (ids are global UUIDs, so the FK passes),
+    // corrupting both tenants' reconciliation reports. Mirrors the
+    // tenant-ownership check applied to the bank transaction above.
+    const { data: je, error: jeErr } = await sb
+      .from("erp_journal_entries")
+      .select("id, tenant_id, status")
+      .eq("id", body.journal_entry_id)
+      .eq("tenant_id", tid)
+      .maybeSingle();
+    if (jeErr) {
+      return NextResponse.json({ error: sanitizeError(jeErr) }, { status: 500 });
+    }
+    if (!je) {
+      return NextResponse.json(
+        { error: "Journal entry not found in this tenant." },
+        { status: 404 },
+      );
+    }
+    if (je.status && je.status !== "posted") {
+      return NextResponse.json(
+        { error: `Cannot reconcile against a journal entry in status '${je.status}' (must be posted).` },
+        { status: 409 },
+      );
+    }
+
     const reconciled = await auth.store.reconcileBankTransaction(id, body.journal_entry_id);
     await audit(auth.store, auth.user, req, "bank_transaction.reconcile", "erp_bank_transaction", id, {
       journal_entry_id: body.journal_entry_id,

@@ -24,6 +24,19 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       if (!auth.isSuperAdmin && existing.tenant_id !== auth.tenantId) {
         return NextResponse.json({ error: "Not found." }, { status: 404 });
       }
+      // AUDIT19 / F6 — in-tenant horizontal access: tenant match alone let
+      // any notifications:update holder mark-read ANY user's notification
+      // in the same tenant. Notifications are per-user inboxes (user_id is
+      // set on every targeted notification; null = tenant broadcast, which
+      // any tenant member may mark read). Super-admins keep cross-user
+      // access for support workflows.
+      if (
+        !auth.isSuperAdmin &&
+        (existing as any).user_id &&
+        (existing as any).user_id !== auth.user.id
+      ) {
+        return NextResponse.json({ error: "Not found." }, { status: 404 });
+      }
       // CRITICAL FIX (audit A3): pass the notification's tenant_id to scope
       // the UPDATE. For regular users this matches auth.tenantId (verified
       // above); for super-admins we use the notification's actual tenant so
@@ -85,6 +98,17 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     if (!existing) return NextResponse.json({ error: "Not found." }, { status: 404 });
     // Tenant ownership check for non-super-admins.
     if (!auth.isSuperAdmin && existing.tenant_id !== auth.tenantId) {
+      return NextResponse.json({ error: "Not found." }, { status: 404 });
+    }
+    // AUDIT19 / F6 — same in-tenant horizontal rule as the PUT above: a
+    // notifications:delete holder may only delete their OWN targeted
+    // notifications (user_id null = broadcast — deletable by any tenant
+    // member with the permission).
+    if (
+      !auth.isSuperAdmin &&
+      existing.user_id &&
+      existing.user_id !== auth.user.id
+    ) {
       return NextResponse.json({ error: "Not found." }, { status: 404 });
     }
     await auth.store.deleteNotification(id);

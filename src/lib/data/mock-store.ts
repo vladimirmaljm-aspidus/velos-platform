@@ -921,6 +921,40 @@ export class MockStore implements Store {
   async deleteTenant(id: string): Promise<void> {
     const idx = mock.tenants.findIndex((t) => t.id === id); if (idx >= 0) mock.tenants.splice(idx, 1);
   }
+  // AUDIT19 / F4 — atomic document status transition (mock equivalent of
+  // supabase-store's atomicDocStatusTransition). Single-threaded: the
+  // check + update run in the same synchronous block, mirroring the SQL
+  // `.in("status", fromStatuses)` conditional-update semantics for tests.
+  async atomicDocStatusTransition(
+    table: "offers" | "invoices" | "proformas" | "lois",
+    id: string,
+    fromStatuses: string[],
+    toStatus: string,
+    patch?: Record<string, unknown>,
+  ): Promise<Record<string, unknown> | null> {
+    const storeMap: Record<string, any[]> = {
+      offers: mock.offers,
+      invoices: mock.invoices,
+      proformas: mock.proformas,
+      // The mock store does not implement LOI persistence (listLois/getLoi
+      // throw mockUnsupported) — treat it as an empty collection so the
+      // transition returns null ("not found") instead of crashing.
+      lois: [],
+    };
+    const rows = storeMap[table];
+    if (!rows) return null;
+    const existing = rows.find((r: any) => r.id === id);
+    if (!existing) return null;
+    if (!fromStatuses.includes(existing.status)) return null;
+    const safePatch = { ...(patch ?? {}) };
+    delete safePatch.id;
+    delete safePatch.tenant_id;
+    delete safePatch.created_at;
+    delete safePatch.updated_at;
+    delete safePatch.status;
+    Object.assign(existing, safePatch, { status: toStatus, updated_at: new Date().toISOString() });
+    return existing as Record<string, unknown>;
+  }
   // P0 / task C-1 — mock-store stubs. The mock store has no orphan-row
   // problem (it deletes by array filter), so these are no-ops / counters
   // that let the tenant / user DELETE routes call them unconditionally

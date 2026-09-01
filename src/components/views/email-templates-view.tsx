@@ -515,9 +515,16 @@ function TemplateEditorPanel({
   }, [template, editName, editSubject, editBody, saveMut]);
 
   const handleCopyVariable = useCallback(
-    (variable: string) => {
-      navigator.clipboard.writeText(`{{${variable}}}`);
-      toast.success(t("copied"));
+    async (variable: string) => {
+      // AUDIT19 (frontend #9) — await + catch: the floating promise fired a
+      // success toast even when clipboard access failed (insecure context,
+      // permission denied) AND produced an unhandled rejection.
+      try {
+        await navigator.clipboard.writeText(`{{${variable}}}`);
+        toast.success(t("copied"));
+      } catch {
+        toast.error(`Copy failed — copy manually: {{${variable}}}`);
+      }
     },
     [t]
   );

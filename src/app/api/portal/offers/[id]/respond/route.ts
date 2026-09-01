@@ -148,9 +148,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     // FIX-MARKET-UI / FIX 3 — append the counter to the JSONB history
-    // column before the upsert. We read the existing array (default to
-    // [] when null/missing), prepend the new entry (newest first), and
-    // pass the merged array to upsertOffer.
+    // column before the transition. We read the existing array (default to
+    // [] when null/missing) and prepend the new entry (newest first).
     let mergedCounters: Array<{ amount: number; currency: string; message: string | null; partner_id: string | null; created_at: string }> = [];
     if (decision === "counter") {
       const existing = Array.isArray((offer as any).counter_offers) ? (offer as any).counter_offers : [];
@@ -166,26 +165,44 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       ];
     }
 
-    const upsertPayload: Record<string, unknown> = {
+    // AUDIT19 / F4 — atomic, race-safe transition. The previous plain
+    // `upsertOffer` was read-check-write: two concurrent responds (double
+    // click, or admin PUT racing the portal response) BOTH passed the
+    // status check above and BOTH fired the commission + inventory
+    // cascades → double commission owed / double stock deduction.
+    // atomicDocStatusTransition filters the UPDATE on the CURRENT status —
+    // Postgres serialises the row lock; the loser matches 0 rows and gets
+    // a clean 409 instead of double-firing the cascades.
+    const flipped = await store.atomicDocStatusTransition(
+      "offers",
       id,
-      status: newStatus,
-      responded_at: nowIso,
-      admin_reviewed_by_client: true,
-      client_note: note || null,
-      client_signature: signature ?? null,
-    };
-    if (decision === "accept") {
-      upsertPayload.client_accepted_at = nowIso;
+      [currentStatus],
+      newStatus,
+      {
+        responded_at: nowIso,
+        admin_reviewed_by_client: true,
+        client_note: note || null,
+        client_signature: signature ?? null,
+        ...(decision === "accept" ? { client_accepted_at: nowIso } : {}),
+        ...(decision === "counter"
+          ? {
+              counter_offers: mergedCounters,
+              // Keep client_accepted_at null while a counter is open.
+              client_accepted_at: null,
+            }
+          : {}),
+      },
+    );
+    if (!flipped) {
+      return NextResponse.json(
+        {
+          error:
+            "Offer was concurrently updated — it is no longer in the status you saw. " +
+            "Reload the offer and try again.",
+        },
+        { status: 409 },
+      );
     }
-    if (decision === "counter") {
-      upsertPayload.counter_offers = mergedCounters;
-      // Keep client_accepted_at null while a counter is open.
-      upsertPayload.client_accepted_at = null;
-    }
-
-    await store.upsertOffer({
-      ...upsertPayload,
-    } as any);
 
     // ── Cascade: when the portal client ACCEPTS an offer, auto-create the
     //    pending DealCommission row if the offer's linked deal has a

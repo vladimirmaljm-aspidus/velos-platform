@@ -246,6 +246,21 @@ export interface Store {
     toStatus: string,
     patch?: Partial<Tenant>,
   ): Promise<Tenant | null>;
+  // AUDIT19 / F4 — atomic DOCUMENT status transition (generic version of
+  // atomicTenantStatusTransition for offers / invoices / proformas / lois).
+  // Single SQL UPDATE … WHERE id=? AND status IN (fromStatuses): Postgres
+  // serialises the row lock, so two concurrent accepts (admin PUT + portal
+  // respond, or a double-click) cannot BOTH flip the row and double-fire
+  // the commission / inventory cascades. The loser gets `null` and the
+  // route turns that into a 409. Mock/prisma stores implement a check +
+  // update equivalent so the guarantee holds there too.
+  atomicDocStatusTransition(
+    table: "offers" | "invoices" | "proformas" | "lois",
+    id: string,
+    fromStatuses: string[],
+    toStatus: string,
+    patch?: Record<string, unknown>,
+  ): Promise<Record<string, unknown> | null>;
   // P0 / task C-1 — safe tenant deletion. The live DB has very few FK
   // CASCADE constraints (migration 021 comment), so a naive deleteTenant
   // orphans every dependent row. `countTenantDependencies` returns a

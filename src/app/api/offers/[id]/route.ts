@@ -166,6 +166,19 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         return NextResponse.json({ error: "Deal not found." }, { status: 404 });
       }
     }
+    // AUDIT19 / F2 — cross-tenant partner reference injection. `partner_id`
+    // is in the PUT whitelist but was only locked on accepted offers, so a
+    // tenant-A offers:write user could point a draft offer at a tenant-B
+    // partner: the PDF route then renders tenant-B partner PII inside a
+    // tenant-A document, and the send route resolves the foreign partner.
+    // Same S-FIX shape the deals/[id] route applies to ALL cross-refs.
+    // Allow null/empty (clearing) without a lookup.
+    if (body.partner_id) {
+      const partner = await auth.store.getPartner(body.partner_id);
+      if (!partner || partner.tenant_id !== existing.tenant_id) {
+        return NextResponse.json({ error: "Partner not found." }, { status: 404 });
+      }
+    }
     // FIX-ALL-2 / Fix 6 — XSS prevention on free-text fields (parity with POST).
     const sanitizedBody = sanitizeFields(body, [
       "subject",
@@ -266,6 +279,28 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     // attached to the audit-trail revision record below.
     const changeNote = (sanitizedBody as any)?._changeNote || null;
     const safeBody = whitelistOfferFields(sanitizedBody as Record<string, unknown>);
+    // AUDIT19 / F4 — atomic accept guard (admin path). Closes the read-
+    // check-write race where two concurrent accepts (admin PUT + portal
+    // respond, or a double-click) both pass validation and both fire the
+    // commission + inventory cascades. The conditional UPDATE below only
+    // matches while the row is STILL in the status we read; the racing
+    // loser gets a clean 409. (The DB-level backstop is migration 080's
+    // partial unique index on active deal_commissions.)
+    if (isAccepting) {
+      const flipped = await auth.store.atomicDocStatusTransition(
+        "offers", id, [existing.status], "accepted",
+      );
+      if (!flipped) {
+        return NextResponse.json(
+          {
+            error:
+              "Offer was concurrently updated — it is no longer in the expected status. " +
+              "Reload the offer and retry.",
+          },
+          { status: 409 },
+        );
+      }
+    }
     const updated = await auth.store.upsertOffer({ ...safeBody, id, tenant_id: existing.tenant_id } as any);
     // FIX-ALL-2 / Fix 3 — audit identity for API-key callers.
     const auditUser = "user" in auth ? auth.user : { id: `api:${auth.apiKeyId}`, username: auth.apiKeyName, tenant_id: auth.tenantId };

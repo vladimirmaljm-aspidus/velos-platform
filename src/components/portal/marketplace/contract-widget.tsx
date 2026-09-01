@@ -139,6 +139,16 @@ export function ContractWidget({ postId, currency, unit, isOwner }: ContractWidg
     onSuccess: () => {
       toast.success(t("marketplace-contract-created"));
       setCreateOpen(false);
+      // AUDIT19 (frontend #10) — reset the create form on success: the
+      // previous values (total/dates/price-type) previously persisted into
+      // the next "Create contract" session.
+      setCreateForm({
+        total_quantity: "",
+        frequency: "monthly",
+        start_date: "",
+        end_date: "",
+        price_type: "fixed",
+      });
       qc.invalidateQueries({ queryKey: ["marketplace-contract", postId] });
       qc.invalidateQueries({ queryKey: ["marketplace-contract-deliveries", postId] });
     },
@@ -547,7 +557,13 @@ export function ContractWidget({ postId, currency, unit, isOwner }: ContractWidg
           </div>
           <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
             <Button variant="outline" onClick={() => setEditingId(null)}>{t("portal-action-cancel")}</Button>
-            <Button onClick={() => editingId && updateDelivery.mutate({ deliveryId: editingId })}>
+            <Button
+              // AUDIT19 (frontend #10) — disable while pending: clicks still
+              // fired during the in-flight update (spinner showed but the
+              // button stayed clickable → duplicate PUTs).
+              disabled={updateDelivery.isPending}
+              onClick={() => editingId && updateDelivery.mutate({ deliveryId: editingId })}
+            >
               {updateDelivery.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : null}
               {t("portal-action-save-changes")}
             </Button>

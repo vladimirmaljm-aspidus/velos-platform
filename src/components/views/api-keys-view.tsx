@@ -160,11 +160,11 @@ export function ApiKeysView() {
       if (!r.ok) throw new Error("Neuspešno brisanje ključa");
     },
     onSuccess: () => {
-      toast.success("API ključ je opozvan.");
+      toast.success(t("misc-apikey-revoked"));
       qc.invalidateQueries({ queryKey: ["api-keys", tenantKey] });
       setDeleteId(null);
     },
-    onError: () => toast.error("Neuspešno brisanje ključa."),
+    onError: () => toast.error(t("misc-apikey-delete-failed")),
   });
 
   if (!admin) {
@@ -380,8 +380,8 @@ function CreateKeyDialog({
     : [];
 
   async function save() {
-    if (!name.trim()) { toast.error("Naziv je obavezan."); return; }
-    if (!selectedPreset) { toast.error("Izaberite nivo pristupa."); return; }
+    if (!name.trim()) { toast.error(t("misc-apikey-name-required")); return; }
+    if (!selectedPreset) { toast.error(t("misc-apikey-preset-required")); return; }
     setSaving(true);
     try {
       const body: Record<string, unknown> = {
@@ -401,7 +401,7 @@ function CreateKeyDialog({
       }
       const data = await r.json();
       if (!data.full_key) throw new Error("Server nije vratio ključ.");
-      toast.success("API ključ kreiran!");
+      toast.success(t("misc-apikey-created"));
       onCreated(data.full_key as string);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Neuspešno kreiranje ključa";
@@ -502,10 +502,10 @@ function KeyRevealDialog({ fullKey, onClose }: { fullKey: string | null; onClose
     try {
       await navigator.clipboard.writeText(fullKey || "");
       setCopied(true);
-      toast.success("Ključ kopiran u clipboard.");
+      toast.success(t("misc-apikey-copied"));
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      toast.error("Clipboard nije dostupan. Kopirajte ručno.");
+      toast.error(t("misc-apikey-clipboard-failed"));
     }
   }
 

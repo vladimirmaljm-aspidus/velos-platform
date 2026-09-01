@@ -145,6 +145,28 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     // the whitelist strips it. It's not a DB column — it's a transient
     // note attached to the audit-trail revision record below.
     const changeNote = (body as any)?._changeNote || null;
+    // AUDIT19 / F2 — cross-tenant partner reference injection. `partner_id`
+    // is in the PUT whitelist but was only locked on paid/partial invoices,
+    // so a tenant-A invoices:write user could point a draft invoice at a
+    // tenant-B partner: the PDF route then renders tenant-B partner PII
+    // inside a tenant-A document. Same S-FIX shape as deals/[id].
+    // Allow null/empty (clearing) without a lookup.
+    if (body.partner_id) {
+      const partner = await auth.store.getPartner(body.partner_id);
+      if (!partner || partner.tenant_id !== existing.tenant_id) {
+        return NextResponse.json({ error: "Partner not found." }, { status: 404 });
+      }
+    }
+    // AUDIT19 / F2 — same injection vector via `offer_id`: the invoice's
+    // offer link feeds the commission cascade (deal lookup by offer_id) —
+    // a foreign offer silently re-routes commissions to another tenant's
+    // deal.
+    if (body.offer_id) {
+      const offer = await auth.store.getOffer(body.offer_id);
+      if (!offer || offer.tenant_id !== existing.tenant_id) {
+        return NextResponse.json({ error: "Offer not found." }, { status: 404 });
+      }
+    }
     // CRITICAL FIX (audit F-2): lock financial fields on paid/partial invoices.
     // A user with invoices.update permission should NOT be able to change total,
     // items, partner_id, or currency on a document that's already been paid.

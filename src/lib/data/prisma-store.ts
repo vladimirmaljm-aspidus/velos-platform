@@ -1580,6 +1580,40 @@ export class PrismaStore implements Store {
     const r = await db.tenant.findUnique({ where: { id: tenantId } });
     return r ? { ...r, created_at: dateToISOOrNow(r.created_at), updated_at: dateToISOOrNow(r.updated_at) } : null;
   }
+  // AUDIT19 / F4 — atomic document status transition (prisma equivalent).
+  // updateMany with the status filter is atomic w.r.t. concurrent calls —
+  // only one of two racing transitions gets count=1. The prisma backend is
+  // DEPRECATED (known tenant-isolation bugs — see lib/data/store.ts); this
+  // exists only to satisfy the Store interface until the backend is removed.
+  // LOIs have no prisma model — returns null (not found).
+  async atomicDocStatusTransition(
+    table: "offers" | "invoices" | "proformas" | "lois",
+    id: string,
+    fromStatuses: string[],
+    toStatus: string,
+    patch?: Record<string, unknown>,
+  ): Promise<Record<string, unknown> | null> {
+    if (table === "lois") return null;
+    if (!id || !fromStatuses || fromStatuses.length === 0) return null;
+    const data: any = { status: toStatus };
+    if (patch) {
+      const safePatch = { ...patch };
+      delete safePatch.id;
+      delete safePatch.tenant_id;
+      delete safePatch.created_at;
+      delete safePatch.updated_at;
+      delete safePatch.status;
+      Object.assign(data, safePatch);
+    }
+    const model = table === "offers" ? db.offer : table === "invoices" ? db.invoice : db.proforma;
+    const result = await (model as any).updateMany({
+      where: { id, status: { in: fromStatuses } },
+      data,
+    });
+    if (result.count === 0) return null;
+    const r = await (model as any).findUnique({ where: { id } });
+    return r ?? null;
+  }
   // P0 / task C-1 — prisma-store stubs. The prisma schema's relational
   // `User` / `Tenant` models already cascade via Prisma's `onDelete:
   // Cascade` rules (set in schema.prisma), so the app-layer cascade is a

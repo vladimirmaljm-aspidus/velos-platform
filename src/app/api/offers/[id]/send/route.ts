@@ -46,6 +46,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // Body is optional — empty body means "send to portal only, no email"
   }
   const toEmail: string | undefined = body?.email;
+  // AUDIT19 / F10 — validate the optional override email before it reaches
+  // sendEmail (parity with settings/test-smtp which already runs this
+  // check). A malformed address becomes an SMTP 500 / header-injection
+  // surface; the canonical validator rejects both early and cheaply.
+  if (toEmail !== undefined) {
+    if (typeof toEmail !== "string" || toEmail === "") {
+      return NextResponse.json({ error: "Invalid email address." }, { status: 400 });
+    }
+    const { isValidEmail } = await import("@/lib/validation/email");
+    if (!isValidEmail(toEmail)) {
+      return NextResponse.json({ error: `Invalid email address: ${toEmail}` }, { status: 400 });
+    }
+  }
 
   try {
     // Fetch the offer

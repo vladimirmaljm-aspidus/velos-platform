@@ -343,9 +343,15 @@ export function Topbar() {
         setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
         setUnreadTotal(0);
         toast.success("All notifications marked as read");
+      } else {
+        // AUDIT19 (frontend #16) — a non-OK server response was fully
+        // silent (badge untouched, no feedback); the full-page
+        // notifications view's identical action DOES toast on failure.
+        toast.error("Could not mark notifications as read — please try again.");
       }
     } catch {
-      // silently fail
+      // AUDIT19 (frontend #16) — network-level rejection: same feedback.
+      toast.error("Network error — notifications not marked as read.");
     }
   };
 

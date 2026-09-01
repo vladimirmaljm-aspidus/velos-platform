@@ -3,6 +3,43 @@ import { requireAuth, audit, sanitizeError } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
 
+/**
+ * AUDIT19 / F1 — field whitelist for the generic deal-commission PUT.
+ *
+ * The three action branches (approve / mark_paid / void) each enforce their
+ * own H-4 status guard and set the lifecycle columns server-side. But the
+ * fallthrough previously spread `...body` raw into `upsertDealCommission`,
+ * so a commissions:update caller could:
+ *   - PUT {"status":"paid"} and skip the pending→approved→paid SoD flow,
+ *   - forge approved_by / approved_at / paid_at / payout_reference,
+ *   - overwrite calculated_commission (the money amount).
+ *
+ * Allow only business-level editable fields. Lifecycle, audit-trail and
+ * identity columns are NOT in this list — they are set exclusively by the
+ * action branches (which have their own guards) or server-side.
+ * `status` is deliberately NOT whitelisted: every status change must go
+ * through the action endpoints so the guards and audit trail apply.
+ */
+const COMMISSION_EDITABLE_FIELDS = new Set([
+  "notes",
+  // Commission-config inputs (legitimate to correct before approval):
+  "commission_type",
+  "commission_rate",
+  "commission_per_unit",
+  "commission_custom_formula",
+  "commission_currency",
+]);
+
+function whitelistCommissionFields(
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(body)) {
+    if (COMMISSION_EDITABLE_FIELDS.has(key)) result[key] = value;
+  }
+  return result;
+}
+
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const auth = await requireAuth(_req);
@@ -97,7 +134,42 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json(updated);
     }
 
-    const updated = await auth.store.upsertDealCommission({ ...body, id, tenant_id: existing.tenant_id });
+    // AUDIT19 / F1 — generic field-edit fallthrough (whitelist + guards).
+    // Non-whitelisted keys (status, approved_*, paid_*, payout_reference,
+    // calculated_commission, ids, timestamps) are silently dropped — exactly
+    // like the offers/proformas/invoices PUT whitelists. Status changes MUST
+    // use the action branches above (they carry the H-4 guards + audit
+    // entries). A body that ONLY tried to set a protected field (e.g. a
+    // raw {"status":"paid"}) results in an empty whitelist → no-op 409
+    // instead of a silent "success".
+    const safeBody = whitelistCommissionFields(body as Record<string, unknown>);
+    if (Object.keys(body).some((k) => k !== "action" && !COMMISSION_EDITABLE_FIELDS.has(k))) {
+      return NextResponse.json(
+        {
+          error:
+            "Field(s) not editable via generic PUT (use the approve / mark_paid / void actions for lifecycle changes). " +
+            `Editable: ${[...COMMISSION_EDITABLE_FIELDS].join(", ")}.`,
+        },
+        { status: 409 },
+      );
+    }
+    // Once a commission is approved, its config is frozen: the amount was
+    // vetted in the approval step. Editing rate/type after approval would
+    // silently desync the vetted calculated_commission.
+    const nonPendingEdit =
+      existing.status !== "pending" &&
+      Object.keys(safeBody).some((k) => k !== "notes");
+    if (nonPendingEdit && !auth.isSuperAdmin) {
+      return NextResponse.json(
+        { error: `Commission config is frozen in status '${existing.status}' (only notes remain editable).` },
+        { status: 409 },
+      );
+    }
+    const updated = await auth.store.upsertDealCommission({
+      ...safeBody,
+      id,
+      tenant_id: existing.tenant_id,
+    });
     await audit(auth.store, auth.user, req, "deal_commission.update", "deal_commission", id);
     return NextResponse.json(updated);
   } catch (error: any) {

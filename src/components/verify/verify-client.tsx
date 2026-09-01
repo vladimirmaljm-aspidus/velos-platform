@@ -54,15 +54,26 @@ export function VerifyClient({ exists, documentType, code, cipheredRecipient = "
   // after GPS is granted. The SSR page no longer passes the full object as a
   // prop — this prevents document data from leaking in the RSC payload.
   const [v, setV] = React.useState<DocumentVerification | null>(null);
+  // AUDIT19 (frontend #12) — explicit error state: a failed / requires_gps /
+  // non-ok response previously left `v === null` forever → the public
+  // verification page rendered a perpetual loading spinner for external
+  // recipients of offer PDFs.
+  const [loadError, setLoadError] = React.useState<string | null>(null);
 
   // After GPS is granted, fetch the full verification via the API.
   React.useEffect(() => {
-    if (phase !== "ready" || v) return;
+    if (phase !== "ready" || v || loadError) return;
     fetch(`/api/verify/${encodeURIComponent(code)}?gps=1`)
-      .then((r) => r.ok ? r.json() : null)
-      .then((data) => { if (data && !data.requires_gps) setV(data); })
-      .catch(() => {});
-  }, [phase, code, v]);
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((data) => {
+        if (data && !data.requires_gps) {
+          setV(data);
+        } else {
+          setLoadError(data?.requires_gps ? "gps" : "empty");
+        }
+      })
+      .catch(() => setLoadError("network"));
+  }, [phase, code, v, loadError]);
 
   // Request GPS — BLOCK if user denies
   React.useEffect(() => {
@@ -212,6 +223,38 @@ export function VerifyClient({ exists, documentType, code, cipheredRecipient = "
               </div>
               <h1 className="text-lg font-semibold text-slate-800 mb-2">{t("misc-verify-not-found")}</h1>
               <p className="text-sm text-slate-500">{t("misc-verify-check-code")}</p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    // AUDIT19 (frontend #12) — failed verification fetch: explicit error card
+    // with retry instead of the perpetual "Loading…" spinner.
+    if (loadError) {
+      return (
+        <div className="verify-bg min-h-screen flex items-center justify-center p-4">
+          <div className="verify-card w-full max-w-md p-10 text-center">
+            <div className="verify-glow verify-glow-red" />
+            <div className="relative z-10">
+              <div className="size-16 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-5">
+                <XCircle className="size-8 text-red-500" />
+              </div>
+              <h1 className="text-lg font-semibold text-slate-800 mb-2">
+                {t("misc-verify-cannot-verify")}
+              </h1>
+              <p className="text-sm text-slate-500 mb-6">
+                {loadError === "network"
+                  ? "A network error occurred while loading this verification."
+                  : loadError === "gps"
+                    ? "Location verification could not be completed."
+                    : "Verification data is unavailable for this code."}
+              </p>
+              <button
+                onClick={() => { setLoadError(null); }}
+                className="w-full py-2.5 rounded-xl bg-slate-800 text-white text-sm font-medium hover:bg-slate-900 transition-colors"
+              >
+                {t("misc-verify-reload-try-again")}
+              </button>
             </div>
           </div>
         </div>

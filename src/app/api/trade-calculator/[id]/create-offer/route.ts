@@ -75,6 +75,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         { status: 400 }
       );
     }
+    // AUDIT19 / F2 — cross-tenant partner reference injection. The body's
+    // partner_id (and legacy calc.partner_id/buyer_id rows) was never
+    // tenant-checked, so an offers:write caller could create an offer
+    // pointing at another tenant's partner — the offer PDF then renders
+    // the foreign partner's PII. POST /api/offers already validates this
+    // ("CRITICAL FIX audit P1-5"); mirror it here.
+    {
+      const partner = await auth.store.getPartner(partnerId);
+      if (!partner || partner.tenant_id !== tenantId) {
+        return NextResponse.json(
+          { error: "Partner not found in this tenant. Specify a partner that belongs to your organization." },
+          { status: 404 }
+        );
+      }
+    }
 
     const currency = (calc as any).currency || "USD";
     const qty = (calc as any).quantity || 0;

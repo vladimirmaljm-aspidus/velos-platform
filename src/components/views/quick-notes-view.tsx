@@ -9,6 +9,16 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Pin, PinOff, Trash2, Plus, Search, StickyNote } from "lucide-react";
 import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { PageHeader } from "@/components/common/page-header";
 import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
 
@@ -24,6 +34,9 @@ const CATEGORY_COLORS: Record<string, string> = { general: "#f59e0b", idea: "#8b
 export function QuickNotesView() {
   const api = useApiUrl(); const tenantKey = useTenantKey(); const qc = useQueryClient();
   const [search, setSearch] = useState(""); const [editing, setEditing] = useState<QuickNote | null>(null); const [showForm, setShowForm] = useState(false);
+  // AUDIT19 (frontend #6) — delete confirm state (one-click trash destroyed
+  // a note with no confirmation, unlike tasks/products/commissions deletes).
+  const [deleting, setDeleting] = useState<QuickNote | null>(null);
   const t = useT();
 
   const { data, isLoading } = useQuery({
@@ -38,10 +51,18 @@ export function QuickNotesView() {
   const deleteMut = useMutation({
     mutationFn: async (id: string) => { const r = await fetch(api(`/api/quick-notes/${id}`), { method: "DELETE" }); if (!r.ok) throw new Error("Delete failed"); },
     onSuccess: () => { toast.success("Deleted."); qc.invalidateQueries({ queryKey: ["quick-notes", tenantKey] }); },
+    // AUDIT19 (frontend #6) — a failed delete previously showed NOTHING
+    // (parallel saveMut had an onError; delete didn't).
+    onError: () => toast.error("Failed to delete note."),
   });
   const togglePin = (note: QuickNote) => saveMut.mutate({ ...note, pinned: !note.pinned });
   const notes = (data?.items || []).filter(n => !search || n.title?.toLowerCase().includes(search.toLowerCase()) || n.content?.toLowerCase().includes(search.toLowerCase()));
   const pinnedNotes = notes.filter(n => n.pinned); const regularNotes = notes.filter(n => !n.pinned);
+  // AUDIT19 (frontend #6) — shared delete handler for the confirm dialog.
+  const confirmDelete = (note: QuickNote | null) => {
+    setDeleting(note);
+    if (note) { deleteMut.mutate(note.id); setDeleting(null); }
+  };
 
   return (
     <div>
@@ -58,10 +79,27 @@ export function QuickNotesView() {
       {isLoading ? <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-40 w-full rounded-xl" />)}</div>
       : notes.length === 0 ? <EmptyState icon={<StickyNote className="size-6" />} title={t("misc-no-notes-yet")} description={t("misc-create-first-note")} />
       : <div className="space-y-6">
-          {pinnedNotes.length > 0 && <div><h3 className="text-sm font-semibold text-muted-foreground mb-2 flex items-center gap-1.5"><Pin className="size-3.5" /> {t("misc-pinned")}</h3><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">{pinnedNotes.map(n => <NoteCard key={n.id} note={n} onEdit={() => { setEditing(n); setShowForm(true); }} onDelete={() => deleteMut.mutate(n.id)} onPin={() => togglePin(n)} />)}</div></div>}
-          {regularNotes.length > 0 && <div><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">{regularNotes.map(n => <NoteCard key={n.id} note={n} onEdit={() => { setEditing(n); setShowForm(true); }} onDelete={() => deleteMut.mutate(n.id)} onPin={() => togglePin(n)} />)}</div></div>}
+          {pinnedNotes.length > 0 && <div><h3 className="text-sm font-semibold text-muted-foreground mb-2 flex items-center gap-1.5"><Pin className="size-3.5" /> {t("misc-pinned")}</h3><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">{pinnedNotes.map(n => <NoteCard key={n.id} note={n} onEdit={() => { setEditing(n); setShowForm(true); }} onDelete={() => setDeleting(n)} onPin={() => togglePin(n)} />)}</div></div>}
+          {regularNotes.length > 0 && <div><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">{regularNotes.map(n => <NoteCard key={n.id} note={n} onEdit={() => { setEditing(n); setShowForm(true); }} onDelete={() => setDeleting(n)} onPin={() => togglePin(n)} />)}</div></div>}
         </div>}
       {showForm && <NoteForm note={editing} onClose={() => { setShowForm(false); setEditing(null); }} onSave={(d) => saveMut.mutate(d)} saving={saveMut.isPending} t={t} />}
+      {/* AUDIT19 (frontend #6) — delete confirmation dialog */}
+      <AlertDialog open={!!deleting} onOpenChange={(open) => !open && setDeleting(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("misc-delete-note-confirm")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleting ? `${deleting.title || "Untitled"} — this cannot be undone.` : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => confirmDelete(deleting)}>
+              {t("misc-delete-note-confirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -70,7 +108,7 @@ function NoteCard({ note, onEdit, onDelete, onPin }: { note: QuickNote; onEdit: 
   const color = note.color || CATEGORY_COLORS[note.category] || "#f59e0b";
   return <Card className="border-border/60 shadow-soft rounded-xl overflow-hidden cursor-pointer hover:shadow-md transition-shadow group" onClick={onEdit} style={{ borderTopWidth: 3, borderTopColor: color }}>
     <CardContent className="p-4"><div className="flex items-start justify-between gap-2 mb-2"><h4 className="font-semibold text-sm leading-tight line-clamp-2">{note.title || "Untitled"}</h4>
-    <div className="flex items-center gap-0.5 shrink-0"><Button size="icon" variant="ghost" className="size-6 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => { e.stopPropagation(); onPin(); }}>{note.pinned ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}</Button><Button size="icon" variant="ghost" className="size-6 opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive" onClick={(e) => { e.stopPropagation(); onDelete(); }}><Trash2 className="size-3.5" /></Button></div></div>
+    <div className="flex items-center gap-0.5 shrink-0"><Button size="icon" variant="ghost" className="size-6 opacity-0 group-hover:opacity-100 transition-opacity" title={note.pinned ? "Unpin note" : "Pin note"} aria-label={note.pinned ? "Unpin note" : "Pin note"} onClick={(e) => { e.stopPropagation(); onPin(); }}>{note.pinned ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}</Button><Button size="icon" variant="ghost" className="size-6 opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive" title="Delete note" aria-label="Delete note" onClick={(e) => { e.stopPropagation(); onDelete(); }}><Trash2 className="size-3.5" /></Button></div></div>
     <p className="text-xs text-muted-foreground line-clamp-4 whitespace-pre-wrap">{note.content || "No content"}</p>
     <div className="flex items-center justify-between mt-3"><Badge variant="outline" className="text-xs" style={{ color, borderColor: `${color}40` }}>{CATEGORY_LABELS[note.category] || note.category}</Badge><span className="text-xs text-muted-foreground">{fmtRelative(note.updated_at)}</span></div></CardContent></Card>;
 }

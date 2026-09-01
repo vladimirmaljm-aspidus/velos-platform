@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { timingSafeEqual } from "crypto";
 import { hashPassword } from "@/lib/auth/password";
 import { validatePasswordWithPlatformPolicy } from "@/lib/auth/password-policy";
 import { getIp } from "@/lib/api/helpers";
@@ -13,6 +14,17 @@ export const runtime = "nodejs";
 //   • log noise / DoS from someone hitting the endpoint repeatedly
 // 3/hour is generous — bootstrap happens once in the lifetime of a deploy.
 const SETUP_RATE_LIMIT = { maxAttempts: 3, windowMs: 60 * 60 * 1000 };
+
+// AUDIT19 / F9 — constant-time token compare (parity with cron-auth's
+// safeCompare). The previous `!==` short-circuit leaks SETUP_TOKEN one
+// byte at a time to a patient attacker. Length-check first —
+// timingSafeEqual throws on length mismatch.
+function safeSetupTokenCompare(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
+}
 
 export async function GET() {
   try {
@@ -72,7 +84,7 @@ export async function POST(req: NextRequest) {
     // Extra bootstrap guard: when SETUP_TOKEN is configured, require it —
     // closes the window between a fresh deploy and the first admin login
     // where this endpoint would otherwise mint a super_admin for anyone.
-    if (process.env.SETUP_TOKEN && body.setup_token !== process.env.SETUP_TOKEN) {
+    if (process.env.SETUP_TOKEN && !safeSetupTokenCompare(body.setup_token || "", process.env.SETUP_TOKEN)) {
       return NextResponse.json({ error: "Invalid setup token." }, { status: 403 });
     }
     const username = body.username || process.env.ADMIN_USERNAME;
@@ -113,6 +125,18 @@ export async function POST(req: NextRequest) {
     const existingUser = await store.getUserByUsername(username);
     if (existingUser) {
       return NextResponse.json({ message: "Setup already completed — admin user exists", tenant_id: tenant.id, user_id: existingUser.id, username: existingUser.username });
+    }
+    // AUDIT19 / F9 — shrink the bootstrap TOCTOU window: re-check the
+    // admin-existence guard as close to the INSERT as possible (the loop
+    // above may have run seconds ago, before rate-limit + token + password
+    // validation). A concurrent POST that also passed the guard now sees
+    // this second check in ~all cases (both requests serialize on the
+    // users insert; the practical residual window is single-digit ms).
+    for (const t of existingTenants) {
+      const usersNow = await store.listUsers(t.id);
+      if (usersNow.some((u) => u.role === "admin" || u.role === "super_admin")) {
+        return NextResponse.json({ error: "Setup already completed." }, { status: 403 });
+      }
     }
     const passwordHash = await hashPassword(password);
     const admin = await store.upsertUser({ tenant_id: tenant.id, username, email, full_name: fullName, role: "super_admin", password_hash: passwordHash, active: true, permissions: ["*"], token_version: 1 });

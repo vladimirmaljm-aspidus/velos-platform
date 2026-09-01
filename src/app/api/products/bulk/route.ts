@@ -83,7 +83,13 @@ export async function POST(req: NextRequest) {
             results.push({ id, success: false, error: "Not found." });
             continue;
           }
-          if (tid && product.tenant_id && product.tenant_id !== tid) {
+          // AUDIT19 / F8 — tenant-less rows are treated as FOREIGN for
+          // non-super-admins: the previous `product.tenant_id &&` guard
+          // required tenant_id to be truthy, so a NULL/''-tenant row
+          // (platform-level or legacy) bypassed the scope check and a
+          // tenant admin could delete/toggle platform rows.
+          const isSuperAdmin = !!("user" in auth && auth.isSuperAdmin);
+          if (tid && !isSuperAdmin && product.tenant_id !== tid) {
             results.push({ id, success: false, error: "Not found." });
             continue;
           }
@@ -99,7 +105,9 @@ export async function POST(req: NextRequest) {
           results.push({ id, success: false, error: "Not found." });
           continue;
         }
-        if (tid && product.tenant_id && product.tenant_id !== tid) {
+        // AUDIT19 / F8 — same tenant-less fix as the delete branch above.
+        const isSuperAdmin = !!("user" in auth && auth.isSuperAdmin);
+        if (tid && !isSuperAdmin && product.tenant_id !== tid) {
           results.push({ id, success: false, error: "Not found." });
           continue;
         }

@@ -194,6 +194,19 @@ export function PortalNotifications() {
           <div className="flex items-center justify-center py-16">
             <Loader2 className="size-6 animate-spin text-muted-foreground" />
           </div>
+        ) : notifsQ.isError ? (
+          // AUDIT19 (frontend #13) — a failed /api/portal/notifications call
+          // previously rendered the "You're all caught up" empty state,
+          // hiding the failure from portal clients.
+          <div className="flex flex-col items-center justify-center py-16 gap-2 text-center">
+            <Loader2 className="size-6 text-destructive" />
+            <p className="text-sm font-medium text-destructive">
+              {t("portal-notif-load-failed")}
+            </p>
+            <Button variant="outline" size="sm" onClick={() => notifsQ.refetch()}>
+              {t("portal-notif-retry")}
+            </Button>
+          </div>
         ) : items.length === 0 ? (
           <EmptyNotifications />
         ) : (

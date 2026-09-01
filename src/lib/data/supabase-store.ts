@@ -648,6 +648,49 @@ export class SupabaseStore implements Store {
   async upsertOffer(o: Partial<Offer> & { id?: string }): Promise<Offer> {
     return this.smartUpsert<Offer>("offers", o, o.tenant_id ?? undefined);
   }
+  // AUDIT19 / F4 — atomic DOCUMENT status transition (generic version of
+  // atomicTenantStatusTransition). Single SQL UPDATE with a WHERE clause on
+  // the CURRENT status: Postgres serialises the row lock, so two concurrent
+  // accepts (admin PUT + portal respond, or a double-click racing the first
+  // request) cannot BOTH flip the same row from "sent"→"accepted" and both
+  // fire the commission cascade. The loser's UPDATE matches 0 rows and this
+  // method returns `null` — the route turns that into a 409.
+  //
+  // `table` must be one of the document tables (offers / invoices /
+  // proformas / lois). The patch is sanitized like the tenant variant:
+  // identity + audit columns are stripped, status/updated_at are set by
+  // the method itself.
+  async atomicDocStatusTransition(
+    table: "offers" | "invoices" | "proformas" | "lois",
+    id: string,
+    fromStatuses: string[],
+    toStatus: string,
+    patch?: Record<string, unknown>,
+  ): Promise<Record<string, unknown> | null> {
+    if (!id || !fromStatuses || fromStatuses.length === 0) return null;
+    const update: Record<string, unknown> = {
+      status: toStatus,
+      updated_at: new Date().toISOString(),
+    };
+    if (patch) {
+      const p = this.sanitizePayload({ ...patch }) as Record<string, unknown>;
+      delete p.id;
+      delete p.tenant_id;
+      delete p.created_at;
+      delete p.updated_at;
+      delete p.status;
+      Object.assign(update, p);
+    }
+    const { data, error } = await this.sb()
+      .from(table)
+      .update(update)
+      .eq("id", id)
+      .in("status", fromStatuses)
+      .select("*")
+      .maybeSingle();
+    if (error) throw error;
+    return data || null;
+  }
   async deleteOffer(id: string): Promise<void> {
     const { error } = await this.sb().from("offers").delete().eq("id", id);
     if (error) throw error;

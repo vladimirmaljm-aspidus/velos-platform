@@ -105,6 +105,15 @@ export function SystemHealth() {
   }, [api]);
 
   React.useEffect(() => {
+    // AUDIT19 (frontend #1) — load immediately on mount, THEN poll every
+    // 30s. setInterval alone never fires `load` on the first tick, so the
+    // tab rendered a spinner for the full 30-second interval before any
+    // data appeared (every sibling panel calls `void load()` first).
+    // load() calls setLoading synchronously at its start; the rule's
+    // static analysis can't follow the promise — same disable as the
+    // sibling super-admin panels (monitoring-settings.tsx:89).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load();
     const id = setInterval(load, 30_000); // refresh every 30s
     return () => clearInterval(id);
   }, [load]);

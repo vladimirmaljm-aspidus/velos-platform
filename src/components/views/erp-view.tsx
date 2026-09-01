@@ -33,7 +33,7 @@ import {
   Plus, Search, Pencil, Trash2, Eye, MoreHorizontal, Wallet, TrendingUp, TrendingDown,
   PieChart, BookOpen, ArrowRightLeft, Landmark, FileBarChart, Settings2,
   CheckCircle2, RotateCcw, XCircle, ChevronRight, Download, Building2, Calendar,
-  Hash, RefreshCw, Repeat,
+  Hash, RefreshCw, Repeat, Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
@@ -1245,14 +1245,37 @@ function JournalEntries() {
                           <Button variant="ghost" size="icon" onClick={() => openEdit(entry)} title={lbl("edit")} aria-label={lbl("edit")}>
                             <Pencil className="size-4" />
                           </Button>
-                          <Button variant="ghost" size="icon" onClick={() => postMutation.mutate(entry.id)} title={lbl("erp-post")} aria-label={lbl("erp-post")}>
-                            <CheckCircle2 className="size-4 text-emerald-600" />
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            // AUDIT19 (frontend #5) — disable while pending:
+                            // double-clicks double-fired the irreversible
+                            // post (locks the draft entry into "posted").
+                            disabled={postMutation.isPending}
+                            onClick={() => {
+                              if (confirm(lbl("erp-post") + "?")) postMutation.mutate(entry.id);
+                            }}
+                            title={lbl("erp-post")}
+                            aria-label={lbl("erp-post")}
+                          >
+                            {postMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4 text-emerald-600" />}
                           </Button>
                         </>
                       )}
                       {entry.status === "posted" && (
-                        <Button variant="ghost" size="icon" onClick={() => reverseMutation.mutate(entry.id)} title={lbl("erp-reverse")} aria-label={lbl("erp-reverse")}>
-                          <RotateCcw className="size-4 text-red-600" />
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          // AUDIT19 (frontend #5) — disable while pending +
+                          // confirm (creates counter-entries irreversibly).
+                          disabled={reverseMutation.isPending}
+                          onClick={() => {
+                            if (confirm(lbl("erp-reverse") + "?")) reverseMutation.mutate(entry.id);
+                          }}
+                          title={lbl("erp-reverse")}
+                          aria-label={lbl("erp-reverse")}
+                        >
+                          {reverseMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : <RotateCcw className="size-4 text-red-600" />}
                         </Button>
                       )}
                     </div>

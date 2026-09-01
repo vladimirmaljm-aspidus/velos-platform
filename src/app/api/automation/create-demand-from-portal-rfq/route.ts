@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, requireAuthOrApiKey, requireAuthOrApiKeyPermission, audit, resolveTenantId, sanitizeError } from "@/lib/api/helpers";
+import { generateDemandNumber } from "@/lib/api/doc-number";
 
 export const runtime = "nodejs";
 
@@ -60,14 +61,36 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Portal RFQ not found." }, { status: 404 });
     }
 
+    // AUDIT19 / F5 — idempotency guard (parity with the sibling automation
+    // routes create-invoice-from-proforma / create-proforma-from-offer /
+    // create-invoice-from-offer, which all have an "already exists" check).
+    // A retry or a double-click previously created a SECOND demand per RFQ
+    // and silently re-linked linked_demand_id to the newer one. Once an RFQ
+    // is quoted (or linked), re-running the automation must 409 and point
+    // at the existing demand.
+    if ((rfq as any).linked_demand_id || rfq.status === "quoted") {
+      return NextResponse.json(
+        {
+          error: `This RFQ has already been converted to a demand${(rfq as any).linked_demand_id ? "" : " (status: quoted)"}.`,
+          demand_id: (rfq as any).linked_demand_id ?? null,
+        },
+        { status: 409 },
+      );
+    }
+
     // 2. Fetch partner data for auto-fill
     const partner = rfq.partner_id ? await store.getPartner(rfq.partner_id) : null;
 
-    // 3. Auto-generate demand number
-    const existingDemands = await store.listDemands(tid, { limit: 1 });
-    const year = new Date().getFullYear();
-    const nextSeq = existingDemands.total + 1;
-    const demandNumber = `RFQ-${year}-${String(nextSeq).padStart(3, "0")}`;
+    // 3. Demand number — canonical per-tenant numbering.
+    // AUDIT19 / F5 — the previous `listDemands().total + 1` was a TOCTOU
+    // race (concurrent calls mint the same RFQ-YYYY-NNN) AND counted
+    // deleted/other-year demands. generateDemandNumber uses MAX(number)
+    // per tenant per year (the same helper POST /api/demands uses).
+    const demandNumber = await generateDemandNumber(store, tid)
+      ?? (() => {
+        const year = new Date().getFullYear();
+        return `RFQ-${year}-${String(Date.now()).slice(-5)}`;
+      })();
 
     // 4. Build demand items from RFQ data
     const demandItems = [

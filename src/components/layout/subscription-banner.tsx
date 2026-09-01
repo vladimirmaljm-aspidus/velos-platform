@@ -102,8 +102,11 @@ export function SubscriptionBanner() {
         >
           {sub.is_trial ? t("misc-sub-upgrade-now") : t("misc-sub-view-plan")}
         </Button>
+        {/* AUDIT19 (frontend #15) — accessible name for the icon-only
+            dismiss button (screen readers announced it as an unnamed
+            button). */}
         {!isExpired && sub.warning_level === "warning" && (
-          <Button size="icon" variant="ghost" className="size-7" onClick={() => setDismissed(true)}>
+          <Button size="icon" variant="ghost" className="size-7" onClick={() => setDismissed(true)} aria-label={t("misc-sub-dismiss")} title={t("misc-sub-dismiss")}>
             <X className="size-3.5" />
           </Button>
         )}

@@ -790,13 +790,18 @@ export function SuperAdminOverviewView({ embedded = false }: { embedded?: boolea
                             className="h-7 w-7 p-0 text-amber-600 hover:text-amber-700"
                             onClick={async () => {
                               if (!confirm(`Suspend tenant "${ts.tenant.name}"? All users in this tenant will be blocked from logging in.`)) return;
-                              const r = await fetch(api(`/api/tenants/${ts.tenant.id}`), {
-                                method: "PATCH",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({ id: ts.tenant.id, status: "suspended" }),
-                              });
-                              if (r.ok) { toast.success("Tenant suspended"); queryClient.invalidateQueries({ queryKey: ["super-admin-overview", tenantKey] }); }
-                              else { toast.error("Failed to suspend"); }
+                              // AUDIT19 (frontend #7) — try/catch: a network-level
+                              // fetch rejection (offline / DNS / proxy 502) previously
+                              // became an unhandled promise with ZERO user feedback.
+                              try {
+                                const r = await fetch(api(`/api/tenants/${ts.tenant.id}`), {
+                                  method: "PATCH",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ id: ts.tenant.id, status: "suspended" }),
+                                });
+                                if (r.ok) { toast.success("Tenant suspended"); queryClient.invalidateQueries({ queryKey: ["super-admin-overview", tenantKey] }); }
+                                else { toast.error("Failed to suspend"); }
+                              } catch { toast.error("Network error — tenant not suspended."); }
                             }}
                             title="Suspend"
                           >
@@ -809,13 +814,16 @@ export function SuperAdminOverviewView({ embedded = false }: { embedded?: boolea
                             variant="ghost"
                             className="h-7 w-7 p-0 text-emerald-600 hover:text-emerald-700"
                             onClick={async () => {
-                              const r = await fetch(api(`/api/tenants/${ts.tenant.id}`), {
-                                method: "PATCH",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({ id: ts.tenant.id, status: "active" }),
-                              });
-                              if (r.ok) { toast.success("Tenant activated"); queryClient.invalidateQueries({ queryKey: ["super-admin-overview", tenantKey] }); }
-                              else { toast.error("Failed to activate"); }
+                              // AUDIT19 (frontend #7) — try/catch (see suspend button).
+                              try {
+                                const r = await fetch(api(`/api/tenants/${ts.tenant.id}`), {
+                                  method: "PATCH",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ id: ts.tenant.id, status: "active" }),
+                                });
+                                if (r.ok) { toast.success("Tenant activated"); queryClient.invalidateQueries({ queryKey: ["super-admin-overview", tenantKey] }); }
+                                else { toast.error("Failed to activate"); }
+                              } catch { toast.error("Network error — tenant not activated."); }
                             }}
                             title="Activate"
                           >
@@ -828,14 +836,17 @@ export function SuperAdminOverviewView({ embedded = false }: { embedded?: boolea
                             variant="ghost"
                             className="h-7 w-7 p-0 text-blue-600 hover:text-blue-700"
                             onClick={async () => {
+                              // AUDIT19 (frontend #7) — try/catch (see suspend button).
                               const newEnd = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-                              const r = await fetch(api(`/api/tenants/${ts.tenant.id}`), {
-                                method: "PATCH",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({ id: ts.tenant.id, trial_ends_at: newEnd }),
-                              });
-                              if (r.ok) { toast.success("Trial extended +7 days"); queryClient.invalidateQueries({ queryKey: ["super-admin-overview", tenantKey] }); }
-                              else { toast.error("Failed to extend trial"); }
+                              try {
+                                const r = await fetch(api(`/api/tenants/${ts.tenant.id}`), {
+                                  method: "PATCH",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ id: ts.tenant.id, trial_ends_at: newEnd }),
+                                });
+                                if (r.ok) { toast.success("Trial extended +7 days"); queryClient.invalidateQueries({ queryKey: ["super-admin-overview", tenantKey] }); }
+                                else { toast.error("Failed to extend trial"); }
+                              } catch { toast.error("Network error — trial not extended."); }
                             }}
                             title="Extend Trial +7 days"
                           >

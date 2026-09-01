@@ -12,6 +12,16 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Shield,
   Lock,
   Unlock,
@@ -75,6 +85,10 @@ export function EscrowStatus({ instrumentId, canRelease }: EscrowStatusProps) {
   const t = useT();
   const qc = useQueryClient();
   const [now, setNow] = useState(Date.now());
+  // AUDIT19 (frontend #2) — irreversible money release needs a confirm
+  // dialog (one mis-click previously released the full held amount with
+  // no way back; `released` is a terminal status).
+  const [confirmRelease, setConfirmRelease] = useState(false);
 
   // Tick every 60s for the auto-release countdown.
   useEffect(() => {
@@ -280,7 +294,7 @@ export function EscrowStatus({ instrumentId, canRelease }: EscrowStatusProps) {
               )}
               <Button
                 size="sm"
-                onClick={() => release.mutate()}
+                onClick={() => setConfirmRelease(true)}
                 disabled={release.isPending || isDisputed}
                 title={isDisputed ? t("marketplace-finance-escrow-release-blocked-disputed") : undefined}
               >
@@ -294,6 +308,35 @@ export function EscrowStatus({ instrumentId, canRelease }: EscrowStatusProps) {
             </div>
           </>
         )}
+
+        {/* AUDIT19 (frontend #2) — release confirmation dialog */}
+        <AlertDialog open={confirmRelease} onOpenChange={setConfirmRelease}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {t("marketplace-finance-escrow-release-confirm-title")}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {t("marketplace-finance-escrow-release-confirm-desc").replace(
+                  "{amount}",
+                  `${instrument.currency} ${Number(instrument.amount).toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}`,
+                )}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t("common-label-cancel")}</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => release.mutate()}
+                className="bg-emerald-600 text-white hover:bg-emerald-700"
+              >
+                {t("marketplace-finance-escrow-release-confirm-yes")}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </CardContent>
     </Card>
   );
