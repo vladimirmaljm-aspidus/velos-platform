@@ -1216,6 +1216,8 @@ export class MockStore implements Store {
       letterhead_id: t.letterhead_id ?? null, seal_id: t.seal_id ?? null,
       seal_enabled: t.seal_enabled ?? true,
       selected_bank_accounts: t.selected_bank_accounts ?? null,
+      // audit22 "Template Studio" — extended styling + visual layout blobs
+      style_json: t.style_json ?? null, layout_json: t.layout_json ?? null,
       created_by: t.created_by || null, created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     };
     mock.documentTemplates.push(newT); return newT;

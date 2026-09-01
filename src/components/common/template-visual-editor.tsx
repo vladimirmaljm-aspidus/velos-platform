@@ -61,6 +61,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { DocumentTemplate, TenantLetterhead } from "@/lib/supabase/types";
 import { useT } from "@/lib/i18n/store";
+import { readTemplateLayout } from "@/lib/pdf/doc-template";
 import {
   parseContentConfig,
   substitutePlaceholders as substituteEnginePlaceholders,
@@ -922,6 +923,52 @@ export function TemplateVisualEditor({
   const [fields, setFields] = React.useState<FieldElement[]>(
     DEFAULT_FIELDS.map((f) => ({ ...f }))
   );
+
+  // ── audit22: layout persistence ────────────────────────────────────
+  // Hydrate the persisted visual layout (template.layout_json, written by
+  // this editor on every field mutation) when the TEMPLATE IDENTITY
+  // changes — not on every parent form update (form re-renders produce a
+  // new object each keystroke; hydrating then would reset in-progress
+  // drags). Built-in fields keep their translated label when the stored
+  // layout row doesn't carry one.
+  const hydratedFor = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    const key = `${(template as { id?: string })?.id ?? "new"}`;
+    if (hydratedFor.current === key) return;
+    hydratedFor.current = key;
+    const parsed = readTemplateLayout((template as { layout_json?: unknown }).layout_json);
+    if (parsed && parsed.fields.length > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setFields(parsed.fields.map((f) => ({
+        ...f,
+        type: f.type as FieldType,
+        label: f.label ?? DEFAULT_FIELDS.find((d) => d.id === f.id)?.label ?? "Custom",
+      })));
+    }
+  }, [template]);
+
+  // Emit the layout into the parent form on every field change (drag move,
+  // resize, add/delete, visibility/lock toggles, custom-field edits) so it
+  // PERSISTS to layout_json on save and the PDF renderer can honor it.
+  // Echo guards:
+  //   • the PRISTINE default layout is never emitted (opening the editor
+  //     alone must not dirty layout_json on templates that have none);
+  //   • identical serializations are skipped (label-only churn ignored).
+  const lastLayoutEmitted = React.useRef<string>("");
+  const suppressNextEmit = React.useRef(true);
+  React.useEffect(() => {
+    const json = JSON.stringify({ fields: fields.map(({ label, ...rest }) => (label ? { ...rest } : rest)) });
+    if (suppressNextEmit.current) {
+      suppressNextEmit.current = false;
+      lastLayoutEmitted.current = json;
+      return;
+    }
+    if (json === lastLayoutEmitted.current) return;
+    lastLayoutEmitted.current = json;
+    onChange({ ...template, layout_json: { fields } });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fields]);
+
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [dragging, setDragging] = React.useState<DragState | null>(null);
   const [activeGuides, setActiveGuides] = React.useState<SnapGuide[]>([]);

@@ -55,6 +55,19 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   delete body.qr_position;
   delete body.qr_size_mm;
   delete body.qr_opacity;
+  // ── audit22: validate the new JSON blobs (shape-agnostic size guard) ──
+  // Deeper normalization happens at read time (parseStyleConfig / renderer);
+  // junk objects degrade to defaults rather than poisoning the column.
+  for (const col of ["style_json", "layout_json"] as const) {
+    const v = body[col];
+    if (v === undefined) continue;
+    const ok = v === null || (typeof v === "object" && !Array.isArray(v));
+    const size = ok ? JSON.stringify(v ?? "").length : 0;
+    if (!ok || size > 32768) {
+      console.warn(`[PUT /api/document-templates/${id}] dropped invalid ${col}`);
+      delete body[col];
+    }
+  }
   const updated = await auth.store.upsertDocumentTemplate({ ...body, id, tenant_id: existing.tenant_id });
   await audit(auth.store, auth.user, req, "doc_template.update", "document_template", id, { name: updated.name });
   return NextResponse.json(updated);

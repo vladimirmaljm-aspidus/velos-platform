@@ -42,15 +42,16 @@ import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
 
 import { EmptyState } from "@/components/common/empty-state";
 import { TemplateVisualEditor } from "@/components/common/template-visual-editor";
+import { TemplateSegmentStudio } from "@/components/common/template-segment-studio";
+import { TemplateStylePanel } from "@/components/common/template-style-panel";
 import { BankAccountSelector } from "@/components/common/bank-account-selector";
 import {
-  TemplateContentEditor,
   parseContentConfig,
   substitutePlaceholders,
   DEFAULT_HEADER_CONTENT_JSON,
   DEFAULT_FOOTER_CONTENT_JSON,
   type ContentSegment,
-} from "@/components/common/template-content-editor";
+} from "@/lib/utils/content-config";
 import { fmtDate } from "@/lib/utils/format";
 import {
   DocumentTemplate, TenantLetterhead, TenantSeal, Tenant,
@@ -129,6 +130,47 @@ const AVAILABLE_VARIABLES: { token: string; label: string }[] = [
   { token: "{page_number}", label: "doc-var-page-num" },
   { token: "{total_pages}", label: "doc-var-total-pages" },
 ];
+
+// audit22: token palette for the Segment Studio (token WITHOUT braces —
+// the studio inserts {token} at the cursor itself).
+const STUDIO_VARIABLES = AVAILABLE_VARIABLES.map(({ token, label }) => ({
+  token: token.replace(/[{}]/g, ""),
+  label,
+}));
+
+/** Sample substitution data for the Segment Studio live preview — real
+ *  values from the linked letterhead / tenant so the preview shows the
+ *  actual company identity (falls back to realistic trade-doc samples). */
+function buildStudioPreviewData(tenant: Tenant | null, letterhead: TenantLetterhead | null): Record<string, string> {
+  const lh = letterhead;
+  return {
+    company_name: lh?.company_name || tenant?.name || "VELOS Trading Ltd",
+    company_legal_name: lh?.company_legal_name || tenant?.legal_name || tenant?.name || "VELOS Trading Ltd",
+    company_address: lh?.company_address_line || tenant?.address_line || "Trg Republike 5",
+    company_city: lh?.company_city || tenant?.city || "Belgrade",
+    company_country: lh?.company_country || tenant?.country || "Serbia",
+    company_postal_code: String(lh?.company_postal_code || tenant?.postal_code || "11000"),
+    company_reg: lh?.company_registration_number || tenant?.registration_number || "21312345",
+    company_vat: lh?.company_vat_number || tenant?.vat_number || "RS108123456",
+    company_tax_id: lh?.company_tax_id || tenant?.tax_id || "123456789",
+    company_phone: lh?.company_phone || tenant?.phone || "+381 11 123 4567",
+    company_email: lh?.company_email || tenant?.email || "office@velos-trading.com",
+    company_website: lh?.company_website || tenant?.website || "www.velos-trading.com",
+    bank_name: tenant?.bank_name || "Raiffeisen Bank",
+    bank_iban: tenant?.bank_iban || "RS3526000560101234567",
+    bank_swift: tenant?.bank_swift || "RZGSRSBG",
+    doc_number: "OF-2025-001",
+    doc_date: fmtDate(new Date().toISOString()),
+    valid_until: fmtDate(new Date(Date.now() + 30 * 86400000).toISOString()),
+    due_date: fmtDate(new Date(Date.now() + 15 * 86400000).toISOString()),
+    partner_name: "Al Manara General Trading LLC",
+    partner_address: "Sheikh Zayed Road 124",
+    partner_city: "Dubai",
+    partner_country: "UAE",
+    total: "1,014,240.00",
+    currency: tenant?.currency || "EUR",
+  };
+}
 
 // HEADER_LAYOUTS / FOOTER_LAYOUTS / SEAL_POSITIONS / SEAL_DOC_TYPES labels are
 // translation keys (resolved via `t()` at render time).
@@ -2592,6 +2634,8 @@ function TemplateEditorDialog({
 
   const linkedLetterhead = letterheads.find((l) => l.id === form.letterhead_id) || null;
   const linkedSeal = seals.find((s) => s.id === form.seal_id) || null;
+  // audit22: real substitution data for the Segment Studio previews.
+  const studioPreviewData = buildStudioPreviewData(tenant, linkedLetterhead);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -2611,6 +2655,9 @@ function TemplateEditorDialog({
             <TabsList className="w-fit">
               <TabsTrigger value="form">
                 <FileText className="size-4" /> {t("doc-tab-form-editor")}
+              </TabsTrigger>
+              <TabsTrigger value="styling">
+                <Palette className="size-4" /> {t("doc-tab-styling")}
               </TabsTrigger>
               <TabsTrigger value="visual">
                 <LayoutTemplate className="size-4" /> {t("doc-tab-visual-editor")}
@@ -2744,10 +2791,17 @@ function TemplateEditorDialog({
                               <p className="text-xs text-muted-foreground">
                                 {t("doc-header-content-hint")}
                               </p>
-                              <TemplateContentEditor
-                                value={form.header_content || DEFAULT_HEADER_CONTENT_JSON}
+                              {/* audit22: Word-grade Segment Studio replaces the
+                                  legacy TemplateContentEditor — full typography
+                                  (fonts/sizes/B I U S), spacing before/after, line &
+                                  letter spacing, colours, backgrounds, borders. */}
+                              <TemplateSegmentStudio
+                                contentJson={form.header_content || DEFAULT_HEADER_CONTENT_JSON}
                                 onChange={(val) => set("header_content", val)}
-                                label="Header Content"
+                                kind="header"
+                                variables={STUDIO_VARIABLES}
+                                previewData={studioPreviewData}
+                                bodyFontFamily={form.body_font_family}
                               />
                             </div>
                             <div className="grid grid-cols-3 gap-2">
@@ -2779,10 +2833,16 @@ function TemplateEditorDialog({
                               <p className="text-xs text-muted-foreground">
                                 {t("doc-footer-content-hint")}
                               </p>
-                              <TemplateContentEditor
-                                value={form.footer_content || DEFAULT_FOOTER_CONTENT_JSON}
+                              {/* audit22: Word-grade Segment Studio (footer). The
+                                  _qrConfig inside footer_content is preserved by
+                                  the studio on every serialize. */}
+                              <TemplateSegmentStudio
+                                contentJson={form.footer_content || DEFAULT_FOOTER_CONTENT_JSON}
                                 onChange={(val) => set("footer_content", val)}
-                                label="Footer Content"
+                                kind="footer"
+                                variables={STUDIO_VARIABLES}
+                                previewData={studioPreviewData}
+                                bodyFontFamily={form.body_font_family}
                               />
                             </div>
                             <div className="grid grid-cols-3 gap-2">
@@ -2966,6 +3026,32 @@ function TemplateEditorDialog({
             </ScrollArea>
           </div>
           </div>
+          </TabsContent>
+          {/* ── audit22: Styling tab — body/table/party/totals/notice/title
+              studio (TemplateStylePanel editing form.style_json). Kept
+              MOUNTED (forceMount + hidden) so the panel's local raw state
+              survives tab flips like the visual editor. */}
+          <TabsContent
+            value="styling"
+            forceMount
+            className="flex-1 min-h-0 mt-0 data-[state=inactive]:hidden"
+          >
+            <div className="h-full overflow-y-auto custom-scroll bg-muted/20 p-5">
+              <div className="mx-auto max-w-3xl space-y-4">
+                <div className="rounded-lg border border-border/60 bg-card p-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Palette className="size-4 text-primary" />
+                    <span className="text-sm font-medium">{t("doc-styling-header")}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{t("doc-styling-desc")}</p>
+                </div>
+                <TemplateStylePanel
+                  styleJson={form.style_json}
+                  onChange={(v) => set("style_json", v)}
+                  primaryColor={form.primary_color}
+                />
+              </div>
+            </div>
           </TabsContent>
           {/* Visual tab stays MOUNTED (forceMount + CSS hidden) so the visual
               editor's drag-and-drop field layout and local state survive tab

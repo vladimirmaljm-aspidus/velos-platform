@@ -143,6 +143,73 @@ export function templateSegments(content: string | null | undefined): ContentSeg
   }
 }
 
+// ─── Visual layout (audit22 — layout_json column) ────────────────────────────
+//
+// The drag-and-drop Template Studio persists its field layout (x/y/width/
+// height in mm, visibility, locks, per-field props) into the layout_json
+// jsonb column. The PDF renderer honors:
+//   • body-section visibility  (e.g. hide trade_terms / specifications)
+//   • custom_text / custom_image fields → rendered at their ABSOLUTE x/y
+//     position on every page (fixed overlays, like Word text boxes)
+// Everything else (body flow order) stays the canonical trade-document
+// layout so multi-page tables keep paginating correctly.
+
+export interface TemplateFieldLayout {
+  id: string;
+  type: string;
+  /** Display label from the visual editor (custom fields keep theirs). */
+  label?: string;
+  x: number; // mm from page left
+  y: number; // mm from page top
+  width: number; // mm
+  height: number; // mm
+  visible: boolean;
+  locked: boolean;
+  props?: Record<string, unknown>;
+}
+
+export interface TemplateLayout {
+  fields: TemplateFieldLayout[];
+}
+
+function num(v: unknown, min: number, max: number, fallback: number): number {
+  const n = typeof v === "number" ? v : Number(v);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
+/**
+ * Parse + clamp the layout_json column. Returns null when absent/junk —
+ * the renderer then uses its built-in default layout (previous behaviour).
+ */
+export function readTemplateLayout(json: unknown): TemplateLayout | null {
+  if (!json || typeof json !== "object" || Array.isArray(json)) return null;
+  const fields = (json as { fields?: unknown }).fields;
+  if (!Array.isArray(fields)) return null;
+  const out: TemplateFieldLayout[] = [];
+  for (const f of fields) {
+    if (!f || typeof f !== "object") continue;
+    const r = f as Record<string, unknown>;
+    const type = typeof r.type === "string" ? r.type : "";
+    if (!type) continue;
+    out.push({
+      id: typeof r.id === "string" ? r.id : `f${out.length}`,
+      type,
+      label: typeof r.label === "string" ? r.label : undefined,
+      x: num(r.x, -20, 250, 15),
+      y: num(r.y, -20, 400, 20),
+      width: num(r.width, 5, 250, 60),
+      height: num(r.height, 3, 300, 10),
+      visible: r.visible !== false,
+      locked: r.locked === true,
+      props: (r.props && typeof r.props === "object" && !Array.isArray(r.props))
+        ? (r.props as Record<string, unknown>)
+        : {},
+    });
+  }
+  return { fields: out };
+}
+
 // ─── Placeholder data ────────────────────────────────────────────────────────
 
 /**

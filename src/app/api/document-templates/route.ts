@@ -20,6 +20,8 @@ const TEMPLATE_COLUMNS = new Set([
   "primary_color", "accent_color",
   "table_header_bg", "table_header_color", "table_border_color", "table_stripe",
   "letterhead_id", "seal_id", "seal_enabled", "selected_bank_accounts",
+  // audit22 Template Studio — extended styling + visual layout blobs.
+  "style_json", "layout_json",
 ]);
 const TEMPLATE_TYPES = new Set(["offer", "invoice", "proforma", "contract", "generic"]);
 const TEMPLATE_PAGE_SIZES = new Set(["A4", "Letter"]);
@@ -184,6 +186,22 @@ export async function POST(req: NextRequest) {
     if (!ok) {
       console.warn("[POST /api/document-templates] dropped invalid selected_bank_accounts");
       delete sanitized.selected_bank_accounts;
+    }
+  }
+
+  // ── style_json / layout_json (migration 082, audit22) ──────────────────
+  // Both must be null or a plain JSON object; the deeper shape is
+  // normalized at READ time by parseStyleConfig()/the renderer, so here we
+  // only guard size (≤ 32 KB) and type — junk objects degrade to defaults
+  // instead of poisoning the column.
+  for (const col of ["style_json", "layout_json"] as const) {
+    if (sanitized[col] === undefined) continue;
+    const v = sanitized[col];
+    const ok = v === null || (typeof v === "object" && !Array.isArray(v));
+    const size = ok ? JSON.stringify(v ?? "").length : 0;
+    if (!ok || size > 32768) {
+      console.warn(`[POST /api/document-templates] dropped invalid ${col}${ok ? " (too large)" : ""}`);
+      delete sanitized[col];
     }
   }
 

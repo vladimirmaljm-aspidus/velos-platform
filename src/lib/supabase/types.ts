@@ -1208,6 +1208,14 @@ export interface DocumentTemplate {
   /** Which bank accounts to show in PDF (indexes into tenant.bank_accounts array).
    *  null/empty = show all accounts. [0,2] = show only 1st and 3rd accounts. */
   selected_bank_accounts?: number[] | null;
+  // ── audit22 "Template Studio" ──────────────────────────────────────
+  /** Extended styling object (body/table/party/totals/notice/title).
+   *  Parsed by src/lib/utils/style-config.ts — the raw column stays `any`
+   *  here; consumers call parseStyleConfig(). null = built-in defaults. */
+  style_json?: unknown;
+  /** Persisted visual-editor layout: { fields: [{ id, type, x, y, width,
+   *  height, visible, locked, props }] } in mm. null = default layout. */
+  layout_json?: unknown;
   // ── QR code placement ─────────────────────────────────────────────
   // NOTE: these fields are NOT real DB columns. They live inside
   // `footer_content` as a `_qrConfig` JSON sub-key (see

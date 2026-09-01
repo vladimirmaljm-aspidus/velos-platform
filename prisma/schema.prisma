@@ -1157,6 +1157,11 @@ model DocumentTemplate {
   // Migration 081 added the column; without it Prisma + the supabase store
   // silently dropped this field on every save.
   selected_bank_accounts   Json?
+  // audit22 "Template Studio" — extended styling (body/table/party/totals/
+  // notice/title) and the persisted visual-editor layout (fields in mm).
+  // NULL = built-in defaults; parsed by src/lib/utils/style-config.ts.
+  style_json               Json?
+  layout_json              Json?
   // Metadata
   created_by               String?
   created_at               DateTime @default(now())

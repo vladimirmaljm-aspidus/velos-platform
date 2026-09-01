@@ -2059,6 +2059,11 @@ export class PrismaStore implements Store {
       // from this column whitelist, so every prisma-backed save silently
       // dropped the bank-account selection.
       selected_bank_accounts: t.selected_bank_accounts,
+      // audit22 "Template Studio" — extended styling + visual layout blobs
+      // (migration 082). Undefined values are stripped below so updates
+      // never null them out accidentally.
+      style_json: t.style_json as any,
+      layout_json: t.layout_json as any,
       // Branding links
       letterhead_id: t.letterhead_id === undefined ? undefined : t.letterhead_id,
       seal_id: t.seal_id === undefined ? undefined : t.seal_id,

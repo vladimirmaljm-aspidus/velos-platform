@@ -1,8 +1,9 @@
 import React from "react";
 import { Document, Page, Text, View, StyleSheet, Image, Font } from "@react-pdf/renderer";
 import type { Offer, Invoice, Proforma, LetterOfIntent, OfferLineItem, Partner, Tenant, MemorandumSettings, TenantSeal, DocumentTemplate, TenantLetterhead } from "@/lib/supabase/types";
-import { substitutePlaceholders, hasPagePlaceholders, type ContentSegment, type PlaceholderData } from "@/lib/utils/content-config";
-import { templateSegments, readTemplateQrConfig } from "@/lib/pdf/doc-template";
+import { substitutePlaceholders, hasPagePlaceholders, normalizeSegment, type ContentSegment, type PlaceholderData } from "@/lib/utils/content-config";
+import { parseStyleConfig, type TemplateStyleConfig } from "@/lib/utils/style-config";
+import { templateSegments, readTemplateQrConfig, readTemplateLayout, type TemplateFieldLayout } from "@/lib/pdf/doc-template";
 
 // ── Shared helpers (audit12 dedup) ─────────────────────────────────────────
 // mmToPoints, mapFont, boldVariant, lightenHex, fmtMoney, amountInWords,
@@ -228,6 +229,50 @@ export function buildPdfDocument({
   // matches the document's branding instead of being a flat grey.
   const stripeBg = lightenHex(tableHeaderBg, 0.92);
 
+  // ── audit22: Template Studio style_json — EXTENDED styling layer ────
+  // Font sizes, cell padding, column widths, header treatment, party
+  // boxes, totals block, doc title, notice box, body colours. Scalar
+  // template columns above stay primary for the fields they cover; the
+  // style config fills everything else. parseStyleConfig degrades to
+  // built-in defaults when the column is NULL — pre-audit22 templates keep
+  // their exact current output.
+  const st: TemplateStyleConfig = parseStyleConfig(tpl?.style_json);
+  const stTableHeaderBg = tpl?.table_header_bg || st.table.headerBg;
+  const stTableHeaderColor = tpl?.table_header_color || st.table.headerColor;
+  const stTableBorderColor = tpl?.table_border_color || st.table.borderColor;
+  const stStripe = tpl ? (tpl.table_stripe !== false && st.table.stripe !== false) : st.table.stripe;
+  const stStripeBg = tpl?.style_json ? st.table.stripeColor : stripeBg;
+
+  // ── audit22: visual layout (layout_json) ────────────────────────────
+  // Body-section visibility + custom absolute-position text/image
+  // overlays. Null → built-in layout (all sections visible, no custom
+  // overlays — previous behaviour).
+  const layout = readTemplateLayout(tpl?.layout_json);
+  const layoutFields = layout?.fields ?? [];
+  const layoutHidden = (type: string): boolean => {
+    if (layoutFields.length === 0) return false;
+    const f = layoutFields.find((x) => x.type === type);
+    return f ? !f.visible : false;
+  };
+  const customOverlays = layoutFields.filter(
+    (f) => f.visible && (f.type === "custom_text" || f.type === "custom_image"),
+  );
+
+  // ── audit22: line-items column widths (percent → flex) ──────────────
+  const cw = st.table.columnWidths;
+  const colFlex = (key: string, fallback: number): number => {
+    const pct = cw[key];
+    return typeof pct === "number" && pct > 0 ? pct / 100 : fallback;
+  };
+  const flexRowNum = colFlex("rowNum", 0.3);
+  const flexDescription = colFlex("description", 3);
+  const flexHsCode = colFlex("hsCode", 1.1);
+  const flexOrigin = colFlex("origin", 0.9);
+  const flexQuantity = colFlex("quantity", 1.1);
+  const flexUnitPrice = colFlex("unitPrice", 1);
+  const flexTotal = colFlex("total", 1.1);
+  const numericAlign = st.table.numericAlign;
+
   // ── Derived layout — content area must clear the absolutely ─────────
   //    positioned header/footer.
   const headerGap = 6;  // breathing room between header bottom and body
@@ -434,15 +479,27 @@ export function buildPdfDocument({
     // the title, reading like an afterthought (design audit finding). A
     // subtle card (light bg + hairline border) anchors it to the grid and
     // gives the title row a professional two-card composition.
+    // audit22: doc title treatment from style_json — size / colour /
+    // letter spacing / transform / underline / rule line under the row.
     docTitleRow: {
       flexDirection: "row",
       justifyContent: "space-between",
       alignItems: "stretch",
       marginBottom: 14,
       marginTop: 0,
+      borderBottomWidth: st.title.showRule ? 1 : 0,
+      borderBottomColor: st.title.ruleColor,
+      paddingBottom: st.title.showRule ? st.title.spacingAfter : 0,
     },
     docTitleBlock: { flexDirection: "column", justifyContent: "center", flex: 1 },
-    docTitle: { fontSize: 18, fontFamily: headingFontFamily, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: 1 },
+    docTitle: {
+      fontSize: st.title.fontSize,
+      fontFamily: headingFontFamily,
+      color: st.title.color,
+      textTransform: st.title.transform,
+      letterSpacing: st.title.letterSpacing,
+      textDecoration: st.title.underline ? "underline" : undefined,
+    },
     docSubtitle: { fontSize: 8.5, color: "#888", marginTop: 3 },
     docMetaBlock: {
       flexDirection: "column",
@@ -483,14 +540,14 @@ export function buildPdfDocument({
       letterSpacing: 0.5,
     },
 
-    // ── FROM / TO party boxes ─────────────────────────────────────────
-    partiesSection: { flexDirection: "row", gap: 10, marginBottom: 14 },
-    partyBox: { flex: 1, borderWidth: 1, borderColor: tableBorderColor, borderRadius: 3, overflow: "hidden" },
-    partyHeader: { backgroundColor: "#f5f5f5", paddingVertical: 4, paddingHorizontal: 8, borderBottomWidth: 1, borderBottomColor: tableBorderColor },
-    partyHeaderText: { fontSize: 8, fontFamily: headingFontFamily, color: "#555", textTransform: "uppercase", letterSpacing: 0.5 },
+    // ── FROM / TO party boxes (audit22: style_json party styling) ────
+    partiesSection: { flexDirection: "row", gap: mmToPoints(st.party.gap), marginBottom: 14 },
+    partyBox: { flex: 1, borderWidth: st.party.borderWidth, borderColor: st.party.borderColor, borderRadius: st.party.borderRadius, overflow: "hidden", backgroundColor: st.party.bgColor },
+    partyHeader: { backgroundColor: st.party.bgColor === "#ffffff" ? "#f5f5f5" : st.party.bgColor, paddingVertical: 4, paddingHorizontal: 8, borderBottomWidth: 1, borderBottomColor: st.party.borderColor },
+    partyHeaderText: { fontSize: 8, fontFamily: headingFontFamily, color: st.party.labelColor, textTransform: "uppercase", letterSpacing: 0.5 },
     partyBody: { padding: 8 },
-    partyName: { fontSize: 9.5, fontFamily: headingFontFamily, color: "#1a1a1a", marginBottom: 3 },
-    partyAddr: { fontSize: 8, color: "#555", lineHeight: 1.4, marginBottom: 1 },
+    partyName: { fontSize: 9.5, fontFamily: headingFontFamily, color: st.party.valueColor, marginBottom: 3 },
+    partyAddr: { fontSize: 8, color: st.party.labelColor, lineHeight: 1.4, marginBottom: 1 },
 
     // ── Trade Terms box (3-column grid) ───────────────────────────────
     tradeTerms: { marginBottom: 14, borderWidth: 1, borderColor: tableBorderColor, borderRadius: 3, overflow: "hidden" },
@@ -501,27 +558,35 @@ export function buildPdfDocument({
     tradeTermsValue: { fontSize: 8.5, fontFamily: headingFontFamily, color: "#333", flex: 1 },
 
     // ── Line items table ──────────────────────────────────────────────
-    table: { marginBottom: 10, borderWidth: 1, borderColor: tableBorderColor, borderRadius: 3, overflow: "hidden" },
+    // audit22: header font size / padding / cell padding / border width /
+    // stripe colour / body text colour now come from style_json (st).
+    table: { marginBottom: 10, borderWidth: st.table.borderWidth, borderColor: stTableBorderColor, borderRadius: 3, overflow: "hidden" },
     tableHeader: {
       flexDirection: "row",
-      backgroundColor: tableHeaderBg,
-      paddingVertical: 7,
+      backgroundColor: stTableHeaderBg,
+      paddingVertical: mmToPoints(st.table.headerPaddingY),
     },
-    th: { fontSize: 8.5, fontFamily: headingFontFamily, color: tableHeaderColor, paddingHorizontal: 4 },
+    th: {
+      fontSize: st.table.headerFontSize,
+      fontFamily: st.table.headerBold === false ? fontFamily : headingFontFamily,
+      color: stTableHeaderColor,
+      paddingHorizontal: 4,
+      textTransform: st.table.headerTransform,
+    },
     tableRow: {
       flexDirection: "row",
-      paddingVertical: 6,
-      borderBottomWidth: 0.5,
-      borderBottomColor: tableBorderColor,
+      paddingVertical: mmToPoints(st.table.cellPaddingY),
+      borderBottomWidth: st.table.borderWidth,
+      borderBottomColor: stTableBorderColor,
       alignItems: "stretch",
     },
     // Zebra-stripe background — applied to every other data row when
     // table_stripe is true. Uses a very light tint of the header
     // background so it blends with the document's branding.
     tableRowEven: {
-      backgroundColor: stripeBg,
+      backgroundColor: stStripeBg,
     },
-    td: { fontSize: 8.5, paddingHorizontal: 4, color: "#333" },
+    td: { fontSize: st.table.cellFontSize, paddingHorizontal: 4, color: st.body.textColor },
 
     // ── Specifications (per product key/value table + free text) ──────
     specSection: { marginTop: 12, marginBottom: 10 },
@@ -533,21 +598,22 @@ export function buildPdfDocument({
     specValue: { flex: 1, fontSize: 8, paddingVertical: 3, paddingHorizontal: 6, color: "#333" },
     specDetail: { fontSize: 7.5, color: "#555", lineHeight: 1.4, marginTop: 3, paddingHorizontal: 6 },
 
-    // ── Totals ────────────────────────────────────────────────────────
+    // ── Totals (audit22: style_json totals styling) ──────────────
     totals: { marginTop: 12, alignSelf: "flex-end", width: 250 },
     totalRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 3 },
-    totalLabel: { fontSize: 8.5, color: "#666" },
-    totalValue: { fontSize: 8.5, fontFamily: headingFontFamily, color: "#333" },
+    totalLabel: { fontSize: 8.5, color: st.totals.labelColor },
+    totalValue: { fontSize: 8.5, fontFamily: headingFontFamily, color: st.totals.valueColor },
     grandTotal: {
       flexDirection: "row",
       justifyContent: "space-between",
       paddingVertical: 8,
       marginTop: 4,
       borderTopWidth: 2,
-      borderTopColor: primaryColor,
+      borderTopColor: st.totals.grandBgColor !== "#ecfdf5" ? st.totals.borderColor : primaryColor,
+      backgroundColor: st.totals.grandBgColor,
     },
-    grandTotalLabel: { fontSize: 10, fontFamily: headingFontFamily, color: primaryColor },
-    grandTotalValue: { fontSize: 13, fontFamily: headingFontFamily, color: primaryColor },
+    grandTotalLabel: { fontSize: 10, fontFamily: st.totals.grandBold === false ? fontFamily : headingFontFamily, color: st.totals.grandColor },
+    grandTotalValue: { fontSize: 13, fontFamily: st.totals.grandBold === false ? fontFamily : headingFontFamily, color: st.totals.grandColor },
     amountInWords: {
       marginTop: 6,
       paddingVertical: 6,
@@ -619,16 +685,17 @@ export function buildPdfDocument({
     },
 
     // ── Document Notice (legally required disclaimer per doc type) ────
+    // audit22: notice treatment from style_json (st.notice).
     noticeBox: {
       marginTop: 14,
       paddingVertical: 6,
       paddingHorizontal: 10,
-      backgroundColor: "#fafafa",
+      backgroundColor: st.notice.bgColor,
       borderLeftWidth: 3,
-      borderLeftColor: primaryColor,
+      borderLeftColor: st.notice.borderColor,
       borderRadius: 2,
     },
-    noticeText: { fontSize: 7.5, color: "#555", fontStyle: "italic", lineHeight: 1.4 },
+    noticeText: { fontSize: st.notice.fontSize, color: st.notice.textColor, fontStyle: "italic", lineHeight: 1.4 },
   });
 
   const docTitleMap = {
@@ -835,42 +902,93 @@ export function buildPdfDocument({
     currency,
   };
 
-  // ── Segment renderer (audit20) ────────────────────────────────────
-  // Renders one template header/footer segment: {placeholders} substituted,
-  // per-segment fontSize/bold/italic/colour/alignment, and — when the text
-  // carries {page_number}/{total_pages} — the react-pdf render prop so the
-  // value resolves PER PAGE (substitutePlaceholders leaves those tokens
-  // untouched when page_number isn't in the data).
-  const SegmentText = ({ seg, kind }: { seg: ContentSegment; kind: "header" | "footer" }) => {
-    const baseStyle = kind === "header" ? styles.headerSegment : styles.footerSegment;
-    const segFont = seg.bold ? boldVariant(fontFamily) : fontFamily;
-    const substituted = substitutePlaceholders(seg.text, phData as any);
-    return hasPagePlaceholders(seg.text) ? (
+  // ── Segment renderer (audit22 "Template Studio") ──────────────────
+  // Renders one template header/footer segment with the FULL Word-grade
+  // property set: per-segment font family/size, bold/italic/underline/
+  // strike, colour + background, letter & line spacing, spacing before/
+  // after, padding, box + bottom borders, radius, text transform, opacity.
+  // {page_number}/{total_pages} resolve per page via the Text render prop.
+  //
+  // The segment's paragraph chrome (spacing/bg/border/padding) lives on a
+  // wrapping View; the typography lives on the Text. Both derive from the
+  // SAME normalizeSegment() the browser preview uses — WYSIWYG by design.
+  const SegmentText = ({ seg }: { seg: ContentSegment }) => {
+    const s = normalizeSegment(seg);
+    // Font resolution: per-segment family → template body family. Bold and
+    // italic resolve to the registered NotoSans variants (or the built-in
+    // Times/Courior italic/bold families).
+    const segFamily =
+      s.fontFamily === "Times-Roman" || s.fontFamily === "Courier" ? s.fontFamily : fontFamily;
+    let segFont: string;
+    if (s.bold && s.italic) {
+      segFont = segFamily === "NotoSans" ? "NotoSans-BoldOblique"
+        : segFamily === "Times-Roman" ? "Times-BoldItalic"
+        : "Courier-BoldOblique";
+    } else if (s.bold) {
+      segFont = boldVariant(segFamily);
+    } else if (s.italic) {
+      segFont = segFamily === "NotoSans" ? "NotoSans-Oblique"
+        : segFamily === "Times-Roman" ? "Times-Italic"
+        : "Courier-Oblique";
+    } else {
+      segFont = segFamily;
+    }
+
+    // Paragraph chrome — spacing, background, borders, padding, radius.
+    // Only set what the segment actually carries so the base vertical
+    // rhythm (footerSegment/headerSegment marginBottom) stays intact for
+    // legacy 6-prop segments.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const wrapStyle: any = {};
+    if (s.spacingBefore > 0) wrapStyle.marginTop = mmToPoints(s.spacingBefore);
+    if (s.spacingAfter > 0) wrapStyle.marginBottom = mmToPoints(s.spacingAfter);
+    if (s.bgColor) wrapStyle.backgroundColor = s.bgColor;
+    if (s.paddingY > 0) { wrapStyle.paddingTop = mmToPoints(s.paddingY); wrapStyle.paddingBottom = mmToPoints(s.paddingY); }
+    if (s.paddingX > 0) { wrapStyle.paddingLeft = mmToPoints(s.paddingX); wrapStyle.paddingRight = mmToPoints(s.paddingX); }
+    if (s.border) {
+      wrapStyle.borderWidth = s.border.width;
+      wrapStyle.borderColor = s.border.color;
+      wrapStyle.borderStyle = s.border.style;
+    }
+    if (s.borderBottom) {
+      wrapStyle.borderBottomWidth = s.borderBottom.width;
+      wrapStyle.borderBottomColor = s.borderBottom.color;
+      wrapStyle.borderBottomStyle = s.borderBottom.style;
+    }
+    if (s.borderRadius > 0) wrapStyle.borderRadius = s.borderRadius;
+
+    const textStyle: any = {
+      fontSize: s.fontSize,
+      fontFamily: segFont,
+      color: s.color,
+      textAlign: s.alignment,
+    };
+    if (s.lineHeight !== 1.35) textStyle.lineHeight = s.lineHeight;
+    if (s.letterSpacing !== 0) textStyle.letterSpacing = s.letterSpacing;
+    if (s.textTransform !== "none") textStyle.textTransform = s.textTransform;
+    if (s.underline && s.strike) textStyle.textDecoration = "underline line-through";
+    else if (s.underline) textStyle.textDecoration = "underline";
+    else if (s.strike) textStyle.textDecoration = "line-through";
+    if (s.opacity < 1) textStyle.opacity = s.opacity;
+
+    const hasChrome = Object.keys(wrapStyle).length > 0;
+    const inner = hasPagePlaceholders(s.text) ? (
       <Text
-        style={[baseStyle, {
-          fontSize: seg.fontSize,
-          fontFamily: segFont,
-          fontStyle: seg.italic ? ("italic" as const) : undefined,
-          color: seg.color,
-          textAlign: seg.alignment,
-        }]}
+        style={textStyle}
         render={({ pageNumber, totalPages }: { pageNumber: number; totalPages: number }) =>
-          substitutePlaceholders(seg.text, { ...(phData as any), page_number: pageNumber, total_pages: totalPages })
+          substitutePlaceholders(s.text, { ...(phData as any), page_number: pageNumber, total_pages: totalPages })
         }
       />
     ) : (
-      <Text
-        style={[baseStyle, {
-          fontSize: seg.fontSize,
-          fontFamily: segFont,
-          fontStyle: seg.italic ? ("italic" as const) : undefined,
-          color: seg.color,
-          textAlign: seg.alignment,
-        }]}
-      >
-        {substituted}
-      </Text>
+      <Text style={textStyle}>{substitutePlaceholders(s.text, phData as any)}</Text>
     );
+
+    // Empty text + no chrome → a spacer paragraph (Word's empty line).
+    if (!s.text && !hasChrome) return <View style={{ height: mmToPoints(3) }} />;
+    if (hasChrome) {
+      return <View style={wrapStyle}>{inner}</View>;
+    }
+    return inner;
   };
 
   // ── QR block (audit20 zones) ──────────────────────────────────────
@@ -947,6 +1065,108 @@ export function buildPdfDocument({
             (doc as any).document_data?.priceUnconfirmed === true,
           )}
         />
+
+        {/* ── audit22: custom overlays from layout_json ─────────────────
+            Word-style absolutely-positioned text boxes / images the user
+            placed on the page canvas in the Template Studio. They repeat
+            on every page (fixed), like Word header text boxes. Empty when
+            the template has no custom fields (default). */}
+        {customOverlays.length > 0 && customOverlays.map((f) => {
+          if (f.type === "custom_text") {
+            // audit22: the visual editor writes props.content (legacy) or
+            // props.text (studio) — accept both.
+            const raw = typeof f.props?.text === "string"
+              ? (f.props.text as string)
+              : (typeof f.props?.content === "string" ? (f.props.content as string) : "");
+            if (!raw.trim()) return null;
+            const seg = normalizeSegment({
+              ...(typeof f.props?.style === "object" && f.props.style ? f.props.style : {}),
+              text: raw,
+            } as any);
+            const segFont = seg.bold
+              ? boldVariant(seg.fontFamily === "Times-Roman" || seg.fontFamily === "Courier" ? seg.fontFamily : fontFamily)
+              : (seg.fontFamily === "Times-Roman" || seg.fontFamily === "Courier" ? seg.fontFamily : fontFamily);
+            return (
+              <View
+                key={f.id}
+                fixed
+                style={{
+                  position: "absolute",
+                  left: mmToPoints(f.x),
+                  top: mmToPoints(f.y),
+                  width: mmToPoints(f.width),
+                  backgroundColor: seg.bgColor || undefined,
+                  borderWidth: seg.border ? seg.border.width : 0,
+                  borderColor: seg.border ? seg.border.color : undefined,
+                  borderStyle: seg.border ? seg.border.style : undefined,
+                  borderRadius: seg.borderRadius || undefined,
+                  paddingTop: mmToPoints(seg.paddingY),
+                  paddingBottom: mmToPoints(seg.paddingY),
+                  paddingLeft: mmToPoints(seg.paddingX),
+                  paddingRight: mmToPoints(seg.paddingX),
+                  opacity: seg.opacity,
+                }}
+              >
+                {hasPagePlaceholders(raw) ? (
+                  <Text
+                    style={{
+                      fontSize: seg.fontSize,
+                      fontFamily: seg.italic ? (segFont === "NotoSans" ? "NotoSans-Oblique" : `${segFont}Italic`) : segFont,
+                      color: seg.color,
+                      textAlign: seg.alignment,
+                      lineHeight: seg.lineHeight,
+                      letterSpacing: seg.letterSpacing || undefined,
+                      textTransform: seg.textTransform !== "none" ? seg.textTransform : undefined,
+                      textDecoration: seg.underline ? "underline" : undefined,
+                    }}
+                    render={({ pageNumber, totalPages }: { pageNumber: number; totalPages: number }) =>
+                      substitutePlaceholders(raw, { ...(phData as any), page_number: pageNumber, total_pages: totalPages })
+                    }
+                  />
+                ) : (
+                  <Text
+                    style={{
+                      fontSize: seg.fontSize,
+                      fontFamily: seg.italic ? (segFont === "NotoSans" ? "NotoSans-Oblique" : `${segFont}Italic`) : segFont,
+                      color: seg.color,
+                      textAlign: seg.alignment,
+                      lineHeight: seg.lineHeight,
+                      letterSpacing: seg.letterSpacing || undefined,
+                      textTransform: seg.textTransform !== "none" ? seg.textTransform : undefined,
+                      textDecoration: seg.underline ? "underline" : undefined,
+                    }}
+                  >
+                    {substitutePlaceholders(raw, phData as any)}
+                  </Text>
+                )}
+              </View>
+            );
+          }
+          if (f.type === "custom_image") {
+            // audit22: accept props.src (studio) or props.imageUrl (visual editor).
+            const src = typeof f.props?.src === "string"
+              ? (f.props.src as string)
+              : (typeof f.props?.imageUrl === "string" ? (f.props.imageUrl as string) : null);
+            if (!src) return null;
+            return (
+              <View
+                key={f.id}
+                fixed
+                style={{
+                  position: "absolute",
+                  left: mmToPoints(f.x),
+                  top: mmToPoints(f.y),
+                  width: mmToPoints(f.width),
+                  height: mmToPoints(f.height),
+                }}
+              >
+                {/* eslint-disable-next-line jsx-a11y/alt-text */}
+                <Image style={{ width: "100%", height: "100%", objectFit: "contain" }} src={src} />
+              </View>
+            );
+          }
+          return null;
+        })}
         {/* ── HEADER (memorandum — fixed, repeats on every page) ────────
             IMPORTANT: header + footer MUST be inlined directly as
             <View fixed> children of <Page>. @react-pdf/renderer only
@@ -962,7 +1182,7 @@ export function buildPdfDocument({
                  with its own fontSize / bold / italic / colour / alignment.
                  Replaces the auto company-name header; {page_number} etc.
                  resolve per page via the render prop. */
-              headerSegments.map((seg) => <SegmentText key={seg.id} seg={seg} kind="header" />)
+              headerSegments.map((seg) => <SegmentText key={seg.id} seg={seg} />)
             ) : (
               <>
                 {(tpl?.header_show_company_name !== false) && (
@@ -997,6 +1217,9 @@ export function buildPdfDocument({
         <View style={styles.bodyBlock}>
 
         {/* Document title + meta block */}
+        {/* audit22: layout_json section visibility — the visual editor's
+            eye-toggle for each body field now actually gates the render. */}
+        {!layoutHidden("doc_title") && (
         <View style={styles.docTitleRow}>
           <View style={styles.docTitleBlock}>
             <Text style={styles.docTitle}>{docTitleMap[docType]}</Text>
@@ -1043,6 +1266,7 @@ export function buildPdfDocument({
             </View>
           </View>
         </View>
+        )}
 
         {/* Proforma banner — clearly marked "PROFORMA — NOT A TAX INVOICE" */}
         {docType === "proforma" && (
@@ -1055,8 +1279,12 @@ export function buildPdfDocument({
             tenant (issuer) is the SELLER and the partner is the BUYER.
             For LOIs the roles are reversed: the tenant (issuer) is the
             BUYER and the partner is the SELLER. The box titles branch
-            on docType so the labels stay correct in both cases. */}
+            on docType so the labels stay correct in both cases.
+            audit22: layout_json visibility gates each box; both hidden
+            → the whole row collapses (either visible keeps the row). */}
+        {(!layoutHidden("from_box") || !layoutHidden("to_box")) && (
         <View style={styles.partiesSection}>
+          {!layoutHidden("from_box") && (
           <PartyBox
             title={docType === "loi" ? "FROM (BUYER)" : "FROM (SELLER)"}
             name={tenant?.legal_name || tenant?.name || "Company"}
@@ -1071,6 +1299,8 @@ export function buildPdfDocument({
             email={tenant?.email}
             website={tenant?.website}
           />
+          )}
+          {!layoutHidden("to_box") && (
           <PartyBox
             title={docType === "loi" ? "TO (SELLER)" : "TO (BUYER)"}
             name={partner?.name || "—"}
@@ -1085,7 +1315,9 @@ export function buildPdfDocument({
             email={partner?.email}
             website={partner?.website}
           />
+          )}
         </View>
+        )}
 
         {/* ── OFFER / INVOICE / PROFORMA BODY ──────────────────────────
             LOI uses a separate body branch (intro text + product specs
@@ -1094,7 +1326,9 @@ export function buildPdfDocument({
             further below. */}
         {docType !== "loi" && (<>
 
-        {/* TRADE TERMS (Incoterm, Origin, POL, POD, Payment, Lead time, Packaging, Vessel, Container) */}
+        {/* TRADE TERMS (Incoterm, Origin, POL, POD, Payment, Lead time, Packaging, Vessel, Container) —
+            audit22: layout_json visibility gate. */}
+        {!layoutHidden("trade_terms") && (<>
         <Text style={styles.sectionHeader}>Trade Terms</Text>
         <View style={styles.tradeTerms} wrap={false}>
           <View style={styles.tradeTermsRow}>
@@ -1142,18 +1376,23 @@ export function buildPdfDocument({
             </View>
           </View>
         </View>
+        </>)}
 
-        {/* LINE ITEMS — header is `fixed` so it repeats on every page */}
+        {/* LINE ITEMS — header is `fixed` so it repeats on every page.
+            audit22: column flex ratios + numeric alignment come from
+            style_json (st.table.columnWidths / numericAlign);
+            layout_json can hide the whole table. */}
+        {!layoutHidden("line_items_table") && (<>
         <Text style={styles.sectionHeader}>Line Items</Text>
         <View style={styles.table}>
           <View style={styles.tableHeader} fixed>
-            <Text style={[styles.th, { flex: 0.3 }]}>#</Text>
-            <Text style={[styles.th, { flex: 3 }]}>Description</Text>
-            <Text style={[styles.th, { flex: 1.1 }]}>HS Code</Text>
-            <Text style={[styles.th, { flex: 0.9 }]}>Origin</Text>
-            <Text style={[styles.th, { flex: 1.1 }]}>Quantity</Text>
-            <Text style={[styles.th, { flex: 1, textAlign: "right" }]}>Unit Price</Text>
-            <Text style={[styles.th, { flex: 1.1, textAlign: "right" }]}>Total</Text>
+            <Text style={[styles.th, { flex: flexRowNum }]}>#</Text>
+            <Text style={[styles.th, { flex: flexDescription }]}>Description</Text>
+            <Text style={[styles.th, { flex: flexHsCode }]}>HS Code</Text>
+            <Text style={[styles.th, { flex: flexOrigin }]}>Origin</Text>
+            <Text style={[styles.th, { flex: flexQuantity }]}>Quantity</Text>
+            <Text style={[styles.th, { flex: flexUnitPrice, textAlign: numericAlign }]}>Unit Price</Text>
+            <Text style={[styles.th, { flex: flexTotal, textAlign: numericAlign }]}>Total</Text>
           </View>
           {items.map((item, i) => {
             // 2g-F7 fix (round 4): the "Total" column previously rendered
@@ -1173,30 +1412,32 @@ export function buildPdfDocument({
                 key={i}
                 style={[styles.tableRow, ...(tableStripe && i % 2 === 1 ? [styles.tableRowEven] : [])]}
               >
-                <Text style={[styles.td, { flex: 0.3 }]}>{i + 1}</Text>
-                <Text style={[styles.td, { flex: 3 }]}>
+                <Text style={[styles.td, { flex: flexRowNum }]}>{i + 1}</Text>
+                <Text style={[styles.td, { flex: flexDescription }]}>
                   {item.product_name}
                   {item.sku ? `\nSKU: ${item.sku}` : ""}
                   {item.brand ? `\nBrand: ${item.brand}` : ""}
                 </Text>
-                <Text style={[styles.td, { flex: 1.1 }]}>{(item as any).hs_code || "—"}</Text>
-                <Text style={[styles.td, { flex: 0.9 }]}>{countryName((item as any).origin_country)}</Text>
-                <Text style={[styles.td, { flex: 1.1 }]}>
+                <Text style={[styles.td, { flex: flexHsCode }]}>{(item as any).hs_code || "—"}</Text>
+                <Text style={[styles.td, { flex: flexOrigin }]}>{countryName((item as any).origin_country)}</Text>
+                <Text style={[styles.td, { flex: flexQuantity, textAlign: numericAlign }]}>
                   {fmtQty(item.quantity)} {item.unit || "kg"}
                 </Text>
-                <Text style={[styles.td, { flex: 1, textAlign: "right" }]}>
+                <Text style={[styles.td, { flex: flexUnitPrice, textAlign: numericAlign }]}>
                   {fmtMoney(item.unit_price, currency)}
                 </Text>
-                <Text style={[styles.td, { flex: 1.1, textAlign: "right", fontFamily: headingFontFamily }]}>
+                <Text style={[styles.td, { flex: flexTotal, textAlign: numericAlign, fontFamily: headingFontFamily }]}>
                   {fmtMoney(lineNet, currency)}
                 </Text>
               </View>
             );
           })}
         </View>
+        </>)}
 
-        {/* SPECIFICATIONS — coa_params (key/value table) + detailed_spec */}
-        {items.some((it: any) => {
+        {/* SPECIFICATIONS — coa_params (key/value table) + detailed_spec
+            (audit22: layout_json visibility gate) */}
+        {!layoutHidden("specifications") && items.some((it: any) => {
           const specs = it.specifications;
           const hasSpecs = Array.isArray(specs)
             ? specs.length > 0
@@ -1236,7 +1477,9 @@ export function buildPdfDocument({
           </View>
         )}
 
-        {/* TOTALS + Amount in Words (kept together, never split across pages) */}
+        {/* TOTALS + Amount in Words (kept together, never split across pages)
+            audit22: layout_json visibility gates (totals / amount_in_words) */}
+        {!layoutHidden("totals") && !layoutHidden("amount_in_words") && (
         <View style={styles.totals} wrap={false}>
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Subtotal:</Text>
@@ -1277,9 +1520,10 @@ export function buildPdfDocument({
             <Text style={styles.amountInWordsValue}>{amountInWords((doc as any).total, currency)}</Text>
           </View>
         </View>
+        )}
 
-        {/* OFFER TEXT / TERMS & CONDITIONS */}
-        {((doc as any).terms || doc.notes) && (
+        {/* OFFER TEXT / TERMS & CONDITIONS (audit22: layout_json gate) */}
+        {!layoutHidden("offer_text") && ((doc as any).terms || doc.notes) && (
           <View style={styles.termsBox}>
             <Text style={styles.sectionHeader} wrap={false}>
               {docType === "offer" ? "Offer Text / Terms" : "Terms & Conditions"}
@@ -1292,12 +1536,13 @@ export function buildPdfDocument({
         )}
 
         {/* BANK DETAILS — show as a clean vertical list, not a cramped grid.
+            audit22: layout_json visibility gate.
             Modern: tenant.bank_accounts JSON array → one row per account
               (optionally filtered by memorandum_settings.selected_bank_accounts).
             Legacy: if no bank_accounts array, fall back to tenant's
               single-bank fields.
             Per-doc bank_details override always appended at the bottom. */}
-        {(bankAccountsList.length > 0 || bankDetails ||
+        {!layoutHidden("bank_details") && (bankAccountsList.length > 0 || bankDetails ||
           (!bankDetails && (tenant?.bank_name || tenant?.bank_iban || tenant?.bank_swift))) && (
           <View style={styles.termsBox}>
             <Text style={styles.sectionHeader} wrap={false}>Bank Details</Text>
@@ -1631,7 +1876,7 @@ export function buildPdfDocument({
                 <QrBlock />
               ) : null}
               {footerSegments.filter((s) => s.alignment === "left").map((seg) => (
-                <SegmentText key={seg.id} seg={seg} kind="footer" />
+                <SegmentText key={seg.id} seg={seg} />
               ))}
             </View>
 
@@ -1642,7 +1887,7 @@ export function buildPdfDocument({
                 duplicated the party boxes.) */}
             <View style={styles.footerZoneCenter}>
               {footerSegments.filter((s) => s.alignment === "center").map((seg) => (
-                <SegmentText key={seg.id} seg={seg} kind="footer" />
+                <SegmentText key={seg.id} seg={seg} />
               ))}
               {footerBankLines.map((line, i) => (
                 <Text key={`fb-${i}`} style={styles.footerBankLine}>{line}</Text>
@@ -1670,7 +1915,7 @@ export function buildPdfDocument({
                 ) : null}
               </View>
               {footerSegments.filter((s) => s.alignment === "right").map((seg) => (
-                <SegmentText key={seg.id} seg={seg} kind="footer" />
+                <SegmentText key={seg.id} seg={seg} />
               ))}
             </View>
         </View>

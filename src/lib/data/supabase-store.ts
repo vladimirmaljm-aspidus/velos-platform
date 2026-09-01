@@ -180,6 +180,12 @@ export class SupabaseStore implements Store {
       "comms", "permissions", "data",
       // LOI-specific JSONB columns (migration 066)
       "coa_params",
+      // audit22 "Template Studio" — DocumentTemplate extended styling +
+      // visual layout blobs (migration 082). Without this whitelist entry
+      // sanitizePayload silently dropped them on every template save —
+      // the exact same silent-data-loss bug selected_bank_accounts had
+      // in audit20 (the column survived only because it's an ARRAY).
+      "style_json", "layout_json",
     ]);
     const out: SupaRow = {};
     for (const [k, v] of Object.entries(row)) {
