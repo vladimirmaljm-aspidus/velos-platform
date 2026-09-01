@@ -95,6 +95,7 @@ describe("AUDIT17 F1 — invoice totals sum the rounded line components", () => 
       tenant_id: "t1",
       partner_id: "p1",
       currency: "EUR",
+      subject: "Test invoice",
       items: [
         { description: "A", quantity: 3, unit_price: 3.418, tax_rate: 0, discount: 0 },
         { description: "B", quantity: 3, unit_price: 3.418, tax_rate: 0, discount: 0 },
@@ -123,14 +124,14 @@ describe("AUDIT17 F1 — invoice totals sum the rounded line components", () => 
     mockRequireAuthOrApiKey.mockResolvedValue(makeAuth(store));
 
     const res1 = await POST(jsonReq({
-      tenant_id: "t1", partner_id: "p1", currency: "EUR",
+      tenant_id: "t1", partner_id: "p1", currency: "EUR", subject: "Test invoice",
       items: [{ description: "A", quantity: 1, unit_price: 10, tax_rate: 0, discount: 150 }],
     }));
     expect(res1.status).toBe(400);
     expect((await res1.json()).error).toContain("discount");
 
     const res2 = await POST(jsonReq({
-      tenant_id: "t1", partner_id: "p1", currency: "EUR",
+      tenant_id: "t1", partner_id: "p1", currency: "EUR", subject: "Test invoice",
       items: [{ description: "A", quantity: 1, unit_price: 10, tax_rate: -5, discount: 0 }],
     }));
     expect(res2.status).toBe(400);

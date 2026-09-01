@@ -710,7 +710,12 @@ export interface VaultSecret {
    * the wire format is the source of truth at decrypt time.
    */
   key_version?: string | null;
-  category: "api" | "smtp" | "database" | "payment" | "other";
+  // audit21: "comms" added — the settings/SMTP flows persist comms secrets
+  // (smtp_password, postmark_server_token, resend_api_key) with this
+  // category. The VaultView's CATEGORY_META previously lacked it, so any
+  // tenant with a configured SMTP provider crashed the whole view with
+  // "Cannot read properties of undefined (reading 'icon')".
+  category: "api" | "smtp" | "comms" | "database" | "payment" | "other";
   last_accessed_at: string | null;
   created_at: string;
   updated_at: string;

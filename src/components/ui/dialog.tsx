@@ -83,7 +83,13 @@ function DialogContent({
           // Always cap height to the viewport and make the body scrollable so
           // long content (forms, tables, detail sheets) never overflows the
           // dialog. The header and footer stay pinned; only the middle scrolls.
-          "max-h-[92vh] overflow-y-auto",
+          //
+          // audit21 fix: FULL-size dialogs pin their height (h-[90vh]) and
+          // manage their own internal ScrollAreas — an outer overflow-y-auto
+          // here created nested scrolling where a `min-h-full` inner wrapper
+          // (e.g. the template visual editor) could overlay the dialog footer
+          // and swallow clicks on Save/Cancel ("buttons don't work").
+          isFull ? "overflow-hidden" : "max-h-[92vh] overflow-y-auto",
           sizeClasses,
           className
         )}

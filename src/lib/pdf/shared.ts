@@ -295,6 +295,29 @@ export function fmtQty(n: number | string | null | undefined): string {
   return v.toLocaleString("en-US", { maximumFractionDigits: 2 });
 }
 
+/**
+ * audit21 — normalise a document's line-items column to a real array.
+ *
+ * Production rows exist whose `items` column holds a JSON *string*
+ * (e.g. `"[]"`) rather than a parsed array — legacy writes and some
+ * automation paths. A truthy string slips past `|| []` / `?? []` guards
+ * and then crashes `.map()` inside react-pdf ("Cannot read properties of
+ * null (reading 'props')" → HTTP 500 on the PDF route). Accepts an array
+ * (returned as-is), a JSON string (parsed), anything else → [].
+ */
+export function normalizeLineItems<T = unknown>(raw: unknown): T[] {
+  if (Array.isArray(raw)) return raw as T[];
+  if (typeof raw === "string" && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? (parsed as T[]) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 /** Weight with thousands separators + unit suffix (e.g. "1,234.50 kg"). */
 export function fmtWeight(n: number | null | undefined, unit = "kg"): string {
   const v = typeof n === "number" && isFinite(n) ? n : 0;
@@ -470,7 +493,12 @@ export function boldVariant(family: string): string {
  * when the status doesn't warrant a watermark.
  */
 export function Watermark({ text }: { text: string }) {
-  const fontSize = text.length >= 14 ? 50 : 80;
+  // audit21 design polish: 80pt at 0.12 opacity read as a heavy grey slab
+  // behind the content (design-audit finding: "massive, semi-transparent
+  // gray watermark … looks unpolished"). Tightened to 54/68pt at 0.10 —
+  // still unmissable for its legal purpose (DRAFT/PAID/VOID), but no
+  // longer dominating the page.
+  const fontSize = text.length >= 14 ? 44 : 64;
   return React.createElement(
     View,
     {
@@ -480,7 +508,7 @@ export function Watermark({ text }: { text: string }) {
         top: "40%",
         left: 0,
         right: 0,
-        opacity: 0.12,
+        opacity: 0.1,
         zIndex: 0,
       },
     },

@@ -2292,6 +2292,15 @@ function OfferFormDialog({
 
       const body = {
         ...formRest,
+        // audit21 — subject auto-fill: subject is NOT NULL but the field is
+        // buried in the collapsed details section; auto-derive from the first
+        // line item / partner so saves never 500 with the nameless
+        // "Missing required field." error.
+        subject:
+          form.subject?.trim() ||
+          (form.items || []).find((it) => it.product_name?.trim())?.product_name?.trim() ||
+          partnerContext?.partner?.name ||
+          "Offer",
         bank_details: bankDetailsToSave,
         notes: combinedNotes,
         status: form.status || "draft",

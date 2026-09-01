@@ -17,6 +17,7 @@ import {
   tradeWatermarkText,
   marketplaceWatermarkText,
   logisticsWatermarkText,
+  normalizeLineItems,
 } from "@/lib/pdf/shared";
 
 // 13-A: unit tests for the shared PDF helper module (audit12 dedup).
@@ -417,5 +418,36 @@ describe("boldVariant — valid react-pdf bold families", () => {
     expect(boldVariant("NotoSans-Bold")).toBe("NotoSans-Bold");
     expect(boldVariant("Times-Bold")).toBe("Times-Bold");
     expect(boldVariant("")).toBe("NotoSans-Bold");
+  });
+});
+
+// ── audit21 — normalizeLineItems regression tests ──────────────────────────
+// Production invoice rows exist whose `items` column holds a JSON STRING
+// (e.g. "[]"). A truthy string slipped past `|| []` / `?? []` guards and
+// crashed react-pdf's render ("items.map is not a function" surfaced as
+// "Cannot read properties of null (reading 'props')" → HTTP 500 on the
+// PDF route). These tests pin the normalization contract.
+describe("normalizeLineItems (audit21)", () => {
+  it("passes arrays through unchanged", () => {
+    const items = [{ product_name: "A" }, { product_name: "B" }];
+    expect(normalizeLineItems(items)).toBe(items);
+    expect(normalizeLineItems([])).toEqual([]);
+  });
+
+  it("parses a JSON-string items column (the production crash)", () => {
+    expect(normalizeLineItems("[]")).toEqual([]);
+    expect(normalizeLineItems(JSON.stringify([{ product_name: "Sugar" }]))).toEqual([
+      { product_name: "Sugar" },
+    ]);
+  });
+
+  it("returns [] for junk inputs instead of throwing", () => {
+    expect(normalizeLineItems(null)).toEqual([]);
+    expect(normalizeLineItems(undefined)).toEqual([]);
+    expect(normalizeLineItems(42)).toEqual([]);
+    expect(normalizeLineItems({})).toEqual([]);
+    expect(normalizeLineItems("not json")).toEqual([]);
+    expect(normalizeLineItems('{"not":"an array"}')).toEqual([]);
+    expect(normalizeLineItems("   ")).toEqual([]);
   });
 });

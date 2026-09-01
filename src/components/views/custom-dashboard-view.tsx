@@ -135,6 +135,32 @@ const DEFAULT_WIDGETS: DashboardWidget[] = [
 
 const STORAGE_KEY = "velos-custom-dashboard";
 
+/**
+ * audit21 — sanitize widgets loaded from localStorage.
+ *
+ * The dashboard layout persists to localStorage and is trusted verbatim on
+ * load. A widget `type` that no longer exists in WIDGET_META (renamed /
+ * removed in a deploy, corrupted storage, hand-edited value) made every
+ * `WIDGET_META[widget.type].icon` lookup throw
+ * "Cannot read properties of undefined (reading 'icon')" — which crashed
+ * the whole route segment behind the error boundary ("Something went
+ * wrong"). Unknown types are now dropped; if nothing survives, the
+ * default layout applies.
+ */
+function sanitizeWidgets(parsed: unknown): DashboardWidget[] {
+  if (!Array.isArray(parsed)) return [];
+  const safe: DashboardWidget[] = [];
+  for (const w of parsed) {
+    if (!w || typeof w !== "object") continue;
+    const id = (w as { id?: unknown }).id;
+    const type = (w as { type?: unknown }).type;
+    if (typeof id !== "string" || id.length === 0) continue;
+    if (typeof type !== "string" || !(type in WIDGET_META)) continue;
+    safe.push({ id, type: type as WidgetType });
+  }
+  return safe;
+}
+
 // ─── API Types ─────────────────────────────────────────────────────────────
 
 interface DashboardInsights {
@@ -234,7 +260,9 @@ function SortableWidget({
     transition,
   };
 
-  const meta = WIDGET_META[widget.type];
+  // audit21: safe lookup — sanitizeWidgets guards the loaded list, but this
+  // component also receives widgets from state transitions; belt + braces.
+  const meta = WIDGET_META[widget.type] ?? WIDGET_META.kpi;
   const Icon = meta.icon;
 
   return (
@@ -1012,13 +1040,18 @@ export function CustomDashboardView() {
   const [addDialogOpen, setAddDialogOpen] = useState(false);
 
   // Load widgets from localStorage or use defaults
+  // audit21: raw localStorage is NEVER trusted — sanitizeWidgets drops
+  // entries whose type is no longer in WIDGET_META (stale/corrupt storage
+  // used to crash the view on `.icon`). An all-invalid payload falls back
+  // to the default layout instead of rendering an empty dashboard.
   const [widgets, setWidgets] = useState<DashboardWidget[]>(() => {
     if (typeof window === "undefined") return DEFAULT_WIDGETS;
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
-        const parsed = JSON.parse(saved) as DashboardWidget[];
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        const parsed: unknown = JSON.parse(saved);
+        const safe = sanitizeWidgets(parsed);
+        if (safe.length > 0) return safe;
       }
     } catch {
       // ignore
@@ -1146,7 +1179,7 @@ export function CustomDashboardView() {
               </DialogHeader>
               <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 grid grid-cols-2 gap-3">
                 {availableTypes.map((type) => {
-                  const meta = WIDGET_META[type];
+                  const meta = WIDGET_META[type] ?? WIDGET_META.kpi;
                   const Icon = meta.icon;
                   return (
                     <button
@@ -1204,7 +1237,7 @@ export function CustomDashboardView() {
         >
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
             {widgets.map((widget) => {
-              const meta = WIDGET_META[widget.type];
+              const meta = WIDGET_META[widget.type] ?? WIDGET_META.kpi;
               const Icon = meta.icon;
               return (
                 <SortableWidget
@@ -1242,12 +1275,12 @@ export function CustomDashboardView() {
                 <div className="flex items-center gap-2">
                   <div className="size-7 rounded-lg bg-primary/10 flex items-center justify-center">
                     {(() => {
-                      const Icon = WIDGET_META[activeWidget.type].icon;
+                      const Icon = (WIDGET_META[activeWidget.type] ?? WIDGET_META.kpi).icon;
                       return <Icon className="size-3.5" />;
                     })()}
                   </div>
                   <CardTitle className="text-sm font-semibold">
-                    {t(locale, WIDGET_META[activeWidget.type].labelKey)}
+                    {t(locale, (WIDGET_META[activeWidget.type] ?? WIDGET_META.kpi).labelKey)}
                   </CardTitle>
                 </div>
               </CardHeader>

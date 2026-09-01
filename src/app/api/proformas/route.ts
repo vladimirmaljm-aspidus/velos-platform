@@ -87,6 +87,10 @@ export async function POST(req: NextRequest) {
     if (!body.id) {
       const missing: string[] = [];
       if (!body.partner_id) missing.push("partner_id");
+      // audit21: subject is NOT NULL — name it in the 400 instead of the
+      // sanitised "Missing required field." 500 (the form auto-fills it, this
+      // is the last line of defence).
+      if (typeof body.subject !== "string" || !body.subject.trim()) missing.push("subject");
       if (!Array.isArray(body.items) || body.items.length === 0) missing.push("items");
       if (missing.length > 0) {
         return NextResponse.json(

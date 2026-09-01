@@ -35,6 +35,7 @@ import type {
 import {
   fmtValue as fmt,
   fmtQty,
+  normalizeLineItems,
   fmtMoney,
   fmtWeight,
   Watermark,
@@ -378,7 +379,9 @@ function PartyBlock({
 // ─── Commercial invoice ────────────────────────────────────────────────────
 
 function CommercialInvoiceBody(data: Record<string, any>) {
-  const items: TradeDocumentLineItem[] = data.items ?? [];
+  // audit21: normalizeLineItems guards against JSON-string items columns
+  // (same crash class as the admin templates fix).
+  const items: TradeDocumentLineItem[] = normalizeLineItems<TradeDocumentLineItem>(data.items);
   return React.createElement(
     React.Fragment,
     null,
@@ -522,7 +525,9 @@ function CommercialInvoiceBody(data: Record<string, any>) {
 // ─── Packing list ──────────────────────────────────────────────────────────
 
 function PackingListBody(data: Record<string, any>) {
-  const items: TradeDocumentLineItem[] = data.items ?? [];
+  // audit21: normalizeLineItems guards against JSON-string items columns
+  // (same crash class as the admin templates fix).
+  const items: TradeDocumentLineItem[] = normalizeLineItems<TradeDocumentLineItem>(data.items);
   return React.createElement(
     React.Fragment,
     null,
@@ -831,7 +836,9 @@ function BillOfLadingBody(data: Record<string, any>) {
 // ─── Proforma invoice ──────────────────────────────────────────────────────
 
 function ProformaInvoiceBody(data: Record<string, any>) {
-  const items: TradeDocumentLineItem[] = data.items ?? [];
+  // audit21: normalizeLineItems guards against JSON-string items columns
+  // (same crash class as the admin templates fix).
+  const items: TradeDocumentLineItem[] = normalizeLineItems<TradeDocumentLineItem>(data.items);
   return React.createElement(
     React.Fragment,
     null,

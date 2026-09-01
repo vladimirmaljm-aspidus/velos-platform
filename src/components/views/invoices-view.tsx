@@ -1831,8 +1831,24 @@ function InvoiceFormDialog({
       // AUDIT18: recomputeDocTotals returns items (per-line total set) +
       // the rounded header totals — canonical math shared with the server.
       const computed = computeTotals(form.items || []);
+      // audit21 — subject auto-fill: the invoices.subject column is NOT NULL
+      // but its form field lives in the collapsed "More details" section.
+      // Users who filled the essentials got a cryptic "Missing required
+      // field." 500 (the not-null constraint sanitised server-side) with no
+      // hint WHICH field. Now the subject auto-fills from the first line
+      // item (or the partner name) so an empty subject never reaches the
+      // DB, and the route-level check names the field when it somehow does.
+      const firstProductName = computed.items
+        .map((it) => String((it as { product_name?: unknown }).product_name ?? ""))
+        .find((name) => name.trim().length > 0);
+      const subjectFallback =
+        form.subject?.trim() ||
+        firstProductName?.trim() ||
+        partnerContext?.partner?.name ||
+        "Invoice";
       const body = {
         ...form,
+        subject: subjectFallback,
         items: computed.items,
         subtotal: computed.subtotal,
         discount_total: computed.discount_total,

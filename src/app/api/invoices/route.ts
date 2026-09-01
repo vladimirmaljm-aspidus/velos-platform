@@ -89,6 +89,12 @@ async function _post(req: NextRequest) {
     if (!body.id) {
       const missing: string[] = [];
       if (!body.partner_id) missing.push("partner_id");
+      // audit21: subject is NOT NULL in the invoices table but its form
+      // field is collapsed under "More details" — a missing subject used to
+      // surface as the sanitised not-null 500 "Missing required field."
+      // with no field name. Named here so the 400 tells the caller exactly
+      // what to fill (the frontend also auto-fills it before sending).
+      if (typeof body.subject !== "string" || !body.subject.trim()) missing.push("subject");
       if (!Array.isArray(body.items) || body.items.length === 0) missing.push("items");
       if (missing.length > 0) {
         return NextResponse.json(

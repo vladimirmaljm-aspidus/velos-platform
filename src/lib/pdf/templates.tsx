@@ -21,6 +21,7 @@ import {
   countryName,
   remainingAddressParts,
   fmtDateIso as fmtDate,
+  normalizeLineItems,
   Watermark,
   tradeWatermarkText,
 } from "@/lib/pdf/shared";
@@ -428,17 +429,31 @@ export function buildPdfDocument({
     },
 
     // ── Document title block ──────────────────────────────────────────
+    // audit21 design polish: the meta block (Document No. / Date / Currency)
+    // used to float right-aligned with no container — visually detached from
+    // the title, reading like an afterthought (design audit finding). A
+    // subtle card (light bg + hairline border) anchors it to the grid and
+    // gives the title row a professional two-card composition.
     docTitleRow: {
       flexDirection: "row",
       justifyContent: "space-between",
-      alignItems: "flex-end",
+      alignItems: "stretch",
       marginBottom: 14,
       marginTop: 0,
     },
-    docTitleBlock: { flexDirection: "column" },
+    docTitleBlock: { flexDirection: "column", justifyContent: "center", flex: 1 },
     docTitle: { fontSize: 18, fontFamily: headingFontFamily, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: 1 },
     docSubtitle: { fontSize: 8.5, color: "#888", marginTop: 3 },
-    docMetaBlock: { flexDirection: "column", alignItems: "flex-end" },
+    docMetaBlock: {
+      flexDirection: "column",
+      alignItems: "flex-end",
+      backgroundColor: "#f8fafc",
+      borderWidth: 0.5,
+      borderColor: "#e2e8f0",
+      borderRadius: 3,
+      paddingHorizontal: 10,
+      paddingVertical: 7,
+    },
     docMetaRow: { flexDirection: "row", marginBottom: 2 },
     docMetaLabel: { fontSize: 8, color: "#888", marginRight: 4 },
     docMetaValue: { fontSize: 8.5, fontFamily: headingFontFamily, color: "#333" },
@@ -625,7 +640,16 @@ export function buildPdfDocument({
   // LOI has no `items` array (it carries a single product inline on the
   // doc row), so we normalise to an empty array for the line-items-driven
   // branch below. The cast through `any` keeps TS happy across the union.
-  const items = ((doc as any).items || []) as OfferLineItem[];
+  //
+  // audit21 — CRITICAL crash fix: production invoice rows exist whose
+  // `items` column holds a JSON *STRING* (e.g. "[]") rather than a parsed
+  // array (legacy writes / certain automation paths). A string passes the
+  // old `|| []` fallback (truthy) and even `length === 0` checks ("[]".length
+  // is 2), then `items.map(...)` throws "items.map is not a function" —
+  // which react-pdf surfaces as "Cannot read properties of null (reading
+  // 'props')" and the whole PDF render 500s. normalizeLineItems (shared.ts)
+  // guarantees every downstream consumer gets a real array.
+  const items = normalizeLineItems<OfferLineItem>((doc as any).items);
   const currency = doc.currency || "USD";
 
   // ── Pull trade / shipping fields off the doc ───────────────────────

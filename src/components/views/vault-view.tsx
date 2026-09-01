@@ -42,13 +42,31 @@ import { useT } from "@/lib/i18n/store";
 type SecretCategory = VaultSecret["category"];
 type SafeSecret = Omit<VaultSecret, "encrypted_value">;
 
-const CATEGORY_META: Record<SecretCategory, { labelKey: string; icon: typeof KeyRound; className: string }> = {
+const CATEGORY_META: Record<string, { labelKey: string; icon: typeof KeyRound; className: string }> = {
   api: { labelKey: "admin-vault-cat-api", icon: KeyRound, className: "bg-[var(--chart-1)] text-white" },
   smtp: { labelKey: "admin-vault-cat-smtp", icon: Mail, className: "bg-[var(--chart-4)] text-black" },
+  // audit21: "comms" — the settings/SMTP flows persist comms secrets
+  // (smtp_password / postmark_server_token / resend_api_key) under this
+  // category. It was missing from the map, so every tenant with a
+  // configured mail provider crashed the Vault view with
+  // "Cannot read properties of undefined (reading 'icon')".
+  comms: { labelKey: "admin-vault-cat-comms", icon: Mail, className: "bg-[var(--chart-4)] text-black" },
   database: { labelKey: "admin-vault-cat-database", icon: Database, className: "bg-[var(--chart-3)] text-black" },
   payment: { labelKey: "admin-vault-cat-payment", icon: CreditCard, className: "bg-emerald-600 text-white" },
   other: { labelKey: "admin-vault-cat-other", icon: Box, className: "bg-secondary text-secondary-foreground" },
 };
+
+/**
+ * Safe category lookup — NEVER index CATEGORY_META directly with raw data.
+ * The DB has no enum constraint on vault_secrets.category, so rows written
+ * by server-side flows (or future categories) can carry values the map
+ * doesn't know. A direct `CATEGORY_META[s.category].icon` lookup crashes
+ * the entire view (audit21: this exact crash shipped with "comms").
+ * Unknown categories fall back to "other" styling + a readable label.
+ */
+function categoryMeta(category: string | null | undefined) {
+  return CATEGORY_META[category ?? ""] ?? CATEGORY_META.other;
+}
 
 function AdminRequired() {
   const t = useT();
@@ -302,6 +320,7 @@ export function VaultView() {
               <SelectItem value="all">{t("admin-vault-all-categories")}</SelectItem>
               <SelectItem value="api">{t("admin-vault-cat-api")}</SelectItem>
               <SelectItem value="smtp">{t("admin-vault-cat-smtp")}</SelectItem>
+              <SelectItem value="comms">{t("admin-vault-cat-comms")}</SelectItem>
               <SelectItem value="database">{t("admin-vault-cat-database")}</SelectItem>
               <SelectItem value="payment">{t("admin-vault-cat-payment")}</SelectItem>
               <SelectItem value="other">{t("admin-vault-cat-other")}</SelectItem>
@@ -342,7 +361,7 @@ export function VaultView() {
                 </TableHeader>
                 <TableBody>
                   {items.map((s) => {
-                    const meta = CATEGORY_META[s.category];
+                    const meta = categoryMeta(s.category);
                     const Icon = meta.icon;
                     const revealState = revealed[s.id];
                     const isRevealed = !!revealState && !revealState.loading;
@@ -567,6 +586,7 @@ function VaultFormDialog({
               <SelectContent>
                 <SelectItem value="api">{t("admin-vault-cat-api")}</SelectItem>
                 <SelectItem value="smtp">{t("admin-vault-cat-smtp")}</SelectItem>
+                <SelectItem value="comms">{t("admin-vault-cat-comms")}</SelectItem>
                 <SelectItem value="database">{t("admin-vault-cat-database")}</SelectItem>
                 <SelectItem value="payment">{t("admin-vault-cat-payment")}</SelectItem>
                 <SelectItem value="other">{t("admin-vault-cat-other")}</SelectItem>

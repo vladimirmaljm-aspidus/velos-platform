@@ -488,8 +488,32 @@ export function DocumentTemplatesView() {
   const superAdmin = isSuperAdmin(user);
   const [activeTab, setActiveTab] = useState<string>("letterheads");
 
-  // Tenant selector state — only used when super_admin
-  const [selectedTenantId, setSelectedTenantId] = useState<string | null>(user?.tenant_id ?? null);
+  // ── audit21 — CRITICAL tenant-context fix ─────────────────────────────
+  // The template editor previously defaulted to `tenants[0]` (whatever
+  // order /api/tenants returned — for this platform an inactive audit-test
+  // tenant) and IGNORED the active tenant context from the topbar switcher.
+  // A super-admin who selected "ASPIDUS DMCC" in the topbar still edited
+  // the FIRST tenant's templates here, while `api()` silently rewrote the
+  // fetch to the topbar tenant — the editor showed one tenant's templates,
+  // saved to another's, and the user's PDFs never changed ("template edits
+  // never apply"). Now:
+  //   1. the local selector initializes from the effective tenant context
+  //   2. it FOLLOWS the topbar switcher when that context changes
+  //   3. the in-view selector remains a manual override
+  //   4. the `tenants[0]` fallback fires ONLY when no context is active
+  const activeTenantId = useAppStore((s) => s.activeTenantId);
+  const [selectedTenantId, setSelectedTenantId] = useState<string | null>(
+    activeTenantId ?? user?.tenant_id ?? null,
+  );
+  // Follow the topbar tenant switcher. Derived-during-render pattern (the
+  // same one the `tenants[0]` fallback below already uses) — when the
+  // topbar context changes, the local selection adjusts on the very next
+  // render without an effect round-trip.
+  const [lastSeenActiveTenant, setLastSeenActiveTenant] = useState<string | null>(activeTenantId);
+  if (superAdmin && activeTenantId && activeTenantId !== lastSeenActiveTenant) {
+    setLastSeenActiveTenant(activeTenantId);
+    setSelectedTenantId(activeTenantId);
+  }
 
   const tenantsQ = useQuery<{ items: Tenant[] }>({
     queryKey: ["tenants", tenantKey, "list"],
@@ -503,7 +527,8 @@ export function DocumentTemplatesView() {
 
   const tenants = tenantsQ.data?.items ?? [];
 
-  // Auto-select first tenant when super_admin and none selected
+  // Last-resort fallback: super_admin with no topbar context and no saved
+  // selection → first tenant (previous behaviour, now only a fallback).
   if (superAdmin && !selectedTenantId && tenants.length > 0) {
     setSelectedTenantId(tenants[0].id);
   }
@@ -2472,6 +2497,17 @@ function TemplateEditorDialog({
   const [form, setForm] = useState<TemplateFormState>(defaultTemplate());
   const [saving, setSaving] = useState(false);
 
+  // audit21 — session-local “table header customised?” flag.
+  // While the user has NOT explicitly edited the Table styling header
+  // colour in THIS editing session, changing the primary (brand) colour
+  // keeps table_header_bg in lockstep. Once they customise it, the two
+  // decouple for the rest of the session. This resolves the top user
+  // complaint “template colour edits never show up in the document” —
+  // previously the table header kept its old absolute colour while only
+  // the header rule/grand-total re-branded, looking exactly like the edit
+  // was ignored.
+  const tableHeaderTouched = useRef(false);
+
   useEffect(() => {
     if (open) {
       // Edit-existing takes priority, then starter draft, then blank default.
@@ -2846,7 +2882,21 @@ function TemplateEditorDialog({
                           <Field label={t("doc-line-height")}><NumberInput value={form.body_line_height} onChange={(v) => set("body_line_height", v)} min={1} max={2.5} step={0.1} /></Field>
                         </div>
                         <div className="grid grid-cols-2 gap-3">
-                          <ColorField label={t("doc-primary-color")} value={form.primary_color} onChange={(v) => set("primary_color", v)} />
+                          <ColorField label={t("doc-primary-color")} value={form.primary_color} onChange={(v) => {
+                          // audit21 — "template edits never apply" fix (partial application):
+                          // changing the primary colour previously left table_header_bg
+                          // on its old absolute colour, so the saved document only
+                          // partially re-branded (header line changed, table headers
+                          // stayed the old colour) and looked like the edit was ignored.
+                          // Unless the table header colour was customised in THIS
+                          // session (tableHeaderTouched), it now follows the primary
+                          // colour change so the whole document re-brands together.
+                          setForm((p) => ({
+                            ...p,
+                            primary_color: v,
+                            ...(!tableHeaderTouched.current ? { table_header_bg: v } : {}),
+                          }));
+                        }} />
                           <ColorField label={t("doc-accent-color")} value={form.accent_color} onChange={(v) => set("accent_color", v)} />
                         </div>
                       </div>
@@ -2857,7 +2907,7 @@ function TemplateEditorDialog({
                     <AccordionTrigger><SectionLabel icon={TableIcon} label={t("doc-section-table-styling")} /></AccordionTrigger>
                     <AccordionContent>
                       <div className="space-y-3">
-                        <ColorField label={t("doc-header-background")} value={form.table_header_bg} onChange={(v) => set("table_header_bg", v)} />
+                        <ColorField label={t("doc-header-background")} value={form.table_header_bg} onChange={(v) => { tableHeaderTouched.current = true; set("table_header_bg", v); }} />
                         <ColorField label={t("doc-header-text-color")} value={form.table_header_color} onChange={(v) => set("table_header_color", v)} />
                         <ColorField label={t("doc-border-color")} value={form.table_border_color} onChange={(v) => set("table_border_color", v)} />
                         <Field label={t("doc-striped-rows")}>
