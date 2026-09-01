@@ -37,6 +37,11 @@ import {
   Circle,
 } from "lucide-react";
 import { useT } from "@/lib/i18n/store";
+
+// AUDIT19 (dedup #6) — the calculator currency picker list, repeated twice
+// inline below; hoisted to a single module-level constant (subset of the
+// FX module's SUPPORTED_CURRENCIES the calculators default-quote in).
+const CALCULATOR_CURRENCIES = ["USD", "EUR", "GBP", "RSD", "TRY", "RUB"];
 import type {
   FactoringCost,
   InsurancePremium,
@@ -203,7 +208,7 @@ function FactoringCalculator() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {["USD", "EUR", "GBP", "RSD", "TRY", "RUB"].map((c) => (
+              {CALCULATOR_CURRENCIES.map((c) => (
                 <SelectItem key={c} value={c}>{c}</SelectItem>
               ))}
             </SelectContent>
@@ -319,7 +324,7 @@ function InsuranceCalculator() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {["USD", "EUR", "GBP", "RSD", "TRY", "RUB"].map((c) => (
+              {CALCULATOR_CURRENCIES.map((c) => (
                 <SelectItem key={c} value={c}>{c}</SelectItem>
               ))}
             </SelectContent>

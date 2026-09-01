@@ -31,13 +31,14 @@ import {
 } from "@/components/ui/select";
 import { useT } from "@/lib/i18n/store";
 import { fmtMoney } from "@/lib/utils/format";
+// AUDIT19 (dedup #6) — import the FX-supported currency list instead of a
+// local verbatim copy (adding a currency to the FX module now reaches this
+// view automatically).
+import { SUPPORTED_CURRENCIES } from "@/lib/utils/exchange-rates";
 
-const DISPLAY_CURRENCIES = [
-  "USD", "EUR", "GBP", "CHF", "AED", "SAR", "CNY", "INR", "RUB",
-  "JPY", "TRY", "BRL", "ZAR", "SGD", "HKD", "AUD", "CAD", "RSD",
-  "EGP", "KRW", "MXN", "MYR", "THB", "IDR", "PHP", "NZD", "SEK",
-  "NOK", "DKK", "PLN", "CZK", "HUF", "RON", "BGN", "ILS",
-];
+// AUDIT19 (dedup #6) — was a 35-entry verbatim copy of the FX module's
+// SUPPORTED_CURRENCIES; aliased for minimal diff at the 2 usage sites.
+const DISPLAY_CURRENCIES = SUPPORTED_CURRENCIES;
 
 export interface CostLine {
   type: string;

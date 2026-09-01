@@ -9,15 +9,11 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useT } from "@/lib/i18n/store";
 
-interface BankAccount {
-  bankName?: string;
-  bank_name?: string;
-  currency?: string;
-  swiftCode?: string;
-  swift_code?: string;
-  accountNumber?: string;
-  account_number?: string;
-}
+// AUDIT19 (dedup #11) — imports the canonical shape + parser from
+// src/lib/utils/bank-accounts.ts (previously a narrower local interface +
+// an inline JSON.parse fallback that had drifted from offers-view's copy).
+import { parseTenantBankAccounts, type TenantBankAccount } from "@/lib/utils/bank-accounts";
+type BankAccount = TenantBankAccount;
 
 interface BankAccountSelectorProps {
   /** The tenant's bank_accounts array (from tenant.bank_accounts) */
@@ -32,15 +28,11 @@ export function BankAccountSelector({ accounts, selected, onChange, className }:
   const [open, setOpen] = React.useState(false);
   const t = useT();
 
-  // Parse accounts (can be array, JSON string, or null)
-  const accountList: BankAccount[] = React.useMemo(() => {
-    if (!accounts) return [];
-    if (Array.isArray(accounts)) return accounts;
-    if (typeof accounts === "string") {
-      try { return JSON.parse(accounts); } catch { return []; }
-    }
-    return [];
-  }, [accounts]);
+  // Parse accounts (can be array, JSON string, or null) — shared parser.
+  const accountList: BankAccount[] = React.useMemo(
+    () => parseTenantBankAccounts(accounts as string | BankAccount[] | null),
+    [accounts],
+  );
 
   if (accountList.length === 0) {
     return (

@@ -34,6 +34,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
+// AUDIT19 (dedup #5) — canonical amount-in-words (matches the printed PDF
+// exactly; see the comment at the old inline copy site below).
+import { amountInWords } from "@/lib/utils/amount-in-words";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -144,126 +147,24 @@ function computeTotals(items: OfferLineItem[]) {
 // ─── Bank account shape (tenant.bank_accounts JSON array) ───
 // The DB column is typed as `string | null` (jsonb), but in practice it holds
 // a JSON array of { bankName, currency, swiftCode, accountNumber, holder }.
-// Accept both camelCase and snake_case keys so we're resilient to legacy data.
-interface TenantBankAccount {
-  bankName?: string;
-  bank_name?: string;
-  accountNumber?: string;
-  account_number?: string;
-  swiftCode?: string;
-  swift_code?: string;
-  iban?: string;
-  currency?: string;
-  holder?: string;
-  account_holder?: string;
-}
+// AUDIT19 (dedup #11) — the shape + parser + formatter now live in
+// src/lib/utils/bank-accounts.ts (shared with bank-account-selector.tsx so
+// the PDF bank block and the selector can never disagree). Re-exported
+// here for the two internal usage sites.
+import {
+  parseTenantBankAccounts,
+  formatBankDetailsForOffer,
+  type TenantBankAccount,
+} from "@/lib/utils/bank-accounts";
 
-function parseTenantBankAccounts(raw: string | null | undefined): TenantBankAccount[] {
-  if (!raw) return [];
-  if (Array.isArray(raw as any)) return raw as unknown as TenantBankAccount[];
-  if (typeof raw !== "string") return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-/** Format a single bank account as the multi-line string saved into the
- *  offer's `bank_details` column. The PDF renders this verbatim. */
-function formatBankDetailsForOffer(acct: TenantBankAccount): string {
-  const bankName = acct.bankName || acct.bank_name || "";
-  const accountNumber = acct.accountNumber || acct.account_number || acct.iban || "";
-  const swift = acct.swiftCode || acct.swift_code || "";
-  const holder = acct.holder || acct.account_holder || "";
-  const currency = acct.currency || "";
-  const lines: string[] = [];
-  if (bankName) lines.push(bankName);
-  if (holder) lines.push(`Account holder: ${holder}`);
-  if (accountNumber) lines.push(`Account: ${accountNumber}`);
-  if (swift) lines.push(`SWIFT: ${swift}`);
-  if (currency) lines.push(`Currency: ${currency}`);
-  return lines.join("\n");
-}
-
-// ─── Convert a numeric amount to English words (e.g. 171000 → "One Hundred
-//     Seventy-One Thousand US Dollars"). Mirrors the PDF generator's
-//     amountInWords helper so the offer form's "Amount in Words" line matches
-//     exactly what will print on the PDF. Handles up to billions + cents.
-function amountInWords(amount: number, currency = "USD"): string {
-  const currName =
-    currency === "USD" ? "US Dollars"
-    : currency === "EUR" ? "Euros"
-    : currency === "GBP" ? "Pounds Sterling"
-    : currency === "CHF" ? "Swiss Francs"
-    : currency === "AED" ? "UAE Dirhams"
-    : currency === "CNY" ? "Chinese Yuan"
-    : currency === "INR" ? "Indian Rupees"
-    : currency === "RUB" ? "Russian Rubles"
-    : currency === "JPY" ? "Japanese Yen"
-    : currency === "SAR" ? "Saudi Riyals"
-    : currency === "BRL" ? "Brazilian Real"
-    : currency === "ZAR" ? "South African Rand"
-    : currency === "TRY" ? "Turkish Lira"
-    : currency === "SGD" ? "Singapore Dollars"
-    : currency === "HKD" ? "Hong Kong Dollars"
-    : currency;
-
-  const ones = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine"];
-  const teens = ["Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"];
-  const tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
-
-  function threeDigitsToWords(n: number): string {
-    if (n === 0) return "";
-    let str = "";
-    const hundred = Math.floor(n / 100);
-    const remainder = n % 100;
-    if (hundred > 0) str += ones[hundred] + " Hundred";
-    if (remainder > 0) {
-      if (str) str += " ";
-      if (remainder < 10) str += ones[remainder];
-      else if (remainder < 20) str += teens[remainder - 10];
-      else {
-        const t = Math.floor(remainder / 10);
-        const o = remainder % 10;
-        str += tens[t];
-        if (o > 0) str += "-" + ones[o];
-      }
-    }
-    return str;
-  }
-
-  if (!isFinite(amount)) return `Zero ${currName} Only`;
-  const negative = amount < 0;
-  const absAmount = Math.abs(amount);
-  const whole = Math.floor(absAmount);
-  const cents = Math.round((absAmount - whole) * 100);
-
-  let words: string;
-  if (whole === 0) {
-    words = "Zero";
-  } else {
-    const billions = Math.floor(whole / 1000000000);
-    const millions = Math.floor((whole % 1000000000) / 1000000);
-    const thousands = Math.floor((whole % 1000000) / 1000);
-    const remainder = whole % 1000;
-    const parts: string[] = [];
-    if (billions > 0) parts.push(threeDigitsToWords(billions) + " Billion");
-    if (millions > 0) parts.push(threeDigitsToWords(millions) + " Million");
-    if (thousands > 0) parts.push(threeDigitsToWords(thousands) + " Thousand");
-    if (remainder > 0) parts.push(threeDigitsToWords(remainder));
-    words = parts.join(" ");
-  }
-
-  let result = words + " " + currName;
-  if (cents > 0) {
-    const c = cents < 10 ? "0" + cents : String(cents);
-    result += ` and ${c}/100`;
-  }
-  result += " Only";
-  return negative ? `Minus ${result}` : result;
-}
+// ─── Amount in words ───────────────────────────────────────────────────
+// AUDIT19 (dedup #5) — the canonical implementation is imported at the
+// top of this file (src/lib/utils/amount-in-words.ts — the exact function
+// the PDF prints) instead of a local 77-line copy that had drifted: the
+// form previewed "Minus One Hundred US Dollars and 25/100 Only" while
+// the PDF printed "SAY: NEGATIVE ONE HUNDRED US DOLLARS AND 25/100 ONLY".
+// The legal "Amount in Words" line now always matches the printed
+// document.
 
 // ─── Partner context type ───
 interface PartnerContext {
