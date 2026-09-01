@@ -875,6 +875,18 @@ export function buildPdfDocument({
   // template.footer_show_tax_id → one Tax ID line. Centred, 6.5pt, muted —
   // the classic trade-document payment-reference footer. Only rendered in
   // template mode; the memo footer stays minimal (audit14).
+  // audit20 dedup: when a template footer SEGMENT already carries the
+  // legal notice text (the proforma starter ships its customs disclaimer as
+  // footer_content), the body noticeBox would repeat the same sentence on
+  // the last page while the footer shows it on EVERY page. Skip the body
+  // notice when the footer already covers it (normalised containment).
+  const normText = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const normNotice = normText(docNotice);
+  const footerCoversNotice = footerSegments.some((seg) => {
+    const t = normText(substitutePlaceholders(seg.text, phData as any));
+    return t.length >= 20 && (normNotice.includes(t) || t.includes(normNotice));
+  });
+
   const footerBankLines: string[] = [];
   if (tpl) {
     if (tpl.footer_show_bank_details && bankAccountsList.length > 0 && !bankDetails) {
@@ -1559,10 +1571,15 @@ export function buildPdfDocument({
           })()}
         </View>
 
-        {/* DOCUMENT NOTICE — legally required disclaimer per doc type */}
+        {/* DOCUMENT NOTICE — legally required disclaimer per doc type.
+            audit20: skipped when a template footer segment already carries
+            the same text (it repeats on every page — the legal line is
+            covered without the body duplicate). */}
+        {!footerCoversNotice && (
         <View style={styles.noticeBox} wrap={false}>
           <Text style={styles.noticeText}>{docNotice}</Text>
         </View>
+        )}
         </View>
 
         {/* ── FOOTER (memorandum — pinned to the bottom, repeats on every page)

@@ -330,6 +330,37 @@ describe("audit20: DocumentTemplate wiring — offer", () => {
     expect(lastText).not.toContain("Mashreq-only-exclusivity"); // sanity
   });
 
+  it("skips the body notice when a footer segment carries the same legal text", async () => {
+    // The proforma starter ships its customs disclaimer as footer_content —
+    // audit20 dedup: the body noticeBox must not repeat it.
+    const proformaFooter = JSON.stringify({
+      segments: [
+        { id: "f1", text: "This proforma invoice is issued for customs/bank purposes only and is not a tax invoice.", fontSize: 7.5, bold: false, italic: false, color: "#666666", alignment: "center" },
+      ],
+    });
+    const doc = { ...offer, number: "PRO-2026-0001" } as any;
+    const el = React.createElement(buildPdfDocument, {
+      doc,
+      docType: "proforma",
+      partner,
+      tenant,
+      memorandumSettings: null,
+      template: makeTemplate({ type: "proforma", footer_content: proformaFooter }),
+    });
+    const { pdf } = await renderPdf(el);
+    const pages: string[] = [];
+    for (let i = 1; i <= pdf.numPages; i++) {
+      pages.push((await pageItems(pdf, i)).items.map((x) => x.str).join("\n"));
+    }
+    const all = pages.join("\n");
+    const occurrences = all.split("customs/bank purposes").length - 1;
+    // Footer repeats per page; the BODY notice must be gone → occurrences
+    // must equal the page count (footer only), not pages + 1.
+    expect(occurrences).toBeLessThanOrEqual(pdf.numPages);
+    expect(all).toContain("PROFORMA");
+    expect(all).toContain("PRO-2026-0001");
+  });
+
   it("footer qr_position none keeps the page number but drops the QR", async () => {
     const noQr = JSON.stringify({
       segments: [
