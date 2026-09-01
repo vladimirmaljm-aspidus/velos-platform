@@ -20,7 +20,7 @@
 // document hasn't been altered in transit.
 
 import React from "react";
-import { renderToBuffer, Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
+import { renderToBuffer, Document, Page, Text, View, Image, StyleSheet } from "@react-pdf/renderer";
 import { createHash } from "crypto";
 import type {
   MarketplaceTradeDocumentType,
@@ -163,6 +163,16 @@ const styles = StyleSheet.create({
     color: "#6b7280",
     fontStyle: "italic",
   },
+  // audit20 / 20-d2 — issuer logo in the header bar. When a logo is present
+  // the headerBar becomes a row: [title/meta column flex:1] + [logo on the
+  // right]; without one the header renders exactly as before (single
+  // column, no empty gap where the logo would sit).
+  headerBarRow: { flexDirection: "row", alignItems: "center" },
+  headerBarTitle: { flex: 1, flexDirection: "column" },
+  headerLogoWrap: { flexDirection: "column", justifyContent: "center", alignItems: "flex-end", marginLeft: 12 },
+  // objectFit "contain" is the key — it preserves aspect ratio inside the
+  // 110×36pt bounding box (react-pdf needs an explicit height).
+  headerLogo: { width: 110, height: 36, objectFit: "contain" },
 });
 
 interface TradeDocumentRootProps {
@@ -172,7 +182,68 @@ interface TradeDocumentRootProps {
   logoUrl?: string | null;
 }
 
-function TradeDocumentRoot({ type, data, issuerName }: TradeDocumentRootProps) {
+/**
+ * audit20 / 20-d2 — build the issuer logo element for the header bar.
+ *
+ * opts.logoUrl was accepted since Phase 8 but never destructured/rendered —
+ * marketplace PDFs could never show a logo. Only data: URLs are rendered:
+ * @react-pdf/renderer has no error boundary around <Image>, so a remote URL
+ * that 404s / returns a non-image would throw and take the ENTIRE document
+ * render down. The PDF route resolves the tenant logo to a data: URL before
+ * calling renderTradeDocumentPDF (the same contract as generator.ts's
+ * resolveLogoUrl for offer/invoice/proforma/LOI PDFs). Anything else
+ * arriving here is skipped with a log — the document renders with the
+ * no-logo layout instead of failing.
+ */
+function headerLogo(logoUrl: string | null | undefined): React.ReactElement | null {
+  if (!logoUrl) return null;
+  if (!logoUrl.startsWith("data:")) {
+    console.warn(
+      "[document-pdf] logoUrl is not a data: URL — skipping logo (resolve remote URLs to data: URLs in the route before rendering)",
+    );
+    return null;
+  }
+  return React.createElement(
+    View,
+    { style: styles.headerLogoWrap },
+    React.createElement(Image, { style: styles.headerLogo, src: logoUrl }),
+  );
+}
+
+/**
+ * audit20 / 20-d2 — the letterhead header bar. With a resolvable logo the
+ * bar is a row: [title/meta column flex:1] + [logo on the right]. Without
+ * one it renders exactly as before — the three texts as direct children of
+ * the copper headerBar (no layout change, no empty gap where the logo
+ * would sit), so default output stays identical.
+ */
+function letterheadHeader(
+  type: MarketplaceTradeDocumentType,
+  refNo: string,
+  issuerName: string,
+  generatedAt: string,
+  logoUrl: string | null | undefined,
+): React.ReactElement {
+  const headerTexts = [
+    React.createElement(Text, { style: styles.h1 }, DOC_TYPE_TITLE[type] ?? type),
+    React.createElement(Text, { style: styles.small }, `Reference: ${refNo}`),
+    React.createElement(
+      Text,
+      { style: styles.small },
+      `Issued: ${new Date(generatedAt).toLocaleDateString("en-GB")} · Issuer: ${issuerName}`,
+    ),
+  ];
+  const logoElement = headerLogo(logoUrl);
+  return React.createElement(
+    View,
+    { style: logoElement ? [styles.headerBar, styles.headerBarRow] : styles.headerBar },
+    ...(logoElement
+      ? [React.createElement(View, { style: styles.headerBarTitle }, ...headerTexts), logoElement]
+      : headerTexts),
+  );
+}
+
+function TradeDocumentRoot({ type, data, issuerName, logoUrl }: TradeDocumentRootProps) {
   const meta = data.meta ?? {};
   const refNo = meta.reference_number ?? data.reference_number ?? "—";
   const generatedAt = meta.generated_at ?? data.generated_at ?? new Date().toISOString();
@@ -209,17 +280,10 @@ function TradeDocumentRoot({ type, data, issuerName }: TradeDocumentRootProps) {
       // opacity 0.10 while the others used 0.12).
       React.createElement(Watermark, { text: watermarkText }),
       // Letterhead
-      React.createElement(
-        View,
-        { style: styles.headerBar },
-        React.createElement(Text, { style: styles.h1 }, DOC_TYPE_TITLE[type] ?? type),
-        React.createElement(Text, { style: styles.small }, `Reference: ${refNo}`),
-        React.createElement(
-          Text,
-          { style: styles.small },
-          `Issued: ${new Date(generatedAt).toLocaleDateString("en-GB")} · Issuer: ${issuerName}`,
-        ),
-      ),
+      // audit20 / 20-d2 — issuer logo support: with a logo the header bar
+      // is a row (title/meta column + logo); without one it renders
+      // exactly as before. See letterheadHeader / headerLogo above.
+      letterheadHeader(type, refNo, issuerName, generatedAt, logoUrl),
       // Document-type body
       renderDocumentBody(type, data),
       // 2h-F6 fix (round 4): footer wrapped in a `fixed` View so it repeats

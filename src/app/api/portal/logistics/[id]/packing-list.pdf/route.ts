@@ -13,6 +13,35 @@ import { checkRateLimit } from "@/lib/security/rate-limiter";
 
 export const runtime = "nodejs";
 
+// audit20 / 20-d2 — resolve the tenant's default letterhead logo / seal
+// image to a data: URL. The packing-list renderer only accepts data: URLs
+// (@react-pdf/renderer has no error boundary around <Image> — a remote
+// fetch failure would take the whole render down). Minimal local copy of
+// generator.ts's fetchAsDataUrl pattern (kept local to keep this route
+// self-contained, same as the admin route's copy); any failure returns
+// null → the PDF renders without the image.
+async function fetchImageAsDataUrl(url: string): Promise<string | null> {
+  try {
+    if (url.startsWith("data:")) return url;
+    let target = url;
+    if (!/^https?:\/\//i.test(url)) {
+      // Relative Supabase storage path — build the public URL the same
+      // way generator.ts's fallback does.
+      if (!process.env.SUPABASE_URL) return null;
+      target = `${process.env.SUPABASE_URL}/storage/v1/object/public/tenant-logos/${url}`;
+    }
+    const res = await fetch(target, { redirect: "follow" });
+    if (!res.ok) return null;
+    const contentType = (res.headers.get("content-type") || "").split(";")[0].trim();
+    if (!contentType.startsWith("image/")) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length === 0) return null;
+    return `data:${contentType};base64,${buf.toString("base64")}`;
+  } catch {
+    return null;
+  }
+}
+
 // Portal client: download the packing list for their OWN logistics request.
 // Ownership is enforced against the caller's partner_id + tenant_id — a
 // request from another partner returns 404 (not 403) so we don't leak
@@ -63,7 +92,26 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   // audit12: shared builder (extracted from the admin route — this portal
   // route previously carried an identical 25-line inline copy of the same
   // LR → PackingListInput mapping).
-  const buffer = await renderPackingListPdf(buildPackingListInput(lr as any, tenant?.name || "VELOS"));
+  const input = buildPackingListInput(lr as any, tenant?.name || "VELOS");
+  // audit20 / 20-d2 — letterhead + seal parity with the admin packing-list
+  // route + the offer/invoice/proforma/LOI PDFs: populate the (previously
+  // dead) letterheadUrl / sealUrl props from the tenant's DEFAULT
+  // letterhead + seal. Best-effort — the mock store throws
+  // mockUnsupported on these lookups and any fetch failure degrades to the
+  // unbranded PDF (never fails the download).
+  try {
+    const lh = await store.getDefaultLetterhead((lr as any).tenant_id);
+    if (lh?.logo_url) input.letterheadUrl = await fetchImageAsDataUrl(lh.logo_url);
+  } catch (e) {
+    console.warn("[portal.logistics.packing-list.pdf] letterhead resolve failed:", e);
+  }
+  try {
+    const seal = await store.getDefaultSeal((lr as any).tenant_id);
+    if (seal?.image_url) input.sealUrl = await fetchImageAsDataUrl(seal.image_url);
+  } catch (e) {
+    console.warn("[portal.logistics.packing-list.pdf] seal resolve failed:", e);
+  }
+  const buffer = await renderPackingListPdf(input);
   const bytes = new Uint8Array(buffer);
   return new Response(bytes as any, {
     headers: {

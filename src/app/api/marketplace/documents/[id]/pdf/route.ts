@@ -13,6 +13,44 @@ import { withApm } from "@/lib/monitoring/apm";
 
 export const runtime = "nodejs";
 
+// audit20 / 20-d2 — resolve the issuer tenant's logo to a data: URL so the
+// marketplace PDF header can render it. document-pdf.ts only accepts data:
+// URLs (@react-pdf/renderer has no error boundary around <Image> — a remote
+// fetch failure would take the whole render down). This is the minimal
+// version of generator.ts's private resolveLogoUrl/fetchAsDataUrl pair
+// (same contract, kept local to keep this route self-contained — see the
+// isParticipantInLinkedEntity note below for the same rationale):
+//   • data: URL → passed through untouched
+//   • http(s) URL → fetched, content-type-checked, re-encoded as base64
+//   • relative Supabase storage path → public-URL fallback, then fetched
+// Any failure returns null → the PDF renders without a logo (never throws).
+async function fetchImageAsDataUrl(url: string): Promise<string | null> {
+  try {
+    let target = url;
+    if (!url.startsWith("data:")) {
+      if (/^https?:\/\//i.test(url)) {
+        target = url;
+      } else if (process.env.SUPABASE_URL) {
+        // Relative storage path (e.g. "tenant-id/logo.png") — build the
+        // public URL the same way generator.ts's fallback does.
+        target = `${process.env.SUPABASE_URL}/storage/v1/object/public/tenant-logos/${url}`;
+      } else {
+        return null;
+      }
+      const res = await fetch(target, { redirect: "follow" });
+      if (!res.ok) return null;
+      const contentType = (res.headers.get("content-type") || "").split(";")[0].trim();
+      if (!contentType.startsWith("image/")) return null;
+      const buf = Buffer.from(await res.arrayBuffer());
+      if (buf.length === 0) return null;
+      return `data:${contentType};base64,${buf.toString("base64")}`;
+    }
+    return target;
+  } catch {
+    return null;
+  }
+}
+
 // GET /api/marketplace/documents/[id]/pdf — render and stream the PDF for
 // a trade document. The PDF is generated on demand from the stored
 // `document_data` JSONB; the generated_pdf_url column on the row is NOT
@@ -57,10 +95,18 @@ async function _get(req: NextRequest, ctx: { params: Promise<{ id: string }> }) 
 
     // Resolve the issuer's tenant name (for the letterhead).
     let issuerName = "VELOS Marketplace";
+    // audit20 / 20-d2 — issuer logo: the trade-document PDF previously
+    // accepted a logoUrl option it never rendered (and this route never
+    // passed one). Resolve the issuer tenant's logo to a data: URL —
+    // best-effort, failures render the PDF without the logo.
+    let logoUrl: string | null = null;
     try {
       const store = await getStore();
       const tenant = await store.getTenant(access.tenant_id);
       if (tenant?.name) issuerName = tenant.name;
+      if (tenant?.logo_url) {
+        logoUrl = await fetchImageAsDataUrl(tenant.logo_url);
+      }
     } catch (e) {
       console.warn("[m[marketplace.documents.pdf] tenant lookup failed:", e);
     }
@@ -71,7 +117,7 @@ async function _get(req: NextRequest, ctx: { params: Promise<{ id: string }> }) 
       buffer = await renderTradeDocumentPDF(
         doc.document_type,
         doc.document_data as Record<string, any>,
-        { issuerName },
+        { issuerName, logoUrl },
       );
     } catch (e: any) {
       console.error("[m[marketplace.documents.pdf] render failed:", e);

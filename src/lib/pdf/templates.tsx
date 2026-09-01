@@ -1,6 +1,8 @@
 import React from "react";
 import { Document, Page, Text, View, StyleSheet, Image, Font } from "@react-pdf/renderer";
-import type { Offer, Invoice, Proforma, LetterOfIntent, OfferLineItem, Partner, Tenant, MemorandumSettings, TenantSeal } from "@/lib/supabase/types";
+import type { Offer, Invoice, Proforma, LetterOfIntent, OfferLineItem, Partner, Tenant, MemorandumSettings, TenantSeal, DocumentTemplate, TenantLetterhead } from "@/lib/supabase/types";
+import { substitutePlaceholders, hasPagePlaceholders, type ContentSegment, type PlaceholderData } from "@/lib/utils/content-config";
+import { templateSegments, readTemplateQrConfig } from "@/lib/pdf/doc-template";
 
 // ── Shared helpers (audit12 dedup) ─────────────────────────────────────────
 // mmToPoints, mapFont, boldVariant, lightenHex, fmtMoney, amountInWords,
@@ -38,11 +40,24 @@ interface PdfDocData {
   docType: "offer" | "invoice" | "proforma" | "loi";
   partner: Partner | null;
   tenant: Tenant | null;
-  /** Per-tenant header/footer/body configuration. Replaces the legacy
-   *  DocumentTemplate. When null the renderer falls back to built-in defaults
-   *  so PDFs still render in mock/dev mode or when the row hasn't been
-   *  migrated yet. */
+  /** Per-tenant header/footer/body configuration (memorandum_settings).
+   *  audit20: now the FALLBACK layer — when a DocumentTemplate row exists
+   *  for this docType its values take precedence per field; fields the
+   *  template lacks (header fonts, logo geometry, footer column widths,
+   *  body text colour) still come from here. Null → built-in defaults. */
   memorandumSettings: MemorandumSettings | null;
+  /** audit20 / 20-a: the DocumentTemplate row resolved for (tenant, docType)
+   *  — what the Document Templates editor saves. Null = no template row →
+   *  render exactly as before (memorandum fallback). */
+  template?: DocumentTemplate | null;
+  /** The letterhead linked to the template (template.letterhead_id). Its
+   *  logo wins over tenant.logo_url and its curated company fields feed
+   *  {placeholder} substitution. Null when unlinked/unresolvable. */
+  letterhead?: TenantLetterhead | null;
+  /** Substitution values for {token} placeholders in template segments
+   *  (built by the generator via buildPlaceholderData). When absent the
+   *  renderer builds a minimal set from tenant/partner/doc inline. */
+  placeholderData?: PlaceholderData | null;
   verificationCode?: string;
   qrCodeDataUrl?: string;
   logoUrl?: string | null;
@@ -72,6 +87,9 @@ export function buildPdfDocument({
   partner,
   tenant,
   memorandumSettings,
+  template,
+  letterhead,
+  placeholderData,
   verificationCode,
   qrCodeDataUrl,
   logoUrl,
@@ -86,13 +104,23 @@ export function buildPdfDocument({
   // page margins, accent_color, table styling, selected_bank_accounts,
   // seal_enabled/seal_id) use built-in defaults — they're intentionally
   // out of memorandum_settings' scope so the schema stays simple.
+  // ── Settings resolution (audit20): template → memorandum → default ──
+  //
+  // Before audit20 this function read memorandum_settings ONLY — the
+  // DocumentTemplate the user edited in the Document Templates view was
+  // never consulted, so every saved field (page size, margins, header/footer
+  // segments, table styling, QR placement, bank selection) was dead config.
+  // Now the template wins per field; memorandum_settings remains the
+  // fallback for template-less tenants; built-ins are the last resort so
+  // the renderer always produces a professional document.
   const m = memorandumSettings;
-  const primaryColor = m?.primary_color || "#0d9488";
-  const accentColor = "#666666"; // secondary accent (footer divider)
+  const tpl = template ?? null;
+  const primaryColor = tpl?.primary_color || m?.primary_color || "#0d9488";
+  const accentColor = tpl?.accent_color || "#666666";
   const bodyTextColor = m?.body_text_color || "#1a1a1a";
 
   // ── Typography ──────────────────────────────────────────────────────
-  const fontFamily = mapFont(m?.body_font_family, "Helvetica");
+  const fontFamily = mapFont(tpl?.body_font_family ?? m?.body_font_family, "NotoSans");
   const headingFontFamily = boldVariant(fontFamily);
   // Header company-name font (header_left_*). Defaults to the body font.
   const headerFontBase = mapFont(m?.header_left_font_family, fontFamily);
@@ -110,79 +138,91 @@ export function buildPdfDocument({
   const footerRightFontSize = m?.footer_right_font_size ?? 8;
   const footerRightFontColor = m?.footer_right_font_color || "#666666";
 
-  const fontSize = m?.body_font_size ?? 9;
-  const lineHeight = m?.body_line_height ?? 1.4;
+  const fontSize = tpl?.body_font_size ?? m?.body_font_size ?? 9;
+  const lineHeight = tpl?.body_line_height ?? m?.body_line_height ?? 1.4;
 
-  // ── Page size ──────────────────────────────────────────────────────
-  // Page size + margins aren't part of memorandum_settings — they're
-  // hardcoded sensible defaults so the schema stays simple.
-  const pageSize = "A4";
+  // ── Page size (audit20: template-driven; A4 default) ────────────────
+  const pageSize = tpl?.page_size === "Letter" ? "LETTER" : "A4";
 
-  // ── Page margins (mm → points) ──────────────────────────────────────
-  const marginTop = mmToPoints(20);
-  const marginBottom = mmToPoints(20);
-  const marginLeft = mmToPoints(15);
-  const marginRight = mmToPoints(15);
+  // ── Page margins (mm → points) — template wins, memo-era defaults ────
+  const marginTop = mmToPoints(tpl?.page_margin_top ?? 20);
+  const marginBottom = mmToPoints(tpl?.page_margin_bottom ?? 20);
+  const marginLeft = mmToPoints(tpl?.page_margin_left ?? 15);
+  const marginRight = mmToPoints(tpl?.page_margin_right ?? 15);
 
-  // ── Header (memorandum — repeats on every page) ────────────────────
-  // 2 columns: company name (left) + logo (right). Disabled when explicitly
-  // turned off OR when the tenant has neither a name nor a logo to show.
-  const headerEnabled = m?.header_enabled !== false;
-  const headerHeightPts = headerEnabled ? mmToPoints(m?.header_height_mm ?? 22) : 0;
+  // ── Header (repeats on every page) ──────────────────────────────────
+  // Template mode: header_enabled + header_height + header_content segments
+  // (styled lines with {placeholders}) + show flags. Segments replace the
+  // auto company-name header when present; otherwise the auto header
+  // renders (company name gated by header_show_company_name, contact line
+  // by header_show_contact). Memorandum fallback keeps its own header_*.
+  const headerEnabled = tpl
+    ? tpl.header_enabled !== false
+    : m?.header_enabled !== false;
+  const headerSegments = tpl ? templateSegments(tpl.header_content) : [];
+  const hasHeaderSegments = headerSegments.length > 0;
+  const headerHeightPts = headerEnabled ? mmToPoints(tpl?.header_height ?? m?.header_height_mm ?? 22) : 0;
   // audit13: apply the header_bg_color setting the UI saves (white default).
   const headerBgColor = m?.header_bg_color || "#ffffff";
 
   // ── Logo (header right column) ──────────────────────────────────────
   // Logo is NEVER distorted — objectFit: "contain" preserves aspect ratio.
   // Dimensions come from settings (mm → pts); position offsets are also mm.
-  const logoEnabled = m?.logo_enabled !== false;
+  // audit20: the template's header_show_logo gates the logo (memo mode
+  // keeps its logo_enabled).
+  const logoEnabled = tpl
+    ? tpl.header_show_logo !== false
+    : m?.logo_enabled !== false;
   const logoWidthPts = mmToPoints(m?.logo_max_width_mm ?? 30);
   const logoHeightPts = mmToPoints(m?.logo_max_height_mm ?? 20);
   const logoOffsetXPts = mmToPoints(m?.logo_position_x_mm ?? 0);
   const logoOffsetYPts = mmToPoints(m?.logo_position_y_mm ?? 0);
   const showLogo = logoEnabled && !!logoUrl;
 
-  // ── Footer (memorandum — repeats on every page) ────────────────────
-  // audit14 — two fixes the user reported from production:
-  //   1. POSITION: the footer View flowed with the body content, so on any
-  //      page where the content ended early (typically page 2+) the footer
-  //      landed mid-page instead of at the bottom. It is now absolutely
-  //      positioned at bottom:0 — pinned to the bottom edge of EVERY page,
-  //      exactly like the header is pinned at top:0 (and like the packing-
-  //      list / marketplace footers, which always worked).
-  //   2. CONTENT: the footer carried the tenant address + website + email +
-  //      phone (duplicating the FROM/TO party boxes) AND the document
-  //      number + issue date (duplicating the title meta block) — on EVERY
-  //      page of a multi-page document. That's the "same information 6
-  //      times in one document" complaint. The footer now contains only
-  //      what is NOT already elsewhere: the QR verification code (left)
-  //      and "Page X of Y" (right).
-  const footerEnabled = m?.footer_enabled !== false;
-  const footerHeightPts = footerEnabled ? mmToPoints(m?.footer_height_mm ?? 18) : 0;
+  // ── Footer (repeats on every page) ──────────────────────────────────
+  // audit20 redesign — three-zone footer driven by the template:
+  //   [LEFT zone]   QR (qr_position=footer-left) + left-aligned segments
+  //   [CENTER zone] QR (footer-center) + centered segments + bank/tax lines
+  //   [RIGHT zone]  right-aligned segments + QR (footer-right) + page number
+  // Segments come from template.footer_content with their own
+  // fontSize/bold/italic/colour/alignment; {page_number}/{total_pages}
+  // resolve per page via the Text render prop. The bank-details and tax-id
+  // flags append compact centred lines (the classic trade-document footer).
+  // Without a template the layout degrades to the audit14 memo footer:
+  // QR left + "Page X of Y" right — pixel-identical to the previous output.
+  const footerEnabled = tpl
+    ? tpl.footer_enabled !== false
+    : m?.footer_enabled !== false;
+  const footerSegments = tpl ? templateSegments(tpl.footer_content) : [];
+  const qrCfg = tpl ? readTemplateQrConfig(tpl.footer_content) : null;
+  const qrPosition = qrCfg?.position ?? "footer-left";
+  const qrOpacity = qrCfg?.opacity ?? 1;
+  const footerHeightPts = footerEnabled ? mmToPoints(tpl?.footer_height ?? m?.footer_height_mm ?? 18) : 0;
   // audit13: apply the footer_bg_color setting the UI saves.
   const footerBgColor = m?.footer_bg_color || "#ffffff";
-  // audit13: apply the QR position offsets (mm) the UI saves.
+  // audit13: apply the QR position offsets (mm) the memo UI saves.
   const qrOffsetXPts = mmToPoints(m?.qr_position_x_mm ?? 0);
   const qrOffsetYPts = mmToPoints(m?.qr_position_y_mm ?? 0);
 
-  // audit14: two content columns (QR left, page# right) with a flexible
-  // spacer between. The percentages are used raw (left / center-spacer /
-  // right default to 25 / 50 / 25); the spacer's flexGrow/Shrink absorbs
-  // any misconfiguration so the footer always renders cleanly.
-  const footerLeftPct = Math.max(0, m?.footer_left_width_pct ?? 25);
-  const footerSpacerPct = Math.max(0, m?.footer_center_width_pct ?? 50);
-  const footerRightPct = Math.max(0, m?.footer_right_width_pct ?? 25);
+  // Page number flag: template-driven when a template exists (memo mode
+  // always showed it — keep that behaviour).
+  const showPageNumber = tpl ? tpl.footer_show_page_number !== false : true;
 
-  // ── QR code (footer left column) ───────────────────────────────────
-  const qrEnabled = m?.qr_enabled !== false;
-  const qrSizePts = mmToPoints(m?.qr_size_mm ?? 15);
+  // ── QR code (placement zone) ────────────────────────────────────────
+  // Template mode: qr_position/size/opacity from footer_content._qrConfig
+  // (footer-right default — matches the template editor's default).
+  // Memo mode: footer-left with the memo QR size (previous behaviour).
+  const qrEnabled = tpl
+    ? qrPosition !== "none"
+    : m?.qr_enabled !== false;
+  const qrSizePts = mmToPoints(qrCfg?.size ?? m?.qr_size_mm ?? 15);
   const showQr = qrEnabled && !!qrCodeDataUrl;
 
-  // ── Table styling (built-in defaults — not in memorandum_settings) ──
-  const tableHeaderBg = primaryColor;
-  const tableHeaderColor = "#ffffff";
-  const tableBorderColor = "#e5e7eb";
-  const tableStripe = true;
+  // ── Table styling (audit20: template-driven) ────────────────────────
+  const tableHeaderBg = tpl?.table_header_bg || primaryColor;
+  const tableHeaderColor = tpl?.table_header_color || "#ffffff";
+  const tableBorderColor = tpl?.table_border_color || "#e5e7eb";
+  const tableStripe = tpl ? tpl.table_stripe !== false : true;
   // Stripe row background: a very light tint of the header color so it
   // matches the document's branding instead of being a flat grey.
   const stripeBg = lightenHex(tableHeaderBg, 0.92);
@@ -298,33 +338,48 @@ export function buildPdfDocument({
       // audit13: footer_bg_color setting.
       backgroundColor: footerBgColor,
     },
-    footerColLeft: {
+    // audit20: three-zone footer. LEFT/CENTER zones are flexible content
+    // columns (segments stack, QR anchors per its configured zone); the
+    // RIGHT zone stacks right-aligned content + QR (footer-right) + the
+    // page number. Zone widths: fixed anchors left/right (~30%), flexible
+    // center — no percentage math, no ×100 flexBasis drift (the old code
+    // emitted "2500%" for a configured 25 — react-pdf happened to render
+    // it correctly, but the code contradicted its own comment; the new
+    // zones use plain flexGrow/flexBasis in POINTS-free relative terms).
+    footerZoneLeft: {
       flexDirection: "column",
+      justifyContent: "center",
       alignItems: "flex-start",
-      justifyContent: "center",
-      flexBasis: `${footerLeftPct * 100}%`,
+      alignSelf: "stretch",
+      flexBasis: "30%",
       flexGrow: 0,
-      flexShrink: 0,
+      flexShrink: 1,
     },
-    // audit14: the center column no longer renders the tenant address /
-    // contact details (they duplicate the FROM/TO party boxes on every
-    // page). It remains as a flexible spacer so the left (QR) and right
-    // (page number) columns keep their configured anchor widths.
-    footerColCenter: {
+    footerZoneCenter: {
       flexDirection: "column",
-      alignItems: "center",
       justifyContent: "center",
-      flexBasis: `${footerSpacerPct * 100}%`,
+      alignItems: "center",
+      alignSelf: "stretch",
+      flexBasis: "30%",
       flexGrow: 1,
       flexShrink: 1,
     },
-    footerColRight: {
+    footerZoneRight: {
       flexDirection: "column",
-      alignItems: "flex-end",
       justifyContent: "center",
-      flexBasis: `${footerRightPct * 100}%`,
+      alignItems: "flex-end",
+      alignSelf: "stretch",
+      flexBasis: "30%",
       flexGrow: 0,
-      flexShrink: 0,
+      flexShrink: 1,
+    },
+    // Right zone can host QR + page number side by side (footer-right):
+    // a row keeps them on one line so a 15mm QR + label + page text fits
+    // a 20mm footer.
+    footerZoneRightRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
     },
     footerQrWrap: {
       flexDirection: "column",
@@ -340,6 +395,36 @@ export function buildPdfDocument({
       color: footerRightFontColor,
       fontFamily: footerRightFontFamily,
       textAlign: "right",
+    },
+    // audit20: template footer segment line — each segment carries its own
+    // fontSize / bold / italic / colour / alignment; the base style keeps
+    // the vertical rhythm tight so several lines fit the footer band.
+    footerSegment: {
+      fontSize: 7.5,
+      marginBottom: 1,
+      textAlign: "left",
+    },
+    footerBankLine: {
+      fontSize: 6.5,
+      color: "#888888",
+      textAlign: "center",
+      marginBottom: 1,
+    },
+    // audit20: template header segment line — same styling model as the
+    // footer segments but sized for the letterhead band.
+    headerSegment: {
+      fontSize: 9,
+      marginBottom: 1,
+      textAlign: "left",
+    },
+    // audit20: compact contact line under the auto company name (gated by
+    // header_show_contact) — city/country only, never the full street
+    // address (the FROM/TO party boxes already carry it; audit14 removed
+    // the full-address duplication from the footer for the same reason).
+    headerContactLine: {
+      fontSize: 7.5,
+      color: "#666666",
+      marginBottom: 1,
     },
 
     // ── Document title block ──────────────────────────────────────────
@@ -614,8 +699,16 @@ export function buildPdfDocument({
   // ── Bank accounts list ────────────────────────────────────────────
   // If the document has a specific bank_details override (user selected
   // a specific bank account in the offer/invoice form), show ONLY that.
-  // Otherwise show all tenant bank accounts.
-  const bankAccountsList: any[] = bankDetails ? [] : parsedBankAccounts;
+  // Otherwise:
+  //   • template.selected_bank_accounts = [0,2] → show only those indexes
+  //     into the tenant bank_accounts array (audit20 — the field finally
+  //     has a column and now actually filters)
+  //   • null/empty/absent → show all tenant accounts (previous behaviour)
+  const selectedIdx = tpl?.selected_bank_accounts;
+  const filteredBankAccounts: any[] = Array.isArray(selectedIdx) && selectedIdx.length > 0
+    ? parsedBankAccounts.filter((_: any, i: number) => selectedIdx.includes(i))
+    : parsedBankAccounts;
+  const bankAccountsList: any[] = bankDetails ? [] : filteredBankAccounts;
 
   // ── Party box helper (used for FROM / TO) ──────────────────────────
   const PartyBox = ({
@@ -686,6 +779,117 @@ export function buildPdfDocument({
   // Verification code lives ONLY in the PDF metadata (subject/keywords) — never visible.
   const verificationMeta = verificationCode ? ` Verification: ${verificationCode}.` : "";
 
+  // ── Placeholder substitution data (audit20) ───────────────────────
+  // The generator passes curated values (letterhead-aware); when absent
+  // (e.g. tests rendering buildPdfDocument directly) build a minimal set
+  // inline so {tokens} still resolve.
+  const phData: PlaceholderData = placeholderData ?? {
+    company_name: tenant?.name || "",
+    company_legal_name: tenant?.legal_name || tenant?.name || "",
+    company_address: tenant?.address_line || "",
+    company_city: tenant?.city || "",
+    company_country: tenant?.country ? countryName(tenant.country) : "",
+    company_postal_code: tenant?.postal_code || "",
+    company_reg: tenant?.registration_number || "",
+    company_vat: tenant?.vat_number || "",
+    company_tax_id: tenant?.tax_id || "",
+    company_phone: tenant?.phone || "",
+    company_email: tenant?.email || "",
+    company_website: tenant?.website || "",
+    bank_name: tenant?.bank_name || "",
+    bank_iban: tenant?.bank_iban || "",
+    bank_swift: tenant?.bank_swift || "",
+    doc_number: doc.number || "",
+    doc_date: fmtDate((doc as any).issue_date || doc.created_at),
+    valid_until: fmtDate((doc as any).valid_until || (doc as any).validity_until || null),
+    due_date: fmtDate((doc as any).due_date || null),
+    partner_name: partner?.name || "",
+    partner_address: partner?.address_line || "",
+    partner_city: partner?.city || "",
+    partner_country: partner?.country ? countryName(partner.country) : "",
+    total: typeof (doc as any).total === "number" ? fmtMoney((doc as any).total, currency) : "",
+    currency,
+  };
+
+  // ── Segment renderer (audit20) ────────────────────────────────────
+  // Renders one template header/footer segment: {placeholders} substituted,
+  // per-segment fontSize/bold/italic/colour/alignment, and — when the text
+  // carries {page_number}/{total_pages} — the react-pdf render prop so the
+  // value resolves PER PAGE (substitutePlaceholders leaves those tokens
+  // untouched when page_number isn't in the data).
+  const SegmentText = ({ seg, kind }: { seg: ContentSegment; kind: "header" | "footer" }) => {
+    const baseStyle = kind === "header" ? styles.headerSegment : styles.footerSegment;
+    const segFont = seg.bold ? boldVariant(fontFamily) : fontFamily;
+    const substituted = substitutePlaceholders(seg.text, phData as any);
+    return hasPagePlaceholders(seg.text) ? (
+      <Text
+        style={[baseStyle, {
+          fontSize: seg.fontSize,
+          fontFamily: segFont,
+          fontStyle: seg.italic ? ("italic" as const) : undefined,
+          color: seg.color,
+          textAlign: seg.alignment,
+        }]}
+        render={({ pageNumber, totalPages }: { pageNumber: number; totalPages: number }) =>
+          substitutePlaceholders(seg.text, { ...(phData as any), page_number: pageNumber, total_pages: totalPages })
+        }
+      />
+    ) : (
+      <Text
+        style={[baseStyle, {
+          fontSize: seg.fontSize,
+          fontFamily: segFont,
+          fontStyle: seg.italic ? ("italic" as const) : undefined,
+          color: seg.color,
+          textAlign: seg.alignment,
+        }]}
+      >
+        {substituted}
+      </Text>
+    );
+  };
+
+  // ── QR block (audit20 zones) ──────────────────────────────────────
+  // The QR image + "Scan to verify" label, wrapped for the zone layout.
+  // audit20: applies the template's qr_opacity (_qrConfig) — previously
+  // only the memo path could offset it.
+  const QrBlock = () => (
+    <View style={styles.footerQrWrap}>
+      {/* eslint-disable-next-line jsx-a11y/alt-text */}
+      <Image
+        style={{
+          width: qrSizePts,
+          height: qrSizePts,
+          objectFit: "contain",
+          opacity: qrOpacity,
+        }}
+        src={qrCodeDataUrl!}
+      />
+      <Text style={styles.footerQrLabel}>Scan to verify</Text>
+    </View>
+  );
+
+  // ── Footer bank / tax compact lines (audit20) ─────────────────────
+  // template.footer_show_bank_details → one compact line per shown bank
+  // account (max 2, the account list is already template-filtered);
+  // template.footer_show_tax_id → one Tax ID line. Centred, 6.5pt, muted —
+  // the classic trade-document payment-reference footer. Only rendered in
+  // template mode; the memo footer stays minimal (audit14).
+  const footerBankLines: string[] = [];
+  if (tpl) {
+    if (tpl.footer_show_bank_details && bankAccountsList.length > 0 && !bankDetails) {
+      for (const acct of bankAccountsList.slice(0, 2)) {
+        footerBankLines.push(
+          `${acct.bankName || acct.bank_name || "Bank"}: ${acct.accountNumber || acct.account_number || "—"} · SWIFT ${acct.swiftCode || acct.swift_code || "—"}`,
+        );
+      }
+    }
+    if (tpl.footer_show_tax_id) {
+      const taxId = letterhead?.company_tax_id || tenant?.tax_id;
+      if (taxId) footerBankLines.push(`Tax ID: ${taxId}`);
+    }
+  }
+
   return (
     <Document
       title={pdfMeta?.title || `${docTitleMap[docType]} ${doc.number}`}
@@ -716,7 +920,31 @@ export function buildPdfDocument({
             can cause the renderer to lose the fixed signal on pages 2+. */}
         <View style={styles.header} fixed>
           <View style={styles.headerLeft}>
-            <Text style={styles.companyName}>{tenant?.legal_name || tenant?.name || "Company"}</Text>
+            {hasHeaderSegments ? (
+              /* audit20: template header segments — styled lines with
+                 {placeholders} (company name / address / reg / VAT…), each
+                 with its own fontSize / bold / italic / colour / alignment.
+                 Replaces the auto company-name header; {page_number} etc.
+                 resolve per page via the render prop. */
+              headerSegments.map((seg) => <SegmentText key={seg.id} seg={seg} kind="header" />)
+            ) : (
+              <>
+                {(tpl?.header_show_company_name !== false) && (
+                  <Text style={styles.companyName}>{tenant?.legal_name || tenant?.name || "Company"}</Text>
+                )}
+                {/* audit20: header_show_contact renders the compact
+                    city/country line (letterhead-style). Template mode ONLY —
+                    the memo-era header stays company-name-only (audit13/14
+                    dedup: city/country already live in the FROM party box,
+                    and the header contact line would repeat them on every
+                    page of a multi-page doc). */}
+                {tpl && tpl.header_show_contact !== false && (tenant?.city || tenant?.country) && (
+                  <Text style={styles.headerContactLine}>
+                    {[tenant?.city, countryName(tenant?.country)].filter(Boolean).join(", ")}
+                  </Text>
+                )}
+              </>
+            )}
           </View>
           {showLogo && logoUrl ? (
             <View style={styles.headerLogoWrap}>
@@ -989,16 +1217,21 @@ export function buildPdfDocument({
               <Text style={styles.totalLabel}>{docType === "offer" ? "Tax / VAT:" : "VAT:"}</Text>
               <Text style={styles.totalValue}>{fmtMoney((doc as any).tax_total, currency)}</Text>
             </View>
-          ) : (
-            /* 2g-F11: when tax_total = 0 on a commercial invoice/proforma/offer,
-               this is a reverse-charge (B2B cross-border) scenario. Tax
-               authorities require the "Reverse charge" legend — omitting it
-               makes the document look like a tax-exempt consumer sale. */
+          ) : (doc as any).tax_total === 0 ? (
+            /* 2g-F11: when tax_total is EXPLICITLY 0 on a commercial
+               invoice/proforma/offer, this is a reverse-charge (B2B
+               cross-border) scenario. Tax authorities require the "Reverse
+               charge" legend — omitting it makes the document look like a
+               tax-exempt consumer sale.
+               audit20 fix: the legend used to print when tax_total was
+               null/undefined too (unknown ≠ zero) — a missing tax field
+               asserted a legally-weighty statement the issuer never made.
+               Unknown tax now renders NO VAT row at all. */
             <View style={styles.totalRow}>
               <Text style={styles.totalLabel}>VAT:</Text>
               <Text style={styles.totalValue}>Reverse charge — VAT settled by recipient</Text>
             </View>
-          )}
+          ) : null}
           <View style={styles.grandTotal}>
             <Text style={styles.grandTotalLabel}>GRAND TOTAL:</Text>
             <Text style={styles.grandTotalValue}>{fmtMoney((doc as any).total, currency)}</Text>
@@ -1342,43 +1575,62 @@ export function buildPdfDocument({
             that used to sit in the center column duplicated the party
             boxes on every page, and the doc number + date in the right
             column duplicated the title meta block. */}
+        {/* audit20: three-zone footer. QR anchors to its configured zone
+            (footer-left / footer-center / footer-right / none — from the
+            template's footer_content._qrConfig; memo mode keeps QR-left,
+            the pre-audit20 look). Template segments render with their own
+            alignment; the bank-details / tax-id flags append compact
+            centred lines. Page number stays bottom-right (reading
+            convention). Memo mode (no template): QR left + page# right —
+            pixel-identical to the audit14 output. */}
         <View style={styles.footer} fixed>
-            {/* Left column — QR code (verification; unique to the footer) */}
-            <View style={styles.footerColLeft}>
-              {showQr && qrCodeDataUrl ? (
-                <View style={styles.footerQrWrap}>
-                  {/* eslint-disable-next-line jsx-a11y/alt-text */}
-                  <Image
-                    style={{
-                      width: qrSizePts,
-                      height: qrSizePts,
-                      objectFit: "contain",
-                    }}
-                    src={qrCodeDataUrl}
-                  />
-                  <Text style={styles.footerQrLabel}>Scan to verify</Text>
-                </View>
+            {/* LEFT zone — QR (footer-left) + left-aligned segments */}
+            <View style={styles.footerZoneLeft}>
+              {showQr && qrPosition === "footer-left" && qrCodeDataUrl ? (
+                <QrBlock />
+              ) : null}
+              {footerSegments.filter((s) => s.alignment === "left").map((seg) => (
+                <SegmentText key={seg.id} seg={seg} kind="footer" />
+              ))}
+            </View>
+
+            {/* CENTER zone — QR (footer-center) + centered segments +
+                the template's bank-details / tax-id compact lines.
+                (audit14 dedup preserved: these render only when a template
+                explicitly asks for them — the memo-era footer never
+                duplicated the party boxes.) */}
+            <View style={styles.footerZoneCenter}>
+              {footerSegments.filter((s) => s.alignment === "center").map((seg) => (
+                <SegmentText key={seg.id} seg={seg} kind="footer" />
+              ))}
+              {footerBankLines.map((line, i) => (
+                <Text key={`fb-${i}`} style={styles.footerBankLine}>{line}</Text>
+              ))}
+              {showQr && qrPosition === "footer-center" && qrCodeDataUrl ? (
+                <QrBlock />
               ) : null}
             </View>
 
-            {/* Center column — empty spacer (audit14). The tenant address /
-                website / email / phone were REMOVED: they duplicate the
-                FROM/TO party boxes, and on a multi-page document the footer
-                repeated them on every page ("same information 6 times"). */}
-            <View style={styles.footerColCenter} />
-
-            {/* Right column — page number only (audit14).
-                2g-F4 fix (round 4): react-pdf v4 supports the `render` prop
-                on <Text> elements inside a `fixed` View — use it for
-                "Page X of Y" (was hardcoded "Page 1" on every page).
-                audit13→audit14: the identifier line ("LOI-2026-000005 · 29
-                Aug 2026") was removed — the document number and issue date
-                are already in the title meta block on page 1. */}
-            <View style={styles.footerColRight}>
-              <Text
-                style={styles.footerPage}
-                render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`}
-              />
+            {/* RIGHT zone — right-aligned segments + QR (footer-right,
+                side by side with the page number so a 15mm QR fits a 20mm
+                footer) + "Page X of Y".
+                2g-F4: react-pdf v4 supports the `render` prop on <Text>
+                inside a `fixed` View — correct per-page numbering. */}
+            <View style={styles.footerZoneRight}>
+              <View style={styles.footerZoneRightRow}>
+                {showQr && qrPosition === "footer-right" && qrCodeDataUrl ? (
+                  <QrBlock />
+                ) : null}
+                {showPageNumber ? (
+                  <Text
+                    style={styles.footerPage}
+                    render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`}
+                  />
+                ) : null}
+              </View>
+              {footerSegments.filter((s) => s.alignment === "right").map((seg) => (
+                <SegmentText key={seg.id} seg={seg} kind="footer" />
+              ))}
             </View>
         </View>
       </Page>

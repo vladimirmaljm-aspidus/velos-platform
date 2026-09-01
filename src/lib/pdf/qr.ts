@@ -4,9 +4,14 @@ import { randomBytes } from "crypto";
 /**
  * Generates a QR code as a data URL (base64 PNG).
  * The QR code encodes the public verification URL.
+ *
+ * audit20 fix: the legacy fallback pointed at the OLD product domain
+ * (aspidus.onrender.com) — APP_BASE_URL isn't set in any repo env file, so
+ * deployments without it minted QR codes that led to a dead site. The
+ * fallback is now the live production deployment.
  */
 export async function generateQrCodeDataUrl(verificationCode: string, baseUrl?: string): Promise<string> {
-  const base = baseUrl || process.env.APP_BASE_URL || "https://aspidus.onrender.com";
+  const base = baseUrl || process.env.APP_BASE_URL || "https://velos-platform.vercel.app";
   const url = `${base}/verify/${verificationCode}`;
   return QRCode.toDataURL(url, {
     width: 120,

@@ -1,5 +1,5 @@
 import React from "react";
-import { renderToBuffer, Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
+import { renderToBuffer, Document, Page, Text, View, Image, StyleSheet } from "@react-pdf/renderer";
 // audit12: shared helpers + components (fmtValue, sumRows, Watermark,
 // logisticsWatermarkText, base styles) — single source of truth shared with
 // templates.tsx and marketplace/document-pdf.ts.
@@ -35,11 +35,16 @@ export interface PackingListInput {
   createdAt?: string | null;
   targetPickupDate?: string | null;
   targetDeliveryDate?: string | null;
-  // F-FINAL: optional letterhead / seal image URLs for future per-tenant
-  // branding parity with the offer/invoice/proforma PDF template (which
-  // already supports `logoUrl` and `sealImageUrl`). Currently unused by
-  // callers — renderPackingListPdf accepts them so future code can pass
-  // them through without another interface break.
+  // audit20 / 20-d2 — optional letterhead / seal image URLs for per-tenant
+  // branding parity with the offer/invoice/proforma/LOI PDF template (which
+  // already supports `logoUrl` and `sealImageUrl`). NOW RENDERED (previously
+  // dead props): letterheadUrl draws the tenant logo on the right of the
+  // header bar, sealUrl stamps the tenant seal in the authorization block
+  // at the bottom. Data-URL-only contract — @react-pdf/renderer has no
+  // error boundary around <Image>, so the admin/portal packing-list routes
+  // resolve remote images to data: URLs before calling
+  // renderPackingListPdf (anything else is skipped with a log and the PDF
+  // renders without the image).
   letterheadUrl?: string | null;
   sealUrl?: string | null;
   origin: {
@@ -115,6 +120,22 @@ const styles = StyleSheet.create({
   badge: { fontSize: 8, backgroundColor: "#fee2e2", color: "#991b1b", padding: 3, borderRadius: 2 },
   badgeNeutral: { fontSize: 8, backgroundColor: "#e0e7ff", color: "#3730a3", padding: 3, borderRadius: 2 },
   instructions: { border: "1pt solid #d1d5db", borderRadius: 3, padding: 8, backgroundColor: "#f9fafb", marginTop: 4 },
+  // audit20 / 20-d2 — letterhead logo (right side of the header bar) +
+  // seal stamp (authorization block at the bottom). Both render ONLY when
+  // the caller passes a data: URL; the default output (no props) is
+  // byte-identical to the pre-audit20 layout.
+  headerBarRow: { flexDirection: "row", alignItems: "center" },
+  headerBarTitle: { flex: 1, flexDirection: "column" },
+  headerLogoWrap: { flexDirection: "column", justifyContent: "center", alignItems: "flex-end", marginLeft: 12 },
+  // objectFit "contain" preserves aspect ratio inside the 100×30pt
+  // bounding box (react-pdf needs an explicit height).
+  headerLogo: { width: 100, height: 30, objectFit: "contain" },
+  signRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", gap: 24, marginTop: 30 },
+  signBlock: { flex: 1 },
+  signLine: { borderTop: "1pt solid #111", marginTop: 40, paddingTop: 4, fontSize: 8, color: "#374151" },
+  // Semi-transparent stamp (~70×70pt) — mirrors the memorandum template's
+  // TenantSeal placement semantics (near the signature/authorization area).
+  sealStamp: { width: 70, height: 70, objectFit: "contain", opacity: 0.9 },
 });
 
 function addr(a: PackingListInput["origin"]): string {
@@ -167,6 +188,57 @@ export function buildPackingListInput(lr: any, tenantName: string): PackingListI
   };
 }
 
+/**
+ * audit20 / 20-d2 — build the header bar. With a resolvable letterheadUrl
+ * the bar becomes a row: [title/meta column flex:1] + [logo ~100×30pt,
+ * objectFit contain, right side]. Without one (the default — callers that
+ * configure no tenant letterhead, and all existing tests) it renders
+ * exactly as before: the three texts as direct children of the copper
+ * headerBar, no layout change, no empty gap.
+ *
+ * Only data: URLs are rendered — @react-pdf/renderer has no error boundary
+ * around <Image>, so a remote URL that 404s or returns a non-image would
+ * throw and fail the whole PDF render. The admin + portal packing-list
+ * routes resolve the tenant's default letterhead to a data: URL before
+ * calling renderPackingListPdf (mirroring generator.ts's resolveLogoUrl
+ * for the offer/invoice/proforma/LOI PDFs).
+ */
+function letterheadHeader(input: PackingListInput): React.ReactElement {
+  const headerTexts = [
+    React.createElement(Text, { style: styles.h1 }, `Packing List · ${input.requestNumber}`),
+    React.createElement(
+      Text,
+      { style: styles.small },
+      `${input.mode.toUpperCase()}${input.containerType ? " · " + input.containerType : ""}${input.incoterm ? " · " + input.incoterm : ""}`
+        + (input.createdAt ? ` · Issued ${new Date(input.createdAt).toLocaleDateString("en-GB")}` : ""),
+    ),
+    React.createElement(Text, { style: styles.small }, `Issuer: ${input.tenantName}`),
+  ];
+  // Narrowed to a proven data: URL (string) or null — keeps the <Image src>
+  // type happy AND documents the contract at the value level.
+  const logoSrc =
+    input.letterheadUrl && input.letterheadUrl.startsWith("data:") ? input.letterheadUrl : null;
+  if (input.letterheadUrl && !logoSrc) {
+    console.warn(
+      "[packing-list] letterheadUrl is not a data: URL — skipping logo (resolve remote URLs to data: URLs in the route before rendering)",
+    );
+  }
+  const logoElement = logoSrc
+    ? React.createElement(
+        View,
+        { style: styles.headerLogoWrap },
+        React.createElement(Image, { style: styles.headerLogo, src: logoSrc }),
+      )
+    : null;
+  return React.createElement(
+    View,
+    { style: logoElement ? [styles.headerBar, styles.headerBarRow] : styles.headerBar },
+    ...(logoElement
+      ? [React.createElement(View, { style: styles.headerBarTitle }, ...headerTexts), logoElement]
+      : headerTexts),
+  );
+}
+
 export async function renderPackingListPdf(input: PackingListInput): Promise<Buffer> {
   const totalWeight = input.cargo.total_weight_kg ?? sumRows(input.packingList, (l) => Number(l.unit_weight_kg || 0) * Number(l.packages || 0));
   const totalVolume = input.cargo.total_volume_cbm ?? sumRows(input.packingList, (l) => (Number(l.length_cm || 0) * Number(l.width_cm || 0) * Number(l.height_cm || 0) * Number(l.packages || 0)) / 1_000_000);
@@ -181,6 +253,21 @@ export async function renderPackingListPdf(input: PackingListInput): Promise<Buf
   // (previously this one rotated −30° while the others were straight).
   const _status = logisticsWatermarkText(input.targetPickupDate, input.targetDeliveryDate);
 
+  // audit20 / 20-d2 — seal stamp element (semi-transparent, ~70×70pt) for
+  // the authorization block at the bottom. Data-URL-only contract — same
+  // rationale as the letterhead logo (see letterheadHeader above): a remote
+  // URL that fails mid-render would take the whole PDF down, so anything
+  // that isn't a data: URL is skipped with a log.
+  const sealSrc = input.sealUrl && input.sealUrl.startsWith("data:") ? input.sealUrl : null;
+  if (input.sealUrl && !sealSrc) {
+    console.warn(
+      "[packing-list] sealUrl is not a data: URL — skipping seal (resolve remote URLs to data: URLs in the route before rendering)",
+    );
+  }
+  const sealElement = sealSrc
+    ? React.createElement(Image, { style: styles.sealStamp, src: sealSrc })
+    : null;
+
   const doc = React.createElement(
     Document,
     null,
@@ -190,18 +277,10 @@ export async function renderPackingListPdf(input: PackingListInput): Promise<Buf
       // Status watermark — shared component, fixed View, low opacity.
       React.createElement(Watermark, { text: _status }),
       // Header
-      React.createElement(
-        View,
-        { style: styles.headerBar },
-        React.createElement(Text, { style: styles.h1 }, `Packing List · ${input.requestNumber}`),
-        React.createElement(
-          Text,
-          { style: styles.small },
-          `${input.mode.toUpperCase()}${input.containerType ? " · " + input.containerType : ""}${input.incoterm ? " · " + input.incoterm : ""}`
-            + (input.createdAt ? ` · Issued ${new Date(input.createdAt).toLocaleDateString("en-GB")}` : ""),
-        ),
-        React.createElement(Text, { style: styles.small }, `Issuer: ${input.tenantName}`),
-      ),
+      // audit20 / 20-d2 — letterhead logo support: with a logo the header
+      // bar is a row (title/meta column + logo); without one it renders
+      // exactly as before. See letterheadHeader above.
+      letterheadHeader(input),
       // Route (origin / destination)
       React.createElement(
         View,
@@ -320,6 +399,32 @@ export async function renderPackingListPdf(input: PackingListInput): Promise<Buf
               View,
               { style: styles.instructions },
               React.createElement(Text, null, input.specialInstructions),
+            ),
+          )
+        : null,
+      // ── audit20 / 20-d2 — seal + authorization block (bottom) ────────
+      // Rendered ONLY when a seal is configured — the default output
+      // (no sealUrl) stays identical (existing tests pass no props).
+      // The seal stamps next to the signature line, mirroring the
+      // memorandum template's TenantSeal placement.
+      sealElement
+        ? React.createElement(
+            View,
+            { style: styles.section },
+            React.createElement(Text, { style: styles.sectionTitle }, "Authorization"),
+            React.createElement(
+              View,
+              { style: styles.signRow },
+              React.createElement(
+                View,
+                { style: styles.signBlock },
+                React.createElement(
+                  Text,
+                  { style: styles.signLine },
+                  "Authorized signature — for and on behalf of the issuer",
+                ),
+              ),
+              sealElement,
             ),
           )
         : null,

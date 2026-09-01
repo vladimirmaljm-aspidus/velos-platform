@@ -347,7 +347,15 @@ export async function POST(req: NextRequest) {
       "portal:read",
       "portal.rfq_read",
       "portal-uploads:read",
-      "document-templates:read", "document-templates:write",
+      // audit20 / 20-b — was colon-format "document-templates:read/write",
+      // which matches NO key in the permissions catalog (dot format, see
+      // DOCUMENT_TEMPLATES in src/lib/permissions/catalog.ts). The legacy
+      // colon back-compat in can() papered over it at runtime, but the keys
+      // are invisible to catalog-driven consumers (permission tree UI,
+      // role-override grant matching). "write" ≈ create+update+delete, so
+      // the trial admin keeps full template CRUD.
+      "document-templates.read", "document-templates.create",
+      "document-templates.update", "document-templates.delete",
       "erp:read",
       "marketplace:read", "marketplace:write",
       "reports:read",

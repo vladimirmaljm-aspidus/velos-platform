@@ -160,15 +160,18 @@ describe("lightenHex", () => {
 });
 
 describe("mapFont", () => {
+  // audit20: sans stacks now resolve to the registered Unicode "NotoSans"
+  // family — the WinAnsi-only built-in Helvetica corrupted Cyrillic/Greek/
+  // Serbian-Latin ĐČĆ glyphs in every PDF.
   it("maps CSS font stacks to PDF-safe families", () => {
-    expect(mapFont("Inter, system-ui, sans-serif")).toBe("Helvetica");
+    expect(mapFont("Inter, system-ui, sans-serif")).toBe("NotoSans");
     expect(mapFont("times")).toBe("Times-Roman");
     expect(mapFont("times-new-roman")).toBe("Times-Roman");
     expect(mapFont("courier")).toBe("Courier");
   });
   it("falls back for unknown/missing fonts", () => {
-    expect(mapFont(null)).toBe("Helvetica");
-    expect(mapFont("Comic Sans")).toBe("Helvetica");
+    expect(mapFont(null)).toBe("NotoSans");
+    expect(mapFont("Comic Sans")).toBe("NotoSans");
     expect(mapFont(undefined, "Times-Roman")).toBe("Times-Roman");
   });
 });
@@ -178,16 +181,19 @@ describe("boldVariant", () => {
   // INVALID react-pdf font that never rendered. The correct Times bold family
   // is "Times-Bold". Stale invariant updated to the corrected behaviour.
   it("maps every built-in base family to its VALID bold variant", () => {
-    expect(boldVariant("Helvetica")).toBe("Helvetica-Bold");
+    // audit20: Helvetica→NotoSans-Bold (Unicode); Times/Courier keep built-ins
+    expect(boldVariant("Helvetica")).toBe("NotoSans-Bold");
+    expect(boldVariant("NotoSans")).toBe("NotoSans-Bold");
     expect(boldVariant("Times-Roman")).toBe("Times-Bold");
     expect(boldVariant("Courier")).toBe("Courier-Bold");
   });
   it("leaves already-bold families untouched and resolves oblique variants", () => {
-    expect(boldVariant("Helvetica-Bold")).toBe("Helvetica-Bold");
+    expect(boldVariant("NotoSans-Bold")).toBe("NotoSans-Bold");
     expect(boldVariant("Times-Bold")).toBe("Times-Bold");
     // -Oblique now resolves to the correct BoldOblique (previously produced
     // the invalid "Helvetica-Oblique-Bold")
-    expect(boldVariant("Helvetica-Oblique")).toBe("Helvetica-BoldOblique");
+    expect(boldVariant("Helvetica-Oblique")).toBe("NotoSans-BoldOblique");
+    expect(boldVariant("NotoSans-Oblique")).toBe("NotoSans-BoldOblique");
     expect(boldVariant("Times-Italic")).toBe("Times-BoldItalic");
   });
 });
@@ -375,21 +381,22 @@ describe("mapFont — react-pdf exact names (memorandum settings UI values)", ()
   // rendered in the wrong font for every tenant that picked Times.
   it("maps the three UI values correctly", () => {
     expect(mapFont("Times-Roman")).toBe("Times-Roman");
-    expect(mapFont("Helvetica")).toBe("Helvetica");
+    // audit20: "Helvetica" (the memo UI's sans value) → registered Unicode family
+    expect(mapFont("Helvetica")).toBe("NotoSans");
     expect(mapFont("Courier")).toBe("Courier");
   });
 
   it("still maps CSS stack names", () => {
     expect(mapFont("'Times New Roman', Times, serif")).toBe("Times-Roman");
-    expect(mapFont("Inter, system-ui, sans-serif")).toBe("Helvetica");
-    expect(mapFont("Arial")).toBe("Helvetica");
+    expect(mapFont("Inter, system-ui, sans-serif")).toBe("NotoSans");
+    expect(mapFont("Arial")).toBe("NotoSans");
     expect(mapFont("monospace")).toBe("Courier");
   });
 
   it("unknown → fallback", () => {
-    expect(mapFont("Comic Sans")).toBe("Helvetica");
+    expect(mapFont("Comic Sans")).toBe("NotoSans");
     expect(mapFont(null, "Times-Roman")).toBe("Times-Roman");
-    expect(mapFont(undefined)).toBe("Helvetica");
+    expect(mapFont(undefined)).toBe("NotoSans");
   });
 });
 
@@ -399,14 +406,16 @@ describe("boldVariant — valid react-pdf bold families", () => {
     expect(boldVariant("Times-Italic")).toBe("Times-BoldItalic");
   });
   it("Helvetica / Courier variants", () => {
-    expect(boldVariant("Helvetica")).toBe("Helvetica-Bold");
-    expect(boldVariant("Helvetica-Oblique")).toBe("Helvetica-BoldOblique");
+    // audit20: the sans family is NotoSans now
+    expect(boldVariant("Helvetica")).toBe("NotoSans-Bold");
+    expect(boldVariant("Helvetica-Oblique")).toBe("NotoSans-BoldOblique");
     expect(boldVariant("Courier")).toBe("Courier-Bold");
     expect(boldVariant("Courier-Oblique")).toBe("Courier-BoldOblique");
   });
   it("already-bold passthrough + empty fallback", () => {
     expect(boldVariant("Helvetica-Bold")).toBe("Helvetica-Bold");
+    expect(boldVariant("NotoSans-Bold")).toBe("NotoSans-Bold");
     expect(boldVariant("Times-Bold")).toBe("Times-Bold");
-    expect(boldVariant("")).toBe("Helvetica-Bold");
+    expect(boldVariant("")).toBe("NotoSans-Bold");
   });
 });

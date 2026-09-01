@@ -40,6 +40,7 @@ import {
   ZoomIn,
   ZoomOut,
   GripVertical,
+  Info,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -60,6 +61,12 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { DocumentTemplate, TenantLetterhead } from "@/lib/supabase/types";
 import { useT } from "@/lib/i18n/store";
+import {
+  parseContentConfig,
+  substitutePlaceholders as substituteEnginePlaceholders,
+  type ContentSegment,
+  type PlaceholderData,
+} from "@/lib/utils/content-config";
 
 // ============================================================
 // Types
@@ -183,26 +190,36 @@ const DOC_TYPE_LABELS: Record<NonNullable<DocumentTemplate["type"]>, string> = {
 // ============================================================
 // Draggable placeholder chips for inline text fields
 // (header / footer / custom_text / offer_text / bank_details).
-// Keys match the {{...}} tokens consumed by substitutePlaceholders().
+// Keys use the canonical {token} syntax consumed by the shared
+// substitutePlaceholders() engine in content-config.ts — the same
+// engine the PDF generator uses, so chips dropped into a field
+// actually substitute at render time. `label` is a translation key.
 // ============================================================
 const PLACEHOLDERS: { key: string; label: string }[] = [
-  { key: "{{company_name}}", label: "Company Name" },
-  { key: "{{company_legal_name}}", label: "Legal Name" },
-  { key: "{{company_address}}", label: "Address" },
-  { key: "{{company_email}}", label: "Email" },
-  { key: "{{company_phone}}", label: "Phone" },
-  { key: "{{company_website}}", label: "Website" },
-  { key: "{{company_vat}}", label: "VAT #" },
-  { key: "{{company_reg}}", label: "Reg #" },
-  { key: "{{company_bank}}", label: "Bank" },
-  { key: "{{company_iban}}", label: "IBAN" },
-  { key: "{{company_swift}}", label: "SWIFT" },
-  { key: "{{doc_number}}", label: "Doc #" },
-  { key: "{{doc_date}}", label: "Doc Date" },
-  { key: "{{doc_valid}}", label: "Valid Until" },
-  { key: "{{payment_terms}}", label: "Payment Terms" },
-  { key: "{{page_number}}", label: "Page #" },
-  { key: "{{page_total}}", label: "Total Pages" },
+  { key: "{company_name}", label: "doc-var-company-name" },
+  { key: "{company_legal_name}", label: "doc-var-legal-name" },
+  { key: "{company_address}", label: "doc-var-address" },
+  { key: "{company_city}", label: "doc-var-city" },
+  { key: "{company_country}", label: "doc-var-country" },
+  { key: "{company_reg}", label: "doc-var-reg" },
+  { key: "{company_vat}", label: "doc-var-vat" },
+  { key: "{company_tax_id}", label: "doc-var-tax-id" },
+  { key: "{company_phone}", label: "doc-var-phone" },
+  { key: "{company_email}", label: "doc-var-email" },
+  { key: "{company_website}", label: "doc-var-website" },
+  { key: "{bank_name}", label: "doc-var-bank" },
+  { key: "{bank_iban}", label: "doc-var-iban" },
+  { key: "{bank_swift}", label: "doc-var-swift" },
+  { key: "{doc_number}", label: "doc-var-doc-num" },
+  { key: "{doc_date}", label: "doc-var-doc-date" },
+  { key: "{valid_until}", label: "doc-var-valid-until" },
+  { key: "{due_date}", label: "doc-var-due-date" },
+  { key: "{partner_name}", label: "doc-var-partner-name" },
+  { key: "{partner_address}", label: "doc-var-partner-address" },
+  { key: "{total}", label: "doc-var-total" },
+  { key: "{currency}", label: "doc-var-currency" },
+  { key: "{page_number}", label: "doc-var-page-num" },
+  { key: "{total_pages}", label: "doc-var-total-pages" },
 ];
 
 // ============================================================
@@ -244,35 +261,112 @@ function getVatNumber(letterhead: TenantLetterhead | null): string | null {
   return letterhead?.company_vat_number || null;
 }
 
-/** Substitute {{placeholders}} with live data for inline text rendering. */
-function substitutePlaceholders(
+/** Normalize the legacy {{token}} syntax to the canonical {token} syntax so
+ *  both forms substitute through the shared engine, and map legacy token
+ *  names (offered by the old {{...}} palettes) onto the engine's set. */
+function normalizeLegacyTokens(text: string): string {
+  return text
+    .replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, "{$1}")
+    .replace(/{company_bank}/g, "{bank_name}")
+    .replace(/{company_iban}/g, "{bank_iban}")
+    .replace(/{company_swift}/g, "{bank_swift}")
+    .replace(/{doc_valid}/g, "{valid_until}")
+    .replace(/{page_total}/g, "{total_pages}")
+    .replace(/{address}/g, "{company_address}")
+    .replace(/{reg}/g, "{company_reg}")
+    .replace(/{vat}/g, "{company_vat}")
+    .replace(/{date}/g, "{doc_date}");
+}
+
+/** Substitute {placeholders} (plus legacy {{placeholders}}) with live data for
+ *  inline text rendering. Delegates to the SAME substitution engine the PDF
+ *  generator uses (content-config.ts) so the editor preview matches the PDF. */
+function substituteForFieldPreview(
   text: string,
-  template: Partial<DocumentTemplate>,
   letterhead: TenantLetterhead | null
 ): string {
-  return (text || "")
-    .replace(/{{company_name}}/g, getCompanyName(letterhead))
-    .replace(/{{company_legal_name}}/g, letterhead?.company_legal_name || getCompanyName(letterhead))
-    .replace(/{{company_address}}/g, buildCompanyAddress(letterhead))
-    .replace(/{{company_email}}/g, letterhead?.company_email || "office@velos.trade")
-    .replace(/{{company_phone}}/g, letterhead?.company_phone || "+971 4 555 0100")
-    .replace(/{{company_website}}/g, letterhead?.company_website || "www.velos.trade")
-    .replace(/{{company_vat}}/g, getVatNumber(letterhead) || "—")
-    .replace(/{{company_reg}}/g, getRegNumber(letterhead))
-    .replace(/{{company_bank}}/g, letterhead?.bank_name || "Abu Dhabi Islamic Bank")
-    .replace(/{{company_iban}}/g, letterhead?.bank_iban || "AE11 0200 0000 1234 5678 901")
-    .replace(/{{company_swift}}/g, letterhead?.bank_swift || "ABDIAEAD")
-    .replace(/{{doc_number}}/g, "OF-2026-0014")
-    .replace(/{{doc_date}}/g, "14 Mar 2026")
-    .replace(/{{doc_valid}}/g, "14 Apr 2026")
-    .replace(/{{payment_terms}}/g, "30% advance, 70% before shipment")
-    .replace(/{{page_number}}/g, "1")
-    .replace(/{{page_total}}/g, String(5))
-    .replace(/{company_name}/g, getCompanyName(letterhead))
-    .replace(/{address}/g, buildCompanyAddress(letterhead))
-    .replace(/{reg}/g, getRegNumber(letterhead))
-    .replace(/{vat}/g, getVatNumber(letterhead) || "—")
-    .replace(/{date}/g, "14 Mar 2026");
+  const data: PlaceholderData = {
+    company_name: getCompanyName(letterhead),
+    company_legal_name: letterhead?.company_legal_name || getCompanyName(letterhead),
+    company_address: buildCompanyAddress(letterhead),
+    company_city: letterhead?.company_city || "Belgrade",
+    company_country: letterhead?.company_country || "Serbia",
+    company_postal_code: letterhead?.company_postal_code || null,
+    company_reg: getRegNumber(letterhead),
+    company_vat: getVatNumber(letterhead),
+    company_tax_id: letterhead?.company_tax_id || null,
+    company_phone: letterhead?.company_phone || "+971 4 555 0100",
+    company_email: letterhead?.company_email || "office@velos.trade",
+    company_website: letterhead?.company_website || "www.velos.trade",
+    bank_name: letterhead?.bank_name || "Abu Dhabi Islamic Bank",
+    bank_iban: letterhead?.bank_iban || "AE11 0200 0000 1234 5678 901",
+    bank_swift: letterhead?.bank_swift || "ABDIAEAD",
+    doc_number: "OF-2026-0014",
+    doc_date: "14 Mar 2026",
+    valid_until: "14 Apr 2026",
+    due_date: "14 Apr 2026",
+    partner_name: "Mediterra Exports GmbH",
+    partner_address: "Hafenstraße 4, 20457 Hamburg",
+    partner_city: "Hamburg",
+    partner_country: "Germany",
+    total: "$42,196.00",
+    currency: "USD",
+    page_number: 1,
+    total_pages: 5,
+  };
+  return substituteEnginePlaceholders(normalizeLegacyTokens(text || ""), data);
+}
+
+/** Convert stored header/footer content (segments JSON or legacy plain text)
+ *  into the PLAIN TEXT shown in the content Textarea (segments joined with
+ *  "\n" — never the raw JSON string). */
+function contentToPlainText(content: string | null | undefined): string {
+  if (!content) return "";
+  return parseContentConfig(content)
+    .segments.map((s) => s.text ?? "")
+    .join("\n");
+}
+
+/** Persist edited plain text back into the segments JSON format used by
+ *  header_content / footer_content:
+ *  • exactly one existing segment → its text is updated in place (styling kept);
+ *  • otherwise → the text is wrapped as a single default segment.
+ *  Sibling JSON keys (e.g. the reserved `_qrConfig`) are preserved. */
+function plainTextToContentJson(
+  text: string,
+  existing: string | null | undefined,
+  segmentId: string
+): string {
+  let parsed: Record<string, unknown> | null = null;
+  if (existing) {
+    try {
+      const maybe: unknown = JSON.parse(existing);
+      if (
+        maybe &&
+        typeof maybe === "object" &&
+        !Array.isArray(maybe) &&
+        Array.isArray((maybe as { segments?: unknown }).segments)
+      ) {
+        parsed = maybe as Record<string, unknown>;
+      }
+    } catch {
+      // Legacy plain text — fall through and wrap it.
+    }
+  }
+  const segments = (parsed?.segments as ContentSegment[] | undefined) ?? [];
+  if (parsed && segments.length === 1) {
+    return JSON.stringify({ ...parsed, segments: [{ ...segments[0], text }] });
+  }
+  const segment: ContentSegment = {
+    id: segmentId,
+    text,
+    fontSize: 9,
+    bold: false,
+    italic: false,
+    color: "#666666",
+    alignment: "left",
+  };
+  return JSON.stringify(parsed ? { ...parsed, segments: [segment] } : { segments: [segment] });
 }
 
 /** Resolve the text content to render for header / footer / custom_text fields. */
@@ -353,11 +447,26 @@ function renderFieldContent(
       );
 
     case "header": {
-      const rawContent = resolveFieldContent(field, template);
-      if (rawContent.trim()) {
+      const cfg = parseContentConfig(resolveFieldContent(field, template));
+      if (cfg.segments.length > 0) {
+        // Render the real segments (styled + substituted) — never raw JSON.
         return (
-          <div className="whitespace-pre-line text-[6.5px] leading-tight text-slate-700">
-            {substitutePlaceholders(rawContent, template, letterhead)}
+          <div className="flex h-full w-full flex-col justify-center overflow-hidden">
+            {cfg.segments.map((seg) => (
+              <div
+                key={seg.id}
+                className="leading-tight"
+                style={{
+                  fontSize: `${Math.max(4, Math.round(seg.fontSize * 0.7))}px`,
+                  fontWeight: seg.bold ? 700 : 400,
+                  fontStyle: seg.italic ? "italic" : "normal",
+                  color: seg.color,
+                  textAlign: seg.alignment,
+                }}
+              >
+                {substituteForFieldPreview(seg.text, letterhead)}
+              </div>
+            ))}
           </div>
         );
       }
@@ -514,13 +623,32 @@ function renderFieldContent(
       );
 
     case "footer": {
-      const rawContent = resolveFieldContent(field, template);
-      const text = rawContent.trim()
-        ? substitutePlaceholders(rawContent, template, letterhead)
-        : `${companyName} · Reg#${reg}${vat ? ` · ${t("misc-tve-vat-label")}: ${vat}` : ""} · ${t("misc-tve-page-n-of-m").replace("{n}", "1").replace("{m}", "5")}`;
+      const cfg = parseContentConfig(resolveFieldContent(field, template));
+      if (cfg.segments.length > 0) {
+        // Render the real segments (styled + substituted) — never raw JSON.
+        return (
+          <div className="flex h-full w-full flex-col justify-center overflow-hidden">
+            {cfg.segments.map((seg) => (
+              <div
+                key={seg.id}
+                className="truncate leading-tight"
+                style={{
+                  fontSize: `${Math.max(4, Math.round(seg.fontSize * 0.7))}px`,
+                  fontWeight: seg.bold ? 700 : 400,
+                  fontStyle: seg.italic ? "italic" : "normal",
+                  color: seg.color,
+                  textAlign: seg.alignment,
+                }}
+              >
+                {substituteForFieldPreview(seg.text, letterhead)}
+              </div>
+            ))}
+          </div>
+        );
+      }
       return (
         <div className="h-full w-full truncate text-[6px] text-slate-500">
-          {text}
+          {`${companyName} · Reg#${reg}${vat ? ` · ${t("misc-tve-vat-label")}: ${vat}` : ""} · ${t("misc-tve-page-n-of-m").replace("{n}", "1").replace("{m}", "5")}`}
         </div>
       );
     }
@@ -938,6 +1066,48 @@ export function TemplateVisualEditor({
     );
   };
 
+  // ---------------------------------------------------------
+  // Inline content editing (properties panel Textarea)
+  //
+  // header / footer content is PERSISTED through the parent form state
+  // (template.header_content / template.footer_content, segments JSON) so
+  // edits survive tab switches and are included in the save payload.
+  // custom_text / offer_text / bank_details keep their content in local
+  // field props (preview-only, as before).
+  // ---------------------------------------------------------
+  const selectedPersistedKey: "header_content" | "footer_content" | null =
+    selected?.type === "header"
+      ? "header_content"
+      : selected?.type === "footer"
+        ? "footer_content"
+        : null;
+
+  const getSelectedContentText = (): string => {
+    if (!selected) return "";
+    if (selectedPersistedKey) {
+      return contentToPlainText(template[selectedPersistedKey]);
+    }
+    return (selected.props?.content as string) || "";
+  };
+
+  const setSelectedContentText = (text: string) => {
+    if (!selected) return;
+    if (selectedPersistedKey) {
+      // Write through to the parent form (QR config etc. are untouched — the
+      // parent re-serializes _qrConfig from its own state at save time and
+      // plainTextToContentJson preserves sibling JSON keys anyway).
+      updateTemplate({
+        [selectedPersistedKey]: plainTextToContentJson(
+          text,
+          template[selectedPersistedKey],
+          `visual-${selected.type}`
+        ),
+      } as Partial<DocumentTemplate>);
+    } else {
+      updateFieldProps(selected.id, { content: text });
+    }
+  };
+
   const alignField = (id: string, alignment: string) => {
     setFields((prev) =>
       prev.map((f) => {
@@ -1294,6 +1464,12 @@ export function TemplateVisualEditor({
             {effectivePageSize} · {page.width}×{page.height}mm
           </span>
         </div>
+      </div>
+
+      {/* ─── Honest-labeling hint: drag positions are preview-only ─── */}
+      <div className="flex items-center gap-1.5 border-b bg-muted/30 px-3 py-1.5 text-[11px] leading-tight text-muted-foreground">
+        <Info className="size-3 shrink-0" />
+        <span>{t("doc-visual-preview-hint")}</span>
       </div>
 
       {/* ─── Body: 3 panels ─── */}
@@ -1724,26 +1900,15 @@ export function TemplateVisualEditor({
                             title={`Drag into the text area: ${ph.key}`}
                           >
                             <GripVertical className="size-2.5 text-muted-foreground/70" />
-                            {ph.label}
+                            {t(ph.label)}
                           </div>
                         ))}
                       </div>
                     </div>
                     <Textarea
                       rows={4}
-                      value={
-                        ((selected.props?.content as string) ??
-                          (selected.type === "header"
-                            ? template.header_content || ""
-                            : selected.type === "footer"
-                              ? template.footer_content || ""
-                              : "")) as string
-                      }
-                      onChange={(e) =>
-                        updateFieldProps(selected.id, {
-                          content: e.target.value,
-                        })
-                      }
+                      value={getSelectedContentText()}
+                      onChange={(e) => setSelectedContentText(e.target.value)}
                       onDragOver={(e) => {
                         e.preventDefault();
                         e.dataTransfer.dropEffect = "copy";
@@ -1758,19 +1923,13 @@ export function TemplateVisualEditor({
                         e.preventDefault();
                         const ph = e.dataTransfer.getData("text/plain");
                         if (ph) {
-                          // Use the resolved display value as the base — this lets
-                          // users drop onto a header/footer that currently falls
-                          // back to the template's default text.
-                          const current =
-                            (selected.props?.content as string) ??
-                            (selected.type === "header"
-                              ? template.header_content || ""
-                              : selected.type === "footer"
-                                ? template.footer_content || ""
-                                : "") ??
-                            "";
+                          // Append the chip to the current text. For header /
+                          // footer this writes through to the persisted segments
+                          // JSON (see setSelectedContentText); for other fields
+                          // it stays in local field props.
+                          const current = getSelectedContentText();
                           const next = current.trim() ? `${current} ${ph}` : ph;
-                          updateFieldProps(selected.id, { content: next });
+                          setSelectedContentText(next);
                         }
                         setDragOverContent(false);
                       }}
@@ -1781,8 +1940,8 @@ export function TemplateVisualEditor({
                       )}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Placeholders: {"{company_name}"}, {"{address}"}, {"{reg}"},{" "}
-                      {"{vat}"}, {"{date}"}, {"{doc_number}"}, {"{page_number}"}
+                      Placeholders: {"{company_name}"}, {"{company_address}"}, {"{company_reg}"},{" "}
+                      {"{company_vat}"}, {"{doc_number}"}, {"{page_number}"}
                     </p>
                     {selected.type !== "custom_text" && (
                       <p className="text-xs italic text-muted-foreground">

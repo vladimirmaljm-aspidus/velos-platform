@@ -118,12 +118,59 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
               { status: 422 },
             );
           }
-          const result = await generatePdf({ docType: entityType as any, docId: entityId, tenantId: tenantIdForPdf });
-          attachments = [{
-            filename: `${entityType}-${entityId}.pdf`,
-            content: Buffer.from(result.buffer),
-            contentType: "application/pdf",
-          }];
+
+          // ── audit20 / 20-d2 — tenant re-check BEFORE regenerating ──────
+          // generatePdf fetches the document by id ONLY (no tenant
+          // scoping) and brands it with the passed tenantId — so a queue
+          // row whose tenant_id drifts from the actual document owner (a
+          // stale/mismatched row) would silently render tenant-A branding
+          // over tenant-B's document and email it out. Fetch the document
+          // ourselves and verify ownership first. Store fetch ERRORS
+          // (missing method, store outage) degrade to the legacy
+          // no-attachment retry — the same semantics as the generatePdf
+          // failure path below — instead of blocking the retry, because
+          // generatePdf would hit the same store error anyway.
+          let doc: { tenant_id?: string | null } | null = null;
+          let docFetchFailed = false;
+          try {
+            if (entityType === "offer") doc = (await auth.store.getOffer(entityId)) ?? null;
+            else if (entityType === "invoice") doc = (await auth.store.getInvoice(entityId)) ?? null;
+            else if (entityType === "proforma") doc = (await auth.store.getProforma(entityId)) ?? null;
+            else doc = (await auth.store.getLoi(entityId)) ?? null;
+          } catch (docErr: any) {
+            docFetchFailed = true;
+            console.error("[mail-queue retry] document fetch failed — skipping attachment regeneration:", docErr);
+          }
+
+          if (!docFetchFailed) {
+            if (!doc) {
+              return NextResponse.json(
+                {
+                  error:
+                    "Cannot regenerate the attachment: the document no longer exists (it may have been deleted since the email was queued). " +
+                    "Re-send or update the email from the document's detail page instead.",
+                },
+                { status: 422 },
+              );
+            }
+            if (doc.tenant_id !== tenantIdForPdf) {
+              // No tenant ids in the message — just the actionable fact.
+              return NextResponse.json(
+                {
+                  error:
+                    "Document tenant mismatch — cannot regenerate the attachment. " +
+                    "This queue row and its document belong to different tenants; re-send the document from its detail page instead.",
+                },
+                { status: 422 },
+              );
+            }
+            const result = await generatePdf({ docType: entityType as any, docId: entityId, tenantId: tenantIdForPdf });
+            attachments = [{
+              filename: `${entityType}-${entityId}.pdf`,
+              content: Buffer.from(result.buffer),
+              contentType: "application/pdf",
+            }];
+          }
         } catch (pdfErr: any) {
           // The document may have been deleted since the email was queued —
           // retry WITHOUT the attachment rather than hard-failing (matches

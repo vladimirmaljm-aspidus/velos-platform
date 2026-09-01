@@ -1152,6 +1152,11 @@ model DocumentTemplate {
   letterhead_id            String? // ref TenantLetterhead — null = use tenant default letterhead
   seal_id                  String? // ref TenantSeal — null = use tenant default seal
   seal_enabled             Boolean  @default(true) // whether to stamp seal on this template
+  // audit20 / 20-b — which tenant bank accounts (indexes into the
+  // tenant.bank_accounts JSON array) this template's PDFs show. NULL = all.
+  // Migration 081 added the column; without it Prisma + the supabase store
+  // silently dropped this field on every save.
+  selected_bank_accounts   Json?
   // Metadata
   created_by               String?
   created_at               DateTime @default(now())

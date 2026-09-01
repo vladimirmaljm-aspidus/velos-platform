@@ -2,9 +2,10 @@ import { renderToBuffer } from "@react-pdf/renderer";
 import React from "react";
 import { buildPdfDocument } from "./templates";
 import { generateQrCodeDataUrl, generateVerificationCode, computePdfHash } from "./qr";
+import { resolveDocumentTemplate, buildPlaceholderData } from "./doc-template";
 import { getStore } from "@/lib/data/store";
 import { getSupabase, isSupabaseConfigured } from "@/lib/supabase/client";
-import type { Offer, Invoice, Proforma, LetterOfIntent, Partner, Tenant, MemorandumSettings, TenantSeal } from "@/lib/supabase/types";
+import type { Offer, Invoice, Proforma, LetterOfIntent, Partner, Tenant, MemorandumSettings, TenantSeal, DocumentTemplate, TenantLetterhead } from "@/lib/supabase/types";
 // P0-3 / Feature 2: partner PII (contact_email, phone, tax_id, vat_number)
 // is stored encrypted (enc: prefix). The PDF generator fetches the partner
 // via store.getPartner which returns the raw row — so tax_id shows as
@@ -242,6 +243,32 @@ export async function generatePdf(opts: GeneratePdfOptions): Promise<GeneratePdf
     console.warn("[PDF] MemorandumSettings fetch failed — continuing with defaults:", memoErr);
   }
 
+  // ── DocumentTemplate (audit20 / 20-a) ────────────────────────────────
+  // The template the user edits in the Document Templates view — page size,
+  // margins, header/footer segments, colours, table styling, letterhead +
+  // seal links, QR placement, bank-account selection. Per-field precedence
+  // in templates.tsx: template → memorandum_settings → built-in defaults,
+  // so tenants without template rows render exactly as before.
+  let template: DocumentTemplate | null = null;
+  try {
+    template = await resolveDocumentTemplate(store, opts.tenantId, opts.docType);
+  } catch (tplErr) {
+    console.warn("[PDF] DocumentTemplate resolution failed — continuing without template:", tplErr);
+  }
+
+  // ── Letterhead (memorandum firme) ─────────────────────────────────────
+  // Template-linked letterhead wins; otherwise the tenant's own logo (the
+  // pre-audit20 behaviour). The letterhead also carries curated company
+  // fields used for {placeholder} substitution in header/footer segments.
+  let letterhead: TenantLetterhead | null = null;
+  if (template?.letterhead_id) {
+    try {
+      letterhead = await store.getLetterhead(template.letterhead_id);
+    } catch (lhErr) {
+      console.warn("[PDF] Letterhead fetch failed — continuing without it:", lhErr);
+    }
+  }
+
   // Handle verification
   let verificationCode: string | undefined;
   let qrCodeDataUrl: string | undefined;
@@ -284,20 +311,28 @@ export async function generatePdf(opts: GeneratePdfOptions): Promise<GeneratePdf
     }
   }
 
-  // Resolve the logo URL — memorandum_settings uses the tenant's own logo
-  // (tenant.logo_url). Resolution converts the storage path into a data:
-  // URL so @react-pdf/renderer can render it without a network round-trip.
-  const resolvedLogoUrl = await resolveLogoUrl(tenant?.logo_url);
+  // Resolve the logo URL — the template-linked letterhead's logo wins, then
+  // the tenant's own logo (tenant.logo_url). Resolution converts the storage
+  // path into a data: URL so @react-pdf/renderer can render it without a
+  // network round-trip.
+  const resolvedLogoUrl = await resolveLogoUrl(letterhead?.logo_url || tenant?.logo_url);
 
-  // ── Seal (optional, branded stamp) ────────────────────────────────
-  // The seal isn't part of memorandum_settings (memorandum_settings is
-  // purely header/footer/body layout). We fall back to the tenant's default
-  // seal (the existing tenant_seals table) so branded PDFs keep their stamp.
+  // ── Seal (optional, branded stamp) ──────────────────────────────────
+  // audit20: the template's seal wiring finally takes effect —
+  //   • template.seal_enabled === false → NO seal (explicit opt-out)
+  //   • template.seal_id → that specific seal
+  //   • otherwise → the tenant's default seal (previous behaviour)
   let seal: TenantSeal | null = null;
-  try {
-    seal = await store.getDefaultSeal(opts.tenantId);
-  } catch (sealErr) {
-    console.warn("[PDF] Seal fetch failed — continuing without seal:", sealErr);
+  if (template && template.seal_enabled === false) {
+    seal = null;
+  } else {
+    try {
+      seal = template?.seal_id
+        ? await store.getSeal(template.seal_id)
+        : await store.getDefaultSeal(opts.tenantId);
+    } catch (sealErr) {
+      console.warn("[PDF] Seal fetch failed — continuing without seal:", sealErr);
+    }
   }
   const sealImageUrl = seal ? await resolveLogoUrl(seal.image_url) : null;
 
@@ -321,6 +356,9 @@ export async function generatePdf(opts: GeneratePdfOptions): Promise<GeneratePdf
     partner,
     tenant,
     memorandumSettings,
+    template,
+    letterhead,
+    placeholderData: buildPlaceholderData({ doc, tenant, partner, letterhead }),
     verificationCode,
     qrCodeDataUrl,
     logoUrl: resolvedLogoUrl,
@@ -362,6 +400,13 @@ export async function generatePdf(opts: GeneratePdfOptions): Promise<GeneratePdf
   // the document register with a sequential version number so the firm has
   // a complete audit trail of all outbound documents INCLUDING regenerations.
   //
+  // audit20 fix: portal partner RE-DOWNLOADS (createVerification === false)
+  // no longer append a register entry. Previously every download minted a
+  // new "-V{n}" row — 10 downloads = 10 junk versions polluting the audit
+  // trail with byte-identical copies. Only issuance events register now:
+  // admin renders, email sends and mail-queue retries (they all run with
+  // createVerification !== false).
+  if (opts.createVerification !== false) {
   // 2g-F1 fix (round 4): the prior `count + 1` logic produced wrong
   // versions when (a) an older version was deleted, or (b) the tenant had
   // >1000 doc-register entries for the same reference_id (the list-all
@@ -421,6 +466,7 @@ export async function generatePdf(opts: GeneratePdfOptions): Promise<GeneratePdf
     // Don't fail the PDF generation if the register write fails — log it.
     console.error("[pdf.generator] Document register version lookup failed:", regErr);
   }
+  } // end createVerification !== false (audit20 register gating)
 
   return { buffer, verificationCode, pdfHash, verificationId };
 }

@@ -1176,6 +1176,22 @@ export class MockStore implements Store {
   }
   async upsertDocumentTemplate(t: Partial<DocumentTemplate> & { id?: string }): Promise<DocumentTemplate> {
     const existing = t.id ? mock.documentTemplates.find((x) => x.id === t.id) : null;
+    // audit20 / 20-b — mirror the prisma/supabase stores: keep the "one
+    // default per (tenant, type)" invariant. Without this, repeated "set as
+    // default" saves stacked multiple is_default=true rows, and the default
+    // lookup silently returned whichever duplicate came first. The row being
+    // promoted (t.id) is never cleared.
+    if (t.is_default === true) {
+      const tenantId = t.tenant_id ?? existing?.tenant_id;
+      const type = t.type ?? existing?.type;
+      if (tenantId && type) {
+        for (const row of mock.documentTemplates) {
+          if (row.tenant_id === tenantId && row.type === type && row.is_default && row.id !== t.id) {
+            row.is_default = false;
+          }
+        }
+      }
+    }
     if (existing) { Object.assign(existing, t, { updated_at: new Date().toISOString() }); return existing; }
     const newT: DocumentTemplate = {
       id: t.id || mock.nid("dt_"), tenant_id: t.tenant_id || "", name: t.name || "New Template",
@@ -1193,6 +1209,13 @@ export class MockStore implements Store {
       primary_color: t.primary_color || "#0f766e", accent_color: t.accent_color || "#0d9488",
       table_header_bg: t.table_header_bg || "#0f766e", table_header_color: t.table_header_color || "#ffffff",
       table_border_color: t.table_border_color || "#e5e7eb", table_stripe: t.table_stripe ?? true,
+      // Linked branding assets — audit20 / 20-b: these were silently dropped
+      // on CREATE here (the update path kept them via Object.assign, the
+      // real stores persisted them), so mock-backed flows lost the
+      // letterhead/seal link + bank-account selection on every first save.
+      letterhead_id: t.letterhead_id ?? null, seal_id: t.seal_id ?? null,
+      seal_enabled: t.seal_enabled ?? true,
+      selected_bank_accounts: t.selected_bank_accounts ?? null,
       created_by: t.created_by || null, created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     };
     mock.documentTemplates.push(newT); return newT;

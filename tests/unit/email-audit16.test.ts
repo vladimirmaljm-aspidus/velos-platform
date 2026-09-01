@@ -393,16 +393,159 @@ describe("email-templates POST — trusted keys survive the spread (audit16 HIGH
     expect(saved.created_by).toBe("u1"); // auth user, not "attacker-user"
   });
 
-  it("keeps regular template fields from the body", async () => {
+  it("maps email fields into the footer_content wrapper (audit20 / 20-b)", async () => {
     const req = new NextRequest("http://localhost/api/email-templates", {
       method: "POST",
-      body: JSON.stringify({ name: "My template", type: "offer", isDefault: true }),
+      body: JSON.stringify({
+        name: "My template",
+        subject: "Invoice {{invoiceNumber}}",
+        html: "<div>body</div>",
+        category: "transactional",
+        variables: ["invoiceNumber"],
+        description: "desc",
+      }),
       headers: { "content-type": "application/json" },
     });
     await templatesPost(req);
     const saved = mockUpsertDocumentTemplate.mock.calls[0][0];
     expect(saved.name).toBe("My template");
-    expect(saved.type).toBe("offer");
+    // audit20 / 20-b — email rows are NOT PDF templates, so `type` is
+    // route-controlled: body.type is ignored (an email row posing as an
+    // "offer"/"invoice" type would pollute the PDF template namespace)
+    // and is_default is pinned false (email rows must never become the
+    // PDF default for a type).
+    expect(saved.type).toBe("generic");
+    expect(saved.is_default).toBe(false);
+    // The email fields persist inside the REAL footer_content column as an
+    // { emailTemplate } JSON wrapper — they must NOT reach the store as
+    // top-level columns (document_templates has no subject/html/category/
+    // variables/description columns; the supabase smartUpsert strips one
+    // unknown column then throws on the next → every save 500'd).
+    const wrapper = JSON.parse(saved.footer_content).emailTemplate;
+    expect(wrapper.subject).toBe("Invoice {{invoiceNumber}}");
+    expect(wrapper.html).toBe("<div>body</div>");
+    expect(wrapper.category).toBe("transactional");
+    expect(wrapper.variables).toEqual(["invoiceNumber"]);
+    expect(wrapper.description).toBe("desc");
+    expect(saved.subject).toBeUndefined();
+    expect(saved.html).toBeUndefined();
+    expect(saved.category).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 4b. POST /api/email-templates action:"test-send" (audit20 / 20-b).
+//     The old route let the test-send payload fall into the upsert path —
+//     every click created a junk "Custom Template" row and STILL sent no
+//     email while the UI toasted success. Handled explicitly now: lookup
+//     the saved template, unwrap footer_content's emailTemplate, send to
+//     the requesting user. NEVER creates rows.
+// ---------------------------------------------------------------------------
+describe("email-templates POST action:test-send — sends, never writes (audit20 / 20-b)", () => {
+  function makeTemplateStore(tpl: Record<string, unknown> | null) {
+    return {
+      getDocumentTemplate: vi.fn(async () => tpl),
+      upsertDocumentTemplate: mockUpsertDocumentTemplate,
+      listDocumentTemplates: vi.fn(async () => []),
+      appendAudit: vi.fn(async () => {}),
+    } as unknown as Store;
+  }
+  const wrapperRow = {
+    id: "tpl-1",
+    tenant_id: "t1",
+    name: "Invoice Notification",
+    footer_content: JSON.stringify({
+      emailTemplate: { subject: "Invoice INV-1", html: "<div>hello</div>", category: "transactional", variables: [], description: "" },
+    }),
+  };
+
+  it("sends the wrapped body to the requesting user with a [TEST] prefix and creates NO rows", async () => {
+    const store = makeTemplateStore(wrapperRow);
+    mockRequireAuth.mockResolvedValue(makeAuth(store));
+    mockGetStore.mockResolvedValue(store);
+
+    const req = new NextRequest("http://localhost/api/email-templates", {
+      method: "POST",
+      body: JSON.stringify({ action: "test-send", templateId: "tpl-1" }),
+      headers: { "content-type": "application/json" },
+    });
+    const res = await templatesPost(req);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({ ok: true, sent: true });
+    // Send to the requesting user's own address, subject prefixed.
+    expect(mockSendEmail).toHaveBeenCalledTimes(1);
+    const opts = mockSendEmail.mock.calls[0][0];
+    expect(opts.to).toBe("admin@example.com");
+    expect(opts.subject).toBe("[TEST] Invoice INV-1");
+    expect(opts.html).toBe("<div>hello</div>");
+    // Junk-row regression: the upsert must NEVER fire on test-send.
+    expect(mockUpsertDocumentTemplate).not.toHaveBeenCalled();
+  });
+
+  it("400s when the template has no saved HTML body (nothing to send)", async () => {
+    const store = makeTemplateStore({ ...wrapperRow, footer_content: "" });
+    mockRequireAuth.mockResolvedValue(makeAuth(store));
+    mockGetStore.mockResolvedValue(store);
+
+    const req = new NextRequest("http://localhost/api/email-templates", {
+      method: "POST",
+      body: JSON.stringify({ action: "test-send", templateId: "tpl-1" }),
+      headers: { "content-type": "application/json" },
+    });
+    const res = await templatesPost(req);
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("Test send requires a saved template with an HTML body.");
+    expect(mockSendEmail).not.toHaveBeenCalled();
+    expect(mockUpsertDocumentTemplate).not.toHaveBeenCalled();
+  });
+
+  it("404s for a missing template (no junk row, no send)", async () => {
+    const store = makeTemplateStore(null);
+    mockRequireAuth.mockResolvedValue(makeAuth(store));
+    mockGetStore.mockResolvedValue(store);
+
+    const req = new NextRequest("http://localhost/api/email-templates", {
+      method: "POST",
+      body: JSON.stringify({ action: "test-send", templateId: "tpl-missing" }),
+      headers: { "content-type": "application/json" },
+    });
+    const res = await templatesPost(req);
+    expect(res.status).toBe(404);
+    expect(mockSendEmail).not.toHaveBeenCalled();
+    expect(mockUpsertDocumentTemplate).not.toHaveBeenCalled();
+  });
+
+  it("404s when the template belongs to another tenant (no cross-tenant probe)", async () => {
+    const store = makeTemplateStore({ ...wrapperRow, tenant_id: "other-tenant" });
+    mockRequireAuth.mockResolvedValue(makeAuth(store));
+    mockGetStore.mockResolvedValue(store);
+
+    const req = new NextRequest("http://localhost/api/email-templates", {
+      method: "POST",
+      body: JSON.stringify({ action: "test-send", templateId: "tpl-1" }),
+      headers: { "content-type": "application/json" },
+    });
+    const res = await templatesPost(req);
+    expect(res.status).toBe(404);
+    expect(mockSendEmail).not.toHaveBeenCalled();
+  });
+
+  it("reports queued sends as 409 instead of faking success (audit16 parity)", async () => {
+    const store = makeTemplateStore(wrapperRow);
+    mockRequireAuth.mockResolvedValue(makeAuth(store));
+    mockGetStore.mockResolvedValue(store);
+    mockSendEmail.mockResolvedValueOnce({ success: true, queued: true });
+
+    const req = new NextRequest("http://localhost/api/email-templates", {
+      method: "POST",
+      body: JSON.stringify({ action: "test-send", templateId: "tpl-1" }),
+      headers: { "content-type": "application/json" },
+    });
+    const res = await templatesPost(req);
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toContain("No email provider is configured");
+    expect(mockUpsertDocumentTemplate).not.toHaveBeenCalled();
   });
 });
 

@@ -96,19 +96,38 @@ const TYPE_BADGE: Record<TemplateType, string> = {
 };
 
 // AVAILABLE_VARIABLES labels are translation keys (resolved via `t()`).
+// Tokens use the canonical {single-brace} syntax consumed by the shared
+// substitutePlaceholders() engine in content-config.ts — the SAME engine the
+// PDF generator uses, so tokens copied from this palette actually substitute
+// at render time (the legacy {{double-brace}} tokens never did).
 const AVAILABLE_VARIABLES: { token: string; label: string }[] = [
-  { token: "{{company_name}}", label: "doc-var-company-name" },
-  { token: "{{company_legal_name}}", label: "doc-var-legal-name" },
-  { token: "{{company_address}}", label: "doc-var-address" },
-  { token: "{{company_email}}", label: "doc-var-email" },
-  { token: "{{company_phone}}", label: "doc-var-phone" },
-  { token: "{{company_vat}}", label: "doc-var-vat" },
-  { token: "{{company_bank}}", label: "doc-var-bank" },
-  { token: "{{company_iban}}", label: "doc-var-iban" },
-  { token: "{{company_swift}}", label: "doc-var-swift" },
-  { token: "{{payment_terms}}", label: "doc-var-payment-terms" },
-  { token: "{{page_number}}", label: "doc-var-page-num" },
-  { token: "{{doc_number}}", label: "doc-var-doc-num" },
+  { token: "{company_name}", label: "doc-var-company-name" },
+  { token: "{company_legal_name}", label: "doc-var-legal-name" },
+  { token: "{company_address}", label: "doc-var-address" },
+  { token: "{company_city}", label: "doc-var-city" },
+  { token: "{company_country}", label: "doc-var-country" },
+  { token: "{company_postal_code}", label: "doc-var-postal-code" },
+  { token: "{company_reg}", label: "doc-var-reg" },
+  { token: "{company_vat}", label: "doc-var-vat" },
+  { token: "{company_tax_id}", label: "doc-var-tax-id" },
+  { token: "{company_phone}", label: "doc-var-phone" },
+  { token: "{company_email}", label: "doc-var-email" },
+  { token: "{company_website}", label: "doc-var-website" },
+  { token: "{bank_name}", label: "doc-var-bank" },
+  { token: "{bank_iban}", label: "doc-var-iban" },
+  { token: "{bank_swift}", label: "doc-var-swift" },
+  { token: "{doc_number}", label: "doc-var-doc-num" },
+  { token: "{doc_date}", label: "doc-var-doc-date" },
+  { token: "{valid_until}", label: "doc-var-valid-until" },
+  { token: "{due_date}", label: "doc-var-due-date" },
+  { token: "{partner_name}", label: "doc-var-partner-name" },
+  { token: "{partner_address}", label: "doc-var-partner-address" },
+  { token: "{partner_city}", label: "doc-var-partner-city" },
+  { token: "{partner_country}", label: "doc-var-partner-country" },
+  { token: "{total}", label: "doc-var-total" },
+  { token: "{currency}", label: "doc-var-currency" },
+  { token: "{page_number}", label: "doc-var-page-num" },
+  { token: "{total_pages}", label: "doc-var-total-pages" },
 ];
 
 // HEADER_LAYOUTS / FOOTER_LAYOUTS / SEAL_POSITIONS / SEAL_DOC_TYPES labels are
@@ -150,29 +169,37 @@ const SEAL_DOC_TYPES: { value: string; label: string }[] = [
 // ============================================================
 
 function substituteForPreview(text: string): string {
-  return (text || "")
-    .replace(/{{company_name}}/g, "VELOS Trading")
-    .replace(/{{company_legal_name}}/g, "VELOS Trading LLC")
-    .replace(/{{company_address}}/g, "Trg Republike 5, Belgrade")
-    .replace(/{{company_email}}/g, "office@velos.trade")
-    .replace(/{{company_phone}}/g, "+381 11 555 0100")
-    .replace(/{{company_vat}}/g, "RS123456789")
-    .replace(/{{company_bank}}/g, "Raiffeisen Bank")
-    .replace(/{{company_iban}}/g, "RS35 2600 0560 0012 3456 78")
-    .replace(/{{company_swift}}/g, "RAFRCSBG")
-    .replace(/{{payment_terms}}/g, "30% advance, 70% before shipment")
-    .replace(/{{page_number}}/g, "1")
-    .replace(/{{doc_number}}/g, "OF-2026-0014");
+  // 1. Normalize the legacy {{token}} syntax to the canonical {token} —
+  //    before engine substitution, so a legacy token never half-matches.
+  const normalized = (text || "").replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, "{$1}");
+  // 2. Map legacy token names that don't exist in the engine's canonical set
+  //    (they were offered by the old {{...}} palettes).
+  const mapped = normalized
+    .replace(/{company_bank}/g, "{bank_name}")
+    .replace(/{company_iban}/g, "{bank_iban}")
+    .replace(/{company_swift}/g, "{bank_swift}")
+    .replace(/{doc_valid}/g, "{valid_until}")
+    .replace(/{page_total}/g, "{total_pages}")
+    .replace(/{address}/g, "{company_address}")
+    .replace(/{reg}/g, "{company_reg}")
+    .replace(/{vat}/g, "{company_vat}")
+    .replace(/{date}/g, "{doc_date}")
+    .replace(/{payment_terms}/g, "30% advance, 70% before shipment");
+  // 3. Canonical substitution via the shared engine (same one the PDF
+  //    generator uses) with sample data.
+  return substitutePlaceholders(mapped, PREVIEW_PLACEHOLDER_DATA);
 }
 
 // Sample data used by the live preview to substitute the new {placeholder}
 // tokens introduced by the TemplateContentEditor. The legacy {{token}}
-// syntax is handled by substituteForPreview() above.
+// syntax is normalized + mapped by substituteForPreview() above.
 const PREVIEW_PLACEHOLDER_DATA = {
   company_name: "VELOS Trading",
+  company_legal_name: "VELOS Trading LLC",
   company_address: "Trg Republike 5, Belgrade",
   company_city: "Belgrade",
   company_country: "Serbia",
+  company_postal_code: "11000",
   company_reg: "RS-12345678",
   company_vat: "RS123456789",
   company_tax_id: "Tax-001",
@@ -188,6 +215,8 @@ const PREVIEW_PLACEHOLDER_DATA = {
   due_date: "14 Apr 2026",
   partner_name: "Mediterra Exports GmbH",
   partner_address: "Hafenstraße 4, 20457 Hamburg, Germany",
+  partner_city: "Hamburg",
+  partner_country: "Germany",
   total: "$1,601,316",
   currency: "USD",
   page_number: 1,
@@ -2294,6 +2323,130 @@ function SealPreview({ form }: { form: SealFormState }) {
 // Template editor with full document preview
 // ============================================================
 
+// ── Form-tab live mini preview ──────────────────────────────────
+// A lightweight A4/Letter-proportioned approximation of the PDF page
+// rendered from the CURRENT form state: header segments (substituted,
+// via resolvePreviewSegments), a mock body block, and footer segments.
+// No new deps — plain styled divs.
+function TemplateMiniPreview({ form }: { form: TemplateFormState }) {
+  const t = useT();
+
+  const pageW = form.page_size === "Letter" ? 216 : 210;
+  const pageH = form.page_size === "Letter" ? 279 : 297;
+  const width = 340; // px; height derives from the page aspect ratio
+  const scale = width / pageW; // px per mm
+  const height = Math.round(pageH * scale);
+  // 1pt = 25.4/72 mm → px (never below ~3px so lines stay visible)
+  const ptToPx = (pt: number) => Math.max(3, Math.round(pt * 0.3528 * scale));
+
+  const headerSegs = form.header_enabled
+    ? resolvePreviewSegments(form.header_content || DEFAULT_HEADER_CONTENT_JSON)
+    : [];
+  const footerSegs = form.footer_enabled
+    ? resolvePreviewSegments(form.footer_content || DEFAULT_FOOTER_CONTENT_JSON)
+    : [];
+
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <div
+        className="flex flex-col rounded-sm border border-border bg-white shadow-sm"
+        style={{
+          width,
+          height,
+          padding: `${(form.page_margin_top ?? 20) * scale}px ${(form.page_margin_right ?? 18) * scale}px ${(form.page_margin_bottom ?? 20) * scale}px ${(form.page_margin_left ?? 18) * scale}px`,
+          fontFamily: form.body_font_family || undefined,
+          fontSize: ptToPx(form.body_font_size ?? 11),
+        }}
+      >
+        {/* Header segments (substituted, styled) */}
+        {headerSegs.length > 0 && (
+          <div className="mb-2 flex flex-col" style={{ minHeight: (form.header_height ?? 24) * scale }}>
+            {headerSegs.map((seg) => (
+              <div
+                key={seg.id}
+                style={{
+                  fontSize: ptToPx(seg.fontSize),
+                  fontWeight: seg.bold ? 700 : 400,
+                  fontStyle: seg.italic ? "italic" : "normal",
+                  color: seg.color,
+                  textAlign: seg.alignment,
+                  lineHeight: 1.25,
+                  whiteSpace: "pre-wrap",
+                  overflowWrap: "anywhere",
+                }}
+              >
+                {seg.text || "\u00A0"}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Mock body: doc title + line-items table skeleton + total */}
+        <div className="flex flex-1 flex-col">
+          <div
+            className="mb-1 font-bold uppercase tracking-wide"
+            style={{ color: form.primary_color || "#0f766e", fontSize: ptToPx(14) }}
+          >
+            {t(TYPE_LABEL_KEYS[form.type])} · OF-2026-0014
+          </div>
+          <div className="overflow-hidden rounded-sm border" style={{ borderColor: form.table_border_color || "#e2e8f0" }}>
+            <div
+              className="flex items-center justify-between px-2 py-1 text-white"
+              style={{ background: form.table_header_bg || "#0f766e", color: form.table_header_color || "#ffffff" }}
+            >
+              <span className="font-semibold">{t("misc-product")}</span>
+              <span className="font-semibold">{t("misc-total")}</span>
+            </div>
+            {[0, 1, 2].map((i) => (
+              <div
+                key={i}
+                className="flex items-center justify-between px-2 py-1.5"
+                style={{ background: form.table_stripe && i % 2 === 1 ? "#f1f5f9" : "#ffffff" }}
+              >
+                <span className="h-2 rounded-sm bg-slate-200" style={{ width: `${52 - i * 10}%` }} />
+                <span className="h-2 rounded-sm bg-slate-200" style={{ width: "12%" }} />
+              </div>
+            ))}
+          </div>
+          <div className="mt-1.5 flex justify-end">
+            <span className="font-bold" style={{ color: form.primary_color || "#0f766e" }}>
+              {t("misc-total")}: $1,601,316
+            </span>
+          </div>
+          <p className="mt-3 italic text-muted-foreground" style={{ fontSize: ptToPx(8) }}>
+            {t("doc-preview-body-placeholder")}
+          </p>
+        </div>
+
+        {/* Footer segments (substituted, styled) */}
+        {footerSegs.length > 0 && (
+          <div className="mt-2 border-t pt-1" style={{ borderColor: form.table_border_color || "#e2e8f0" }}>
+            {footerSegs.map((seg) => (
+              <div
+                key={seg.id}
+                className="truncate"
+                style={{
+                  fontSize: ptToPx(seg.fontSize),
+                  fontWeight: seg.bold ? 700 : 400,
+                  fontStyle: seg.italic ? "italic" : "normal",
+                  color: seg.color,
+                  textAlign: seg.alignment,
+                  lineHeight: 1.25,
+                }}
+              >
+                {seg.text || "\u00A0"}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <p className="max-w-[340px] text-center text-xs text-muted-foreground">
+        {t("doc-preview-note")}
+      </p>
+    </div>
+  );
+}
+
 function TemplateEditorDialog({
   open, onOpenChange, template, draft, tenantQuery, tenant, letterheads, seals, onSaved,
 }: {
@@ -2757,20 +2910,22 @@ function TemplateEditorDialog({
               </div>
             </div>
             <ScrollArea className="flex-1">
-              <div className="p-6 flex items-center justify-center min-h-full">
-                <div className="text-center text-muted-foreground max-w-sm">
-                  <Eye className="size-8 mx-auto mb-2 opacity-50" />
-                  <p className="text-sm font-medium">{t("doc-switch-to-visual")}</p>
-                  <p className="text-xs mt-1.5">
-                    {t("doc-form-tab-hint")}
-                  </p>
-                </div>
+              <div className="flex min-h-full items-center justify-center p-6">
+                <TemplateMiniPreview form={form} />
               </div>
             </ScrollArea>
           </div>
           </div>
           </TabsContent>
-          <TabsContent value="visual" className="flex-1 min-h-0 mt-0">
+          {/* Visual tab stays MOUNTED (forceMount + CSS hidden) so the visual
+              editor's drag-and-drop field layout and local state survive tab
+              switches — previously Radix unmounted the inactive TabsContent and
+              every position/custom field reset each time the user flipped tabs. */}
+          <TabsContent
+            value="visual"
+            forceMount
+            className="flex-1 min-h-0 mt-0 data-[state=inactive]:hidden"
+          >
             <TemplateVisualEditor
               template={form}
               onChange={(updates) => setForm((p) => ({ ...p, ...updates }))}

@@ -2054,6 +2054,11 @@ export class PrismaStore implements Store {
       table_header_color: t.table_header_color,
       table_border_color: t.table_border_color,
       table_stripe: t.table_stripe,
+      // audit20 / 20-b — selected_bank_accounts (migration 081): the TS type
+      // + template-editor UI carried it for a long time, but it was missing
+      // from this column whitelist, so every prisma-backed save silently
+      // dropped the bank-account selection.
+      selected_bank_accounts: t.selected_bank_accounts,
       // Branding links
       letterhead_id: t.letterhead_id === undefined ? undefined : t.letterhead_id,
       seal_id: t.seal_id === undefined ? undefined : t.seal_id,
@@ -2064,6 +2069,25 @@ export class PrismaStore implements Store {
 
     let r;
     if (t.id) {
+      // audit20 / 20-b — defense in depth: when the caller supplies a tenant
+      // scope, verify the row belongs to that tenant BEFORE the update. The
+      // raw `where: { id }` matched ANY tenant's row — the route-level
+      // ownership checks cover the known callers, but a future route (or a
+      // store call from server code) that forgets the check would turn
+      // POST {id: <other-tenant-uuid>} into a cross-tenant overwrite.
+      // Mirrors the supabase smartUpsert contract: 0 rows → throw, never
+      // fall through to create.
+      if (t.tenant_id) {
+        const owned = await db.documentTemplate.findFirst({
+          where: { id: t.id, tenant_id: t.tenant_id },
+          select: { id: true },
+        });
+        if (!owned) {
+          throw new Error(
+            `Record not found or access denied (table=document_templates, id=${t.id}).`,
+          );
+        }
+      }
       r = await db.documentTemplate.update({ where: { id: t.id }, data, include: { letterhead: true, seal: true } });
     } else {
       r = await db.documentTemplate.create({ data, include: { letterhead: true, seal: true } });

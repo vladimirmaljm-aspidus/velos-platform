@@ -6,6 +6,9 @@ import { checkRateLimit } from "@/lib/security/rate-limiter";
 import { decryptField, isEncrypted } from "@/lib/crypto/field-encryption";
 import { escapeHtml } from "@/lib/security/escape-html";
 import { isValidEmail } from "@/lib/validation/email";
+// audit20 / 20-d2 — LOI send PDF attachment parity with the invoice /
+// offer / proforma send routes (they all import generatePdf statically).
+import { generatePdf } from "@/lib/pdf/generator";
 
 export const runtime = "nodejs";
 
@@ -142,6 +145,30 @@ export async function POST(
       </div>
     `;
 
+    // ── audit20 / 20-d2 — LOI PDF attachment (send-route parity) ────────
+    // Every other document send route (offers / invoices / proformas)
+    // attaches generatePdf's output; the LOI send route emailed an
+    // HTML-only body, so the recipient got the summary table but never the
+    // actual Letter of Intent PDF. Generate it here and attach it to the
+    // sendEmail call. createVerification keeps its DEFAULT (invoices send
+    // does not pass it either) so scanning the LOI PDF's QR works.
+    // Failure is NON-FATAL: if the PDF cannot be generated (template
+    // crash, missing doc row mid-race) we still send the email without
+    // the attachment — the same graceful degradation the mail-queue retry
+    // route applies when regeneration fails — rather than blocking the
+    // entire send on the attachment alone.
+    let loiAttachment: { filename: string; content: Buffer; contentType: string } | undefined;
+    try {
+      const pdf = await generatePdf({ docType: "loi", docId: id, tenantId: loi.tenant_id });
+      loiAttachment = {
+        filename: `loi-${loi.number || id}.pdf`,
+        content: Buffer.from(pdf.buffer),
+        contentType: "application/pdf",
+      };
+    } catch (pdfErr) {
+      console.error("[lois.send] LOI PDF generation failed — sending email without attachment:", pdfErr);
+    }
+
     const result = await sendEmail({
       to: partnerEmail,
       subject: `Letter of Intent — ${loi.number} — ${loi.subject}`,
@@ -151,6 +178,10 @@ export async function POST(
       // regenerate the LOI PDF attachment (migration 077).
       entityType: "loi",
       entityId: id,
+      // audit20 / 20-d2 — the generated LOI PDF (attachment structure
+      // mirrors the invoices send route: filename / content /
+      // contentType). Omitted when generation failed above.
+      attachments: loiAttachment ? [loiAttachment] : undefined,
     });
 
     // AUDIT16 — only flip the LOI to "sent" (and stamp sent_at) when the

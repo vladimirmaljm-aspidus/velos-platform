@@ -2515,6 +2515,54 @@ export class SupabaseStore implements Store {
     }
   }
   async upsertDocumentTemplate(t: Partial<DocumentTemplate> & { id?: string }): Promise<DocumentTemplate> {
+    // audit20 / 20-b — keep the "one default per (tenant, type)" invariant.
+    // The prisma store has always reset sibling defaults; the supabase store
+    // never did, so every "set as default" save accumulated ANOTHER
+    // is_default=true row per (tenant, type). That broke
+    // getDefaultDocumentTemplate()'s maybeSingle() with PGRST116 ("JSON
+    // object requested, multiple rows returned") and made "default" mean
+    // "whichever duplicate row PostgREST happens to return first".
+    // Reset the siblings BEFORE the upsert. Non-fatal by design: a failed
+    // reset is logged and the save still proceeds — a flaky UPDATE here
+    // must not block the actual template write.
+    try {
+      if (t.is_default === true && t.type && (t.tenant_id || t.id)) {
+        let tenantId = t.tenant_id;
+        let type = t.type;
+        if (!tenantId && t.id) {
+          // Update-by-id without a tenant scope (super-admin path): resolve
+          // the row's tenant so the reset never crosses into another
+          // tenant's templates. 0 rows / error → skip the reset entirely.
+          const { data: existing, error: getErr } = await this.sb()
+            .from("document_templates")
+            .select("tenant_id, type")
+            .eq("id", t.id)
+            .maybeSingle();
+          if (getErr || !existing) {
+            if (getErr) console.warn("[upsertDocumentTemplate] sibling lookup failed:", getErr.message);
+          } else {
+            tenantId = existing.tenant_id;
+            if (!type) type = existing.type;
+          }
+        }
+        if (tenantId && type) {
+          let resetQuery = this.sb()
+            .from("document_templates")
+            .update({ is_default: false })
+            .eq("tenant_id", tenantId)
+            .eq("type", type)
+            .eq("is_default", true);
+          // Never clear the row being promoted to default (update-by-id case).
+          if (t.id) resetQuery = resetQuery.neq("id", t.id);
+          const { error: resetErr } = await resetQuery;
+          if (resetErr) {
+            console.warn("[upsertDocumentTemplate] sibling default reset failed:", resetErr.message);
+          }
+        }
+      }
+    } catch (resetError) {
+      console.warn("[upsertDocumentTemplate] sibling default reset error:", resetError);
+    }
     return this.smartUpsert<DocumentTemplate>("document_templates", t, t.tenant_id ?? undefined);
   }
   async deleteDocumentTemplate(id: string): Promise<void> {

@@ -17,7 +17,57 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React from "react";
-import { Text, View, StyleSheet } from "@react-pdf/renderer";
+import { Text, View, StyleSheet, Font } from "@react-pdf/renderer";
+
+// ─── Unicode fonts (audit20) ────────────────────────────────────────────────
+//
+// The react-pdf built-in "standard 14" fonts (Helvetica / Times / Courier)
+// encode text with WinAnsi — Cyrillic, Greek and Serbian-Latin Đ/Č/Ć glyphs
+// render as mojibake or are silently dropped. With sr/ru in the i18n set,
+// partner and tenant names were corrupted in every generated PDF.
+//
+// We register Noto Sans (SIL OFL 1.1) subsets covering Latin, Latin-Ext,
+// Cyrillic, Greek, punctuation, currency and math symbols. Registered under
+// four families so the existing code style (explicit "<family>-Bold" names,
+// boldVariant()) keeps working unchanged:
+//   NotoSans / NotoSans-Bold / NotoSans-Oblique / NotoSans-BoldOblique
+// The "NotoSans" family is ALSO registered with style descriptors
+// (fontWeight/fontStyle) so `fontStyle: "italic"` resolves correctly.
+//
+// pdfkit subsets fonts on embed — only used glyphs land in the PDF, so the
+// ~120 KB-per-variant source costs a few KB per document.
+import NOTO_SANS_REGULAR from "./fonts/noto-sans-regular";
+import NOTO_SANS_BOLD from "./fonts/noto-sans-bold";
+import NOTO_SANS_ITALIC from "./fonts/noto-sans-italic";
+import NOTO_SANS_BOLD_ITALIC from "./fonts/noto-sans-bold-italic";
+
+const NOTO_FAMILIES: Array<[string, string]> = [
+  ["NotoSans", NOTO_SANS_REGULAR],
+  ["NotoSans-Bold", NOTO_SANS_BOLD],
+  ["NotoSans-Oblique", NOTO_SANS_ITALIC],
+  ["NotoSans-BoldOblique", NOTO_SANS_BOLD_ITALIC],
+];
+
+let notoRegistered = false;
+export function ensureUnicodeFontsRegistered(): void {
+  if (notoRegistered) return;
+  for (const [family, src] of NOTO_FAMILIES) {
+    Font.register({ family, src });
+  }
+  // Style-descriptor form for the base family so fontStyle/fontWeight
+  // resolution (e.g. `fontStyle: "italic"`) also finds a variant.
+  Font.register({
+    family: "NotoSans",
+    fonts: [
+      { src: NOTO_SANS_REGULAR },
+      { src: NOTO_SANS_ITALIC, fontStyle: "italic" },
+      { src: NOTO_SANS_BOLD, fontWeight: 700 },
+      { src: NOTO_SANS_BOLD_ITALIC, fontWeight: 700, fontStyle: "italic" },
+    ],
+  });
+  notoRegistered = true;
+}
+ensureUnicodeFontsRegistered();
 
 // ─── Geometry ───────────────────────────────────────────────────────────────
 
@@ -251,10 +301,21 @@ export function fmtWeight(n: number | null | undefined, unit = "kg"): string {
   return `${v.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${unit}`;
 }
 
-/** Format an ISO date as "06 Aug 2026" (en-GB, day-first — trade-document convention). */
+/** Format an ISO date as "06 Aug 2026" (en-GB, day-first — trade-document convention).
+ *
+ *  audit20 fix: date-only strings ("2026-08-29") parse as UTC midnight but were
+ *  formatted in the SERVER's local timezone — a server west of UTC showed
+ *  "28 Aug 2026". Formatting in UTC makes the output deterministic and matches
+ *  what the user entered, regardless of where the function runs.
+ */
 export function fmtDateIso(iso?: string | null): string {
   return iso
-    ? new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+    ? new Date(iso).toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        timeZone: "UTC",
+      })
     : "—";
 }
 
@@ -293,44 +354,57 @@ export function lightenHex(hex: string, amount: number): string {
 }
 
 /**
- * Map a CSS font stack OR a react-pdf font name (what the memorandum settings
- * UI stores: "Helvetica", "Times-Roman", "Courier") to a valid react-pdf
- * base family. react-pdf only ships Helvetica, Times-Roman and Courier
- * built-in — any custom font would need Font.register() first.
+ * Map a CSS font stack OR a react-pdf font name (what the settings UIs store:
+ * "Helvetica", "Times-Roman", "Courier") to a valid registered family.
  *
- * audit13 fix: the settings UI saves the EXACT react-pdf names ("Times-Roman"),
- * but the old map only knew CSS stack names ("times", "times-new-roman") —
- * so "Times-Roman" fell through to the fallback and the memorandum header
- * silently rendered in Helvetica instead of the configured serif font.
+ * audit20: all SANS stacks now resolve to the registered Unicode "NotoSans"
+ * family (see ensureUnicodeFontsRegistered) — Helvetica itself can only encode
+ * WinAnsi, so Cyrillic/Greek/ĐČĆ text corrupted. Times and Courier stay on the
+ * built-ins (serif/mono are rare explicit choices; a Cyrillic serif request is
+ * far less common than the default sans path).
+ *
+ * audit13 fix (kept): the settings UI saves the EXACT react-pdf names
+ * ("Times-Roman"), and spaces in family names are normalised to hyphens.
  */
 const FONT_MAP: Record<string, string> = {
-  // CSS stack names (web preview → PDF)
-  "helvetica": "Helvetica",
-  "inter": "Helvetica",
-  "system-ui": "Helvetica",
-  "sans-serif": "Helvetica",
-  "arial": "Helvetica",
+  // CSS stack names (web preview → PDF) — sans → Unicode Noto Sans
+  "helvetica": "NotoSans",
+  "inter": "NotoSans",
+  "system-ui": "NotoSans",
+  "sans-serif": "NotoSans",
+  "arial": "NotoSans",
+  "noto-sans": "NotoSans",
+  "notosans": "NotoSans",
+  "segoe-ui": "NotoSans",
+  "roboto": "NotoSans",
+  "open-sans": "NotoSans",
+  "lucida-sans": "NotoSans",
+  "verdana": "NotoSans",
+  "tahoma": "NotoSans",
+  // Serif / mono keep the built-ins
   "times": "Times-Roman",
   "times-new-roman": "Times-Roman",
   "serif": "Times-Roman",
+  "georgia": "Times-Roman",
+  "garamond": "Times-Roman",
   "courier": "Courier",
   "courier-new": "Courier",
   "monospace": "Courier",
-  // Exact react-pdf names (memorandum settings UI values + style variants)
+  // Exact react-pdf names (settings UI values + style variants)
   "times-roman": "Times-Roman",
   "times-bold": "Times-Bold",
   "times-italic": "Times-Italic",
   "times-bold-italic": "Times-BoldItalic",
   "timesbolditalic": "Times-BoldItalic",
-  "helvetica-bold": "Helvetica-Bold",
-  "helvetica-oblique": "Helvetica-Oblique",
-  "helvetica-boldoblique": "Helvetica-BoldOblique",
+  "helvetica-bold": "NotoSans-Bold",
+  "helvetica-oblique": "NotoSans-Oblique",
+  "helvetica-boldoblique": "NotoSans-BoldOblique",
   "courier-bold": "Courier-Bold",
   "courier-oblique": "Courier-Oblique",
   "courier-boldoblique": "Courier-BoldOblique",
 };
 
-export function mapFont(fontStack: string | null | undefined, fallback = "Helvetica"): string {
+export function mapFont(fontStack: string | null | undefined, fallback = "NotoSans"): string {
   if (!fontStack) return fallback;
   const first = fontStack.split(",")[0].trim().replace(/['"]/g, "").toLowerCase();
   // audit13: normalise spaces to hyphens so "'Times New Roman', Times, serif"
@@ -351,14 +425,16 @@ export function mapFont(fontStack: string | null | undefined, fallback = "Helvet
 const BOLD_VARIANT: Record<string, string> = {
   "Times-Roman": "Times-Bold",
   "Times-Italic": "Times-BoldItalic",
-  "Helvetica": "Helvetica-Bold",
-  "Helvetica-Oblique": "Helvetica-BoldOblique",
+  "Helvetica": "NotoSans-Bold",
+  "NotoSans": "NotoSans-Bold",
+  "NotoSans-Oblique": "NotoSans-BoldOblique",
+  "Helvetica-Oblique": "NotoSans-BoldOblique",
   "Courier": "Courier-Bold",
   "Courier-Oblique": "Courier-BoldOblique",
 };
 
 export function boldVariant(family: string): string {
-  if (!family) return "Helvetica-Bold";
+  if (!family) return "NotoSans-Bold";
   if (BOLD_VARIANT[family]) return BOLD_VARIANT[family];
   if (family.endsWith("Bold") || family.endsWith("BoldItalic")) return family;
   return `${family}-Bold`;
@@ -413,7 +489,7 @@ export function Watermark({ text }: { text: string }) {
       {
         style: {
           fontSize,
-          fontFamily: "Helvetica-Bold",
+          fontFamily: "NotoSans-Bold",
           color: "#999999",
           textAlign: "center",
         },
@@ -494,7 +570,9 @@ export function logisticsWatermarkText(
  */
 export function createBaseStyles() {
   return StyleSheet.create({
-    page: { padding: 30, fontSize: 9, fontFamily: "Helvetica", color: "#111" },
+    // audit20: NotoSans (registered Unicode subset) instead of the WinAnsi-only
+    // built-in Helvetica — same clean sans look, plus Cyrillic/Greek/ĐČĆ support.
+    page: { padding: 30, fontSize: 9, fontFamily: "NotoSans", color: "#111" },
     headerBar: { backgroundColor: COPPER, color: "white", padding: 12, marginBottom: 16, borderRadius: 3 },
     h1: { fontSize: 16, fontWeight: 700 },
     small: { fontSize: 9, opacity: 0.85 },
