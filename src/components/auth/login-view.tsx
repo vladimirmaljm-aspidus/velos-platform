@@ -28,6 +28,7 @@ import {
   Building2,
   Sparkles,
   Store,
+  Clock,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store/app-store";
 import { useI18nStore, useT } from "@/lib/i18n/store";
@@ -46,6 +47,18 @@ export function LoginView({ onSwitchToRegister }: LoginViewProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  // audit25 (random-logout fix) — the app shell redirects to /?reason=
+  // session_expired when the idle / absolute TTL / revocation kills the
+  // session. We read it once (window.location — no useSearchParams, so
+  // no Suspense boundary requirement) and show an amber explainer banner
+  // instead of the previous silent bounce ("app logs me out for no reason").
+  const [sessionExpired, setSessionExpired] = useState(false);
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("reason") === "session_expired") {
+// eslint-disable-next-line react-hooks/set-state-in-effect
+      setSessionExpired(true);
+    }
+  }, []);
 
   // FIX-AUDIT3 #8 — 429 / 423 lockout countdown. When the API returns
   // a `Retry-After` (HTTP header, seconds) OR `retry_after` (JSON,
@@ -350,6 +363,18 @@ export function LoginView({ onSwitchToRegister }: LoginViewProps) {
                   by the `lockCountdown` state). When the countdown
                   reaches 0, the effect above clears `error` +
                   `lockCountdown`, so this alert naturally disappears too. */}
+              {/* audit25 — explain WHY the user landed here when their
+                  session expired (idle / absolute TTL / revoked). Amber
+                  info alert, not destructive — nothing they did was wrong. */}
+              {sessionExpired && !displayError && (
+                <Alert className="mb-5 border-amber-500/40 bg-amber-500/10" role="status">
+                  <Clock className="h-4 w-4 text-amber-600" aria-hidden />
+                  <AlertDescription className="text-sm text-amber-700 dark:text-amber-400">
+                    {t("login-session-expired")}
+                  </AlertDescription>
+                </Alert>
+              )}
+
               {displayError && (
                 <Alert
                   variant="destructive"

@@ -37,6 +37,21 @@
  *   - user:         7d, 30min idle
  *
  * Configurable by super-admins via PUT /api/settings/session-config.
+ *
+ * audit25 INCIDENT NOTE (2026-09-02): production had userTtlMs=4h
+ * (4,000,000-class override set at some point without an audit row).
+ * Every portal client + regular user was therefore hard-logged-out
+ * 4 HOURS after login EVEN WHILE ACTIVELY WORKING (bumpSessionActivity
+ * preserves expires_at by design — activity extends the idle window,
+ * never the absolute cap). Users reported it as "the app logs me out
+ * for no reason". Fixed in production: userTtlMs=7d (matches the 7-day
+ * cookie maxAge + JWT exp cap — there is no security benefit to an
+ * absolute TTL shorter than the cookie), idleTimeoutMs=60min.
+ * LESSON: userTtlMs below 24h for a B2B portal is a UX foot-gun; the
+ * JWT layer (exp cap 7d) + token_version revocation already bound the
+ * exposure of a stolen cookie. If you tighten these values, tell the
+ * clients first — the frontend now warns 15min before absolute expiry
+ * (see /api/auth/touch + use-session-heartbeat).
  */
 
 export interface SessionConfig {

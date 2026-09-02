@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/sheet";
 import dynamic from "next/dynamic";
 import { useT } from "@/lib/i18n/store";
+import { toast } from "sonner";
 import { useSessionHeartbeat } from "@/hooks/use-session-heartbeat";
 
 /* -------------------------------------------------------------------------- */
@@ -189,11 +190,21 @@ export function AppShell() {
   // it every admin/user session hit the 30-min idle timeout 30 minutes
   // after LOGIN (no code ever called /api/auth/touch), logging people
   // out mid-work. Super-admin sessions are a no-op server-side.
+  // audit25: the redirect now carries ?reason=session_expired so the
+  // login form explains WHY the user was signed out (idle / absolute
+  // TTL / revocation — never again "logged out for no reason"), and
+  // onExpiringSoon toasts a "save your work" warning when the absolute
+  // TTL is < 15 min away.
   useSessionHeartbeat({
     onExpired: () => {
       // Root renders the login form whenever no valid session exists
       // (src/app/page.tsx) — there is no dedicated /login route.
-      if (typeof window !== "undefined") window.location.href = "/";
+      if (typeof window !== "undefined") {
+        window.location.href = "/?reason=session_expired";
+      }
+    },
+    onExpiringSoon: ({ minutesLeft }) => {
+      toast.warning(t("session-expiring-soon").replace("${minutes}", String(minutesLeft)));
     },
   });
 

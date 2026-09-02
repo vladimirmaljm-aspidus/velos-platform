@@ -930,6 +930,8 @@ export const MISC: Record<Locale, Record<string, string>> = {
     // replaced client-side with a "2m 15s"-style countdown.
     "login-locked-too-many": "Too many login attempts. Try again in ${time}.",
     "login-locked-account": "Account temporarily locked. Try again in ${time}.",
+    "login-session-expired": "Your session has expired for security reasons. Please sign in again.",
+    "session-expiring-soon": "Your session expires in ${minutes} minutes — save your work.",
     "login-locked-countdown-h": "${m}m ${s}s",
     "login-locked-countdown-s": "${s}s",
     "login-locked-forgot-help": "Locked out? Use \"Forgot password?\" to reset, or contact your workspace admin.",
@@ -2096,6 +2098,8 @@ export const MISC: Record<Locale, Record<string, string>> = {
     // FIX-AUDIT3 #8
     "login-locked-too-many": "Previše pokušaja prijave. Pokušaj ponovo za ${time}.",
     "login-locked-account": "Nalog je privremeno zaključan. Pokušaj ponovo za ${time}.",
+    "login-session-expired": "Tvoja sesija je istekla iz bezbednosnih razloga. Prijavi se ponovo.",
+    "session-expiring-soon": "Tvoja sesija ističe za ${minutes} minuta — sačuvaj svoj rad.",
     "login-locked-countdown-h": "${m}m ${s}s",
     "login-locked-countdown-s": "${s}s",
     "login-locked-forgot-help": "Zaključan? Koristi „Zaboravljena lozinka?” za resetovanje, ili kontaktiraj admina workspace-a.",
@@ -3197,6 +3201,8 @@ export const MISC: Record<Locale, Record<string, string>> = {
     // FIX-AUDIT3 #8
     "login-locked-too-many": "Çok fazla giriş denemesi. ${time} sonra tekrar deneyin.",
     "login-locked-account": "Hesap geçici olarak kilitli. ${time} sonra tekrar deneyin.",
+    "login-session-expired": "Oturumunuz güvenlik nedeniyle sona erdi. Lütfen tekrar giriş yapın.",
+    "session-expiring-soon": "Oturumunuz ${minutes} dakika içinde sona erecek — çalışmanızı kaydedin.",
     "login-locked-countdown-h": "${m}dk ${s}sn",
     "login-locked-countdown-s": "${s}sn",
     "login-locked-forgot-help": "Kilitli mi? Sıfırlamak için „Şifrenizi mi unuttunuz?” kullanın veya workspace yöneticinize başvurun.",
@@ -4298,6 +4304,8 @@ export const MISC: Record<Locale, Record<string, string>> = {
     // FIX-AUDIT3 #8
     "login-locked-too-many": "Zu viele Anmeldeversuche. Versuchen Sie es in ${time} erneut.",
     "login-locked-account": "Konto vorübergehend gesperrt. Versuchen Sie es in ${time} erneut.",
+    "login-session-expired": "Ihre Sitzung wurde aus Sicherheitsgründen beendet. Bitte melden Sie sich erneut an.",
+    "session-expiring-soon": "Ihre Sitzung läuft in ${minutes} Minuten ab — speichern Sie Ihre Arbeit.",
     "login-locked-countdown-h": "${m}m ${s}s",
     "login-locked-countdown-s": "${s}s",
     "login-locked-forgot-help": "Gesperrt? Nutzen Sie „Passwort vergessen?” zum Zurücksetzen oder wenden Sie sich an Ihren Workspace-Administrator.",
@@ -5399,6 +5407,8 @@ export const MISC: Record<Locale, Record<string, string>> = {
     // FIX-AUDIT3 #8
     "login-locked-too-many": "Слишком много попыток входа. Повторите через ${time}.",
     "login-locked-account": "Аккаунт временно заблокирован. Повторите через ${time}.",
+    "login-session-expired": "Ваша сессия истекла по соображениям безопасности. Пожалуйста, войдите снова.",
+    "session-expiring-soon": "Ваша сессия истекает через ${minutes} мин — сохраните работу.",
     "login-locked-countdown-h": "${m}м ${s}с",
     "login-locked-countdown-s": "${s}с",
     "login-locked-forgot-help": "Заблокированы? Используйте «Забыли пароль?» для сброса или обратитесь к администратору workspace.",

@@ -32,6 +32,7 @@ import {
   EyeOff,
   Store,
   Info,
+  Clock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAppStore } from "@/lib/store/app-store";
@@ -59,6 +60,11 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  // audit25 (random-logout fix) — when the shell redirects here with
+  // ?reason=session_expired (idle / absolute TTL / revocation), we show
+  // an inline INFO banner explaining WHY instead of the previous silent
+  // bounce that users reported as "the app logs me out for no reason".
+  const [sessionExpired, setSessionExpired] = useState(false);
   // UI-1 — surface login errors INLINE (above the form) in addition to the
   // toast. A toast that vanishes after 3s was the root cause of the original
   // "nothing happens" reports — the user missed it and clicked again.
@@ -180,6 +186,10 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
     const emailParam = searchParams.get("email");
 // eslint-disable-next-line react-hooks/set-state-in-effect
     if (emailParam) setEmail(emailParam);
+    // audit25 — the shells redirect here with ?reason=session_expired
+    // when the idle / absolute TTL kills the session. Read it once so
+    // the amber explainer banner shows WHY (never a silent bounce).
+    if (searchParams.get("reason") === "session_expired") setSessionExpired(true);
     // Audit F-6/P1-3: prefer ?setup_token=xxx (single-use, 7-day-expiring)
     // over the legacy ?access_id=xxx (permanent UUID, never expired).
     const setupTokenParam = searchParams.get("setup_token");
@@ -553,6 +563,18 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
                   `lockCountdown` state). When the countdown reaches 0,
                   the effect above clears `loginError` + `lockCountdown`,
                   so this alert naturally disappears too. */}
+              {/* audit25 — explain WHY the user landed here when their
+                  session expired (idle / absolute TTL / revoked). Amber
+                  info alert, not destructive — nothing they did was wrong. */}
+              {sessionExpired && !displayError && (
+                <Alert className="mb-5 border-amber-500/40 bg-amber-500/10" role="status">
+                  <Clock className="h-4 w-4 text-amber-600" aria-hidden />
+                  <AlertDescription className="text-sm text-amber-700 dark:text-amber-400">
+                    {t("portal-login-session-expired")}
+                  </AlertDescription>
+                </Alert>
+              )}
+
               {displayError && (
                 <Alert
                   variant="destructive"

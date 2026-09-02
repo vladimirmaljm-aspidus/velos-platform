@@ -755,6 +755,7 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     // replaced client-side with a "2m 15s"-style countdown.
     "portal-login-locked-too-many": "Too many login attempts. Try again in ${time}.",
     "portal-login-locked-account": "Your account is temporarily locked. Try again in ${time}.",
+    "portal-login-session-expired": "Your session has expired for security reasons. Please sign in again.",
     "portal-login-locked-countdown-h": "${m}m ${s}s",
     "portal-login-locked-countdown-s": "${s}s",
     "portal-login-locked-forgot-help": "Locked out? Use \"Forgot your password?\" below to reset, or contact your account manager.",
@@ -4176,6 +4177,7 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     // FIX-AUDIT3 #8
     "portal-login-locked-too-many": "Previše pokušaja prijave. Pokušaj ponovo za ${time}.",
     "portal-login-locked-account": "Tvoj nalog je privremeno zaključan. Pokušaj ponovo za ${time}.",
+    "portal-login-session-expired": "Tvoja sesija je istekla iz bezbednosnih razloga. Prijavi se ponovo.",
     "portal-login-locked-countdown-h": "${m}m ${s}s",
     "portal-login-locked-countdown-s": "${s}s",
     "portal-login-locked-forgot-help": "Zaključan? Koristi „Zaboravljena lozinka?” ispod za resetovanje, ili kontaktiraj svog account menadžera.",
@@ -6246,6 +6248,7 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     // FIX-AUDIT3 #8
     "portal-login-locked-too-many": "Çok fazla giriş denemesi. ${time} sonra tekrar deneyin.",
     "portal-login-locked-account": "Hesabınız geçici olarak kilitli. ${time} sonra tekrar deneyin.",
+    "portal-login-session-expired": "Oturumunuz güvenlik nedeniyle sona erdi. Lütfen tekrar giriş yapın.",
     "portal-login-locked-countdown-h": "${m}dk ${s}sn",
     "portal-login-locked-countdown-s": "${s}sn",
     "portal-login-locked-forgot-help": "Kilitli mi? Sıfırlamak için aşağıdaki „Şifrenizi mi unuttunuz?” bağlantısını kullanın veya hesap yöneticinize başvurun.",
@@ -8313,6 +8316,7 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     // FIX-AUDIT3 #8
     "portal-login-locked-too-many": "Zu viele Anmeldeversuche. Versuchen Sie es in ${time} erneut.",
     "portal-login-locked-account": "Ihr Konto ist vorübergehend gesperrt. Versuchen Sie es in ${time} erneut.",
+    "portal-login-session-expired": "Ihre Sitzung wurde aus Sicherheitsgründen beendet. Bitte melden Sie sich erneut an.",
     "portal-login-locked-countdown-h": "${m}m ${s}s",
     "portal-login-locked-countdown-s": "${s}s",
     "portal-login-locked-forgot-help": "Gesperrt? Nutzen Sie unten „Passwort vergessen?” zum Zurücksetzen oder wenden Sie sich an Ihren Account-Manager.",
@@ -10380,6 +10384,7 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     // FIX-AUDIT3 #8
     "portal-login-locked-too-many": "Слишком много попыток входа. Повторите через ${time}.",
     "portal-login-locked-account": "Ваш аккаунт временно заблокирован. Повторите через ${time}.",
+    "portal-login-session-expired": "Ваша сессия истекла по соображениям безопасности. Пожалуйста, войдите снова.",
     "portal-login-locked-countdown-h": "${m}м ${s}с",
     "portal-login-locked-countdown-s": "${s}с",
     "portal-login-locked-forgot-help": "Заблокированы? Используйте ссылку «Забыли пароль?» ниже для сброса или обратитесь к аккаунт-менеджеру.",

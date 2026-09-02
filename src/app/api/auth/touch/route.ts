@@ -6,6 +6,7 @@ import {
 } from "@/lib/auth/session";
 import { requireAuth, sanitizeError } from "@/lib/api/helpers";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { getSessionConfig } from "@/lib/auth/session-config";
 
 export const runtime = "nodejs";
 
@@ -40,6 +41,13 @@ export const runtime = "nodejs";
  *
  * Unauthenticated callers get 401 (the frontend should treat this as
  * "session expired — redirect to /login").
+ *
+ * audit25 (random-logout fix): the response now also carries `expiresAt`
+ * (ms epoch — the application-level absolute TTL) and `idleTimeoutMs` so
+ * the frontend heartbeat can WARN the user a few minutes before the
+ * absolute expiry instead of dropping them on the login screen without
+ * explanation. Portal + admin paths both return them; super_admin gets
+ * `bypassed:true` as before (no idle timeout to warn about).
  */
 export async function POST(req: NextRequest) {
   try {
@@ -56,7 +64,18 @@ export async function POST(req: NextRequest) {
       }
       const newToken = await bumpSessionActivity(rawSession);
       await setSessionCookie(newToken);
-      return NextResponse.json({ ok: true, lastActivityAt: new Date().toISOString() });
+      let idleTimeoutMs: number | undefined;
+      try {
+        idleTimeoutMs = (await getSessionConfig()).idleTimeoutMs;
+      } catch {
+        /* config load is best-effort for the warning feature */
+      }
+      return NextResponse.json({
+        ok: true,
+        lastActivityAt: new Date().toISOString(),
+        expiresAt: typeof rawSession.expires_at === "number" ? rawSession.expires_at : undefined,
+        idleTimeoutMs,
+      });
     }
 
     const auth = await requireAuth(req);
@@ -77,8 +96,19 @@ export async function POST(req: NextRequest) {
     }
     const newToken = await bumpSessionActivity(session);
     await setSessionCookie(newToken);
+    let idleTimeoutMs: number | undefined;
+    try {
+      idleTimeoutMs = (await getSessionConfig()).idleTimeoutMs;
+    } catch {
+      /* config load is best-effort for the warning feature */
+    }
 
-    return NextResponse.json({ ok: true, lastActivityAt: new Date().toISOString() });
+    return NextResponse.json({
+      ok: true,
+      lastActivityAt: new Date().toISOString(),
+      expiresAt: typeof session.expires_at === "number" ? session.expires_at : undefined,
+      idleTimeoutMs,
+    });
   } catch (e) {
     console.error("[auth.touch]", e);
     return NextResponse.json({ error: sanitizeError(e) }, { status: 500 });

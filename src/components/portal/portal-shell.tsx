@@ -282,14 +282,22 @@ export function PortalShell({
 
   // P0 (session idle fix) — heartbeat POST /api/auth/touch every 5 min
   // while the tab is visible so an ACTIVELY USED portal session never
-  // hits the 30-min idle timeout (previously every portal client was
-  // silently logged out 30 min after login — no code ever bumped
+  // hits the idle timeout (previously every portal client was silently
+  // logged out 30 min after login — no code ever bumped
   // last_activity_at). On 401 the session is truly expired: clear local
-  // state and let the /api/portal/me hydration effect redirect to login.
+  // state and redirect. audit25: the redirect now carries
+  // ?reason=session_expired so the login page shows WHY (no more
+  // "app logs me out for no reason" reports), and onExpiringSoon toasts
+  // a warning when the absolute TTL is minutes away.
   useSessionHeartbeat({
     onExpired: () => {
       setPortalAccess(null);
-      if (typeof window !== "undefined") window.location.href = "/portal/login";
+      if (typeof window !== "undefined") {
+        window.location.href = "/portal/login?reason=session_expired";
+      }
+    },
+    onExpiringSoon: ({ minutesLeft }) => {
+      toast.warning(t("session-expiring-soon").replace("${minutes}", String(minutesLeft)));
     },
   });
 
@@ -307,13 +315,22 @@ export function PortalShell({
   // portal) leaves the store empty and PortalShell returns null → user
   // sees a blank white page. If /api/portal/me returns 401 we redirect
   // back to the login screen instead of hanging.
+  // audit25: a 401 here means the session EXPIRED (idle / absolute TTL /
+  // revoked) while the user was on the page — the redirect carries
+  // ?reason=session_expired so the login page explains WHY instead of
+  // the "app logged me out for no reason" mystery. Non-401 failures
+  // (5xx) still redirect plainly (session state unknown).
   const [hydrating, setHydrating] = useState<boolean>(!portalAccess);
   useEffect(() => {
 // eslint-disable-next-line react-hooks/set-state-in-effect
     if (portalAccess) { setHydrating(false); return; }
     let mounted = true;
     fetch("/api/portal/me")
-      .then((r) => (r.ok ? r.json() : null))
+      .then((r) => {
+        if (r.ok) return r.json().catch(() => null);
+        if (r.status === 401) throw new Error("session_expired");
+        return null;
+      })
       .then((data) => {
         if (!mounted) return;
         if (data?.access) {
@@ -323,8 +340,13 @@ export function PortalShell({
           window.location.href = "/portal/login";
         }
       })
-      .catch(() => {
-        if (mounted && typeof window !== "undefined") window.location.href = "/portal/login";
+      .catch((e: unknown) => {
+        if (mounted && typeof window !== "undefined") {
+          window.location.href =
+            e instanceof Error && e.message === "session_expired"
+              ? "/portal/login?reason=session_expired"
+              : "/portal/login";
+        }
       })
       .finally(() => { if (mounted) setHydrating(false); });
     return () => { mounted = false; };
