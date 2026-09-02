@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/sheet";
 import dynamic from "next/dynamic";
 import { useT } from "@/lib/i18n/store";
+import { useSessionHeartbeat } from "@/hooks/use-session-heartbeat";
 
 /* -------------------------------------------------------------------------- */
 /*  Dynamic view imports (unchanged)                                          */
@@ -183,6 +184,18 @@ export function AppShell() {
   const setView = useAppStore((s) => s.setView);
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const t = useT();
+
+  // P0 (session idle fix) — same heartbeat as the portal shell. Without
+  // it every admin/user session hit the 30-min idle timeout 30 minutes
+  // after LOGIN (no code ever called /api/auth/touch), logging people
+  // out mid-work. Super-admin sessions are a no-op server-side.
+  useSessionHeartbeat({
+    onExpired: () => {
+      // Root renders the login form whenever no valid session exists
+      // (src/app/page.tsx) — there is no dedicated /login route.
+      if (typeof window !== "undefined") window.location.href = "/";
+    },
+  });
 
   /* Close mobile menu when view changes */
   React.useEffect(() => {

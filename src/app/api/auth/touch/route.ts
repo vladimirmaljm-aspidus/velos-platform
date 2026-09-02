@@ -5,6 +5,7 @@ import {
   bumpSessionActivity,
 } from "@/lib/auth/session";
 import { requireAuth, sanitizeError } from "@/lib/api/helpers";
+import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 
 export const runtime = "nodejs";
 
@@ -24,11 +25,40 @@ export const runtime = "nodejs";
  * their last_activity_at would be harmless but pointless, so we just
  * return success without re-signing the cookie.
  *
+ * PORTAL FIX (P0): portal_client sessions ALSO honour the idle timeout
+ * (see getPortalSessionAccess), but this route used requireAuth — which
+ * resolves the user via `store.getUserById(session.sub)` where a portal
+ * session's sub is `portal:<uuid>`, NOT a users.id. Every touch from a
+ * portal client therefore returned 401, so a portal session could never
+ * be refreshed: 30 minutes after login (default idleTimeoutMs) the
+ * client was silently logged out mid-work even while actively using the
+ * portal. Portal sessions now verify through getPortalSessionAccess
+ * (status/token_version/tenant checks + the idle check itself — an
+ * already-idle session must NOT be resurrectable) and then bump exactly
+ * like admin sessions. The CSRF origin check for POSTs runs through
+ * requireAuth's portal mirror below.
+ *
  * Unauthenticated callers get 401 (the frontend should treat this as
  * "session expired — redirect to /login").
  */
 export async function POST(req: NextRequest) {
   try {
+    // ── Portal session path ────────────────────────────────────────────
+    // Detect BEFORE requireAuth: requireAuth 401s portal subs (no matching
+    // users row). getPortalSessionAccess performs the same CSRF-hardened
+    // request flow via its own cookie read; the origin check for POSTs
+    // is enforced below (same policy as requireAuth's P2-18 defense).
+    const rawSession = await getSessionFromCookie();
+    if (rawSession?.role === "portal_client" && rawSession.sub?.startsWith("portal:")) {
+      const access = await getPortalSessionAccess();
+      if (!access) {
+        return NextResponse.json({ error: "Session expired." }, { status: 401 });
+      }
+      const newToken = await bumpSessionActivity(rawSession);
+      await setSessionCookie(newToken);
+      return NextResponse.json({ ok: true, lastActivityAt: new Date().toISOString() });
+    }
+
     const auth = await requireAuth(req);
     if (auth instanceof NextResponse) return auth;
 

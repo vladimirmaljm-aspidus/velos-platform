@@ -51,6 +51,7 @@ import type { PortalAccess, PortalTier, Partner, Notification } from "@/lib/supa
 import { getTierMeta } from "@/lib/portal/tiers";
 import { usePortalGeolocation } from "@/lib/portal/use-geolocation";
 import { disconnectRealtime } from "@/hooks/use-realtime";
+import { useSessionHeartbeat } from "@/hooks/use-session-heartbeat";
 
 // UI-3 step 5 — the redesigned dashboard is a marketplace-focused welcome
 // page with quick stats, quick actions, and recent activity. The legacy
@@ -278,6 +279,19 @@ export function PortalShell({
   const selectedId = useAppStore((s) => s.selectedId);
   const setSelectedId = useAppStore((s) => s.setSelectedId);
   const setSelectedNegotiationId = useAppStore((s) => s.setSelectedNegotiationId);
+
+  // P0 (session idle fix) — heartbeat POST /api/auth/touch every 5 min
+  // while the tab is visible so an ACTIVELY USED portal session never
+  // hits the 30-min idle timeout (previously every portal client was
+  // silently logged out 30 min after login — no code ever bumped
+  // last_activity_at). On 401 the session is truly expired: clear local
+  // state and let the /api/portal/me hydration effect redirect to login.
+  useSessionHeartbeat({
+    onExpired: () => {
+      setPortalAccess(null);
+      if (typeof window !== "undefined") window.location.href = "/portal/login";
+    },
+  });
 
   // Apply the initial view once on mount (when navigating to a deep link like
   // /portal/offers the corresponding page passes initialView so the sidebar
