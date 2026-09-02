@@ -3,7 +3,13 @@
  *
  * Cache strategy routing:
  *   - Static assets (images, CSS, JS, fonts, svg, woff2):  cache-first
- *   - API requests (same-origin /api/...):                  stale-while-revalidate
+ *   - API requests (same-origin /api/...):                  network-first
+ *     (audit24 — was stale-while-revalidate, which served the CACHED copy
+ *     instantly and refreshed in the background; after any save, React
+ *     Query's invalidation refetch received the STALE copy and every list
+ *     kept showing pre-save data until a full page reload. Mutations must
+ *     be visible immediately, so API data is now network-first with the
+ *     cache as an offline fallback only.)
  *   - Navigation requests (HTML documents):                 network-first, offline fallback
  *
  * Additional capabilities:
@@ -17,7 +23,7 @@
  * previous caches on the next activate. Old `velos-v<N>` caches are wiped.
  */
 
-const CACHE_VERSION = "v2";
+const CACHE_VERSION = "v3";
 const CACHE_NAME = `velos-${CACHE_VERSION}`;
 const STATIC_CACHE = `${CACHE_NAME}-static`;
 const API_CACHE = `${CACHE_NAME}-api`;
@@ -146,9 +152,12 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // API requests → stale-while-revalidate (non-auth only).
+  // API requests → network-first (non-auth only): fresh data wins, the
+  // cached copy is only an offline fallback. Responses marked
+  // Cache-Control: no-store (the app sets this on all /api data routes,
+  // see next.config.ts) are never written to the cache.
   if (API_PATH_PATTERN.test(url.pathname)) {
-    event.respondWith(staleWhileRevalidate(request));
+    event.respondWith(apiNetworkFirst(request));
     return;
   }
 
@@ -186,24 +195,32 @@ async function cacheFirst(request) {
   }
 }
 
-/** Stale-while-revalidate: serve cache, refresh in background. */
-async function staleWhileRevalidate(request) {
-  const cache = await caches.open(API_CACHE);
-  const cached = await cache.match(request);
-  const networkPromise = fetch(request)
-    .then((res) => {
-      // Only cache successful, non-error JSON/GET responses.
-      if (res && res.ok) {
+/**
+ * Network-first for API data (audit24): try the network so mutations are
+ * visible immediately; fall back to the cached copy only when offline.
+ * Never caches responses that carry Cache-Control: no-store — the app
+ * marks all /api data routes no-store, so the cache only holds explicit
+ * exceptions (none today) and offline fallbacks.
+ */
+async function apiNetworkFirst(request) {
+  try {
+    const res = await fetch(request);
+    if (res && res.ok) {
+      const cc = res.headers.get("Cache-Control") || "";
+      if (!cc.includes("no-store")) {
+        const cache = await caches.open(API_CACHE);
         cache.put(request, res.clone());
       }
-      return res;
-    })
-    .catch(() => null);
-  // Return cached immediately if available; otherwise wait for the network.
-  return cached || (await networkPromise) || new Response("Offline", {
-    status: 503,
-    headers: { "Content-Type": "application/json" },
-  });
+    }
+    return res;
+  } catch (_err) {
+    const cached = await caches.match(request);
+    if (cached) return cached;
+    return new Response(JSON.stringify({ error: "offline" }), {
+      status: 503,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
 }
 
 /** Network-first: try network, fall back to cache, then offline page. */

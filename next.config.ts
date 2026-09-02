@@ -37,6 +37,24 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        // audit24: API data must never be browser-cached. JSON GETs without
+        // an explicit Cache-Control were heuristic-cached by Chromium —
+        // react-query's post-mutation refetches (invalidateQueries) then
+        // received STALE responses, so every list kept showing pre-save
+        // data until a full page reload ("my edits don't show up").
+        // Routes that intentionally cache set their own Cache-Control in
+        // the entries below (they must come AFTER this one to win).
+        source: "/api/:path*",
+        headers: [{ key: "Cache-Control", value: "no-store, max-age=0" }],
+      },
+      {
+        // Intentional 5-minute public caching (was set by the route itself,
+        // but the global /api no-store rule above overrides route headers —
+        // re-declared here, later entries win).
+        source: "/api/marketplace/public/:path*",
+        headers: [{ key: "Cache-Control", value: "public, max-age=300, s-maxage=300" }],
+      },
+      {
         source: "/(.*)",
         headers: [
           { key: "X-Frame-Options", value: "DENY" },
@@ -57,8 +75,15 @@ const nextConfig: NextConfig = {
             "style-src 'self' 'unsafe-inline'",
             "img-src 'self' data: https: blob:",
             "font-src 'self' data:",
-            "connect-src 'self' https://*.supabase.co https://nominatim.openstreetmap.org https://maps.googleapis.com wss: ws:",
+            "connect-src 'self' blob: https://*.supabase.co https://nominatim.openstreetmap.org https://maps.googleapis.com wss: ws:",
             "worker-src 'self' blob:",
+            // audit24: frame-src is required for the in-app PDF previews
+            // (document-template editor “Real PDF” tab, portal document
+            // viewers). They render <iframe src="blob:…"> URLs — without an
+            // explicit frame-src, the policy falls back to default-src
+            // 'self' which does NOT cover blob:, so every PDF preview
+            // iframe showed a broken-file page instead of the document.
+            "frame-src 'self' blob: data:",
             "frame-ancestors 'none'",
             "form-action 'self'",
             "base-uri 'self'",

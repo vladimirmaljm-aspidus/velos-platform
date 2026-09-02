@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Card, CardContent, CardHeader, CardTitle, CardDescription,
@@ -12,7 +12,6 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Slider } from "@/components/ui/slider";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -35,8 +34,10 @@ import {
   Type, Palette, Table as TableIcon, AlignCenter, AlignJustify,
   Building2, Stamp, ShieldCheck, Upload, ImageIcon, X, Lock,
   Waves, Droplet, RotateCw, MapPin, Pen, Layers, ChevronDown,
-  Loader2, ExternalLink, FileSearch,
+  Loader2, ExternalLink, FileSearch, RefreshCw, Braces, Grid3x3,
+  PanelRightClose, PanelRightOpen, TriangleAlert,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
 import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
@@ -1567,7 +1568,7 @@ function LetterheadEditorDialog({
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 min-h-0">
           {/* Left: form */}
           <div className="border-r border-border/60 min-h-0 flex flex-col">
-            <ScrollArea className="flex-1">
+            <div className="custom-scroll flex-1 overflow-y-auto">
               <div className="p-5">
                 <Accordion type="multiple" defaultValue={["basics", "logo", "colors"]} className="w-full">
                   <AccordionItem value="basics">
@@ -1844,7 +1845,7 @@ function LetterheadEditorDialog({
                   </AccordionItem>
                 </Accordion>
               </div>
-            </ScrollArea>
+            </div>
           </div>
 
           {/* Right: live A4 preview */}
@@ -1856,11 +1857,11 @@ function LetterheadEditorDialog({
               </div>
               <Badge variant="outline" className="text-xs">{form.page_size}</Badge>
             </div>
-            <ScrollArea className="flex-1">
+            <div className="custom-scroll flex-1 overflow-y-auto">
               <div className="p-6 flex justify-center">
                 <LetterheadPreview form={form} />
               </div>
-            </ScrollArea>
+            </div>
           </div>
         </div>
 
@@ -2152,7 +2153,7 @@ function SealEditorDialog({
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 min-h-0">
           {/* Left: form */}
           <div className="border-r border-border/60 min-h-0 flex flex-col">
-            <ScrollArea className="flex-1">
+            <div className="custom-scroll flex-1 overflow-y-auto">
               <div className="p-5">
                 <Accordion type="multiple" defaultValue={["basics", "image"]} className="w-full">
                   <AccordionItem value="basics">
@@ -2305,7 +2306,7 @@ function SealEditorDialog({
                   </AccordionItem>
                 </Accordion>
               </div>
-            </ScrollArea>
+            </div>
           </div>
 
           {/* Right: live preview */}
@@ -2317,11 +2318,11 @@ function SealEditorDialog({
               </div>
               <Badge variant="outline" className="text-xs capitalize">{form.position.replace(/-/g, " ")}</Badge>
             </div>
-            <ScrollArea className="flex-1">
+            <div className="custom-scroll flex-1 overflow-y-auto">
               <div className="p-6 flex justify-center">
                 <SealPreview form={form} />
               </div>
-            </ScrollArea>
+            </div>
           </div>
         </div>
 
@@ -2429,21 +2430,53 @@ function SealPreview({ form }: { form: SealFormState }) {
 }
 
 // ============================================================
-// Template editor with full document preview
+// audit24 — Template editor STUDIO (3-pane redesign)
 // ============================================================
+// Replaces the old 3-tab dialog (Form / Styling / Visual) whose
+// options were scattered across tabs, accordions and sub-tabs.
+//
+//   ┌─────────────┬──────────────────────┬──────────────────┐
+//   │ section nav │ settings (scrolls)   │ live preview     │
+//   └─────────────┴──────────────────────┴──────────────────┘
+//
+// Design goals (user feedback: "ništa se ne može skrolirati, sve je
+// nabacano, ne zna se šta koja opcija radi, preview je loš"):
+//   1. every pane scrolls on its own — NATIVE overflow-y-auto +
+//      custom-scroll (the old nested Radix ScrollArea chain broke
+//      wheel scrolling)
+//   2. ONE place per setting — 9 clearly-labelled sections replace
+//      tab → accordion → sub-tab digging
+//   3. every section opens with a plain-language intro
+//   4. the preview pane is always visible on desktop: instant
+//      Draft preview OR the REAL PDF rendered inline (no nested
+//      dialog), with regenerate + "form changed" staleness hint
+//   5. collapsible preview pane; on mobile the preview becomes a
+//      full-screen overlay via the Eye button in the top bar
 
-// ── Form-tab live mini preview ──────────────────────────────────
-// A lightweight A4/Letter-proportioned approximation of the PDF page
-// rendered from the CURRENT form state: header segments (substituted,
-// via resolvePreviewSegments), a mock body block, and footer segments.
-// No new deps — plain styled divs.
+// Section rail — `labelKey` resolves through t() at render time.
+const EDITOR_SECTIONS: { id: string; icon: any; labelKey: string }[] = [
+  { id: "basics", icon: FileText, labelKey: "doc-section-basics" },
+  { id: "page", icon: LayoutTemplate, labelKey: "doc-section-page-layout" },
+  { id: "header", icon: AlignCenter, labelKey: "doc-section-header" },
+  { id: "footer", icon: AlignJustify, labelKey: "doc-section-footer" },
+  { id: "body", icon: Type, labelKey: "doc-editor-nav-body" },
+  { id: "styling", icon: Palette, labelKey: "doc-tab-styling" },
+  { id: "layout", icon: Grid3x3, labelKey: "doc-editor-nav-layout" },
+  { id: "banks", icon: Building2, labelKey: "doc-section-bank-accounts" },
+  { id: "variables", icon: Braces, labelKey: "doc-section-available-variables" },
+];
+
+// ── Draft preview ──────────────────────────────────────────────
+// A4/Letter-proportioned approximation rendered straight from the
+// CURRENT form state — instant, no server round-trip. For the
+// pixel-true output use the "Real PDF" tab in the preview pane.
 function TemplateMiniPreview({ form }: { form: TemplateFormState }) {
   const t = useT();
 
   const pageW = form.page_size === "Letter" ? 216 : 210;
   const pageH = form.page_size === "Letter" ? 279 : 297;
-  const width = 340; // px; height derives from the page aspect ratio
-  const scale = width / pageW; // px per mm
+  const width = 420; // px — the preview pane is ~380-520 wide
+  const scale = width / pageW;
   const height = Math.round(pageH * scale);
   // 1pt = 25.4/72 mm → px (never below ~3px so lines stay visible)
   const ptToPx = (pt: number) => Math.max(3, Math.round(pt * 0.3528 * scale));
@@ -2462,7 +2495,7 @@ function TemplateMiniPreview({ form }: { form: TemplateFormState }) {
   return (
     <div className="flex flex-col items-center gap-2">
       <div
-        className="relative flex flex-col rounded-sm border border-border bg-white shadow-sm"
+        className="relative flex flex-col rounded-sm border border-border bg-white text-slate-800 shadow-sm"
         style={{
           width,
           height,
@@ -2511,46 +2544,89 @@ function TemplateMiniPreview({ form }: { form: TemplateFormState }) {
           </div>
         )}
 
-        {/* Mock body: doc title + line-items table skeleton + total */}
-        <div className="flex flex-1 flex-col">
-          <div
-            className="mb-1 font-bold uppercase tracking-wide"
-            style={{ color: form.primary_color || "#0f766e", fontSize: ptToPx(14) }}
-          >
-            {t(TYPE_LABEL_KEYS[form.type])} · OF-2026-0014
-          </div>
-          <div className="overflow-hidden rounded-sm border" style={{ borderColor: form.table_border_color || "#e2e8f0" }}>
-            <div
-              className="flex items-center justify-between px-2 py-1 text-white"
-              style={{ background: form.table_header_bg || "#0f766e", color: form.table_header_color || "#ffffff" }}
-            >
-              <span className="font-semibold">{t("misc-product")}</span>
-              <span className="font-semibold">{t("misc-total")}</span>
+        {/* Party block — seller / buyer */}
+        <div className="mb-2 grid grid-cols-2 gap-3">
+          <div className="min-w-0">
+            <div className="text-[8px] font-bold uppercase tracking-wide text-slate-400">
+              {PREVIEW_PLACEHOLDER_DATA.company_name}
             </div>
-            {[0, 1, 2].map((i) => (
-              <div
-                key={i}
-                className="flex items-center justify-between px-2 py-1.5"
-                style={{ background: form.table_stripe && i % 2 === 1 ? "#f1f5f9" : "#ffffff" }}
-              >
-                <span className="h-2 rounded-sm bg-slate-200" style={{ width: `${52 - i * 10}%` }} />
-                <span className="h-2 rounded-sm bg-slate-200" style={{ width: "12%" }} />
-              </div>
-            ))}
+            <div className="text-slate-500 leading-tight" style={{ fontSize: ptToPx(8) }}>
+              {PREVIEW_PLACEHOLDER_DATA.company_city}, {PREVIEW_PLACEHOLDER_DATA.company_country}
+            </div>
           </div>
-          <div className="mt-1.5 flex justify-end">
-            <span className="font-bold" style={{ color: form.primary_color || "#0f766e" }}>
-              {t("misc-total")}: $1,601,316
-            </span>
+          <div className="min-w-0 text-right">
+            <div className="truncate font-semibold" style={{ fontSize: ptToPx(10) }}>
+              {PREVIEW_PLACEHOLDER_DATA.partner_name}
+            </div>
+            <div className="text-slate-500 leading-tight" style={{ fontSize: ptToPx(8) }}>
+              {PREVIEW_PLACEHOLDER_DATA.partner_address}
+            </div>
           </div>
-          <p className="mt-3 italic text-muted-foreground" style={{ fontSize: ptToPx(8) }}>
-            {t("doc-preview-body-placeholder")}
-          </p>
         </div>
+
+        {/* Doc title + number + dates */}
+        <div
+          className="mb-1 font-bold uppercase tracking-wide"
+          style={{ color: form.primary_color || "#0f766e", fontSize: ptToPx(15) }}
+        >
+          {t(TYPE_LABEL_KEYS[form.type])} · {PREVIEW_PLACEHOLDER_DATA.doc_number}
+        </div>
+        <div className="mb-2 text-slate-500" style={{ fontSize: ptToPx(8) }}>
+          {PREVIEW_PLACEHOLDER_DATA.doc_date} · {t("doc-var-valid-until")}: {PREVIEW_PLACEHOLDER_DATA.valid_until}
+        </div>
+
+        {/* Line-items table */}
+        <div className="overflow-hidden rounded-sm border" style={{ borderColor: form.table_border_color || "#e2e8f0" }}>
+          <div
+            className="grid grid-cols-[1fr_54px_70px_84px] px-2 py-1 font-semibold"
+            style={{
+              background: form.table_header_bg || "#0f766e",
+              color: form.table_header_color || "#ffffff",
+              fontSize: ptToPx(9),
+            }}
+          >
+            <span className="truncate">{t("misc-product")}</span>
+            <span className="text-right">{t("misc-qty")}</span>
+            <span className="text-right">{t("misc-price")}</span>
+            <span className="text-right">{t("misc-total")}</span>
+          </div>
+          {[0, 1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="grid grid-cols-[1fr_54px_70px_84px] items-center px-2 py-1.5"
+              style={{ background: form.table_stripe && i % 2 === 1 ? "#f1f5f9" : "#ffffff" }}
+            >
+              <span className="h-2 rounded-sm bg-slate-200" style={{ width: `${58 - i * 9}%` }} />
+              <span className="h-2 justify-self-end rounded-sm bg-slate-200" style={{ width: "60%" }} />
+              <span className="h-2 justify-self-end rounded-sm bg-slate-200" style={{ width: "72%" }} />
+              <span className="h-2 justify-self-end rounded-sm bg-slate-200" style={{ width: "86%" }} />
+            </div>
+          ))}
+        </div>
+
+        {/* Totals */}
+        <div className="mt-2 flex w-[46%] flex-col items-end self-end" style={{ fontSize: ptToPx(8.5) }}>
+          <div className="flex w-full justify-between text-slate-500">
+            <span>{t("doc-var-total")}</span>
+            <span className="tabular">{PREVIEW_PLACEHOLDER_DATA.total}</span>
+          </div>
+          <div
+            className="flex w-full justify-between border-t pt-0.5 font-bold"
+            style={{ borderColor: form.table_border_color || "#e2e8f0", color: form.primary_color }}
+          >
+            <span>{t("misc-total")}</span>
+            <span className="tabular">{PREVIEW_PLACEHOLDER_DATA.total}</span>
+          </div>
+        </div>
+
+        {/* Notice */}
+        <p className="mt-2 italic leading-snug text-slate-500" style={{ fontSize: ptToPx(8) }}>
+          {t("doc-preview-body-placeholder")}
+        </p>
 
         {/* Footer segments (substituted, styled) */}
         {footerSegs.length > 0 && (
-          <div className="mt-2 border-t pt-1" style={{ borderColor: form.table_border_color || "#e2e8f0" }}>
+          <div className="mt-auto border-t pt-1" style={{ borderColor: form.table_border_color || "#e2e8f0" }}>
             {footerSegs.map((seg) => (
               <div
                 key={seg.id}
@@ -2570,9 +2646,147 @@ function TemplateMiniPreview({ form }: { form: TemplateFormState }) {
           </div>
         )}
       </div>
-      <p className="max-w-[340px] text-center text-xs text-muted-foreground">
+      <p className="max-w-[400px] text-center text-xs text-muted-foreground">
         {t("doc-preview-note")}
       </p>
+    </div>
+  );
+}
+
+// ── Section intro — icon + title + plain-language description ──
+function SectionIntro({
+  icon: Icon, title, description, id,
+}: {
+  icon: any; title: string; description: string; id: string;
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+        <Icon className="size-5" />
+      </div>
+      <div className="min-w-0 pt-0.5">
+        <h3 id={id} className="text-base font-semibold leading-tight">{title}</h3>
+        <p className="mt-0.5 text-sm leading-snug text-muted-foreground">{description}</p>
+      </div>
+    </div>
+  );
+}
+
+// ── Preview pane — Draft (instant) | Real PDF (server-rendered) ──
+// Shared by the desktop side pane and the mobile full-screen overlay.
+function PreviewPane({
+  mode, onModeChange, onRegenerate, previewing, previewUrl, docNumber, stale,
+  form, badges, onCollapse,
+}: {
+  mode: "draft" | "pdf";
+  onModeChange: (m: "draft" | "pdf") => void;
+  onRegenerate: () => void;
+  previewing: boolean;
+  previewUrl: string | null;
+  docNumber: string;
+  stale: boolean;
+  form: TemplateFormState;
+  badges?: React.ReactNode;
+  onCollapse?: () => void;
+}) {
+  const t = useT();
+  return (
+    <div className="flex h-full min-h-0 flex-1 flex-col">
+      {/* Mode tabs + actions */}
+      <div className="flex items-center gap-1.5 border-b border-border/60 px-3 py-2">
+        <Tabs value={mode} onValueChange={(v) => onModeChange(v as "draft" | "pdf")}>
+          <TabsList className="h-8">
+            <TabsTrigger value="draft" className="gap-1.5 px-3 text-xs">
+              <Eye className="size-3.5" /> {t("doc-editor-preview-tab-draft")}
+            </TabsTrigger>
+            <TabsTrigger value="pdf" className="gap-1.5 px-3 text-xs">
+              <FileSearch className="size-3.5" /> {t("doc-editor-preview-tab-pdf")}
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div className="ml-auto flex items-center gap-1">
+          {mode === "pdf" && previewUrl && (
+            <Button variant="ghost" size="sm" className="size-8 p-0" asChild title={t("doc-open-new-tab")}>
+              <a href={previewUrl} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="size-4" />
+              </a>
+            </Button>
+          )}
+          {mode === "pdf" && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1.5 px-2"
+              onClick={onRegenerate}
+              disabled={previewing}
+              title={t("doc-editor-preview-regenerate")}
+            >
+              {previewing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+              <span className="hidden xl:inline">{t("doc-editor-preview-regenerate")}</span>
+            </Button>
+          )}
+          {onCollapse && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="hidden size-8 p-0 lg:inline-flex"
+              onClick={onCollapse}
+              title={t("doc-close")}
+            >
+              <PanelRightClose className="size-4" />
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Context badges (draft mode) / doc info + staleness (pdf mode) */}
+      {mode === "draft" && badges ? (
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-border/60 px-3 py-1.5">{badges}</div>
+      ) : null}
+      {mode === "pdf" && stale && previewUrl && (
+        <div className="flex items-center gap-1.5 border-b border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-700 dark:text-amber-400">
+          <TriangleAlert className="size-3.5 shrink-0" />
+          {t("doc-editor-preview-stale")}
+        </div>
+      )}
+      {mode === "pdf" && previewUrl && docNumber && (
+        <div className="flex items-center gap-1.5 border-b border-border/60 px-3 py-1.5 text-xs text-muted-foreground">
+          <FileText className="size-3.5 shrink-0" />
+          <span className="truncate">{docNumber} · {t("doc-editor-preview-pdf-hint")}</span>
+        </div>
+      )}
+
+      {/* Body */}
+      {mode === "draft" ? (
+        <div className="custom-scroll flex min-h-0 flex-1 justify-center overflow-y-auto p-4">
+          <TemplateMiniPreview form={form} />
+        </div>
+      ) : (
+        <div className="relative min-h-0 flex-1 bg-muted/30">
+          {previewUrl ? (
+            <iframe
+              src={previewUrl}
+              title={t("doc-preview-pdf")}
+              className="absolute inset-0 size-full border-0"
+            />
+          ) : previewing ? (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-muted-foreground">
+              <Loader2 className="size-6 animate-spin" />
+              <p className="text-sm">{t("doc-preview-generating")}</p>
+            </div>
+          ) : (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center">
+              <FileSearch className="size-8 text-muted-foreground/60" />
+              <p className="max-w-[280px] text-sm text-muted-foreground">
+                {t("doc-editor-pdf-empty")}
+              </p>
+              <Button size="sm" variant="outline" onClick={onRegenerate} disabled={previewing}>
+                <FileSearch className="size-4" /> {t("doc-editor-pdf-empty-cta")}
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -2602,11 +2816,21 @@ function TemplateEditorDialog({
   const [form, setForm] = useState<TemplateFormState>(defaultTemplate());
   const [saving, setSaving] = useState(false);
 
+  // ── audit24: studio session state ────────────────────────────────────
+  // Active section, which sections have been visited (lazy-mount so the
+  // visual editor / segment studios mount only when first opened, but
+  // then keep their local state), preview mode + collapse + mobile overlay.
+  const [section, setSection] = useState<string>("basics");
+  const [mountedSections, setMountedSections] = useState<string[]>(["basics"]);
+  const [previewMode, setPreviewMode] = useState<"draft" | "pdf">("draft");
+  const [previewCollapsed, setPreviewCollapsed] = useState(false);
+  const [mobilePreview, setMobilePreview] = useState(false);
+
   // ── audit23: live PDF preview state ───────────────────────────────────
   // The preview renders the CURRENT (unsaved) form on the tenant's most
   // recent real document — same generator as the download routes, via the
-  // templateOverride option. Shown in an iframe dialog so popup blockers
-  // can't eat it.
+  // templateOverride option — inline in the preview pane (audit24: no
+  // more nested dialog).
   const [previewing, setPreviewing] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewDocNumber, setPreviewDocNumber] = useState<string>("");
@@ -2622,6 +2846,17 @@ function TemplateEditorDialog({
   // was ignored.
   const tableHeaderTouched = useRef(false);
 
+  // audit24: dirty / PDF-staleness tracking. Both the load snapshot and the
+  // PDF-generation snapshot are STATE (the repo's react-hooks/refs rule
+  // forbids reading refs during render) — updated only in the open effect
+  // and the preview event handler, then compared against the memoised form
+  // signature at render time.
+  const [snapshot, setSnapshot] = useState<string>(""); // form signature at load (dialog open)
+  const [pdfSnapshot, setPdfSnapshot] = useState<string>(""); // form signature when the PDF was generated
+  const formSig = useMemo(() => JSON.stringify(form), [form]);
+  const dirty = formSig !== snapshot;
+  const pdfStale = !!previewUrl && formSig !== pdfSnapshot;
+
   useEffect(() => {
     if (open) {
       // Edit-existing takes priority, then starter draft, then blank default.
@@ -2629,18 +2864,35 @@ function TemplateEditorDialog({
       // Hydrate QR placement fields from footer_content._qrConfig (they're
       // not real DB columns — see writeQrConfig / parseQrConfig above).
       const qr = parseQrConfig(base.footer_content);
-// eslint-disable-next-line react-hooks/set-state-in-effect
-      setForm({
+      const initial = {
         ...base,
         qr_position: base.qr_position ?? qr.position,
         qr_size_mm: base.qr_size_mm ?? qr.size,
         qr_opacity: base.qr_opacity ?? qr.opacity,
-      });
+      };
+      /* eslint-disable react-hooks/set-state-in-effect */
+      setForm(initial);
+      // audit24: fresh studio session per open.
+      setSection("basics");
+      setMountedSections(["basics"]);
+      setPreviewMode("draft");
+      setPreviewCollapsed(false);
+      setMobilePreview(false);
+      setSnapshot(JSON.stringify(initial));
+      setPdfSnapshot("");
+      /* eslint-enable react-hooks/set-state-in-effect */
     }
   }, [open, template, draft]);
 
   function set<K extends keyof TemplateFormState>(k: K, v: TemplateFormState[K]) {
     setForm((p) => ({ ...p, [k]: v }));
+  }
+
+  // audit24: section navigation — lazy-mounts a section the first time it
+  // is opened, then keeps it mounted (hidden) so its local state survives.
+  function goToSection(id: string) {
+    setSection(id);
+    setMountedSections((prev) => (prev.includes(id) ? prev : [...prev, id]));
   }
 
   async function handleSave() {
@@ -2668,11 +2920,8 @@ function TemplateEditorDialog({
       //     They get serialized into footer_content._qrConfig instead so the
       //     PDF renderer can read them back out without a schema migration.
       const {
-         
         qr_position: _qp,
-         
         qr_size_mm: _qs,
-         
         qr_opacity: _qo,
         ...writable
       } = form;
@@ -2719,18 +2968,11 @@ function TemplateEditorDialog({
     : form.type === "loi" ? "loi"
     : "offer";
 
-  function closePreview() {
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setPreviewUrl(null);
-    setPreviewDocNumber("");
-  }
-
   // Revoke the blob when the EDITOR closes (unmount) so we never leak it.
   useEffect(() => {
     return () => {
       if (previewUrl) URL.revokeObjectURL(previewUrl);
     };
-     
   }, [previewUrl]);
 
   async function handlePreview() {
@@ -2741,11 +2983,8 @@ function TemplateEditorDialog({
       // footer_content._qrConfig, unwritable keys stripped — so what is
       // previewed is EXACTLY what would be saved.
       const {
-         
         qr_position: _qp,
-         
         qr_size_mm: _qs,
-         
         qr_opacity: _qo,
         ...writable
       } = form;
@@ -2780,6 +3019,7 @@ function TemplateEditorDialog({
       if (previewUrl) URL.revokeObjectURL(previewUrl);
       setPreviewDocNumber(r.headers.get("X-Preview-Doc-Number") || "");
       setPreviewUrl(URL.createObjectURL(blob));
+      setPdfSnapshot(JSON.stringify(form));
     } catch {
       toast.error(t("doc-preview-failed"));
     } finally {
@@ -2787,530 +3027,673 @@ function TemplateEditorDialog({
     }
   }
 
+  // audit24: switching to the PDF tab auto-generates the first render —
+  // one click, no empty pane hunting for the button.
+  function handleModeSwitch(m: "draft" | "pdf") {
+    setPreviewMode(m);
+    if (m === "pdf" && !previewUrl && !previewing) {
+      void handlePreview();
+    }
+  }
+
+  const previewBadges = (
+    <>
+      {linkedLetterhead && (
+        <Badge variant="outline" className="text-xs">
+          <Building2 className="size-3" /> <span className="max-w-[120px] truncate">{linkedLetterhead.name}</span>
+        </Badge>
+      )}
+      {linkedSeal && form.seal_enabled && (
+        <Badge variant="outline" className="text-xs">
+          <Stamp className="size-3" /> <span className="max-w-[120px] truncate">{linkedSeal.name}</span>
+        </Badge>
+      )}
+      <Badge variant="outline" className="text-xs">{form.page_size}</Badge>
+    </>
+  );
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="full" className="p-0 gap-0">
-        <DialogHeader className="px-5 py-4 border-b border-border/60">
-          <DialogTitle className="flex items-center gap-2">
-            <LayoutTemplate className="size-5 text-primary" />
-            {template ? t("doc-edit-template") : t("doc-new-template-title")}
-          </DialogTitle>
-          <DialogDescription>
-            {t("doc-template-editor-desc")}
-          </DialogDescription>
-        </DialogHeader>
-
-        <Tabs defaultValue="form" className="flex-1 min-h-0 flex flex-col gap-0">
-          <div className="px-5 pt-3">
-            <TabsList className="w-fit">
-              <TabsTrigger value="form">
-                <FileText className="size-4" /> {t("doc-tab-form-editor")}
-              </TabsTrigger>
-              <TabsTrigger value="styling">
-                <Palette className="size-4" /> {t("doc-tab-styling")}
-              </TabsTrigger>
-              <TabsTrigger value="visual">
-                <LayoutTemplate className="size-4" /> {t("doc-tab-visual-editor")}
-              </TabsTrigger>
-            </TabsList>
+      <DialogContent
+        size="full"
+        showCloseButton={false}
+        className="h-[95vh] gap-0 p-0 sm:max-w-[min(96vw,1680px)]"
+      >
+        {/* ── Top bar: identity + actions ── */}
+        <div className="flex items-center gap-3 border-b border-border/60 px-4 py-3 sm:px-5">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <LayoutTemplate className="size-5" />
           </div>
-          <TabsContent value="form" className="flex-1 min-h-0 flex flex-col mt-0">
-          <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 min-h-0">
-          {/* Left: form */}
-          <div className="border-r border-border/60 min-h-0 flex flex-col">
-            <ScrollArea className="flex-1">
-              <div className="p-5">
-                <Accordion type="multiple" defaultValue={["basics", "links"]} className="w-full">
-                  <AccordionItem value="basics">
-                    <AccordionTrigger><SectionLabel icon={FileText} label={t("doc-section-basics")} /></AccordionTrigger>
-                    <AccordionContent>
-                      <div className="space-y-3">
-                        <Field label={t("doc-template-name")}>
-                          <Input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder={t("doc-template-name-placeholder")} />
-                        </Field>
-                        <Field label={t("type")}>
-                          <Select value={form.type} onValueChange={(v) => set("type", v as TemplateType)}>
-                            <SelectTrigger><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="offer">{t("doc-type-offer")}</SelectItem>
-                              <SelectItem value="invoice">{t("doc-type-invoice")}</SelectItem>
-                              <SelectItem value="proforma">{t("doc-type-proforma")}</SelectItem>
-                              <SelectItem value="contract">{t("doc-type-contract")}</SelectItem>
-                              <SelectItem value="loi">{t("doc-type-loi")}</SelectItem>
-                              <SelectItem value="generic">{t("doc-type-generic")}</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </Field>
-                        <Field label={t("doc-default-template")}>
-                          <div className="flex items-center gap-2">
-                            <Switch checked={form.is_default} onCheckedChange={(v) => set("is_default", v)} aria-label={t("doc-default-template")} />
-                            <span className="text-sm text-muted-foreground">{t("doc-use-default-for-type")}</span>
-                          </div>
-                        </Field>
-                      </div>
-                    </AccordionContent>
-                  </AccordionItem>
-
-                  <AccordionItem value="links">
-                    <AccordionTrigger><SectionLabel icon={Layers} label={t("doc-section-linked-memorandum-seal")} /></AccordionTrigger>
-                    <AccordionContent>
-                      <div className="space-y-3">
-                        <Field label={t("doc-letterhead-memorandum")}>
-                          <Select
-                            value={form.letterhead_id ?? "__none__"}
-                            onValueChange={(v) => set("letterhead_id", v === "__none__" ? null : v)}
-                          >
-                            <SelectTrigger><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="__none__">{t("doc-use-tenant-default")}</SelectItem>
-                              {letterheads.map((l) => (
-                                <SelectItem key={l.id} value={l.id}>
-                                  {l.name}{l.is_default ? ` ${t("doc-default-suffix")}` : ""}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </Field>
-                        <Field label={t("doc-seal-zigled")}>
-                          <Select
-                            value={form.seal_id ?? "__none__"}
-                            onValueChange={(v) => set("seal_id", v === "__none__" ? null : v)}
-                          >
-                            <SelectTrigger><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="__none__">{t("doc-no-seal-option")}</SelectItem>
-                              {seals.map((s) => (
-                                <SelectItem key={s.id} value={s.id}>
-                                  {s.name}{s.is_default ? ` ${t("doc-default-suffix")}` : ""}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </Field>
-                        <Field label={t("doc-stamp-seal-template")}>
-                          <div className="flex items-center gap-2">
-                            <Switch checked={form.seal_enabled} onCheckedChange={(v) => set("seal_enabled", v)} aria-label={t("doc-stamp-seal-template")} />
-                            <span className="text-sm text-muted-foreground">
-                              {form.seal_id ? t("doc-apply-selected-seal") : t("doc-select-seal-first")}
-                            </span>
-                          </div>
-                        </Field>
-                      </div>
-                    </AccordionContent>
-                  </AccordionItem>
-
-                  <AccordionItem value="page">
-                    <AccordionTrigger><SectionLabel icon={LayoutTemplate} label={t("doc-section-page-layout")} /></AccordionTrigger>
-                    <AccordionContent>
-                      <div className="space-y-3">
-                        <Field label={t("doc-page-size")}>
-                          <Select value={form.page_size} onValueChange={(v) => set("page_size", v as "A4" | "Letter")}>
-                            <SelectTrigger><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="A4">{t("doc-page-size-a4")}</SelectItem>
-                              <SelectItem value="Letter">{t("doc-page-size-letter")}</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </Field>
-                        <Field label={t("doc-margins-mm")}>
-                          <div className="grid grid-cols-4 gap-2">
-                            <MarginInput label={t("doc-margin-top")} value={form.page_margin_top} onChange={(v) => set("page_margin_top", v)} />
-                            <MarginInput label={t("doc-margin-bottom")} value={form.page_margin_bottom} onChange={(v) => set("page_margin_bottom", v)} />
-                            <MarginInput label={t("doc-margin-left")} value={form.page_margin_left} onChange={(v) => set("page_margin_left", v)} />
-                            <MarginInput label={t("doc-margin-right")} value={form.page_margin_right} onChange={(v) => set("page_margin_right", v)} />
-                          </div>
-                        </Field>
-                      </div>
-                    </AccordionContent>
-                  </AccordionItem>
-
-                  <AccordionItem value="header">
-                    <AccordionTrigger><SectionLabel icon={AlignCenter} label={t("doc-section-header")} /></AccordionTrigger>
-                    <AccordionContent>
-                      <div className="space-y-3">
-                        <Field label={t("doc-enabled")}>
-                          <div className="flex items-center gap-2">
-                            <Switch checked={form.header_enabled} onCheckedChange={(v) => set("header_enabled", v)} aria-label={t("doc-enabled")} />
-                            <span className="text-sm text-muted-foreground">{t("doc-show-header-every-page")}</span>
-                          </div>
-                        </Field>
-                        {form.header_enabled && (
-                          <>
-                            <Field label={t("doc-height-mm")}><NumberInput value={form.header_height} onChange={(v) => set("header_height", v)} min={5} max={80} /></Field>
-                            <div className="space-y-1.5">
-                              <Label className="text-xs text-muted-foreground">{t("doc-header-content")}</Label>
-                              <p className="text-xs text-muted-foreground">
-                                {t("doc-header-content-hint")}
-                              </p>
-                              {/* audit22: Word-grade Segment Studio replaces the
-                                  legacy TemplateContentEditor — full typography
-                                  (fonts/sizes/B I U S), spacing before/after, line &
-                                  letter spacing, colours, backgrounds, borders. */}
-                              <TemplateSegmentStudio
-                                contentJson={form.header_content || DEFAULT_HEADER_CONTENT_JSON}
-                                onChange={(val) => set("header_content", val)}
-                                kind="header"
-                                variables={STUDIO_VARIABLES}
-                                previewData={studioPreviewData}
-                                bodyFontFamily={form.body_font_family}
-                              />
-                            </div>
-                            <div className="grid grid-cols-3 gap-2">
-                              <ToggleField label={t("doc-toggle-logo")} checked={form.header_show_logo} onChange={(v) => set("header_show_logo", v)} />
-                              <ToggleField label={t("doc-toggle-name")} checked={form.header_show_company_name} onChange={(v) => set("header_show_company_name", v)} />
-                              <ToggleField label={t("doc-toggle-contact")} checked={form.header_show_contact} onChange={(v) => set("header_show_contact", v)} />
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    </AccordionContent>
-                  </AccordionItem>
-
-                  <AccordionItem value="footer">
-                    <AccordionTrigger><SectionLabel icon={AlignJustify} label={t("doc-section-footer")} /></AccordionTrigger>
-                    <AccordionContent>
-                      <div className="space-y-3">
-                        <Field label={t("doc-enabled")}>
-                          <div className="flex items-center gap-2">
-                            <Switch checked={form.footer_enabled} onCheckedChange={(v) => set("footer_enabled", v)} aria-label={t("doc-enabled")} />
-                            <span className="text-sm text-muted-foreground">{t("doc-show-footer-every-page")}</span>
-                          </div>
-                        </Field>
-                        {form.footer_enabled && (
-                          <>
-                            <Field label={t("doc-height-mm")}><NumberInput value={form.footer_height} onChange={(v) => set("footer_height", v)} min={5} max={60} /></Field>
-                            <div className="space-y-1.5">
-                              <Label className="text-xs text-muted-foreground">{t("doc-footer-content")}</Label>
-                              <p className="text-xs text-muted-foreground">
-                                {t("doc-footer-content-hint")}
-                              </p>
-                              {/* audit22: Word-grade Segment Studio (footer). The
-                                  _qrConfig inside footer_content is preserved by
-                                  the studio on every serialize. */}
-                              <TemplateSegmentStudio
-                                contentJson={form.footer_content || DEFAULT_FOOTER_CONTENT_JSON}
-                                onChange={(val) => set("footer_content", val)}
-                                kind="footer"
-                                variables={STUDIO_VARIABLES}
-                                previewData={studioPreviewData}
-                                bodyFontFamily={form.body_font_family}
-                              />
-                            </div>
-                            <div className="grid grid-cols-3 gap-2">
-                              <ToggleField label={t("doc-toggle-page-num")} checked={form.footer_show_page_number} onChange={(v) => set("footer_show_page_number", v)} />
-                              <ToggleField label={t("doc-toggle-bank")} checked={form.footer_show_bank_details} onChange={(v) => set("footer_show_bank_details", v)} />
-                              <ToggleField label={t("doc-toggle-tax-id")} checked={form.footer_show_tax_id} onChange={(v) => set("footer_show_tax_id", v)} />
-                            </div>
-
-                            {/* ── QR code placement ──
-                                Stored inside footer_content._qrConfig (NOT a real
-                                DB column) — see writeQrConfig / parseQrConfig. */}
-                            <div className="rounded-md border border-border/60 bg-muted/20 p-3 space-y-3">
-                              <div>
-                                <Label className="text-xs font-medium">{t("doc-qr-placement")}</Label>
-                                <p className="text-xs text-muted-foreground mt-0.5">
-                                  {t("doc-qr-placement-desc")}
-                                </p>
-                              </div>
-                              <Field label={t("doc-position")}>
-                                <Select
-                                  value={form.qr_position ?? "footer-right"}
-                                  onValueChange={(v) => set("qr_position", v)}
-                                >
-                                  <SelectTrigger><SelectValue /></SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="footer-right">{t("doc-qr-footer-right")}</SelectItem>
-                                    <SelectItem value="footer-left">{t("doc-qr-footer-left")}</SelectItem>
-                                    <SelectItem value="footer-center">{t("doc-qr-footer-center")}</SelectItem>
-                                    <SelectItem value="none">{t("doc-qr-none")}</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </Field>
-                              {form.qr_position !== "none" && (
-                                <>
-                                  <div>
-                                    <div className="flex items-center justify-between mb-1">
-                                      <Label className="text-xs">{t("doc-qr-size-mm")}</Label>
-                                      <span className="text-xs tabular text-muted-foreground">
-                                        {form.qr_size_mm ?? 15} mm
-                                      </span>
-                                    </div>
-                                    <Slider
-                                      value={[form.qr_size_mm ?? 15]}
-                                      min={8}
-                                      max={40}
-                                      step={1}
-                                      onValueChange={(v) => set("qr_size_mm", v[0])}
-                                    />
-                                  </div>
-                                  <div>
-                                    <div className="flex items-center justify-between mb-1">
-                                      <Label className="text-xs">{t("doc-qr-opacity")}</Label>
-                                      <span className="text-xs tabular text-muted-foreground">
-                                        {Math.round((form.qr_opacity ?? 1) * 100)}%
-                                      </span>
-                                    </div>
-                                    <Slider
-                                      value={[Math.round((form.qr_opacity ?? 1) * 100)]}
-                                      min={20}
-                                      max={100}
-                                      step={5}
-                                      onValueChange={(v) => set("qr_opacity", v[0] / 100)}
-                                    />
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    </AccordionContent>
-                  </AccordionItem>
-
-                  <AccordionItem value="bank-accounts">
-                    <AccordionTrigger><SectionLabel icon={Building2} label={t("doc-section-bank-accounts")} /></AccordionTrigger>
-                    <AccordionContent>
-                      <div className="space-y-2">
-                        <p className="text-xs text-muted-foreground">
-                          {t("doc-bank-accounts-desc")}
-                        </p>
-                        <BankAccountSelector
-                          accounts={tenant?.bank_accounts ?? null}
-                          selected={form.selected_bank_accounts ?? null}
-                          onChange={(sel) => set("selected_bank_accounts", sel)}
-                        />
-                      </div>
-                    </AccordionContent>
-                  </AccordionItem>
-
-                  <AccordionItem value="body">
-                    <AccordionTrigger><SectionLabel icon={Type} label={t("doc-section-body-styling")} /></AccordionTrigger>
-                    <AccordionContent>
-                      <div className="space-y-3">
-                        {/* Font family — the three PDF-embedded families the
-                            renderer actually resolves (mapFont: NotoSans /
-                            Times-Roman / Courier). A raw text input here used
-                            to accept any CSS stack, silently falling back to
-                            NotoSans in the PDF — the Select guarantees the
-                            chosen family is the one that renders. */}
-                        <Field label={t("doc-font-family")}>
-                          <Select
-                            value={normalizePdfFontFamily(form.body_font_family)}
-                            onValueChange={(v) => set("body_font_family", v)}
-                          >
-                            <SelectTrigger><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="NotoSans">{t("doc-font-sans")}</SelectItem>
-                              <SelectItem value="Times-Roman">{t("doc-font-serif")}</SelectItem>
-                              <SelectItem value="Courier">{t("doc-font-mono")}</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <p className="text-xs text-muted-foreground mt-1">{t("doc-font-family-hint")}</p>
-                        </Field>
-                        <div className="grid grid-cols-2 gap-3">
-                          <Field label={t("doc-font-size-px")}><NumberInput value={form.body_font_size} onChange={(v) => set("body_font_size", v)} min={7} max={24} /></Field>
-                          <Field label={t("doc-line-height")}><NumberInput value={form.body_line_height} onChange={(v) => set("body_line_height", v)} min={1} max={2.5} step={0.1} /></Field>
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                          <ColorField label={t("doc-primary-color")} value={form.primary_color} onChange={(v) => {
-                          // audit21 — "template edits never apply" fix (partial application):
-                          // changing the primary colour previously left table_header_bg
-                          // on its old absolute colour, so the saved document only
-                          // partially re-branded (header line changed, table headers
-                          // stayed the old colour) and looked like the edit was ignored.
-                          // Unless the table header colour was customised in THIS
-                          // session (tableHeaderTouched), it now follows the primary
-                          // colour change so the whole document re-brands together.
-                          setForm((p) => ({
-                            ...p,
-                            primary_color: v,
-                            ...(!tableHeaderTouched.current ? { table_header_bg: v } : {}),
-                          }));
-                        }} />
-                          <ColorField label={t("doc-accent-color")} value={form.accent_color} onChange={(v) => set("accent_color", v)} />
-                        </div>
-                      </div>
-                    </AccordionContent>
-                  </AccordionItem>
-
-                  <AccordionItem value="table">
-                    <AccordionTrigger><SectionLabel icon={TableIcon} label={t("doc-section-table-styling")} /></AccordionTrigger>
-                    <AccordionContent>
-                      <div className="space-y-3">
-                        <ColorField label={t("doc-header-background")} value={form.table_header_bg} onChange={(v) => { tableHeaderTouched.current = true; set("table_header_bg", v); }} />
-                        <ColorField label={t("doc-header-text-color")} value={form.table_header_color} onChange={(v) => set("table_header_color", v)} />
-                        <ColorField label={t("doc-border-color")} value={form.table_border_color} onChange={(v) => set("table_border_color", v)} />
-                        <Field label={t("doc-striped-rows")}>
-                          <div className="flex items-center gap-2">
-                            <Switch checked={form.table_stripe} onCheckedChange={(v) => set("table_stripe", v)} aria-label={t("doc-striped-rows")} />
-                            <span className="text-sm text-muted-foreground">{t("doc-alternate-row-bg")}</span>
-                          </div>
-                        </Field>
-                      </div>
-                    </AccordionContent>
-                  </AccordionItem>
-
-                  <AccordionItem value="variables">
-                    <AccordionTrigger><SectionLabel icon={Type} label={t("doc-section-available-variables")} /></AccordionTrigger>
-                    <AccordionContent>
-                      <div className="space-y-2">
-                        <p className="text-xs text-muted-foreground">
-                          {t("doc-variables-hint")}
-                        </p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {AVAILABLE_VARIABLES.map((v) => (
-                            <code
-                              key={v.token}
-                              className="text-xs px-1.5 py-0.5 rounded bg-card border border-border/60 font-mono"
-                              title={t(v.label)}
-                            >
-                              {v.token}
-                            </code>
-                          ))}
-                        </div>
-                      </div>
-                    </AccordionContent>
-                  </AccordionItem>
-                </Accordion>
-              </div>
-            </ScrollArea>
-          </div>
-
-          {/* Right: live preview */}
-          <div className="bg-muted/30 min-h-0 flex flex-col">
-            <div className="px-5 py-3 border-b border-border/60 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Eye className="size-4 text-muted-foreground" />
-                <span className="text-sm font-medium">{t("doc-live-preview")}</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                {linkedLetterhead && <Badge variant="outline" className="text-xs"><Building2 className="size-3" /> {linkedLetterhead.name}</Badge>}
-                {linkedSeal && form.seal_enabled && <Badge variant="outline" className="text-xs"><Stamp className="size-3" /> {linkedSeal.name}</Badge>}
-                <Badge variant="outline" className="text-xs">{form.page_size}</Badge>
-              </div>
+          <div className="min-w-0 flex-1">
+            <DialogTitle className="truncate text-base leading-tight">
+              {template ? t("doc-edit-template") : t("doc-new-template-title")}
+              {form.name ? `: ${form.name}` : ""}
+            </DialogTitle>
+            <DialogDescription className="sr-only">{t("doc-template-editor-desc")}</DialogDescription>
+            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+              <Badge variant="outline" className={cn("text-xs", TYPE_BADGE[form.type])}>
+                {t(TYPE_LABEL_KEYS[form.type])}
+              </Badge>
+              <span className="tabular">{form.page_size}</span>
+              {dirty && (
+                <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                  <span className="size-1.5 rounded-full bg-amber-500" />
+                  {t("doc-editor-unsaved-changes")}
+                </span>
+              )}
             </div>
-            <ScrollArea className="flex-1">
-              <div className="flex min-h-full items-center justify-center p-6">
-                <TemplateMiniPreview form={form} />
-              </div>
-            </ScrollArea>
           </div>
+          <div className="ml-auto flex shrink-0 items-center gap-1.5">
+            {/* Mobile: open the full-screen preview overlay */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="size-9 p-0 lg:hidden"
+              onClick={() => setMobilePreview(true)}
+              title={t("doc-editor-preview-toggle")}
+              aria-label={t("doc-editor-preview-toggle")}
+            >
+              <Eye className="size-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="hidden sm:inline-flex"
+              onClick={() => onOpenChange(false)}
+            >
+              {t("cancel")}
+            </Button>
+            <Button size="sm" onClick={handleSave} disabled={saving}>
+              {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+              <span className="ml-1.5 hidden sm:inline">{t("doc-save-template")}</span>
+              <span className="sr-only sm:hidden">{t("doc-save-template")}</span>
+            </Button>
           </div>
-          </TabsContent>
-          {/* ── audit22: Styling tab — body/table/party/totals/notice/title
-              studio (TemplateStylePanel editing form.style_json). Kept
-              MOUNTED (forceMount + hidden) so the panel's local raw state
-              survives tab flips like the visual editor. */}
-          <TabsContent
-            value="styling"
-            forceMount
-            className="flex-1 min-h-0 mt-0 data-[state=inactive]:hidden"
+        </div>
+
+        {/* ── Body: section nav | settings | live preview ── */}
+        <div
+          className={cn(
+            "relative flex min-h-0 flex-1 flex-col lg:grid lg:grid-rows-1",
+            previewCollapsed
+              ? "lg:grid-cols-[216px_minmax(0,1fr)_44px]"
+              : "lg:grid-cols-[216px_minmax(0,1fr)_clamp(380px,30vw,520px)]",
+          )}
+        >
+          {/* Section rail — vertical on desktop, horizontal pills on mobile */}
+          <nav
+            aria-label={t("doc-template-editor-desc")}
+            className="custom-scroll flex shrink-0 gap-1 overflow-x-auto border-b border-border/60 bg-muted/20 p-2 lg:flex-col lg:overflow-x-hidden lg:overflow-y-auto lg:border-b-0 lg:border-r lg:border-border/60 lg:p-2.5"
           >
-            <div className="h-full overflow-y-auto custom-scroll bg-muted/20 p-5">
-              <div className="mx-auto max-w-3xl space-y-4">
-                <div className="rounded-lg border border-border/60 bg-card p-4">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Palette className="size-4 text-primary" />
-                    <span className="text-sm font-medium">{t("doc-styling-header")}</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground">{t("doc-styling-desc")}</p>
-                </div>
+            {EDITOR_SECTIONS.map((s) => {
+              const active = section === s.id;
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => goToSection(s.id)}
+                  aria-current={active ? "true" : undefined}
+                  className={cn(
+                    "flex shrink-0 items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors",
+                    active
+                      ? "border-primary/40 bg-primary/10 text-primary"
+                      : "border-transparent text-muted-foreground hover:bg-accent hover:text-foreground",
+                  )}
+                >
+                  <s.icon className="size-4 shrink-0" />
+                  <span>{t(s.labelKey)}</span>
+                </button>
+              );
+            })}
+          </nav>
+
+          {/* Settings — one section at a time, natively scrollable */}
+          <div className="custom-scroll min-h-0 flex-1 overflow-y-auto">
+            <div className="mx-auto w-full max-w-3xl space-y-4 px-4 py-5 sm:px-6">
+
+              {/* ── Basics ── */}
+              {mountedSections.includes("basics") && (
+              <section className={cn("space-y-4", section !== "basics" && "hidden")} aria-labelledby="tpl-sec-basics">
+                <SectionIntro
+                  icon={FileText}
+                  id="tpl-sec-basics"
+                  title={t("doc-section-basics")}
+                  description={t("doc-editor-intro-basics")}
+                />
+                <Card className="border-border/60">
+                  <CardContent className="space-y-3 p-4">
+                    <Field label={t("doc-template-name")}>
+                      <Input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder={t("doc-template-name-placeholder")} />
+                    </Field>
+                    <Field label={t("type")}>
+                      <Select value={form.type} onValueChange={(v) => set("type", v as TemplateType)}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="offer">{t("doc-type-offer")}</SelectItem>
+                          <SelectItem value="invoice">{t("doc-type-invoice")}</SelectItem>
+                          <SelectItem value="proforma">{t("doc-type-proforma")}</SelectItem>
+                          <SelectItem value="contract">{t("doc-type-contract")}</SelectItem>
+                          <SelectItem value="loi">{t("doc-type-loi")}</SelectItem>
+                          <SelectItem value="generic">{t("doc-type-generic")}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field label={t("doc-default-template")}>
+                      <div className="flex items-center gap-2">
+                        <Switch checked={form.is_default} onCheckedChange={(v) => set("is_default", v)} aria-label={t("doc-default-template")} />
+                        <span className="text-sm text-muted-foreground">{t("doc-use-default-for-type")}</span>
+                      </div>
+                    </Field>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-border/60">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm">{t("doc-section-linked-memorandum-seal")}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <Field label={t("doc-letterhead-memorandum")}>
+                      <Select
+                        value={form.letterhead_id ?? "__none__"}
+                        onValueChange={(v) => set("letterhead_id", v === "__none__" ? null : v)}
+                      >
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">{t("doc-use-tenant-default")}</SelectItem>
+                          {letterheads.map((l) => (
+                            <SelectItem key={l.id} value={l.id}>
+                              {l.name}{l.is_default ? ` ${t("doc-default-suffix")}` : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field label={t("doc-seal-zigled")}>
+                      <Select
+                        value={form.seal_id ?? "__none__"}
+                        onValueChange={(v) => set("seal_id", v === "__none__" ? null : v)}
+                      >
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">{t("doc-no-seal-option")}</SelectItem>
+                          {seals.map((s) => (
+                            <SelectItem key={s.id} value={s.id}>
+                              {s.name}{s.is_default ? ` ${t("doc-default-suffix")}` : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field label={t("doc-stamp-seal-template")}>
+                      <div className="flex items-center gap-2">
+                        <Switch checked={form.seal_enabled} onCheckedChange={(v) => set("seal_enabled", v)} aria-label={t("doc-stamp-seal-template")} />
+                        <span className="text-sm text-muted-foreground">
+                          {form.seal_id ? t("doc-apply-selected-seal") : t("doc-select-seal-first")}
+                        </span>
+                      </div>
+                    </Field>
+                  </CardContent>
+                </Card>
+              </section>
+              )}
+
+              {/* ── Page ── */}
+              {mountedSections.includes("page") && (
+              <section className={cn("space-y-4", section !== "page" && "hidden")} aria-labelledby="tpl-sec-page">
+                <SectionIntro
+                  icon={LayoutTemplate}
+                  id="tpl-sec-page"
+                  title={t("doc-section-page-layout")}
+                  description={t("doc-editor-intro-page")}
+                />
+                <Card className="border-border/60">
+                  <CardContent className="space-y-3 p-4">
+                    <Field label={t("doc-page-size")}>
+                      <Select value={form.page_size} onValueChange={(v) => set("page_size", v as "A4" | "Letter")}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="A4">{t("doc-page-size-a4")}</SelectItem>
+                          <SelectItem value="Letter">{t("doc-page-size-letter")}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field label={t("doc-margins-mm")}>
+                      <div className="grid grid-cols-4 gap-2">
+                        <MarginInput label={t("doc-margin-top")} value={form.page_margin_top} onChange={(v) => set("page_margin_top", v)} />
+                        <MarginInput label={t("doc-margin-bottom")} value={form.page_margin_bottom} onChange={(v) => set("page_margin_bottom", v)} />
+                        <MarginInput label={t("doc-margin-left")} value={form.page_margin_left} onChange={(v) => set("page_margin_left", v)} />
+                        <MarginInput label={t("doc-margin-right")} value={form.page_margin_right} onChange={(v) => set("page_margin_right", v)} />
+                      </div>
+                    </Field>
+                  </CardContent>
+                </Card>
+              </section>
+              )}
+
+              {/* ── Header ── */}
+              {mountedSections.includes("header") && (
+              <section className={cn("space-y-4", section !== "header" && "hidden")} aria-labelledby="tpl-sec-header">
+                <SectionIntro
+                  icon={AlignCenter}
+                  id="tpl-sec-header"
+                  title={t("doc-section-header")}
+                  description={t("doc-editor-intro-header")}
+                />
+                <Card className="border-border/60">
+                  <CardContent className="space-y-3 p-4">
+                    <Field label={t("doc-enabled")}>
+                      <div className="flex items-center gap-2">
+                        <Switch checked={form.header_enabled} onCheckedChange={(v) => set("header_enabled", v)} aria-label={t("doc-enabled")} />
+                        <span className="text-sm text-muted-foreground">{t("doc-show-header-every-page")}</span>
+                      </div>
+                    </Field>
+                    {form.header_enabled && (
+                      <>
+                        <Field label={t("doc-height-mm")}>
+                          <NumberInput value={form.header_height} onChange={(v) => set("header_height", v)} min={5} max={80} />
+                        </Field>
+                        <div className="grid grid-cols-3 gap-2">
+                          <ToggleField label={t("doc-toggle-logo")} checked={form.header_show_logo} onChange={(v) => set("header_show_logo", v)} />
+                          <ToggleField label={t("doc-toggle-name")} checked={form.header_show_company_name} onChange={(v) => set("header_show_company_name", v)} />
+                          <ToggleField label={t("doc-toggle-contact")} checked={form.header_show_contact} onChange={(v) => set("header_show_contact", v)} />
+                        </div>
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+                {form.header_enabled && (
+                  <Card className="border-border/60">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-sm">{t("doc-header-content")}</CardTitle>
+                      <CardDescription className="text-xs">{t("doc-header-content-hint")}</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      {/* audit22: Word-grade Segment Studio — full typography
+                          (fonts/sizes/B I U S), spacing, colours, backgrounds,
+                          borders; variables insert at the cursor. */}
+                      <TemplateSegmentStudio
+                        contentJson={form.header_content || DEFAULT_HEADER_CONTENT_JSON}
+                        onChange={(val) => set("header_content", val)}
+                        kind="header"
+                        variables={STUDIO_VARIABLES}
+                        previewData={studioPreviewData}
+                        bodyFontFamily={form.body_font_family}
+                      />
+                    </CardContent>
+                  </Card>
+                )}
+              </section>
+              )}
+
+              {/* ── Footer (+ QR) ── */}
+              {mountedSections.includes("footer") && (
+              <section className={cn("space-y-4", section !== "footer" && "hidden")} aria-labelledby="tpl-sec-footer">
+                <SectionIntro
+                  icon={AlignJustify}
+                  id="tpl-sec-footer"
+                  title={t("doc-section-footer")}
+                  description={t("doc-editor-intro-footer")}
+                />
+                <Card className="border-border/60">
+                  <CardContent className="space-y-3 p-4">
+                    <Field label={t("doc-enabled")}>
+                      <div className="flex items-center gap-2">
+                        <Switch checked={form.footer_enabled} onCheckedChange={(v) => set("footer_enabled", v)} aria-label={t("doc-enabled")} />
+                        <span className="text-sm text-muted-foreground">{t("doc-show-footer-every-page")}</span>
+                      </div>
+                    </Field>
+                    {form.footer_enabled && (
+                      <>
+                        <Field label={t("doc-height-mm")}>
+                          <NumberInput value={form.footer_height} onChange={(v) => set("footer_height", v)} min={5} max={60} />
+                        </Field>
+                        <div className="grid grid-cols-3 gap-2">
+                          <ToggleField label={t("doc-toggle-page-num")} checked={form.footer_show_page_number} onChange={(v) => set("footer_show_page_number", v)} />
+                          <ToggleField label={t("doc-toggle-bank")} checked={form.footer_show_bank_details} onChange={(v) => set("footer_show_bank_details", v)} />
+                          <ToggleField label={t("doc-toggle-tax-id")} checked={form.footer_show_tax_id} onChange={(v) => set("footer_show_tax_id", v)} />
+                        </div>
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+                {form.footer_enabled && (
+                  <Card className="border-border/60">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-sm">{t("doc-footer-content")}</CardTitle>
+                      <CardDescription className="text-xs">{t("doc-footer-content-hint")}</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      {/* audit22: Word-grade Segment Studio (footer). The
+                          _qrConfig inside footer_content is preserved by
+                          the studio on every serialize. */}
+                      <TemplateSegmentStudio
+                        contentJson={form.footer_content || DEFAULT_FOOTER_CONTENT_JSON}
+                        onChange={(val) => set("footer_content", val)}
+                        kind="footer"
+                        variables={STUDIO_VARIABLES}
+                        previewData={studioPreviewData}
+                        bodyFontFamily={form.body_font_family}
+                      />
+                    </CardContent>
+                  </Card>
+                )}
+                {form.footer_enabled && (
+                  <Card className="border-border/60">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-sm">{t("doc-qr-placement")}</CardTitle>
+                      <CardDescription className="text-xs">{t("doc-qr-placement-desc")}</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {/* ── QR code placement ──
+                          Stored inside footer_content._qrConfig (NOT a real
+                          DB column) — see writeQrConfig / parseQrConfig. */}
+                      <Field label={t("doc-position")}>
+                        <Select
+                          value={form.qr_position ?? "footer-right"}
+                          onValueChange={(v) => set("qr_position", v)}
+                        >
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="footer-right">{t("doc-qr-footer-right")}</SelectItem>
+                            <SelectItem value="footer-left">{t("doc-qr-footer-left")}</SelectItem>
+                            <SelectItem value="footer-center">{t("doc-qr-footer-center")}</SelectItem>
+                            <SelectItem value="none">{t("doc-qr-none")}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </Field>
+                      {form.qr_position !== "none" && (
+                        <>
+                          <div>
+                            <div className="flex items-center justify-between mb-1">
+                              <Label className="text-xs">{t("doc-qr-size-mm")}</Label>
+                              <span className="text-xs tabular text-muted-foreground">
+                                {form.qr_size_mm ?? 15} mm
+                              </span>
+                            </div>
+                            <Slider
+                              value={[form.qr_size_mm ?? 15]}
+                              min={8}
+                              max={40}
+                              step={1}
+                              onValueChange={(v) => set("qr_size_mm", v[0])}
+                            />
+                          </div>
+                          <div>
+                            <div className="flex items-center justify-between mb-1">
+                              <Label className="text-xs">{t("doc-qr-opacity")}</Label>
+                              <span className="text-xs tabular text-muted-foreground">
+                                {Math.round((form.qr_opacity ?? 1) * 100)}%
+                              </span>
+                            </div>
+                            <Slider
+                              value={[Math.round((form.qr_opacity ?? 1) * 100)]}
+                              min={20}
+                              max={100}
+                              step={5}
+                              onValueChange={(v) => set("qr_opacity", v[0] / 100)}
+                            />
+                          </div>
+                        </>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+              </section>
+              )}
+
+              {/* ── Body & tables ── */}
+              {mountedSections.includes("body") && (
+              <section className={cn("space-y-4", section !== "body" && "hidden")} aria-labelledby="tpl-sec-body">
+                <SectionIntro
+                  icon={Type}
+                  id="tpl-sec-body"
+                  title={t("doc-editor-nav-body")}
+                  description={t("doc-editor-intro-body")}
+                />
+                <Card className="border-border/60">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm">{t("doc-section-body-styling")}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {/* Font family — the three PDF-embedded families the
+                        renderer actually resolves (mapFont: NotoSans /
+                        Times-Roman / Courier). The Select guarantees the
+                        chosen family is the one that renders in the PDF. */}
+                    <Field label={t("doc-font-family")}>
+                      <Select
+                        value={normalizePdfFontFamily(form.body_font_family)}
+                        onValueChange={(v) => set("body_font_family", v)}
+                      >
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="NotoSans">{t("doc-font-sans")}</SelectItem>
+                          <SelectItem value="Times-Roman">{t("doc-font-serif")}</SelectItem>
+                          <SelectItem value="Courier">{t("doc-font-mono")}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground mt-1">{t("doc-font-family-hint")}</p>
+                    </Field>
+                    <div className="grid grid-cols-2 gap-3">
+                      <Field label={t("doc-font-size-px")}><NumberInput value={form.body_font_size} onChange={(v) => set("body_font_size", v)} min={7} max={24} /></Field>
+                      <Field label={t("doc-line-height")}><NumberInput value={form.body_line_height} onChange={(v) => set("body_line_height", v)} min={1} max={2.5} step={0.1} /></Field>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <ColorField label={t("doc-primary-color")} value={form.primary_color} onChange={(v) => {
+                      // audit21 — "template edits never apply" fix (partial application):
+                      // changing the primary colour previously left table_header_bg
+                      // on its old absolute colour, so the saved document only
+                      // partially re-branded (header line changed, table headers
+                      // stayed the old colour) and looked like the edit was ignored.
+                      // Unless the table header colour was customised in THIS
+                      // session (tableHeaderTouched), it now follows the primary
+                      // colour change so the whole document re-brands together.
+                      setForm((p) => ({
+                        ...p,
+                        primary_color: v,
+                        ...(!tableHeaderTouched.current ? { table_header_bg: v } : {}),
+                      }));
+                    }} />
+                      <ColorField label={t("doc-accent-color")} value={form.accent_color} onChange={(v) => set("accent_color", v)} />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-border/60">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm">{t("doc-section-table-styling")}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <ColorField label={t("doc-header-background")} value={form.table_header_bg} onChange={(v) => { tableHeaderTouched.current = true; set("table_header_bg", v); }} />
+                    <ColorField label={t("doc-header-text-color")} value={form.table_header_color} onChange={(v) => set("table_header_color", v)} />
+                    <ColorField label={t("doc-border-color")} value={form.table_border_color} onChange={(v) => set("table_border_color", v)} />
+                    <Field label={t("doc-striped-rows")}>
+                      <div className="flex items-center gap-2">
+                        <Switch checked={form.table_stripe} onCheckedChange={(v) => set("table_stripe", v)} aria-label={t("doc-striped-rows")} />
+                        <span className="text-sm text-muted-foreground">{t("doc-alternate-row-bg")}</span>
+                      </div>
+                    </Field>
+                  </CardContent>
+                </Card>
+              </section>
+              )}
+
+              {/* ── Advanced styling (TemplateStylePanel) ── */}
+              {mountedSections.includes("styling") && (
+              <section className={cn("space-y-4", section !== "styling" && "hidden")} aria-labelledby="tpl-sec-styling">
+                <SectionIntro
+                  icon={Palette}
+                  id="tpl-sec-styling"
+                  title={t("doc-tab-styling")}
+                  description={t("doc-editor-intro-styling")}
+                />
                 <TemplateStylePanel
                   styleJson={form.style_json}
                   onChange={(v) => set("style_json", v)}
                   primaryColor={form.primary_color}
                 />
+              </section>
+              )}
+
+              {/* ── Layout designer (TemplateVisualEditor) ── */}
+              {mountedSections.includes("layout") && (
+              <section className={cn("space-y-4", section !== "layout" && "hidden")} aria-labelledby="tpl-sec-layout">
+                <SectionIntro
+                  icon={Grid3x3}
+                  id="tpl-sec-layout"
+                  title={t("doc-editor-nav-layout")}
+                  description={t("doc-editor-intro-layout")}
+                />
+                {/* Fixed-height container: the visual editor manages its own
+                    internal scrolling (canvas, fields, properties panes). */}
+                <div className="h-[min(76vh,840px)] overflow-hidden rounded-lg border border-border/60">
+                  <TemplateVisualEditor
+                    template={form}
+                    onChange={(updates) => setForm((p) => ({ ...p, ...updates }))}
+                    pageSize={form.page_size === "Letter" ? "Letter" : "A4"}
+                    letterhead={linkedLetterhead}
+                  />
+                </div>
+              </section>
+              )}
+
+              {/* ── Bank accounts ── */}
+              {mountedSections.includes("banks") && (
+              <section className={cn("space-y-4", section !== "banks" && "hidden")} aria-labelledby="tpl-sec-banks">
+                <SectionIntro
+                  icon={Building2}
+                  id="tpl-sec-banks"
+                  title={t("doc-section-bank-accounts")}
+                  description={t("doc-editor-intro-banks")}
+                />
+                <Card className="border-border/60">
+                  <CardContent className="space-y-3 p-4">
+                    <p className="text-xs text-muted-foreground">
+                      {t("doc-bank-accounts-desc")}
+                    </p>
+                    <BankAccountSelector
+                      accounts={tenant?.bank_accounts ?? null}
+                      selected={form.selected_bank_accounts ?? null}
+                      onChange={(sel) => set("selected_bank_accounts", sel)}
+                    />
+                  </CardContent>
+                </Card>
+              </section>
+              )}
+
+              {/* ── Variables (help) ── */}
+              {mountedSections.includes("variables") && (
+              <section className={cn("space-y-4", section !== "variables" && "hidden")} aria-labelledby="tpl-sec-vars">
+                <SectionIntro
+                  icon={Braces}
+                  id="tpl-sec-vars"
+                  title={t("doc-section-available-variables")}
+                  description={t("doc-editor-intro-variables")}
+                />
+                <Card className="border-border/60">
+                  <CardContent className="space-y-3 p-4">
+                    <p className="text-xs text-muted-foreground">
+                      {t("doc-variables-hint")}
+                    </p>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                      {AVAILABLE_VARIABLES.map((v) => (
+                        <button
+                          key={v.token}
+                          type="button"
+                          onClick={() => {
+                            // audit24: click-to-copy — pro touch for the
+                            // palette (clipboard may be unavailable on
+                            // non-secure origins; degrade silently).
+                            try {
+                              void navigator.clipboard?.writeText(v.token);
+                              toast.success(`${v.token} · ${t("doc-var-copied")}`);
+                            } catch {
+                              // ignore
+                            }
+                          }}
+                          className="group flex flex-col items-start gap-0.5 rounded-md border border-border/60 bg-card px-2.5 py-2 text-left transition-colors hover:border-primary/40 hover:bg-primary/5"
+                          title={t(v.label)}
+                        >
+                          <code className="font-mono text-xs text-primary">{v.token}</code>
+                          <span className="truncate text-[11px] text-muted-foreground">{t(v.label)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </section>
+              )}
+
+            </div>
+          </div>
+
+          {/* ── Preview pane (desktop) ── */}
+          <aside className="hidden min-h-0 flex-col border-l border-border/60 bg-muted/20 lg:flex">
+            {previewCollapsed ? (
+              <button
+                type="button"
+                onClick={() => setPreviewCollapsed(false)}
+                className="flex h-full w-11 flex-col items-center gap-2 py-3 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                title={t("doc-editor-preview-toggle")}
+                aria-label={t("doc-editor-preview-toggle")}
+              >
+                <PanelRightOpen className="size-4 shrink-0" />
+                <span className="mt-1 text-[10px] font-medium tracking-wide [writing-mode:vertical-rl]">
+                  {t("doc-editor-preview-toggle")}
+                </span>
+              </button>
+            ) : (
+              <PreviewPane
+                mode={previewMode}
+                onModeChange={handleModeSwitch}
+                onRegenerate={handlePreview}
+                previewing={previewing}
+                previewUrl={previewUrl}
+                docNumber={previewDocNumber}
+                stale={pdfStale}
+                form={form}
+                badges={previewBadges}
+                onCollapse={() => setPreviewCollapsed(true)}
+              />
+            )}
+          </aside>
+
+          {/* ── Preview overlay (mobile) ── */}
+          {mobilePreview && (
+            <div className="absolute inset-0 z-10 flex min-h-0 flex-1 flex-col bg-background lg:hidden">
+              <div className="flex items-center justify-between border-b border-border/60 px-4 py-2.5">
+                <span className="text-sm font-medium">{t("doc-editor-preview-toggle")}</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="size-8 p-0"
+                  onClick={() => setMobilePreview(false)}
+                  title={t("doc-close")}
+                  aria-label={t("doc-close")}
+                >
+                  <X className="size-4" />
+                </Button>
+              </div>
+              <div className="flex min-h-0 flex-1 flex-col">
+                <PreviewPane
+                  mode={previewMode}
+                  onModeChange={handleModeSwitch}
+                  onRegenerate={handlePreview}
+                  previewing={previewing}
+                  previewUrl={previewUrl}
+                  docNumber={previewDocNumber}
+                  stale={pdfStale}
+                  form={form}
+                  badges={previewBadges}
+                />
               </div>
             </div>
-          </TabsContent>
-          {/* Visual tab stays MOUNTED (forceMount + CSS hidden) so the visual
-              editor's drag-and-drop field layout and local state survive tab
-              switches — previously Radix unmounted the inactive TabsContent and
-              every position/custom field reset each time the user flipped tabs. */}
-          <TabsContent
-            value="visual"
-            forceMount
-            className="flex-1 min-h-0 mt-0 data-[state=inactive]:hidden"
-          >
-            <TemplateVisualEditor
-              template={form}
-              onChange={(updates) => setForm((p) => ({ ...p, ...updates }))}
-              pageSize={form.page_size === "Letter" ? "Letter" : "A4"}
-              letterhead={linkedLetterhead}
-            />
-          </TabsContent>
-        </Tabs>
-
-        <DialogFooter className="px-5 py-4 border-t border-border/60 bg-card">
-          <Button
-            variant="outline"
-            onClick={handlePreview}
-            disabled={previewing || saving}
-            title={t("doc-preview-pdf")}
-          >
-            {previewing ? <Loader2 className="size-4 mr-1 animate-spin" /> : <FileSearch className="size-4 mr-1" />}
-            {previewing ? t("doc-preview-generating") : t("doc-preview-pdf")}
-          </Button>
-          <div className="flex-1" />
-          <Button variant="outline" onClick={() => onOpenChange(false)}>{t("cancel")}</Button>
-          <Button onClick={handleSave} disabled={saving}>
-            <Save className="size-4 mr-1" /> {t("doc-save-template")}
-          </Button>
-        </DialogFooter>
-
-        {/* audit23: live PDF preview — rendered on the tenant's most recent
-            document with the current (unsaved) form. */}
-        <TemplatePreviewDialog url={previewUrl} docNumber={previewDocNumber} onClose={closePreview} />
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ============================================================
-// audit23 — PDF preview dialog (iframe over a blob URL)
-// ============================================================
-
-function TemplatePreviewDialog({
-  url, docNumber, onClose,
-}: {
-  url: string | null;
-  docNumber: string;
-  onClose: () => void;
-}) {
-  const t = useT();
-  return (
-    <Dialog open={!!url} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent size="full" className="p-0 gap-0">
-        <DialogHeader className="px-5 py-4 border-b border-border/60">
-          <DialogTitle className="flex items-center gap-2">
-            <FileSearch className="size-5 text-primary" />
-            {t("doc-preview-pdf")}
-            {docNumber && (
-              <Badge variant="outline" className="text-xs font-normal">{docNumber}</Badge>
-            )}
-          </DialogTitle>
-          <DialogDescription>{t("doc-preview-live-desc")}</DialogDescription>
-        </DialogHeader>
-        <div className="bg-muted/30">
-          <iframe
-            src={url ?? "about:blank"}
-            title={t("doc-preview-pdf")}
-            className="h-[75vh] w-full"
-          />
+          )}
         </div>
-        <DialogFooter className="px-5 py-4 border-t border-border/60 bg-card">
-          <Button variant="outline" asChild>
-            <a href={url ?? "#"} target="_blank" rel="noopener noreferrer">
-              <ExternalLink className="size-4 mr-1" /> {t("doc-open-new-tab")}
-            </a>
-          </Button>
-          <div className="flex-1" />
-          <Button onClick={onClose}>{t("doc-close")}</Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
+
 
 // ============================================================
 // Shared form building blocks
