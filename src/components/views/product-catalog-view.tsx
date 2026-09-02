@@ -216,25 +216,16 @@ export function ProductCatalogView() {
         }
       />
       {/* FIX-PRODUCTS-DOCS / Fix 9 — Product Catalog split-brain deprecation
-          banner. The portal catalog endpoint (/api/portal/catalog) reads
-          from the `products` table filtered by `show_in_catalog && active`,
-          NOT from the legacy `product_catalog` table this view manages.
-          The two can drift silently: an admin editing entries here thinks
-          they're curating what the portal sees, but the portal actually
-          reads from Products. Use the Products view (per-row
-          `show_in_catalog` toggle) to control portal visibility. This
-          view is preserved for backward compatibility with existing
-          catalog entries that have not yet been migrated to Products. */}
+          banner (audit26 rewrite: was a wall of developer documentation;
+          now two plain sentences + the action). The portal catalog endpoint
+          reads from the `products` table (show_in_catalog && active), NOT
+          from this legacy `product_catalog` table. */}
       <Alert variant="destructive" className="mb-4">
         <AlertTriangle className="size-4" />
-        <AlertTitle>Legacy view — portal reads from Products, not this catalog</AlertTitle>
+        <AlertTitle>Legacy view</AlertTitle>
         <AlertDescription>
-          The client portal catalog is curated via the <strong>show_in_catalog</strong> flag
-          on the <strong>Products</strong> table (per-row toggle in the Products view), NOT
-          this <code>product_catalog</code> table. Edits made here do NOT affect what portal
-          clients see. Use the Products view to control portal visibility. This view is
-          preserved for backward compatibility with legacy entries that have not yet been
-          migrated to Products.
+          Portal clients see the <strong>Products</strong> list, not this catalog — use the
+          per-product portal toggle in the Products view to control what clients see.
         </AlertDescription>
       </Alert>
       <ModuleInfoTooltip

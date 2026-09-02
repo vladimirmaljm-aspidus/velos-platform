@@ -11,6 +11,12 @@ export type KycStatus = "not_submitted" | "pending" | "approved" | "rejected";
 export interface User {
   id: string;
   tenant_id: string | null; // null = super-admin (platform level)
+  /**
+   * Display name of the user's tenant (resolved by /api/auth/me — audit26).
+   * Not a DB column: populated on read so the dashboard greeting can show
+   * "ASPIDUS DMCC" instead of the raw tenant UUID.
+   */
+  tenant_name?: string;
   username: string;
   email: string;
   full_name: string | null;

@@ -405,7 +405,8 @@ export function ProductsView() {
       />
 
       {/* Explanatory banner — Products is now the single source of truth.
-          Product Catalog (the old spec-sheet table) has been merged in. */}
+          Product Catalog (the old spec-sheet table) has been merged in.
+          audit26: plain bullet chips (no emoji clutter). */}
       <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 mb-4">
         <div className="flex items-start gap-3">
           <Info className="size-5 text-primary shrink-0 mt-0.5" />
@@ -414,10 +415,10 @@ export function ProductsView() {
             <p className="text-sm text-muted-foreground">
               {t(locale, "crm-products-banner-desc")}
             </p>
-            <div className="flex flex-wrap gap-4 mt-2 text-xs text-muted-foreground">
-              <span>📋 {t(locale, "crm-products-banner-active")}</span>
-              <span>👁️ {t(locale, "crm-products-banner-portal")}</span>
-              <span>📦 {t(locale, "crm-products-banner-stock")}</span>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-muted-foreground">
+              <span>· {t(locale, "crm-products-banner-active")}</span>
+              <span>· {t(locale, "crm-products-banner-portal")}</span>
+              <span>· {t(locale, "crm-products-banner-stock")}</span>
             </div>
           </div>
         </div>

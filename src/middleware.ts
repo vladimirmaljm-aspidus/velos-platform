@@ -281,6 +281,17 @@ export function middleware(req: NextRequest) {
 
   cleanupIfNeeded();
 
+  // ── 0. Pages are NEVER rate-limited ─────────────────────────────────────
+  // UX P0 (audit26): the global ceiling below used to count PAGE navigations
+  // (/portal/dashboard, /, …) toward the per-IP API budget. When a user
+  // browsed pages quickly (or an SPA reloaded repeatedly) the middleware
+  // returned a raw JSON 429 for a PAGE request — the browser rendered
+  // `{"error":"Too many requests..."}` with its built-in JSON viewer instead
+  // of the app. Rate limiting only ever makes sense for /api/* requests.
+  if (!pathname.startsWith("/api/")) {
+    return NextResponse.next();
+  }
+
   // ── 1. Specific route limit ─────────────────────────────────────────────
   const route = findRouteConfig(pathname);
   if (route) {

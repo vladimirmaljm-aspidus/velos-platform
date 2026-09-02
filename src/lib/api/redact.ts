@@ -20,7 +20,7 @@
  *                      Defaults to {@link DEFAULT_DENY} when omitted.
  */
 
-import { decryptField } from "@/lib/crypto/field-encryption";
+import { decryptFieldMasked } from "@/lib/crypto/field-encryption";
 
 const DEFAULT_DENY = [
   "password",
@@ -228,7 +228,10 @@ export function shapePartnerRow<T extends Record<string, unknown>>(
   for (const f of PARTNER_ENCRYPTED_FIELDS) {
     const v = copy[f];
     if (typeof v === "string" && v !== "") {
-      copy[f] = decryptField(v);
+      // audit26 P0: masked decrypt — a failed decryption (rotated key /
+      // tampered ciphertext) must never leak the raw `enc:...` blob into
+      // a UI table cell. Users see "••••••••" instead.
+      copy[f] = decryptFieldMasked(v);
     }
   }
   return redactPartnerFields(copy as T, auth) as T;

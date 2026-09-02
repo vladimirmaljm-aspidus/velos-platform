@@ -26,7 +26,6 @@ import {
   Eye,
   EyeOff,
   Building2,
-  Sparkles,
   Store,
   Clock,
 } from "lucide-react";
@@ -84,7 +83,7 @@ export function LoginView({ onSwitchToRegister }: LoginViewProps) {
       if (lockCountdown === 0) {
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setError("");
-        // eslint-disable-next-line react-hooks/set-state-in-effect
+         
         setLockCountdown(null);
       }
       return;
@@ -203,9 +202,9 @@ export function LoginView({ onSwitchToRegister }: LoginViewProps) {
   }
 
   const highlights = [
-    { icon: Globe, text: "Multi-tenant workspace isolation" },
-    { icon: TrendingUp, text: "Landed cost & margin engine" },
-    { icon: ShieldCheck, text: "KYC compliance & document verification" },
+    { icon: Globe, text: "Offers, invoices and LOIs in one place" },
+    { icon: TrendingUp, text: "Landed cost and margin calculations" },
+    { icon: ShieldCheck, text: "KYC verification for every partner" },
   ];
 
   return (
@@ -308,7 +307,6 @@ export function LoginView({ onSwitchToRegister }: LoginViewProps) {
             </div>
 
             <div className="mt-14 flex items-center gap-2 text-xs text-white/40">
-              <Sparkles className="size-3.5" />
               <span>
                 © {new Date().getFullYear()} VELOS. {t("login-rights")}
               </span>

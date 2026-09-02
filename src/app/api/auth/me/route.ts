@@ -62,6 +62,17 @@ export async function GET() {
     }
 
     const { password_hash, totp_secret, recovery_codes, ...safeUser } = user;
+    // audit26 P0: include the tenant NAME so the dashboard greeting never
+    // falls back to the raw tenant UUID ("…snapshot for c889572d-…").
+    // Non-fatal: if the lookup fails the client falls back to "VELOS".
+    if (user.tenant_id) {
+      try {
+        const tenant = await store.getTenant(user.tenant_id);
+        if (tenant?.name) safeUser.tenant_name = tenant.name;
+      } catch {
+        // non-fatal — UI falls back to the generic workspace label
+      }
+    }
     let defaultLocale: string | null = null;
     try {
       defaultLocale = await store.getSetting<string>("default_locale", user.tenant_id ?? null);

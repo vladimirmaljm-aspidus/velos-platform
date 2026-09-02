@@ -10,7 +10,7 @@ import type { Offer, Invoice, Proforma, LetterOfIntent, Partner, Tenant, Memoran
 // is stored encrypted (enc: prefix). The PDF generator fetches the partner
 // via store.getPartner which returns the raw row — so tax_id shows as
 // "enc:v1:..." in the PDF. We decrypt here so the PDF shows plaintext.
-import { decryptField, isEncrypted } from "@/lib/crypto/field-encryption";
+import { decryptFieldMasked, isEncrypted } from "@/lib/crypto/field-encryption";
 
 export interface GeneratePdfOptions {
   docType: "offer" | "invoice" | "proforma" | "loi";
@@ -217,21 +217,23 @@ export async function generatePdf(opts: GeneratePdfOptions): Promise<GeneratePdf
   // the /api/partners/[id] GET route does for the admin UI.
   const partner: Partner | null = rawPartner ? (() => {
     const p = { ...rawPartner } as any;
+    // audit26: masked decrypt — a failed decryption (rotated key) must never
+    // print raw `enc:...` ciphertext inside a client-facing PDF.
     if (p.tax_id && typeof p.tax_id === "string" && isEncrypted(p.tax_id)) {
-      try { p.tax_id = decryptField(p.tax_id); } catch { /* leave as-is */ }
+      try { p.tax_id = decryptFieldMasked(p.tax_id); } catch { p.tax_id = ""; }
     }
     if (p.vat_number && typeof p.vat_number === "string" && isEncrypted(p.vat_number)) {
-      try { p.vat_number = decryptField(p.vat_number); } catch { /* leave as-is */ }
+      try { p.vat_number = decryptFieldMasked(p.vat_number); } catch { p.vat_number = ""; }
     }
     if (p.contact_email && typeof p.contact_email === "string" && isEncrypted(p.contact_email)) {
-      try { p.contact_email = decryptField(p.contact_email); } catch { /* leave as-is */ }
+      try { p.contact_email = decryptFieldMasked(p.contact_email); } catch { p.contact_email = ""; }
     }
     if (p.phone && typeof p.phone === "string" && isEncrypted(p.phone)) {
-      try { p.phone = decryptField(p.phone); } catch { /* leave as-is */ }
+      try { p.phone = decryptFieldMasked(p.phone); } catch { p.phone = ""; }
     }
     // AUDIT16 — contact_phone parity (portal profile PUT encrypts it).
     if (p.contact_phone && typeof p.contact_phone === "string" && isEncrypted(p.contact_phone)) {
-      try { p.contact_phone = decryptField(p.contact_phone); } catch { /* leave as-is */ }
+      try { p.contact_phone = decryptFieldMasked(p.contact_phone); } catch { p.contact_phone = ""; }
     }
     // Strip internal HMAC columns (never shown in PDF)
     delete p.tax_id_hmac;

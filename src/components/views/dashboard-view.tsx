@@ -272,7 +272,10 @@ export function DashboardView() {
   ).length;
 
   const userName = user?.full_name || user?.username || t("misc-there-fallback");
-  const tenantName = activeTenantName || user?.tenant_id || "VELOS";
+  // audit26: never surface the raw tenant UUID — prefer the tenant NAME
+  // (now included in /api/auth/me), then the super-admin context switch,
+  // then a clean generic label. UUIDs are for logs, not for greetings.
+  const tenantName = activeTenantName || user?.tenant_name || (user?.tenant_id ? "" : "VELOS");
 
   const lowStockCount = k.low_stock_count || 0;
   const marginTone =
@@ -292,10 +295,12 @@ export function DashboardView() {
             <h1 className="text-xl md:text-2xl font-semibold tracking-tight text-foreground flex items-center gap-2">
               {t(greetingKey())}, <span className="text-foreground">{userName}</span>
              <ModuleInfoTooltip title="Dashboard" description="Your tenant overview — KPIs, recent activity, quick actions, and charts." howToUse={["View KPIs (partners, deals, invoices, revenue)", "See recent activity feed", "Quick actions (add partner, create invoice, etc.)", "Charts show trends over time"]} /></h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              {t("misc-trade-snapshot-for")}{" "}
-              <span className="font-medium text-foreground">{tenantName}</span>.
-            </p>
+            {tenantName ? (
+              <p className="text-sm text-muted-foreground mt-1">
+                {t("misc-trade-snapshot-for")}{" "}
+                <span className="font-medium text-foreground">{tenantName}</span>.
+              </p>
+            ) : null}
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <Button variant="outline" size="sm" onClick={() => setView("audit")}>

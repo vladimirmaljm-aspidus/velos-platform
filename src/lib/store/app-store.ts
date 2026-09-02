@@ -113,6 +113,8 @@ export type ViewKey =
 export interface SafeUser {
   id: string;
   tenant_id: string | null;
+  /** Display name of the user's tenant (from /api/auth/me — audit26). */
+  tenant_name?: string;
   username: string;
   email: string;
   full_name: string | null;

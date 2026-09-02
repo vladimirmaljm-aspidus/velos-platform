@@ -16,6 +16,7 @@ import { sanitizeFields } from "@/lib/security/sanitize-input";
 import {
   encryptField,
   decryptField,
+  decryptFieldMasked,
   hmacField,
   isEncrypted,
 } from "@/lib/crypto/field-encryption";
@@ -299,7 +300,7 @@ async function _post(req: NextRequest) {
               const display: Record<string, unknown> = { ...hitByHmacRow };
               const dv = display[field];
               if (dv && typeof dv === "string") {
-                display[field] = decryptField(dv);
+                display[field] = decryptFieldMasked(dv);
               }
               const hitName = hitByHmacRow.name;
               return NextResponse.json({ error: `Partner with ${field} "${v}" already exists (${hitName}).`, duplicate: field, existing: display }, { status: 409 });
@@ -391,16 +392,16 @@ async function _post(req: NextRequest) {
     // (webhook payloads are server-to-server, never exposed to browsers).
     const { portal_token: _omit, tax_id_hmac: _omitTid, vat_number_hmac: _omitVn, ...partnerSafe } = created as any;
     if (partnerSafe.contact_email && typeof partnerSafe.contact_email === "string") {
-      partnerSafe.contact_email = decryptField(partnerSafe.contact_email);
+      partnerSafe.contact_email = decryptFieldMasked(partnerSafe.contact_email);
     }
     if (partnerSafe.phone && typeof partnerSafe.phone === "string") {
-      partnerSafe.phone = decryptField(partnerSafe.phone);
+      partnerSafe.phone = decryptFieldMasked(partnerSafe.phone);
     }
     if (partnerSafe.tax_id && typeof partnerSafe.tax_id === "string") {
-      partnerSafe.tax_id = decryptField(partnerSafe.tax_id);
+      partnerSafe.tax_id = decryptFieldMasked(partnerSafe.tax_id);
     }
     if (partnerSafe.vat_number && typeof partnerSafe.vat_number === "string") {
-      partnerSafe.vat_number = decryptField(partnerSafe.vat_number);
+      partnerSafe.vat_number = decryptFieldMasked(partnerSafe.vat_number);
     }
     void triggerWebhooks(
       auth.store,
@@ -415,16 +416,16 @@ async function _post(req: NextRequest) {
     // shows plaintext; strip the HMAC columns (internal-only).
     const { tax_id_hmac: _omitTid2, vat_number_hmac: _omitVn2, ...safeCreated } = created as any;
     if (safeCreated.contact_email && typeof safeCreated.contact_email === "string") {
-      safeCreated.contact_email = decryptField(safeCreated.contact_email);
+      safeCreated.contact_email = decryptFieldMasked(safeCreated.contact_email);
     }
     if (safeCreated.phone && typeof safeCreated.phone === "string") {
-      safeCreated.phone = decryptField(safeCreated.phone);
+      safeCreated.phone = decryptFieldMasked(safeCreated.phone);
     }
     if (safeCreated.tax_id && typeof safeCreated.tax_id === "string") {
-      safeCreated.tax_id = decryptField(safeCreated.tax_id);
+      safeCreated.tax_id = decryptFieldMasked(safeCreated.tax_id);
     }
     if (safeCreated.vat_number && typeof safeCreated.vat_number === "string") {
-      safeCreated.vat_number = decryptField(safeCreated.vat_number);
+      safeCreated.vat_number = decryptFieldMasked(safeCreated.vat_number);
     }
     // FIX-ALL-2 / Fix 1 — strip KYC / bank / vat / tax from API-key
     // responses (parity with the GET list handler).

@@ -81,7 +81,9 @@ export function HowItWorks({
 
       <div className="relative p-6 sm:p-8">
         <header className="text-center max-w-2xl mx-auto">
-          <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+          {/* audit26: was uppercase tracking-wider — read as "shouting"
+              marketing copy. Now a quiet, normal-case eyebrow. */}
+          <p className="text-sm text-muted-foreground">
             {t("how-it-works-subtitle")}
           </p>
           <h2 className="text-xl sm:text-2xl font-semibold tracking-tight mt-1.5">
@@ -113,7 +115,7 @@ export function HowItWorks({
                   <Icon className="size-7" />
                 </div>
                 <div className="mt-3 flex items-center justify-center gap-1.5">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  <span className="text-xs font-medium text-muted-foreground">
                     {t("marketplace-wizard-progress").replace("{n}", String(step.number)).replace("{total}", "3")}
                   </span>
                 </div>

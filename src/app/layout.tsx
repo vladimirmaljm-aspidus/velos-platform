@@ -3,6 +3,8 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { Providers } from "@/components/providers";
+import { cookies } from "next/headers";
+import type { Locale } from "@/lib/i18n/dictionaries";
 import { ServiceWorkerRegister } from "@/components/pwa/sw-register";
 import { PushNotificationsPrompt } from "@/components/pwa/push-notifications";
 import { ThemeProvider } from "next-themes";
@@ -85,11 +87,22 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // audit26 hydration fix: read the user's saved locale from the cookie so
+  // the SSR pass renders the SAME language the client will render on its
+  // first paint. Previously SSR always rendered English while the client
+  // booted with the localStorage locale → React hydration error #418 on
+  // every page load for non-English users.
+  const cookieStore = await cookies();
+  const cookieLocale = cookieStore.get("velos-locale")?.value as Locale | undefined;
+  const initialLocale: Locale =
+    cookieLocale && ["en", "sr", "tr", "de", "ru"].includes(cookieLocale)
+      ? cookieLocale
+      : "en";
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -107,7 +120,7 @@ export default function RootLayout({
         className={`${inter.variable} ${jetbrainsMono.variable} antialiased bg-background text-foreground`}
       >
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
-          <Providers>
+          <Providers initialLocale={initialLocale}>
             <HtmlLangSetter />
             {children}
             <Toaster richColors position="top-right" />

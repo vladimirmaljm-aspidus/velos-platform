@@ -5,6 +5,7 @@ import { useState, ReactNode, useEffect } from "react";
 import { useTheme } from "next-themes";
 import { useThemeCustomStore } from "@/lib/store/theme-store";
 import { useI18nStore } from "@/lib/i18n/store";
+import type { Locale } from "@/lib/i18n/dictionaries";
 
 function ThemeInitializer() {
   const applyTheme = useThemeCustomStore((s) => s.applyTheme);
@@ -19,6 +20,23 @@ function ThemeInitializer() {
   return null;
 }
 
+/**
+ * audit26 hydration fix — injects the locale the SERVER read from the
+ * `velos-locale` cookie into the store BEFORE the first client render.
+ *
+ * The store initializes to "en" (SSR-safe); the layout (server component)
+ * reads the same cookie and renders with that locale, so the client's
+ * first render matches the SSR HTML exactly. Without this bridge a saved
+ * non-English locale produced React hydration error #418 on every page.
+ */
+function I18nLocaleBridge({ initialLocale }: { initialLocale: Locale }) {
+  useState(() => {
+    if (initialLocale !== "en") useI18nStore.setState({ locale: initialLocale });
+    return true;
+  });
+  return null;
+}
+
 function I18nInitializer() {
   const hydrate = useI18nStore((s) => s.hydrate);
   useEffect(() => {
@@ -27,7 +45,13 @@ function I18nInitializer() {
   return null;
 }
 
-export function Providers({ children }: { children: ReactNode }) {
+export function Providers({
+  children,
+  initialLocale = "en",
+}: {
+  children: ReactNode;
+  initialLocale?: Locale;
+}) {
   const [client] = useState(
     () =>
       new QueryClient({
@@ -43,6 +67,7 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <QueryClientProvider client={client}>
       <ThemeInitializer />
+      <I18nLocaleBridge initialLocale={initialLocale} />
       <I18nInitializer />
       {children}
     </QueryClientProvider>

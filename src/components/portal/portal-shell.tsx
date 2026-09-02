@@ -35,6 +35,8 @@ import {
   ChevronRight,
   ChevronDown,
   ArrowRight,
+  WifiOff,
+  RefreshCw,
 } from "lucide-react";
 import { useAppStore, ViewKey } from "@/lib/store/app-store";
 import { useT, useI18nStore } from "@/lib/i18n/store";
@@ -318,37 +320,57 @@ export function PortalShell({
   // audit25: a 401 here means the session EXPIRED (idle / absolute TTL /
   // revoked) while the user was on the page — the redirect carries
   // ?reason=session_expired so the login page explains WHY instead of
-  // the "app logged me out for no reason" mystery. Non-401 failures
-  // (5xx) still redirect plainly (session state unknown).
+  // the "app logged me out for no reason" mystery.
+  // audit26 P0: NON-401 failures (429 rate-limit, 5xx DB blip, network
+  // hiccup) must NEVER log the user out. The previous code redirected to
+  // /portal/login on ANY failure — a single 429 on /me kicked a paying
+  // client to the login screen mid-work ("app logs me out by itself").
+  // Now: 401 → login (with reason); anything else → retry with backoff,
+  // and after the retries run out show a connection-problem card (the
+  // session cookie is still intact — a reload recovers instantly).
   const [hydrating, setHydrating] = useState<boolean>(!portalAccess);
+  const [connProblem, setConnProblem] = useState<boolean>(false);
   useEffect(() => {
 // eslint-disable-next-line react-hooks/set-state-in-effect
     if (portalAccess) { setHydrating(false); return; }
     let mounted = true;
-    fetch("/api/portal/me")
-      .then((r) => {
-        if (r.ok) return r.json().catch(() => null);
-        if (r.status === 401) throw new Error("session_expired");
-        return null;
-      })
-      .then((data) => {
-        if (!mounted) return;
-        if (data?.access) {
-          setPortalAccess(data.access);
-          setAppMode("portal");
-        } else if (typeof window !== "undefined") {
-          window.location.href = "/portal/login";
-        }
-      })
-      .catch((e: unknown) => {
-        if (mounted && typeof window !== "undefined") {
-          window.location.href =
-            e instanceof Error && e.message === "session_expired"
-              ? "/portal/login?reason=session_expired"
-              : "/portal/login";
-        }
-      })
-      .finally(() => { if (mounted) setHydrating(false); });
+    let attempt = 0;
+    const tryHydrate = () => {
+      fetch("/api/portal/me", { cache: "no-store" })
+        .then(async (r) => {
+          if (r.status === 401) throw new Error("session_expired");
+          if (!r.ok) throw new Error("transient");
+          return r.json().catch(() => null);
+        })
+        .then((data) => {
+          if (!mounted) return;
+          if (data?.access) {
+            setPortalAccess(data.access);
+            setAppMode("portal");
+            setConnProblem(false);
+          } else {
+            // 200 with no access — genuinely not signed in.
+            window.location.href = "/portal/login";
+          }
+        })
+        .catch((e: unknown) => {
+          if (!mounted) return;
+          if (e instanceof Error && e.message === "session_expired") {
+            window.location.href = "/portal/login?reason=session_expired";
+            return;
+          }
+          // Transient failure (429 / 5xx / network). Retry up to 3 times
+          // with backoff, then surface a connection card — NOT a logout.
+          attempt += 1;
+          if (attempt < 3) {
+            setTimeout(tryHydrate, 1000 * attempt);
+          } else {
+            setConnProblem(true);
+          }
+        })
+        .finally(() => { if (mounted) setHydrating(false); });
+    };
+    tryHydrate();
     return () => { mounted = false; };
   }, [portalAccess, setPortalAccess, setAppMode]);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -520,6 +542,27 @@ export function PortalShell({
   }
 
   if (!portalAccess) {
+    // audit26 — transient backend failure (429/5xx) after retries: keep the
+    // user IN the app with a retry card. Their session cookie is intact —
+    // this must never look or behave like a logout.
+    if (connProblem) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-mesh-portal p-6">
+          <div className="max-w-md w-full text-center space-y-4 bg-card border border-border rounded-xl p-8 shadow-soft">
+            <div className="size-14 rounded-full bg-amber-500/10 flex items-center justify-center mx-auto">
+              <WifiOff className="size-7 text-amber-600" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold">{t("portal-conn-problem-title")}</h2>
+              <p className="text-sm text-muted-foreground mt-1">{t("portal-conn-problem-desc")}</p>
+            </div>
+            <Button onClick={() => window.location.reload()} className="w-full">
+              <RefreshCw className="size-4 mr-2" /> {t("portal-conn-problem-retry")}
+            </Button>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="min-h-screen flex items-center justify-center bg-mesh-portal">
         <div className="flex flex-col items-center gap-3">

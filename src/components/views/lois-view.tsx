@@ -564,17 +564,17 @@ export function LoisView() {
                 <Table>
                   <TableHeader className="sticky top-0 bg-card z-10">
                     <TableRow>
-                      <TableHead className="min-w-[120px]">{t("loi-number")}</TableHead>
-                      <TableHead className="min-w-[200px]">{t("loi-subject")}</TableHead>
-                      <TableHead className="min-w-[140px]">{t("loi-buyer")}</TableHead>
-                      <TableHead className="min-w-[140px]">{t("loi-seller")}</TableHead>
-                      <TableHead className="min-w-[160px]">{t("loi-product")}</TableHead>
-                      <TableHead className="text-right min-w-[100px]">{t("loi-quantity")}</TableHead>
-                      <TableHead className="text-right min-w-[140px]">{t("loi-total-value")}</TableHead>
-                      <TableHead className="min-w-[110px]">{t("loi-status")}</TableHead>
-                      <TableHead className="min-w-[110px]">{t("loi-validity")}</TableHead>
-                      <TableHead className="min-w-[100px]">{t("loi-created")}</TableHead>
-                      <TableHead className="text-right min-w-[200px]">{t("loi-actions")}</TableHead>
+                      <TableHead className="min-w-[110px]">{t("loi-number")}</TableHead>
+                      <TableHead className="min-w-[160px]">{t("loi-subject")}</TableHead>
+                      <TableHead className="min-w-[120px]">{t("loi-buyer")}</TableHead>
+                      <TableHead className="min-w-[120px]">{t("loi-seller")}</TableHead>
+                      <TableHead className="min-w-[130px]">{t("loi-product")}</TableHead>
+                      <TableHead className="text-right min-w-[90px]">{t("loi-quantity")}</TableHead>
+                      <TableHead className="text-right min-w-[120px]">{t("loi-total-value")}</TableHead>
+                      <TableHead className="min-w-[100px]">{t("loi-status")}</TableHead>
+                      <TableHead className="min-w-[100px]">{t("loi-validity")}</TableHead>
+                      <TableHead className="min-w-[90px]">{t("loi-created")}</TableHead>
+                      <TableHead className="text-right min-w-[170px]">{t("loi-actions")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>

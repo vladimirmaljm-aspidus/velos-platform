@@ -38,6 +38,7 @@ import { toast } from "sonner";
 import { useAppStore } from "@/lib/store/app-store";
 import { cn } from "@/lib/utils";
 import { useT, useI18nStore } from "@/lib/i18n/store";
+import { useIsHydrated } from "@/hooks/use-is-hydrated";
 
 const FIRM_NAME = "VELOS";
 
@@ -1043,7 +1044,14 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
 // logging in. Saves to localStorage (picked up by portal-shell on login).
 function PortalLoginLanguageSelector() {
   const { locale, setLocale } = useI18nStore();
-  if (typeof window === "undefined") return null;
+  // audit26 hydration fix: `typeof window === "undefined"` here returned
+  // null on the server but BUTTONS on the client → React hydration error
+  // #418 on every login-page load (server HTML discarded + re-rendered).
+  // useIsHydrated (useSyncExternalStore) is Suspense/streaming-safe — a
+  // plain useState+useEffect "mounted" flag still mismatched because the
+  // effect fired between hydration chunks.
+  const hydrated = useIsHydrated();
+  if (!hydrated) return null;
   const flags: Record<string, string> = { en: "🇬🇧", sr: "🇷🇸", tr: "🇹🇷", de: "🇩🇪", ru: "🇷🇺" };
   const labels: Record<string, string> = { en: "English", sr: "Srpski", tr: "Türkçe", de: "Deutsch", ru: "Русский" };
   return (

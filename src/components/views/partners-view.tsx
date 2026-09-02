@@ -600,8 +600,15 @@ export function PartnersView() {
                           <Badge variant="outline">{t(TYPE_LABEL_KEYS[p.type])}</Badge>
                         </TableCell>
                         <TableCell className="hidden lg:table-cell">
-                          <div className="text-sm">{p.contact_name || "—"}</div>
-                          <div className="text-xs text-muted-foreground">{p.contact_email || p.email || "—"}</div>
+                          <div className="text-sm truncate max-w-[180px]" title={p.contact_name || undefined}>{p.contact_name || "—"}</div>
+                          {/* audit26: truncate long emails so the row never
+                              stretches / breaks the table grid. */}
+                          <div
+                            className="text-xs text-muted-foreground truncate max-w-[220px]"
+                            title={p.contact_email || p.email || undefined}
+                          >
+                            {p.contact_email || p.email || "—"}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <Badge variant={STATUS_BADGE[p.status]}>{t(STATUS_LABEL_KEYS[p.status])}</Badge>

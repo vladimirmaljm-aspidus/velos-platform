@@ -206,6 +206,29 @@ export function isEncrypted(value: unknown): boolean {
 }
 
 /**
+ * UI-safe decryption (audit26 P0): decrypt, and if decryption FAILS
+ * (wrong/rotated key, tampered ciphertext) return a short masked
+ * placeholder instead of the raw ciphertext.
+ *
+ * Why: `decryptField` deliberately returns the raw `enc:...` blob on
+ * failure so ops scripts can triage. But when that value flows straight
+ * into an API response and a UI table cell, users see a wall of base64
+ * garbage ("enc!rxxFuL8ReidP7Jb6dzbg==…") in the Contact-person column.
+ * The UI must NEVER render ciphertext — this wrapper guarantees a clean
+ * masked value ("••••••••") for every caller that feeds a user-facing
+ * list/detail response.
+ */
+export function decryptFieldMasked(encryptedValue: string): string {
+  if (encryptedValue == null) return "";
+  const out = decryptField(encryptedValue);
+  if (typeof out === "string" && out.startsWith("enc:")) {
+    // Decryption failed — show a masked placeholder, never the ciphertext.
+    return "••••••••";
+  }
+  return out;
+}
+
+/**
  * Apply `encryptField` to a known set of sensitive keys inside a JSON
  * object. Used by settings routes to transparently encrypt secrets inside
  * a settings blob (e.g. `comms.smtp_password`, `comms.resend_api_key`,

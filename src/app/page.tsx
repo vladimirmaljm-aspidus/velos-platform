@@ -50,20 +50,33 @@ export default function Home() {
   useEffect(() => {
     let mounted = true;
     // Check admin session — swap to AppShell on success.
-    fetch("/api/auth/me")
-      .then((r) => r.json())
-      .then((data) => {
-        if (mounted && data.user) setUser(data.user);
-      })
-      .catch(() => {});
+    // audit26: retry transient failures (429/5xx) twice with backoff so a
+    // momentary rate-limit/DB blip doesn't render the login screen for a
+    // user whose session cookie is perfectly valid ("looks logged out").
+    const fetchMe = (attempt: number) => {
+      fetch("/api/auth/me")
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+        .then((data) => {
+          if (mounted && data.user) setUser(data.user);
+        })
+        .catch(() => {
+          if (mounted && attempt < 2) setTimeout(() => fetchMe(attempt + 1), 1200 * (attempt + 1));
+        });
+    };
+    fetchMe(0);
 
     // Check portal session (in parallel) — swap to PortalShell on success.
-    fetch("/api/portal/me")
-      .then((r) => r.json())
-      .then((data) => {
-        if (mounted && data.access) setPortalAccess(data.access);
-      })
-      .catch(() => {});
+    const fetchPortalMe = (attempt: number) => {
+      fetch("/api/portal/me")
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+        .then((data) => {
+          if (mounted && data.access) setPortalAccess(data.access);
+        })
+        .catch(() => {
+          if (mounted && attempt < 2) setTimeout(() => fetchPortalMe(attempt + 1), 1200 * (attempt + 1));
+        });
+    };
+    fetchPortalMe(0);
     return () => {
       mounted = false;
     };
