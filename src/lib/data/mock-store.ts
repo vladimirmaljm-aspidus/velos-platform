@@ -1466,6 +1466,8 @@ export class MockStore implements Store {
       "offer_sent", "offer_accepted", "offer_rejected", "offer_expired",
       "invoice_sent", "invoice_overdue", "invoice_paid",
       "proforma_sent",
+      // BUILD-LOI-PORTAL — LOI sent to this partner.
+      "loi_sent",
       "document_shared",
       "portal_access_requested", "portal_access_approved", "portal_invite_sent",
       "portal_message",
@@ -1558,6 +1560,8 @@ export class MockStore implements Store {
       "offer_sent", "offer_accepted", "offer_rejected", "offer_expired",
       "invoice_sent", "invoice_overdue", "invoice_paid",
       "proforma_sent",
+      // BUILD-LOI-PORTAL — LOI sent to this partner.
+      "loi_sent",
       "document_shared",
       "portal_access_requested", "portal_access_approved", "portal_invite_sent",
       "portal_message",

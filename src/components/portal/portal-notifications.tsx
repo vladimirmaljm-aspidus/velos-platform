@@ -36,6 +36,9 @@ function portalViewForUrl(url: string, type: NotificationType): ViewKey | null {
   if (u.includes("/invoice")) return "portal-invoices";
   if (u.includes("/offer")) return "portal-offers";
   if (u.includes("/proforma")) return "portal-proformas";
+  // BUILD-LOI-PORTAL — LOI notifications deep-link into the LOI view
+  // (the admin action URL is "/lois?id=…", the portal one "/portal/lois").
+  if (u.includes("/loi")) return "portal-lois";
   if (u.includes("/document")) return "portal-documents";
   if (u.includes("/messages")) return "portal-messages";
   if (u.includes("/portal-access")) return "portal-messages";
@@ -50,6 +53,7 @@ function portalViewForUrl(url: string, type: NotificationType): ViewKey | null {
   if (type.startsWith("invoice_")) return "portal-invoices";
   if (type.startsWith("offer_")) return "portal-offers";
   if (type.startsWith("proforma_")) return "portal-proformas";
+  if (type.startsWith("loi_")) return "portal-lois";
   if (type === "document_shared") return "portal-documents";
   if (type.startsWith("marketplace_")) return "portal-marketplace-negotiations";
   return null;

@@ -14,9 +14,14 @@ import { decryptField } from "@/lib/crypto/field-encryption";
  *
  * Fire-and-forget: never blocks or throws. If the columns don't exist
  * (older schema), it silently no-ops.
+ *
+ * BUILD-LOI-PORTAL — "lois" is included for the portal LOI module. NOTE:
+ * the LOI state machine (status-validator.ts) has NO "viewed" status
+ * (draft | sent | accepted | rejected | expired | cancelled), so viewing
+ * an LOI keeps its status at "sent" — only the tracking columns update.
  */
 export async function markDocumentViewed(
-  table: "offers" | "invoices" | "proformas",
+  table: "offers" | "invoices" | "proformas" | "lois",
   id: string,
   tenantId: string,
   viewerEmail: string | null,
@@ -44,9 +49,12 @@ export async function markDocumentViewed(
       view_count: ((existing as any).view_count || 0) + 1,
     };
     // Only set viewed_at + promote status on the very first view.
+    // (BUILD-LOI-PORTAL) lois has no "viewed" status in its state machine,
+    // so the status promotion is skipped for that table — the LOI stays
+    // "sent" until the partner accepts / rejects / it expires.
     if (!(existing as any).viewed_at) {
       patch.viewed_at = new Date().toISOString();
-      if ((existing as any).status === "sent") {
+      if (table !== "lois" && (existing as any).status === "sent") {
         patch.status = "viewed";
       }
     }

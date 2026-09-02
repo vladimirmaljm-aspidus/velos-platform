@@ -27,6 +27,7 @@ import {
   XCircle,
   Sparkles,
   Handshake,
+  FileCheck2,
 } from "lucide-react";
 import { useAppStore, ViewKey } from "@/lib/store/app-store";
 import { useT } from "@/lib/i18n/store";
@@ -236,6 +237,20 @@ export function PortalDashboardRedesign() {
     },
   });
 
+  // BUILD-LOI-PORTAL — LOIs addressed to this partner. Only fetched when the
+  // partner can view trade documents (same gate as the LOI module itself);
+  // drives the "awaiting your response" stat card that makes the LOI module
+  // discoverable from the dashboard. Errors degrade silently to 0.
+  const loisQ = useQuery<{ items: Array<{ status: string }>; total: number }>({
+    queryKey: ["portal-lois-dashboard"],
+    queryFn: async () => {
+      const r = await fetch("/api/portal/lois?limit=50");
+      if (!r.ok) return { items: [], total: 0 };
+      return r.json();
+    },
+    enabled: !!portalAccess?.can_view_offers,
+  });
+
   if (!portalAccess) return null;
 
   const tier = portalAccess.tier;
@@ -257,6 +272,12 @@ export function PortalDashboardRedesign() {
   const recentMarket = recentMarketQ.data?.items ?? [];
 
   // Stats cards
+  // BUILD-LOI-PORTAL — pending-LOI stat appended when the partner can view
+  // trade documents: counts SENT LOIs (the ones awaiting the seller's
+  // accept/reject). The grid switches 3→4 columns on lg.
+  const pendingLois = (loisQ.data?.items ?? []).filter(
+    (l) => String(l.status || "").toLowerCase() === "sent",
+  ).length;
   const stats = [
     {
       label: t("portal-dashboard-redesign-my-posts"),
@@ -282,6 +303,18 @@ export function PortalDashboardRedesign() {
       bg: "bg-amber-500/10",
       onClick: () => setView("portal-marketplace-negotiations" as ViewKey),
     },
+    ...(portalAccess?.can_view_offers
+      ? [
+          {
+            label: t("portal-dashboard-redesign-pending-lois"),
+            value: loisQ.isLoading ? "—" : pendingLois,
+            icon: FileCheck2,
+            color: "text-teal-700 dark:text-teal-400",
+            bg: "bg-teal-500/10",
+            onClick: () => setView("portal-lois" as ViewKey),
+          },
+        ]
+      : []),
   ];
 
   // Quick actions
@@ -406,7 +439,10 @@ export function PortalDashboardRedesign() {
       </div>
 
       {/* ─── Quick stats ───────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className={cn(
+        "grid grid-cols-1 sm:grid-cols-2 gap-4",
+        stats.length === 3 ? "lg:grid-cols-3" : "lg:grid-cols-4",
+      )}>
         {stats.map((s) => {
           const Icon = s.icon;
           return (

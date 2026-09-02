@@ -9,6 +9,9 @@ import { isValidEmail } from "@/lib/validation/email";
 // audit20 / 20-d2 — LOI send PDF attachment parity with the invoice /
 // offer / proforma send routes (they all import generatePdf statically).
 import { generatePdf } from "@/lib/pdf/generator";
+// BUILD-LOI-PORTAL — in-app notification so the partner sees the LOI in
+// the portal bell the moment it is emailed (loi_sent is portal-safe).
+import { notify } from "@/lib/notif/helper";
 
 export const runtime = "nodejs";
 
@@ -230,6 +233,31 @@ export async function POST(
       }
     } catch (e) {
       console.warn("[loi.send] document_register insert failed:", e);
+    }
+
+    // BUILD-LOI-PORTAL — in-app notification addressed to the partner so
+    // the LOI surfaces in their portal bell + Notifications view (and deep
+    // links straight into the new /portal/lois module). Only notified when
+    // the email was actually delivered — a queued/failed send must not
+    // tease a document the partner can't act on yet. Best-effort: a notify
+    // failure never blocks the send.
+    if (delivered) {
+      try {
+        await notify({
+          tenantId: loi.tenant_id,
+          userId: null,
+          partnerId: loi.partner_id,
+          type: "loi_sent",
+          title: "Letter of Intent Received",
+          message: `${tenant?.name || "A buyer"} sent you LOI ${loi.number} — ${loi.subject}.`,
+          entityType: "loi",
+          entityId: id,
+          actionUrl: "/portal/lois",
+          actionLabel: "View LOI",
+        });
+      } catch (e) {
+        console.warn("[loi.send] partner notification failed:", e);
+      }
     }
 
     await audit(auth.store, auth.user, req, "loi.send", "loi", id, {

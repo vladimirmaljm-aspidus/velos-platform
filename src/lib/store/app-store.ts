@@ -78,6 +78,9 @@ export type ViewKey =
   | "portal-rfq"
   | "portal-messages"
   | "portal-proformas"
+  // BUILD-LOI-PORTAL — Letters of Intent addressed to this partner (the
+  // partner is the SELLER / recipient; the tenant is the buyer).
+  | "portal-lois"
   | "portal-logistics"
   | "portal-notifications"
   // Marketplace (Phase 1 — Berza roba)
@@ -197,7 +200,32 @@ export const useAppStore = create<AppState>((set) => ({
   portalAccess: null,
   setPortalAccess: (a) => set({ portalAccess: a }),
   appMode: "crm",
-  setAppMode: (m) => set({ appMode: m, view: m === "portal" ? "portal-dashboard" : "dashboard" }),
+  // BUILD-LOI-PORTAL audit (deep-link bug): switching app-mode used to
+  // UNCONDITIONALLY reset the view (portal → "portal-dashboard"). That
+  // clobbered PortalShell's initialView on every fresh deep-link load:
+  //   mount effect set view="portal-lois" (from /portal/lois page.tsx)
+  //   → /api/portal/me hydration called setAppMode("portal")
+  //   → view reset to "portal-dashboard" → user landed on the Dashboard.
+  // This affected EVERY portal deep link (/portal/offers, /portal/proformas,
+  // …). Now the reset only happens when the current view does NOT already
+  // belong to the target mode:
+  //   → portal: keep any "portal-*" view, otherwise land on portal-dashboard
+  //   → crm:    keep any non-portal view, otherwise land on dashboard
+  // All existing callers keep their behaviour: topbar "Open portal" /
+  // global-search "open-portal" / post-login all arrive with a CRM view
+  // (no "portal-" prefix) → still land on the portal dashboard.
+  setAppMode: (m) =>
+    set((s) => ({
+      appMode: m,
+      view:
+        m === "portal"
+          ? s.view.startsWith("portal-")
+            ? s.view
+            : "portal-dashboard"
+          : s.view.startsWith("portal-")
+            ? "dashboard"
+            : s.view,
+    })),
 
   view: "dashboard",
   // Note: do NOT wipe selectedId here. Drill-down flows like

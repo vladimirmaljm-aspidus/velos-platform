@@ -196,8 +196,8 @@ export interface PortalPdfRouteConfig {
   docType: TradeDocType;
   /** Label used in the download filename (e.g. "Invoice"). */
   label: string;
-  /** markDocumentViewed table name ("offers" | "invoices" | "proformas"). */
-  viewedTable: "offers" | "invoices" | "proformas";
+  /** markDocumentViewed table name ("offers" | "invoices" | "proformas" | "lois"). */
+  viewedTable: "offers" | "invoices" | "proformas" | "lois";
   /** Log label used in console.error prefixes. */
   logTag: string;
 }

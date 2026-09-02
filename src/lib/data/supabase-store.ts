@@ -2879,6 +2879,9 @@ export class SupabaseStore implements Store {
       "offer_sent", "offer_accepted", "offer_rejected", "offer_expired",
       "invoice_sent", "invoice_overdue", "invoice_paid",
       "proforma_sent",
+      // BUILD-LOI-PORTAL — LOI sent to this partner (accepted/rejected go
+      // to the tenant admins, so they stay out of the portal-safe list).
+      "loi_sent",
       "document_shared",
       "portal_access_requested", "portal_access_approved", "portal_invite_sent",
       "portal_message",
@@ -2999,6 +3002,9 @@ export class SupabaseStore implements Store {
       "offer_sent", "offer_accepted", "offer_rejected", "offer_expired",
       "invoice_sent", "invoice_overdue", "invoice_paid",
       "proforma_sent",
+      // BUILD-LOI-PORTAL — LOI sent to this partner (accepted/rejected go
+      // to the tenant admins, so they stay out of the portal-safe list).
+      "loi_sent",
       "document_shared",
       "portal_access_requested", "portal_access_approved", "portal_invite_sent",
       "portal_message",
@@ -3041,6 +3047,9 @@ export class SupabaseStore implements Store {
       "offer_sent", "offer_accepted", "offer_rejected", "offer_expired",
       "invoice_sent", "invoice_overdue", "invoice_paid",
       "proforma_sent",
+      // BUILD-LOI-PORTAL — LOI sent to this partner (accepted/rejected go
+      // to the tenant admins, so they stay out of the portal-safe list).
+      "loi_sent",
       "document_shared",
       "portal_access_requested", "portal_access_approved", "portal_invite_sent",
       "portal_message",

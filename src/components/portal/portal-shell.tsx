@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import {
   LayoutDashboard,
   FileText,
+  FileCheck2,
   FolderOpen,
   Package,
   ShoppingCart,
@@ -99,6 +100,13 @@ const PortalProformas = dynamic(
   () => import("@/components/portal/portal-proformas").then((m) => m.PortalProformas),
   { ssr: false }
 );
+// BUILD-LOI-PORTAL — Letters of Intent addressed to this partner (the
+// partner is the SELLER / recipient; the tenant is the buyer). Same lazy
+// dynamic-import pattern as every other portal view.
+const PortalLois = dynamic(
+  () => import("@/components/portal/portal-lois").then((m) => m.PortalLois),
+  { ssr: false }
+);
 const PortalNotifications = dynamic(
   () => import("@/components/portal/portal-notifications").then((m) => m.PortalNotifications),
   { ssr: false }
@@ -179,6 +187,9 @@ const NAV_ITEMS: NavItem[] = [
   { key: "portal-offers", labelKey: "portal-nav-my-offers", icon: FileText, gate: "can_view_offers" },
   { key: "portal-invoices", labelKey: "portal-nav-my-invoices", icon: FileText, gate: "can_view_invoices" },
   { key: "portal-proformas", labelKey: "portal-nav-my-proformas", icon: FileText, gate: "can_view_invoices" },
+  // BUILD-LOI-PORTAL — gated on can_view_offers (trade documents the
+  // partner can see; portal_access has no dedicated can_view_lois flag).
+  { key: "portal-lois", labelKey: "portal-nav-my-lois", icon: FileCheck2, gate: "can_view_offers" },
   { key: "portal-messages", labelKey: "portal-nav-messages", icon: MessageSquare, badgeKey: "messages_unread" },
   { key: "portal-notifications", labelKey: "portal-nav-notifications", icon: Bell },
   { key: "portal-documents", labelKey: "portal-nav-my-documents", icon: FolderOpen, gate: "can_view_documents" },
@@ -235,6 +246,7 @@ const VIEW_TITLE_KEYS: Record<string, string> = {
   "portal-offers": "portal-nav-my-offers",
   "portal-invoices": "portal-nav-my-invoices",
   "portal-proformas": "portal-nav-my-proformas",
+  "portal-lois": "portal-nav-my-lois",
   "portal-notifications": "portal-nav-notifications",
   "portal-documents": "portal-nav-my-documents",
   "portal-catalog": "portal-nav-product-catalog",
@@ -831,6 +843,7 @@ export function PortalShell({
               {view === "portal-offers" && <PortalOffers />}
               {view === "portal-invoices" && <PortalInvoices />}
               {view === "portal-proformas" && <PortalProformas />}
+              {view === "portal-lois" && <PortalLois />}
               {view === "portal-notifications" && <PortalNotifications />}
               {view === "portal-documents" && <PortalDocuments />}
               {view === "portal-catalog" && <PortalCatalog />}
