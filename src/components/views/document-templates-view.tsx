@@ -35,6 +35,7 @@ import {
   Type, Palette, Table as TableIcon, AlignCenter, AlignJustify,
   Building2, Stamp, ShieldCheck, Upload, ImageIcon, X, Lock,
   Waves, Droplet, RotateCw, MapPin, Pen, Layers, ChevronDown,
+  Loader2, ExternalLink, FileSearch,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
@@ -52,6 +53,7 @@ import {
   DEFAULT_FOOTER_CONTENT_JSON,
   type ContentSegment,
 } from "@/lib/utils/content-config";
+import { parseStyleConfig } from "@/lib/utils/style-config";
 import { fmtDate } from "@/lib/utils/format";
 import {
   DocumentTemplate, TenantLetterhead, TenantSeal, Tenant,
@@ -85,6 +87,7 @@ const TYPE_LABEL_KEYS: Record<TemplateType, string> = {
   invoice: "doc-type-invoice",
   proforma: "doc-type-proforma",
   contract: "doc-type-contract",
+  loi: "doc-type-loi",
   generic: "doc-type-generic",
 };
 
@@ -93,6 +96,7 @@ const TYPE_BADGE: Record<TemplateType, string> = {
   invoice: "bg-chart-3/15 text-chart-3 border-chart-3/30",
   proforma: "bg-chart-2/15 text-chart-2 border-chart-2/30",
   contract: "bg-chart-4/15 text-chart-4 border-chart-4/30",
+  loi: "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30",
   generic: "bg-muted text-muted-foreground border-border",
 };
 
@@ -204,6 +208,7 @@ const SEAL_DOC_TYPES: { value: string; label: string }[] = [
   { value: "invoice", label: "doc-type-invoice-plural" },
   { value: "proforma", label: "doc-type-proforma-plural" },
   { value: "contract", label: "doc-type-contract-plural" },
+  { value: "loi", label: "doc-type-loi-plural" },
 ];
 
 // ============================================================
@@ -461,6 +466,43 @@ function defaultTemplate(name = "Untitled template"): TemplateFormState {
 // a schema migration. parseContentConfig() ignores `_qrConfig` (it only
 // reads `segments`), so the visual editor / PDF rendering are unaffected.
 const QR_DEFAULTS = { position: "footer-right", size: 15, opacity: 1 };
+
+// ── PDF font normalization ────────────────────────────────────────
+// The PDF renderer resolves any body_font_family through mapFont()
+// (src/lib/pdf/shared.ts): a CSS stack like "Inter, system-ui, sans-serif"
+// or "Helvetica" silently becomes NotoSans; "Times New Roman" becomes
+// Times-Roman; "Courier New" becomes Courier. This UI mirror maps the
+// STORED value onto one of the three canonical families so the Select
+// always shows the font the PDF will actually render with.
+const UI_FONT_MAP: Record<string, string> = {
+  // exact react-pdf / mapFont outputs
+  notosans: "NotoSans",
+  "times-roman": "Times-Roman",
+  times: "Times-Roman",
+  courier: "Courier",
+  "courier-new": "Courier",
+  // common CSS stack names → same buckets
+  helvetica: "NotoSans",
+  inter: "NotoSans",
+  "system-ui": "NotoSans",
+  "sans-serif": "NotoSans",
+  arial: "NotoSans",
+  "segoe-ui": "NotoSans",
+  roboto: "NotoSans",
+  "open-sans": "NotoSans",
+  verdana: "NotoSans",
+  tahoma: "NotoSans",
+  "times-new-roman": "Times-Roman",
+  serif: "Times-Roman",
+  georgia: "Times-Roman",
+  garamond: "Times-Roman",
+  monospace: "Courier",
+};
+function normalizePdfFontFamily(stored: string | null | undefined): "NotoSans" | "Times-Roman" | "Courier" {
+  if (!stored) return "NotoSans";
+  const first = String(stored).split(",")[0].trim().replace(/['"]/g, "").toLowerCase().replace(/\s+/g, "-");
+  return (UI_FONT_MAP[first] as "NotoSans" | "Times-Roman" | "Courier") || "NotoSans";
+}
 
 function parseQrConfig(footerContent: string | null | undefined): {
   position: string;
@@ -2413,10 +2455,14 @@ function TemplateMiniPreview({ form }: { form: TemplateFormState }) {
     ? resolvePreviewSegments(form.footer_content || DEFAULT_FOOTER_CONTENT_JSON)
     : [];
 
+  // audit23: custom watermark (style_json.watermark) — same parser the PDF
+  // renderer uses, rendered as a rotated overlay like the real output.
+  const wm = parseStyleConfig(form.style_json).watermark;
+
   return (
     <div className="flex flex-col items-center gap-2">
       <div
-        className="flex flex-col rounded-sm border border-border bg-white shadow-sm"
+        className="relative flex flex-col rounded-sm border border-border bg-white shadow-sm"
         style={{
           width,
           height,
@@ -2425,6 +2471,23 @@ function TemplateMiniPreview({ form }: { form: TemplateFormState }) {
           fontSize: ptToPx(form.body_font_size ?? 11),
         }}
       >
+        {/* audit23: custom watermark overlay (rotated, low opacity) */}
+        {wm.enabled && wm.text.trim() && (
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute left-0 right-0 select-none text-center font-bold"
+            style={{
+              top: "38%",
+              fontSize: Math.max(12, ptToPx(wm.fontSize)),
+              color: wm.color,
+              opacity: wm.opacity,
+              transform: `rotate(${wm.rotation}deg)`,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {wm.text}
+          </span>
+        )}
         {/* Header segments (substituted, styled) */}
         {headerSegs.length > 0 && (
           <div className="mb-2 flex flex-col" style={{ minHeight: (form.header_height ?? 24) * scale }}>
@@ -2539,6 +2602,15 @@ function TemplateEditorDialog({
   const [form, setForm] = useState<TemplateFormState>(defaultTemplate());
   const [saving, setSaving] = useState(false);
 
+  // ── audit23: live PDF preview state ───────────────────────────────────
+  // The preview renders the CURRENT (unsaved) form on the tenant's most
+  // recent real document — same generator as the download routes, via the
+  // templateOverride option. Shown in an iframe dialog so popup blockers
+  // can't eat it.
+  const [previewing, setPreviewing] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewDocNumber, setPreviewDocNumber] = useState<string>("");
+
   // audit21 — session-local “table header customised?” flag.
   // While the user has NOT explicitly edited the Table styling header
   // colour in THIS editing session, changing the primary (brand) colour
@@ -2596,11 +2668,11 @@ function TemplateEditorDialog({
       //     They get serialized into footer_content._qrConfig instead so the
       //     PDF renderer can read them back out without a schema migration.
       const {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+         
         qr_position: _qp,
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+         
         qr_size_mm: _qs,
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+         
         qr_opacity: _qo,
         ...writable
       } = form;
@@ -2636,6 +2708,84 @@ function TemplateEditorDialog({
   const linkedSeal = seals.find((s) => s.id === form.seal_id) || null;
   // audit22: real substitution data for the Segment Studio previews.
   const studioPreviewData = buildStudioPreviewData(tenant, linkedLetterhead);
+
+  // ── audit23: live PDF preview ─────────────────────────────────────────
+  // Maps the template's type onto the document family the preview renders.
+  // contract/generic templates have no documents of their own — an offer is
+  // the closest stand-in (the generic look applies to future doc types).
+  const previewDocType: "offer" | "invoice" | "proforma" | "loi" =
+    form.type === "invoice" ? "invoice"
+    : form.type === "proforma" ? "proforma"
+    : form.type === "loi" ? "loi"
+    : "offer";
+
+  function closePreview() {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(null);
+    setPreviewDocNumber("");
+  }
+
+  // Revoke the blob when the EDITOR closes (unmount) so we never leak it.
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+     
+  }, [previewUrl]);
+
+  async function handlePreview() {
+    if (previewing) return;
+    setPreviewing(true);
+    try {
+      // Same payload semantics as handleSave — QR placement merged into
+      // footer_content._qrConfig, unwritable keys stripped — so what is
+      // previewed is EXACTLY what would be saved.
+      const {
+         
+        qr_position: _qp,
+         
+        qr_size_mm: _qs,
+         
+        qr_opacity: _qo,
+        ...writable
+      } = form;
+      const payload: TemplateFormState = {
+        ...writable,
+        footer_content: writeQrConfig(form.footer_content, {
+          position: form.qr_position ?? "footer-right",
+          size: form.qr_size_mm ?? 15,
+          opacity: form.qr_opacity ?? 1,
+        }),
+      };
+
+      const r = await fetch(api(`/api/document-templates/preview${tenantQuery}`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ docType: previewDocType, template: payload }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        if ((err as { error?: string }).error === "NO_DOCUMENT") {
+          toast.error(t("doc-preview-no-doc"));
+        } else {
+          toast.error((err as { error?: string }).error || t("doc-preview-failed"));
+        }
+        return;
+      }
+      const blob = await r.blob();
+      if (!blob || blob.type !== "application/pdf" || blob.size < 500) {
+        toast.error(t("doc-preview-failed"));
+        return;
+      }
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setPreviewDocNumber(r.headers.get("X-Preview-Doc-Number") || "");
+      setPreviewUrl(URL.createObjectURL(blob));
+    } catch {
+      toast.error(t("doc-preview-failed"));
+    } finally {
+      setPreviewing(false);
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -2686,6 +2836,7 @@ function TemplateEditorDialog({
                               <SelectItem value="invoice">{t("doc-type-invoice")}</SelectItem>
                               <SelectItem value="proforma">{t("doc-type-proforma")}</SelectItem>
                               <SelectItem value="contract">{t("doc-type-contract")}</SelectItem>
+                              <SelectItem value="loi">{t("doc-type-loi")}</SelectItem>
                               <SelectItem value="generic">{t("doc-type-generic")}</SelectItem>
                             </SelectContent>
                           </Select>
@@ -2936,7 +3087,26 @@ function TemplateEditorDialog({
                     <AccordionTrigger><SectionLabel icon={Type} label={t("doc-section-body-styling")} /></AccordionTrigger>
                     <AccordionContent>
                       <div className="space-y-3">
-                        <Field label={t("doc-font-family")}><Input value={form.body_font_family} onChange={(e) => set("body_font_family", e.target.value)} placeholder="Inter, system-ui, sans-serif" className="font-mono text-xs" /></Field>
+                        {/* Font family — the three PDF-embedded families the
+                            renderer actually resolves (mapFont: NotoSans /
+                            Times-Roman / Courier). A raw text input here used
+                            to accept any CSS stack, silently falling back to
+                            NotoSans in the PDF — the Select guarantees the
+                            chosen family is the one that renders. */}
+                        <Field label={t("doc-font-family")}>
+                          <Select
+                            value={normalizePdfFontFamily(form.body_font_family)}
+                            onValueChange={(v) => set("body_font_family", v)}
+                          >
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="NotoSans">{t("doc-font-sans")}</SelectItem>
+                              <SelectItem value="Times-Roman">{t("doc-font-serif")}</SelectItem>
+                              <SelectItem value="Courier">{t("doc-font-mono")}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <p className="text-xs text-muted-foreground mt-1">{t("doc-font-family-hint")}</p>
+                        </Field>
                         <div className="grid grid-cols-2 gap-3">
                           <Field label={t("doc-font-size-px")}><NumberInput value={form.body_font_size} onChange={(v) => set("body_font_size", v)} min={7} max={24} /></Field>
                           <Field label={t("doc-line-height")}><NumberInput value={form.body_line_height} onChange={(v) => set("body_line_height", v)} min={1} max={2.5} step={0.1} /></Field>
@@ -3072,10 +3242,70 @@ function TemplateEditorDialog({
         </Tabs>
 
         <DialogFooter className="px-5 py-4 border-t border-border/60 bg-card">
+          <Button
+            variant="outline"
+            onClick={handlePreview}
+            disabled={previewing || saving}
+            title={t("doc-preview-pdf")}
+          >
+            {previewing ? <Loader2 className="size-4 mr-1 animate-spin" /> : <FileSearch className="size-4 mr-1" />}
+            {previewing ? t("doc-preview-generating") : t("doc-preview-pdf")}
+          </Button>
+          <div className="flex-1" />
           <Button variant="outline" onClick={() => onOpenChange(false)}>{t("cancel")}</Button>
           <Button onClick={handleSave} disabled={saving}>
             <Save className="size-4 mr-1" /> {t("doc-save-template")}
           </Button>
+        </DialogFooter>
+
+        {/* audit23: live PDF preview — rendered on the tenant's most recent
+            document with the current (unsaved) form. */}
+        <TemplatePreviewDialog url={previewUrl} docNumber={previewDocNumber} onClose={closePreview} />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ============================================================
+// audit23 — PDF preview dialog (iframe over a blob URL)
+// ============================================================
+
+function TemplatePreviewDialog({
+  url, docNumber, onClose,
+}: {
+  url: string | null;
+  docNumber: string;
+  onClose: () => void;
+}) {
+  const t = useT();
+  return (
+    <Dialog open={!!url} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent size="full" className="p-0 gap-0">
+        <DialogHeader className="px-5 py-4 border-b border-border/60">
+          <DialogTitle className="flex items-center gap-2">
+            <FileSearch className="size-5 text-primary" />
+            {t("doc-preview-pdf")}
+            {docNumber && (
+              <Badge variant="outline" className="text-xs font-normal">{docNumber}</Badge>
+            )}
+          </DialogTitle>
+          <DialogDescription>{t("doc-preview-live-desc")}</DialogDescription>
+        </DialogHeader>
+        <div className="bg-muted/30">
+          <iframe
+            src={url ?? "about:blank"}
+            title={t("doc-preview-pdf")}
+            className="h-[75vh] w-full"
+          />
+        </div>
+        <DialogFooter className="px-5 py-4 border-t border-border/60 bg-card">
+          <Button variant="outline" asChild>
+            <a href={url ?? "#"} target="_blank" rel="noopener noreferrer">
+              <ExternalLink className="size-4 mr-1" /> {t("doc-open-new-tab")}
+            </a>
+          </Button>
+          <div className="flex-1" />
+          <Button onClick={onClose}>{t("doc-close")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

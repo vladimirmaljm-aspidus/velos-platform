@@ -14,6 +14,26 @@ const nextConfig: NextConfig = {
   // avoids "Cannot find module" / "fetch failed" errors on Vercel.
   // z-ai-web-dev-sdk reads .z-ai-config from disk at runtime — keep external.
   serverExternalPackages: ["unpdf", "z-ai-web-dev-sdk"],
+  // LOW_MEM_BUILD=1 (local sandbox builds): webpack memory optimizations —
+  // the 4GB sandbox OOM-kills a default Turbopack/webpack build; this flag
+  // trades build speed for ~40% lower peak RSS. Production CI (Vercel/Render)
+  // never sets it, so their builds stay at full speed.
+  ...(process.env.LOW_MEM_BUILD
+    ? {
+        // tsc --noEmit is verified separately in LOW_MEM runs — the in-build
+        // TypeScript program doubles peak memory (two full type graphs).
+        typescript: { ignoreBuildErrors: true },
+        experimental: { webpackMemoryOptimizations: true },
+        // The persistent webpack cache (filesystem) serializes megabytes of
+        // strings after each compile — the single biggest memory spike for a
+        // 4GB sandbox. LOW_MEM_BUILD disables it entirely: slower cold
+        // rebuilds, but the build process stays under the OOM ceiling.
+        webpack: (config: any) => {
+          config.cache = false;
+          return config;
+        },
+      }
+    : {}),
   async headers() {
     return [
       {

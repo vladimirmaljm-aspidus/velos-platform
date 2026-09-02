@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, audit, resolveTenantId } from "@/lib/api/helpers";
 import { STARTER_TEMPLATES } from "@/lib/data/starter-templates";
+import {
+  TEMPLATE_TYPES,
+  sanitizeTemplatePayload,
+} from "@/lib/api/template-payload";
 
 export const runtime = "nodejs";
 
@@ -9,37 +13,8 @@ export const runtime = "nodejs";
 // upsertDocumentTemplate. Unknown keys either 500'd (the supabase
 // smartUpsert strips ONE unknown column, then the NEXT unknown column
 // throws) or mass-assigned DB-managed columns (created_at / updated_at).
-// Only real document_templates columns are accepted now; anything else is
-// dropped with a console.warn naming it.
-const TEMPLATE_COLUMNS = new Set([
-  "name", "type", "is_default",
-  "page_size", "page_margin_top", "page_margin_bottom", "page_margin_left", "page_margin_right",
-  "header_enabled", "header_height", "header_content", "header_show_logo", "header_show_company_name", "header_show_contact",
-  "footer_enabled", "footer_height", "footer_content", "footer_show_page_number", "footer_show_bank_details", "footer_show_tax_id",
-  "body_font_family", "body_font_size", "body_line_height",
-  "primary_color", "accent_color",
-  "table_header_bg", "table_header_color", "table_border_color", "table_stripe",
-  "letterhead_id", "seal_id", "seal_enabled", "selected_bank_accounts",
-  // audit22 Template Studio — extended styling + visual layout blobs.
-  "style_json", "layout_json",
-]);
-const TEMPLATE_TYPES = new Set(["offer", "invoice", "proforma", "contract", "generic"]);
-const TEMPLATE_PAGE_SIZES = new Set(["A4", "Letter"]);
-// (column → [min, max]) — clamped instead of 400'd so a fat-fingered value
-// still saves (the print layout stays usable); non-numeric junk is DROPPED
-// so the store defaults apply instead of poisoning the column with null/NaN.
-const TEMPLATE_CLAMPS: Record<string, [number, number]> = {
-  page_margin_top: [5, 60], page_margin_bottom: [5, 60],
-  page_margin_left: [5, 60], page_margin_right: [5, 60],
-  header_height: [0, 120], footer_height: [0, 80],
-  body_font_size: [6, 16], body_line_height: [1, 2.5],
-};
-// Columns that are Int in the schema (vs Float) — rounded after clamping so
-// a JSON float like 11.5 can't 500 the insert on the int columns.
-const TEMPLATE_INT_COLUMNS = new Set([
-  "page_margin_top", "page_margin_bottom", "page_margin_left", "page_margin_right",
-  "header_height", "footer_height", "body_font_size",
-]);
+// audit23: the whitelist/clamp logic moved to src/lib/api/template-payload.ts
+// so the SAVED payload and the PREVIEWED payload can never drift.
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req);
@@ -115,23 +90,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
-  // ── audit20 / 20-b — field sanitization ────────────────────────────────
-  // Keep ONLY known document_templates columns; unknown keys are dropped
-  // (and logged) instead of reaching the store where they 500 (supabase
-  // smartUpsert strips one unknown column, then throws on the next) or
-  // mass-assign DB-managed columns.
-  // id / tenant_id / created_by are route-controlled meta keys — pulled out
-  // here and re-applied from trusted context below, never from the body.
+  // ── audit20 / 20-b — field sanitization (audit23: shared module) ────────
+  // Whitelist + clamps live in src/lib/api/template-payload.ts so the SAVED
+  // payload and the PREVIEWED payload (preview/route.ts) can never drift.
+  // id / tenant_id / created_by are route-controlled meta keys — never from
+  // the body.
   const bodyId = typeof body.id === "string" && body.id.trim() ? body.id.trim() : undefined;
-  const sanitized: Record<string, unknown> = {};
-  const dropped: string[] = [];
-  for (const [k, v] of Object.entries(body)) {
-    if (k === "id" || k === "tenant_id" || k === "created_by") continue;
-    if (TEMPLATE_COLUMNS.has(k)) sanitized[k] = v;
-    else dropped.push(k);
-  }
-  if (dropped.length) {
-    console.warn(`[POST /api/document-templates] dropped unknown fields: ${dropped.join(", ")}`);
+  let sanitized: Record<string, unknown>;
+  try {
+    sanitized = sanitizeTemplatePayload(body).sanitized;
+  } catch (sanitizeErr) {
+    return NextResponse.json(
+      { error: sanitizeErr instanceof Error ? sanitizeErr.message : "Invalid template payload." },
+      { status: 400 },
+    );
   }
 
   // ── Validation (hard 400s) ──────────────────────────────────────────────
@@ -148,61 +120,9 @@ export async function POST(req: NextRequest) {
     sanitized.type = "generic";
   } else if (typeof sanitized.type !== "string" || !TEMPLATE_TYPES.has(sanitized.type)) {
     return NextResponse.json(
-      { error: "Invalid template type. Allowed: offer, invoice, proforma, contract, generic." },
+      { error: "Invalid template type. Allowed: offer, invoice, proforma, contract, loi, generic." },
       { status: 400 },
     );
-  }
-  if (
-    sanitized.page_size !== undefined &&
-    (typeof sanitized.page_size !== "string" || !TEMPLATE_PAGE_SIZES.has(sanitized.page_size))
-  ) {
-    return NextResponse.json({ error: 'Invalid page size. Allowed: "A4", "Letter".' }, { status: 400 });
-  }
-
-  // ── Numeric clamping ───────────────────────────────────────────────────
-  for (const [col, [min, max]] of Object.entries(TEMPLATE_CLAMPS)) {
-    if (sanitized[col] === undefined || sanitized[col] === null) {
-      // Absent/null numeric → drop so the store default applies (a null would
-      // violate the NOT NULL columns and 500 the write).
-      delete sanitized[col];
-      continue;
-    }
-    const n = Number(sanitized[col]);
-    if (!Number.isFinite(n)) {
-      console.warn(`[POST /api/document-templates] dropped non-numeric ${col}`);
-      delete sanitized[col];
-      continue;
-    }
-    const clamped = Math.min(max, Math.max(min, n));
-    sanitized[col] = TEMPLATE_INT_COLUMNS.has(col) ? Math.round(clamped) : clamped;
-  }
-
-  // ── selected_bank_accounts (migration 081 column) ───────────────────────
-  // null = show all tenant bank accounts; otherwise an array of integer
-  // indexes into tenant.bank_accounts. Junk values are dropped, not stored.
-  if (sanitized.selected_bank_accounts !== undefined) {
-    const v = sanitized.selected_bank_accounts;
-    const ok = v === null || (Array.isArray(v) && v.every((x) => Number.isInteger(x) && x >= 0));
-    if (!ok) {
-      console.warn("[POST /api/document-templates] dropped invalid selected_bank_accounts");
-      delete sanitized.selected_bank_accounts;
-    }
-  }
-
-  // ── style_json / layout_json (migration 082, audit22) ──────────────────
-  // Both must be null or a plain JSON object; the deeper shape is
-  // normalized at READ time by parseStyleConfig()/the renderer, so here we
-  // only guard size (≤ 32 KB) and type — junk objects degrade to defaults
-  // instead of poisoning the column.
-  for (const col of ["style_json", "layout_json"] as const) {
-    if (sanitized[col] === undefined) continue;
-    const v = sanitized[col];
-    const ok = v === null || (typeof v === "object" && !Array.isArray(v));
-    const size = ok ? JSON.stringify(v ?? "").length : 0;
-    if (!ok || size > 32768) {
-      console.warn(`[POST /api/document-templates] dropped invalid ${col}${ok ? " (too large)" : ""}`);
-      delete sanitized[col];
-    }
   }
 
   // Trusted keys AFTER the payload — client-supplied values can never

@@ -9,12 +9,13 @@ import type { DocumentTemplate } from "@/lib/supabase/types";
  *  • Offer    — teal   (#0d9488) — trade / commerce
  *  • Invoice  — blue   (#1e40af) — financial / official
  *  • Proforma — purple (#7c3aed) — provisional / customs
+ *  • LOI      — amber  (#b45309) — intent / pre-contract commitment
  *
  * All templates use Helvetica — a PDF-safe core font that does not require
  * any font embedding and renders identically across PDF readers.
  */
 
-export type StarterTemplateType = "offer" | "invoice" | "proforma" | "generic";
+export type StarterTemplateType = "offer" | "invoice" | "proforma" | "loi" | "generic";
 
 export interface StarterTemplate {
   name: string;
@@ -156,6 +157,54 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
       accent_color: "#64748b",
       // Table styling
       table_header_bg: "#7c3aed",
+      table_header_color: "#ffffff",
+      table_border_color: "#e2e8f0",
+      table_stripe: true,
+      // Linked branding assets
+      letterhead_id: null,
+      seal_id: null,
+      seal_enabled: true,
+      selected_bank_accounts: null,
+    },
+  },
+  {
+    name: "Letter of Intent Template",
+    type: "loi",
+    description: "Professional LOI with buyer/seller blocks, product and payment terms, and signature acceptance",
+    template: {
+      name: "Letter of Intent",
+      type: "loi",
+      is_default: true,
+      // Page layout
+      page_size: "A4",
+      page_margin_top: 20,
+      page_margin_bottom: 20,
+      page_margin_left: 15,
+      page_margin_right: 15,
+      // Header
+      header_enabled: true,
+      header_height: 30,
+      header_content: "",
+      header_show_logo: true,
+      header_show_company_name: true,
+      header_show_contact: true,
+      // Footer — LOI legal disclaimer (non-binding intent notice)
+      footer_enabled: true,
+      footer_height: 20,
+      footer_content:
+        "This Letter of Intent expresses a serious intention to proceed and does not constitute a binding purchase contract unless explicitly agreed in writing by both parties.",
+      footer_show_page_number: true,
+      footer_show_bank_details: false,
+      footer_show_tax_id: true,
+      // Body typography
+      body_font_family: "Helvetica",
+      body_font_size: 9,
+      body_line_height: 1.4,
+      // Branding colors — amber for intent / pre-contract documents
+      primary_color: "#b45309",
+      accent_color: "#64748b",
+      // Table styling
+      table_header_bg: "#b45309",
       table_header_color: "#ffffff",
       table_border_color: "#e2e8f0",
       table_stripe: true,

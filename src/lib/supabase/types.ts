@@ -1166,7 +1166,7 @@ export interface DocumentTemplate {
   id: string;
   tenant_id: string;
   name: string;
-  type: "offer" | "invoice" | "proforma" | "contract" | "generic";
+  type: "offer" | "invoice" | "proforma" | "contract" | "loi" | "generic";
   is_default: boolean;
   // Page layout
   page_size: "A4" | "Letter";

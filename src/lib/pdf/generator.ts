@@ -17,6 +17,11 @@ export interface GeneratePdfOptions {
   docId: string;
   tenantId: string;
   createVerification?: boolean; // if true, creates a verification record with QR + hash
+  /** audit23: render with THIS template instead of the resolved one — used
+   *  by the Template Studio's live "Preview PDF" so the admin sees exactly
+   *  how the (possibly unsaved) form would look on a real document. The
+   *  override never writes verifications (createVerification is forced off). */
+  templateOverride?: DocumentTemplate | null;
 }
 
 export interface GeneratePdfResult {
@@ -251,7 +256,7 @@ export async function generatePdf(opts: GeneratePdfOptions): Promise<GeneratePdf
   // so tenants without template rows render exactly as before.
   let template: DocumentTemplate | null = null;
   try {
-    template = await resolveDocumentTemplate(store, opts.tenantId, opts.docType);
+    template = opts.templateOverride ?? await resolveDocumentTemplate(store, opts.tenantId, opts.docType);
   } catch (tplErr) {
     console.warn("[PDF] DocumentTemplate resolution failed — continuing without template:", tplErr);
   }

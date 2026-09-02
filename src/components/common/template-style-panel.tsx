@@ -34,6 +34,7 @@
 import * as React from "react";
 import {
   Building2,
+  Droplet,
   FileText,
   Info,
   Palette,
@@ -683,7 +684,7 @@ export function TemplateStylePanel({ styleJson, onChange, primaryColor }: Templa
 
       <Tabs defaultValue="title" className="gap-0">
         <div className="border-b p-2">
-          <TabsList className="grid h-auto w-full grid-cols-3 sm:grid-cols-6">
+          <TabsList className="grid h-auto w-full grid-cols-4 sm:grid-cols-7">
             <TabsTrigger value="title" className="h-8 gap-1.5 px-1.5 text-xs">
               <Type className="size-3.5 shrink-0" aria-hidden="true" />
               <span className="min-w-0 truncate">{t("tstyle-tab-title")}</span>
@@ -707,6 +708,10 @@ export function TemplateStylePanel({ styleJson, onChange, primaryColor }: Templa
             <TabsTrigger value="body" className="h-8 gap-1.5 px-1.5 text-xs">
               <FileText className="size-3.5 shrink-0" aria-hidden="true" />
               <span className="min-w-0 truncate">{t("tstyle-tab-body")}</span>
+            </TabsTrigger>
+            <TabsTrigger value="watermark" className="h-8 gap-1.5 px-1.5 text-xs">
+              <Droplet className="size-3.5 shrink-0" aria-hidden="true" />
+              <span className="min-w-0 truncate">{t("tstyle-tab-watermark")}</span>
             </TabsTrigger>
           </TabsList>
         </div>
@@ -1093,6 +1098,98 @@ export function TemplateStylePanel({ styleJson, onChange, primaryColor }: Templa
                 unit={t("tstyle-mm")}
                 onChange={(v) => set(["body", "sectionSpacing"], v)}
               />
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* ── Watermark tab (audit23) ── */}
+        <TabsContent value="watermark" className="mt-0">
+          <div className="max-h-[520px] overflow-y-auto custom-scroll">
+            <div className="space-y-4 p-4">
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                {t("tstyle-wm-hint")}
+              </p>
+              <ToggleField
+                label={t("tstyle-wm-enabled")}
+                checked={cfg.watermark.enabled}
+                onChange={(v) => set(["watermark", "enabled"], v)}
+              />
+              {cfg.watermark.enabled && (
+                <>
+                  {/* Live mini preview — rotated text on a paper strip */}
+                  <div className="space-y-2 rounded-lg border bg-muted/30 p-3">
+                    <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                      {t("tstyle-preview")}
+                    </span>
+                    <div className="relative flex h-28 items-center justify-center overflow-hidden rounded-md bg-white p-3 shadow-sm ring-1 ring-black/5">
+                      <div
+                        aria-hidden="true"
+                        className="absolute inset-x-4 top-4 h-px bg-black/10"
+                      />
+                      <div
+                        aria-hidden="true"
+                        className="absolute inset-x-4 bottom-4 h-px bg-black/10"
+                      />
+                      <span
+                        style={{
+                          fontFamily: "'Noto Sans', sans-serif",
+                          fontWeight: 700,
+                          fontSize: `${Math.max(14, Math.min(36, cfg.watermark.fontSize * 0.4))}pt`,
+                          color: cfg.watermark.color,
+                          opacity: cfg.watermark.opacity,
+                          transform: `rotate(${cfg.watermark.rotation}deg)`,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {cfg.watermark.text || t("tstyle-wm-text-ph")}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium text-muted-foreground">
+                      {t("tstyle-wm-text")}
+                    </Label>
+                    <Input
+                      value={cfg.watermark.text}
+                      maxLength={32}
+                      placeholder={t("tstyle-wm-text-ph")}
+                      className="font-mono text-xs uppercase"
+                      onChange={(e) => set(["watermark", "text"], e.target.value.toUpperCase())}
+                    />
+                  </div>
+                  {renderColor(t("tstyle-color"), cfg.watermark.color, ["watermark", "color"])}
+                  <SliderField
+                    label={t("tstyle-wm-opacity")}
+                    value={cfg.watermark.opacity}
+                    min={0.02}
+                    max={0.3}
+                    step={0.01}
+                    decimals={2}
+                    unit=""
+                    onChange={(v) => set(["watermark", "opacity"], v)}
+                  />
+                  <SliderField
+                    label={t("tstyle-wm-rotation")}
+                    value={cfg.watermark.rotation}
+                    min={-90}
+                    max={90}
+                    step={1}
+                    decimals={0}
+                    unit="°"
+                    onChange={(v) => set(["watermark", "rotation"], v)}
+                  />
+                  <SliderField
+                    label={t("tstyle-wm-size")}
+                    value={cfg.watermark.fontSize}
+                    min={20}
+                    max={96}
+                    step={1}
+                    decimals={0}
+                    unit={t("tstyle-pt")}
+                    onChange={(v) => set(["watermark", "fontSize"], v)}
+                  />
+                </>
+              )}
             </div>
           </div>
         </TabsContent>

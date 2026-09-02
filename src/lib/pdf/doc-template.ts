@@ -36,17 +36,18 @@ export interface TemplateResolverStore {
 /**
  * docType (PDF pipeline) → candidate DocumentTemplate.type values, in order.
  *  • offer/invoice/proforma map to their own type, then the generic fallback.
- *  • loi has no dedicated template type — "generic" is the natural home
- *    (a letter of intent isn't a commercial offer), with "offer" as a
- *    second-chance fallback for tenants that only configured an offer look.
+ *  • loi has a DEDICATED type (user-facing: "LOI template" in the Template
+ *    Studio, editable like any other). Tenants without a "loi" row fall
+ *    back to "generic", then "offer" (a letter of intent reads closest to
+ *    a commercial offer, so an offer-only tenant still gets a sane look).
  *  • contract/generic template types exist in the model but no contract PDF
- *    is generated today; "generic" rows serve LOI + future doc types.
+ *    is generated today; "generic" rows serve future doc types.
  */
 const TEMPLATE_TYPE_CANDIDATES: Record<string, string[]> = {
   offer: ["offer", "generic"],
   invoice: ["invoice", "generic"],
   proforma: ["proforma", "generic"],
-  loi: ["generic", "offer"],
+  loi: ["loi", "generic", "offer"],
 };
 
 /**

@@ -114,6 +114,21 @@ export interface NoticeStyle {
   fontSize: number;
 }
 
+export interface WatermarkStyle {
+  /** Master switch — off means the automatic status watermark keeps
+   *  working (DRAFT / PAID / …) and nothing custom renders. */
+  enabled: boolean;
+  /** Watermark text (e.g. "CONFIDENTIAL", "COPY"). Clamped to 32 chars. */
+  text: string;
+  color: string;
+  /** 0.02..0.30 — subtle enough to keep the document readable. */
+  opacity: number;
+  /** Degrees, -90..90 (classic watermark: -45). */
+  rotation: number;
+  /** Point size 20..96. */
+  fontSize: number;
+}
+
 export interface TemplateStyleConfig {
   body: BodyStyle;
   title: TitleStyle;
@@ -121,6 +136,7 @@ export interface TemplateStyleConfig {
   party: PartyBoxStyle;
   totals: TotalsStyle;
   notice: NoticeStyle;
+  watermark: WatermarkStyle;
 }
 
 // ─── Defaults ────────────────────────────────────────────────────────────────
@@ -194,6 +210,14 @@ export const DEFAULT_STYLE_CONFIG: TemplateStyleConfig = {
     textColor: "#92400e",
     fontSize: 7.5,
   },
+  watermark: {
+    enabled: false,
+    text: "CONFIDENTIAL",
+    color: "#94a3b8",
+    opacity: 0.1,
+    rotation: -45,
+    fontSize: 56,
+  },
 };
 
 // ─── Parser / normalizer ─────────────────────────────────────────────────────
@@ -230,6 +254,7 @@ export function parseStyleConfig(json: unknown): TemplateStyleConfig {
   const party = raw.party || {};
   const totals = raw.totals || {};
   const notice = raw.notice || {};
+  const watermark = raw.watermark || {};
 
   return {
     body: {
@@ -288,6 +313,16 @@ export function parseStyleConfig(json: unknown): TemplateStyleConfig {
       borderColor: hex(notice.borderColor, DEFAULT_STYLE_CONFIG.notice.borderColor),
       textColor: hex(notice.textColor, DEFAULT_STYLE_CONFIG.notice.textColor),
       fontSize: num(notice.fontSize, 5, 12, DEFAULT_STYLE_CONFIG.notice.fontSize),
+    },
+    watermark: {
+      enabled: bool(watermark.enabled, DEFAULT_STYLE_CONFIG.watermark.enabled),
+      text: typeof watermark.text === "string"
+        ? watermark.text.slice(0, 32).trim().toUpperCase() || DEFAULT_STYLE_CONFIG.watermark.text
+        : DEFAULT_STYLE_CONFIG.watermark.text,
+      color: hex(watermark.color, DEFAULT_STYLE_CONFIG.watermark.color),
+      opacity: num(watermark.opacity, 0.02, 0.3, DEFAULT_STYLE_CONFIG.watermark.opacity),
+      rotation: num(watermark.rotation, -90, 90, DEFAULT_STYLE_CONFIG.watermark.rotation),
+      fontSize: num(watermark.fontSize, 20, 96, DEFAULT_STYLE_CONFIG.watermark.fontSize),
     },
   };
 }

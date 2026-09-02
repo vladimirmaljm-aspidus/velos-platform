@@ -185,6 +185,7 @@ const DOC_TYPE_LABELS: Record<NonNullable<DocumentTemplate["type"]>, string> = {
   invoice: "INVOICE",
   proforma: "PROFORMA INVOICE",
   contract: "CONTRACT",
+  loi: "LETTER OF INTENT",
   generic: "DOCUMENT",
 };
 

@@ -273,6 +273,21 @@ export function buildPdfDocument({
   const flexTotal = colFlex("total", 1.1);
   const numericAlign = st.table.numericAlign;
 
+  // ── audit23: custom watermark (style_json.watermark) ────────────────
+  // When enabled, the tenant's own watermark text (e.g. CONFIDENTIAL)
+  // replaces the automatic status watermark on every page — a sent offer
+  // can carry "CONFIDENTIAL" while a DRAFT keeps the automatic DRAFT stamp
+  // only when no custom watermark is set.
+  const wm = st.watermark;
+  const customWatermarkText = wm.enabled && wm.text.trim() ? wm.text.trim() : "";
+  const statusWatermarkText = tradeWatermarkText(
+    (doc as any).status,
+    (doc as any).document_data?.priceUnconfirmed === true,
+  );
+  // Rotation origin: centre of the content-width strip the text sits in.
+  const pageWidthPts = pageSize === "A4" ? 595.28 : 612;
+  const watermarkOriginX = (pageWidthPts - marginLeft - marginRight) / 2;
+
   // ── Derived layout — content area must clear the absolutely ─────────
   //    positioned header/footer.
   const headerGap = 6;  // breathing room between header bottom and body
@@ -938,7 +953,7 @@ export function buildPdfDocument({
     // Only set what the segment actually carries so the base vertical
     // rhythm (footerSegment/headerSegment marginBottom) stays intact for
     // legacy 6-prop segments.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const wrapStyle: any = {};
     if (s.spacingBefore > 0) wrapStyle.marginTop = mmToPoints(s.spacingBefore);
     if (s.spacingAfter > 0) wrapStyle.marginBottom = mmToPoints(s.spacingAfter);
@@ -1058,13 +1073,38 @@ export function buildPdfDocument({
             (or PRICE NOT CONFIRMED for marketplace target-price-derived docs)
             across every page so the document's legal standing is unmissable.
             audit12: the shared <Watermark /> component keeps this pixel-identical
-            to the packing-list and marketplace templates. */}
-        <Watermark
-          text={tradeWatermarkText(
-            (doc as any).status,
-            (doc as any).document_data?.priceUnconfirmed === true,
-          )}
-        />
+            to the packing-list and marketplace templates.
+            audit23: a custom template watermark (style_json.watermark, e.g.
+            "CONFIDENTIAL") REPLACES the status watermark — sent/issued docs
+            can carry the tenant's own notice instead of nothing. */}
+        {customWatermarkText ? (
+          <View
+            fixed
+            style={{
+              position: "absolute",
+              top: "38%",
+              left: 0,
+              right: 0,
+              zIndex: 0,
+              justifyContent: "center",
+            }}
+          >
+            <Text
+              style={{
+                fontSize: wm.fontSize,
+                fontFamily: "NotoSans-Bold",
+                color: wm.color,
+                opacity: wm.opacity,
+                textAlign: "center",
+                transform: `rotate(${wm.rotation}deg, ${watermarkOriginX}, ${wm.fontSize / 3})`,
+              }}
+            >
+              {customWatermarkText}
+            </Text>
+          </View>
+        ) : (
+          <Watermark text={statusWatermarkText} />
+        )}
 
         {/* ── audit22: custom overlays from layout_json ─────────────────
             Word-style absolutely-positioned text boxes / images the user
