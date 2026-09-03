@@ -6,6 +6,11 @@ import { ALLOWED_MIME_TYPES, MAX_UPLOAD_SIZE, MAX_UPLOAD_SIZE_LABEL } from "@/li
 import type { DocumentRegisterEntry } from "@/lib/supabase/types";
 import { getSupabase } from "@/lib/supabase/client";
 import { nextDocRegisterNumber, bumpDocRegisterNumber } from "@/lib/api/doc-number";
+// 31-f — shared request-body validation helpers (audit 30-a findings
+// 30a-07/30a-08: JSON-path POST {} → document_register NOT NULL violation
+// → 500, and {version: "one"} → PostgREST 22P02 integer cast → 500; now
+// clean 400s before the DB write).
+import { requireFields, assertNumeric } from "@/lib/api/validate";
 
 export const runtime = "nodejs";
 
@@ -267,6 +272,22 @@ export async function POST(req: NextRequest) {
       body = await req.json();
     } catch {
       return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+    }
+    // 31-f — required-field + numeric validation BEFORE the upsert (audit
+    // 30a-08: POST {} → 500 "Missing required field."; 30a-07:
+    // {version: "one"} → 500). Mirrors the multipart branch's contract
+    // ("Title is required." / "Type is required." above) for the JSON
+    // path. `number` is auto-generated below, `version` / `status` have DB
+    // defaults. Skipped on the update path (body.id).
+    if (!body.id) {
+      const bad = requireFields(body, ["title", "type"]);
+      if (bad) return bad;
+    }
+    // version is an integer column — a junk string is a PostgREST 22P02,
+    // so coerce-or-400 up front.
+    {
+      const bad = assertNumeric(body, ["version"]);
+      if (bad) return bad;
     }
     body.tenant_id = tid;
     if (!body.created_by) body.created_by = auth.user.id;

@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, resolveTenantId, audit, sanitizeError } from "@/lib/api/helpers";
+// 31-f — shared numeric-field validation (audit 30-a finding 30a-07:
+// POST /api/deal-commissions {commission_rate: "ten"} → 500 "Invalid
+// input format." — PostgREST 22P02 on the numeric cast; now a clean 400).
+import { assertNumeric } from "@/lib/api/validate";
 
 export const runtime = "nodejs";
 
@@ -69,7 +73,20 @@ export async function POST(req: NextRequest) {
     const tenantId = resolveTenantId(auth, req);
     if (!tenantId) return NextResponse.json({ error: "Tenant ID is required." }, { status: 400 });
 
-    const body = await req.json();
+    // 31-f — guard the JSON parse (malformed body previously hit the
+    // generic catch → 500; mirrors the pattern used by every other
+    // high-traffic route).
+    let body;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+    }
+    // 31-f — numeric-field validation BEFORE the DB write (audit 30a-07:
+    // {commission_rate: "ten"} reached PostgREST and came back as 500
+    // "Invalid input format."). The canonical-set check below runs AFTER
+    // the short-name normalize block so `{rate: "ten"}` aliases are caught
+    // too.
     body.tenant_id = tenantId;
 
     // Normalize field names (same as commission-agents route)
@@ -87,6 +104,19 @@ export async function POST(req: NextRequest) {
     }
     if (!body.commission_currency) body.commission_currency = "USD";
     if (!body.commission_type) body.commission_type = "profit_percent";
+
+    // 31-f — numeric validation AFTER the short-name → commission_*
+    // normalize block above, so a `{rate: "ten"}` alias is caught too
+    // (audit 30a-07: commission_rate / commission_per_unit are numeric
+    // columns; deal_value / deal_profit / deal_quantity feed
+    // calculateCommission below and are equally numeric).
+    {
+      const bad = assertNumeric(body, [
+        "commission_rate", "commission_per_unit",
+        "deal_value", "deal_profit", "deal_quantity",
+      ]);
+      if (bad) return bad;
+    }
 
     // Validate required fields
     if (!body.deal_id) return NextResponse.json({ error: "deal_id is required." }, { status: 400 });

@@ -68,7 +68,18 @@ export async function recordRevision(opts: {
     snapshot_before: opts.before,
     changed_by_username: opts.username,
     created_by: opts.userId,
-    change_note: opts.changeNote ?? null,
+    // BUG 31-e / E4 — `document_revisions.change_note` is NOT NULL in the
+    // live DB (the hand-written supabase/types.ts models it as a required
+    // `string`, matching the schema), but this insert used to send
+    // `opts.changeNote ?? null`. Every ordinary PUT (no `_changeNote` in
+    // the body — the common case) therefore died with 23502, the failure
+    // was swallowed by the .catch in withRevisionTracking / the route's
+    // warn-only catch, and revisions were SILENTLY never recorded (the
+    // offers/invoices/proformas history panels stayed empty). An empty
+    // string is the intended "no note supplied" representation for a
+    // NOT NULL text column — PUT with `_changeNote` already worked and is
+    // unaffected.
+    change_note: opts.changeNote ?? "",
   });
 
   // Bump the parent document's version pointer.
@@ -94,8 +105,21 @@ export async function withRevisionTracking<T extends Record<string, unknown>>(op
     await recordRevision({
       docType: opts.docType, documentId: opts.documentId, tenantId: opts.tenantId,
       before: before as Record<string, unknown>, after: after as Record<string, unknown>,
-      userId: opts.userId, username: opts.username, changeNote: opts.changeNote ?? null,
-    }).catch((e) => console.warn("[recordRevision]", e));
+      userId: opts.userId, username: opts.username, changeNote: opts.changeNote ?? "",
+    }).catch((e) => {
+      // Revision recording must NEVER block or fail the update itself —
+      // keep the swallow. But log the ACTUAL error (message + Postgres
+      // error code where present) instead of just the raw object, so the
+      // next silent-revision-loss regression (like E4's 23502) is visible
+      // in server logs instead of an opaque "[recordRevision] {}".
+      const msg = e instanceof Error ? e.message : (typeof e === "object" && e !== null && "message" in e)
+        ? String((e as { message: unknown }).message)
+        : String(e);
+      const code = typeof e === "object" && e !== null && "code" in e
+        ? ` (code ${String((e as { code: unknown }).code)})`
+        : "";
+      console.warn(`[recordRevision] revision NOT recorded (update succeeded): ${msg}${code}`);
+    });
   }
   return after;
 }

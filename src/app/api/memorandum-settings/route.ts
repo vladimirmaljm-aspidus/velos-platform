@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, audit, resolveTenantId } from "@/lib/api/helpers";
 import { getSupabase } from "@/lib/supabase/client";
+// 31-f — shared numeric-field validation (audit 30-a finding 30a-09: a
+// raw Postgres type-cast error leaked to the client as a 500; now a 400).
+import { assertNumeric } from "@/lib/api/validate";
 
 export const runtime = "nodejs";
 
@@ -91,6 +94,27 @@ export async function PUT(req: NextRequest) {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+  }
+
+  // 31-f — numeric-field validation BEFORE the write (audit 30-a finding
+  // 30a-09: PUT {body_font_size: "huge"} previously flowed raw into the
+  // insert/update and Postgres rejected it with a RAW error — 500
+  // 'invalid input syntax for type integer: "huge"' — leaking the DB
+  // dialect + column typing to the client. All the *_mm / *_pct / font-size
+  // / QR geometry columns below are integer (body_line_height is real);
+  // coerce numeric strings, 400 on junk so the raw PG text can never leak.
+  {
+    const bad = assertNumeric(body, [
+      "header_height_mm", "header_left_font_size",
+      "logo_max_width_mm", "logo_max_height_mm",
+      "logo_position_x_mm", "logo_position_y_mm",
+      "footer_height_mm", "qr_size_mm",
+      "qr_position_x_mm", "qr_position_y_mm",
+      "footer_center_font_size", "footer_right_font_size",
+      "footer_left_width_pct", "footer_center_width_pct", "footer_right_width_pct",
+      "body_font_size", "body_line_height",
+    ]);
+    if (bad) return bad;
   }
 
   // Strip fields that shouldn't be updated directly

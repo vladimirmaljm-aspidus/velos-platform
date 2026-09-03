@@ -3,6 +3,10 @@ import { requireAuth, audit, sanitizeError } from "@/lib/api/helpers";
 import { getSupabase } from "@/lib/supabase/client";
 import { validateStatusTransition } from "@/lib/api/status-validator";
 import { isValidEmail } from "@/lib/validation/email";
+// 31-f — shared numeric-field validation (audit 30-a finding 30a-09: PATCH
+// {quoted_price: "cheap"} → 500 'invalid input syntax for type numeric:
+// "cheap"' — the raw Postgres error text leaked to the client; now a 400).
+import { assertNumeric } from "@/lib/api/validate";
 
 export const runtime = "nodejs";
 
@@ -53,6 +57,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       body = await req.json();
     } catch {
       return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+    }
+
+    // 31-f — numeric-field validation BEFORE the update (audit 30a-09:
+    // {quoted_price: "cheap"} flowed into the patch and the raw Postgres
+    // type-cast error leaked as a 500). quoted_price is numeric and
+    // quoted_transit_days is an integer — coerce numeric strings, 400 on
+    // junk.
+    {
+      const bad = assertNumeric(body, ["quoted_price", "quoted_transit_days"]);
+      if (bad) return bad;
     }
 
     // Status transition guard (H-2) — block illegal status jumps on

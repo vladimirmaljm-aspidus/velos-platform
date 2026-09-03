@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, audit, sanitizeError } from "@/lib/api/helpers";
+// 31-f — items[] validation shared with the collection POST route (audit
+// 30a-04: demands accepted malformed items and stored them verbatim).
+// Same cross-route import pattern as partners/[id] importing
+// whitelistPartnerFields from "@/app/api/partners/route".
+import { validateDemandItems } from "@/app/api/demands/route";
 
 export const runtime = "nodejs";
 
@@ -41,7 +46,20 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (!auth.isSuperAdmin && existing.tenant_id !== auth.tenantId) {
       return NextResponse.json({ error: "Not found." }, { status: 404 });
     }
-    const body = await req.json();
+    // 31-f — guard the JSON parse (malformed body previously hit the
+    // generic catch → 500) + items[] per-line validation (audit 30a-04:
+    // same malformed-items acceptance as the POST route — the PUT path
+    // feeds the same upsertDemand call, so the same 400 applies).
+    let body;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+    }
+    {
+      const bad = validateDemandItems(body.items);
+      if (bad) return bad;
+    }
     // ADMIN-H5: if the caller is changing the partner_id, validate that
     // the new partner belongs to the SAME tenant as the demand itself.
     // Without this, a tenant admin could move a demand from their own

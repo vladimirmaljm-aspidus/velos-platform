@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, audit, resolveTenantId } from "@/lib/api/helpers";
+// 31-f — shared request-body validation helpers (audit 30-a findings
+// 30a-07/30a-08: POST {} → product_catalog NOT NULL violation → 500, and
+// {active: "yes-please"} → PostgREST boolean cast error → 500; now clean
+// 400s before the DB write).
+import { requireFields, assertBoolean } from "@/lib/api/validate";
 
 export const runtime = "nodejs";
 
@@ -39,6 +44,20 @@ export async function POST(req: NextRequest) {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+  }
+  // 31-f — required-field + type validation BEFORE the upsert (audit
+  // 30a-08: POST {} → 500 "Missing required field."; 30a-07:
+  // {active: "yes-please"} → 500). name / category / base_unit are NOT
+  // NULL with no DB defaults (active has a default but must still be a
+  // real boolean — a junk string is a PostgREST cast error). Skipped on
+  // the update path (body.id).
+  if (!body.id) {
+    const bad = requireFields(body, ["name", "category", "base_unit"]);
+    if (bad) return bad;
+  }
+  {
+    const bad = assertBoolean(body, ["active"]);
+    if (bad) return bad;
   }
   body.tenant_id = tenantId;
   const created = await auth.store.upsertProductCatalogEntry(body);

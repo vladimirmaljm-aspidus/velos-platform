@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, audit, resolveTenantId, getIp, sanitizeError } from "@/lib/api/helpers";
 import { encrypt, decrypt, currentKeyVersion } from "@/lib/api/vault-crypto";
+// 31-f — shared request-body validation helper (audit 30-b BUG-2: a
+// key-less POST /api/vault surfaced the vault_secrets.key NOT NULL
+// violation as a 500 "Missing required field." — now a clean 400).
+import { requireFields } from "@/lib/api/validate";
 // P0-2 (Monitoring) — fire `vault.read` when a caller explicitly requests the
 // decrypted secret value (reveal=true). This is the high-sensitivity
 // surface — anyone revealing vault values is security-relevant. NOTE: super
@@ -142,6 +146,15 @@ export async function POST(req: NextRequest) {
     // Re-hydrate body with the whitelisted fields only.
     body = cleanBody;
     body.tenant_id = tid;
+
+    // 31-f — required-field validation BEFORE the encrypt + upsert (audit
+    // 30-b BUG-2: POST {category, value} without `key` → DB NOT NULL on
+    // vault_secrets.key → 500 "Missing required field."). Skipped on the
+    // update path (body.id) — the existing row already has a key.
+    if (!body.id) {
+      const bad = requireFields(body, ["key"]);
+      if (bad) return bad;
+    }
 
     // Encrypt the secret value before it hits the store. Accept either
     // `encrypted_value` (legacy field name) or `value` (newer name) from the

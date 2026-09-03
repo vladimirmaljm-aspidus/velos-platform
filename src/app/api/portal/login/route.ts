@@ -25,7 +25,17 @@ const PER_PORTAL_USER_LOGIN_WINDOW_MS = 15 * 60 * 1000; // 15 min
 // Portal login — separate session type (partner, not user)
 export async function POST(req: NextRequest) {
   try {
-    const { email, password, tenant_id } = await req.json();
+    // 31-f — guard the JSON parse (audit 30-c auth suite, parity with
+    // /api/auth/login: a malformed body made `req.json()` throw inside the
+    // outer try and the generic catch returned a 500; a login endpoint
+    // should 400 on a client-side syntax error).
+    let parsed: { email?: string; password?: string; tenant_id?: string };
+    try {
+      parsed = await req.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+    }
+    const { email, password, tenant_id } = parsed;
     if (!email || !password) {
       return NextResponse.json({ error: "Email and password are required." }, { status: 400 });
     }

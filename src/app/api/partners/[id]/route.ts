@@ -17,6 +17,10 @@ import {
   hmacField,
   isEncrypted,
 } from "@/lib/crypto/field-encryption";
+// 31-f — shared numeric-field validation (audit 30-a finding 30a-02,
+// applied to the PUT path for parity with POST: a string risk_score is a
+// PostgREST 22P02 on the integer cast → 500; now a clean 400).
+import { assertNumeric } from "@/lib/api/validate";
 
 export const runtime = "nodejs";
 
@@ -86,6 +90,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       body = await req.json();
     } catch {
       return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+    }
+    // 31-f — numeric-field validation BEFORE the DB write (parity with the
+    // POST handler's 30a-02 fix: risk_score / rating are integer columns —
+    // coerce numeric strings, 400 on junk).
+    {
+      const bad = assertNumeric(body, ["risk_score", "rating"]);
+      if (bad) return bad;
     }
     // FIX-ALL-2 / Fix 6 — XSS prevention on free-text fields (parity with POST).
     body = sanitizeFields(body, [

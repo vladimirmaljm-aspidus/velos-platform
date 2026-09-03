@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, audit, resolveTenantId } from "@/lib/api/helpers";
+// 31-f — shared required-field validation (audit 30-b BUG-2: a name-less
+// POST /api/webhooks returned a 500 with an EMPTY error body because the
+// webhooks.name NOT NULL violation was swallowed by sanitizeError; now a
+// clean 400 listing the missing fields).
+import { requireFields } from "@/lib/api/validate";
 // FIX-AUDIT4-SEC / Fix 10 — SSRF validation for the webhook target URL.
 // The previous implementation accepted any URL string and stored it
 // verbatim — a `webhooks:create` caller could register a webhook pointing
@@ -71,6 +76,18 @@ export async function POST(req: NextRequest) {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+  }
+  // 31-f — required-field validation BEFORE the upsert (audit 30-b BUG-2:
+  // POST {url, events} without `name` → webhooks.name NOT NULL → 500 with
+  // an EMPTY error body — sanitizeError swallowed the actual DB error,
+  // leaving the client with a bare 500). name / url / events are all NOT
+  // NULL without DB defaults (secret is auto-generated below, active has
+  // a default), so a create needs all three from the caller. Skipped on
+  // the update path (body.id) — the existing row already satisfies NOT
+  // NULL.
+  if (!body.id) {
+    const bad = requireFields(body, ["name", "url", "events"]);
+    if (bad) return bad;
   }
   // FIX-AUDIT4-SEC / Fix 10 — SSRF validation BEFORE the upsert. The
   // helper resolves the hostname and rejects non-routable / loopback /

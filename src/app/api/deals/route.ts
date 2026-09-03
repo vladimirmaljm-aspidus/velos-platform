@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuthOrApiKey, resolveTenantId, hasPermission, audit, sanitizeError, type AuthContext, type ApiKeyAuthContext, getAuthUser } from "@/lib/api/helpers";
+// 31-f — shared request-body validation helpers (audit 30-a findings
+// 30a-07/30a-08: POST {} → deals NOT NULL violation → 500, and
+// {value: "lots"} → PostgREST 22P02 numeric cast → 500 "Invalid input
+// format."; now clean 400s before the DB write).
+import { requireFields, assertNumeric } from "@/lib/api/validate";
 
 export const runtime = "nodejs";
 
@@ -65,6 +70,25 @@ export async function POST(req: NextRequest) {
       body = await req.json();
     } catch {
       return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+    }
+    // 31-f — required-field + numeric validation BEFORE the DB write
+    // (audit 30a-08: POST {} → 500 "Missing required field."; 30a-07:
+    // {value: "lots"} → 500). `title` is the client-supplied NOT NULL
+    // column without a DB default; the IDOR guard below validates
+    // partner_id / buyer_id / supplier_id / product_id / contract_id
+    // whenever present, and the F-FINAL block below defaults probability /
+    // buy_cost / quantity / unit (stage / value / currency have DB
+    // defaults). Skipped on the update path (body.id).
+    if (!body.id) {
+      const bad = requireFields(body, ["title"]);
+      if (bad) return bad;
+    }
+    // value / probability / buy_cost / quantity are the four numeric NOT
+    // NULL columns the F-FINAL block below defaults — a junk string that
+    // survives `?? default` is a PostgREST 22P02 (500). Coerce-or-400.
+    {
+      const bad = assertNumeric(body, ["value", "probability", "buy_cost", "quantity"]);
+      if (bad) return bad;
     }
     body.tenant_id = tid;
     if (!body.owner_id && "user" in auth) body.owner_id = auth.user.id;

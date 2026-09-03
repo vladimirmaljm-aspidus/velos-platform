@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, audit, resolveTenantId } from "@/lib/api/helpers";
+// 31-f — shared required-field validation (audit 30-b BUG-2: an empty
+// POST /api/letterheads returned a 500 with an EMPTY error body — the
+// tenant_letterheads.name NOT NULL violation was swallowed; now a clean
+// 400 naming the field).
+import { requireFields } from "@/lib/api/validate";
 
 export const runtime = "nodejs";
 
@@ -63,6 +68,15 @@ export async function POST(req: NextRequest) {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+  }
+  // 31-f — required-field validation BEFORE the upsert (audit 30-b BUG-2:
+  // POST {} → tenant_letterheads.name NOT NULL → 500 with an EMPTY error
+  // body). tenant_id is resolved server-side above and created_by is
+  // defaulted below, so `name` is the only client-supplied NOT NULL column
+  // without a default. Skipped on the update path (body.id).
+  if (!body.id) {
+    const bad = requireFields(body, ["name"]);
+    if (bad) return bad;
   }
   body.tenant_id = tenantId;
   if (!body.created_by) body.created_by = auth.user.id;

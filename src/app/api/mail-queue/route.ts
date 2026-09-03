@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, audit, resolveTenantId, sanitizeError } from "@/lib/api/helpers";
 import type { MailQueueEntry } from "@/lib/supabase/types";
 import { resolveQueueToAddress } from "@/lib/email/service";
+// 31-f — shared request-body validation helpers (audit 30-b BUG-2: a
+// mail-queue POST missing to/subject — or with a non-string subject —
+// surfaced the DB NOT NULL / 22P02 error as a 500 "Missing required
+// field."; now a clean 400 before the DB write).
+import { requireFields, assertNumeric } from "@/lib/api/validate";
 
 export const runtime = "nodejs";
 
@@ -117,6 +122,29 @@ export async function POST(req: NextRequest) {
       body = await req.json();
     } catch {
       return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+    }
+    // 31-f — required-field + type validation BEFORE the upsert (audit
+    // 30-b BUG-2: {subject: 12345} or a missing recipient hit the
+    // mail_queue NOT NULL / text-column cast and returned 500). to_email /
+    // subject / body are text NOT NULL columns with no defaults, so a
+    // create needs all three — and a JSON number in a text column is a
+    // PostgREST 22P02, so enforce the string type up front (mirrors the
+    // offers route's `typeof body.subject !== "string"` guard).
+    if (!body.id) {
+      const bad = requireFields(body, ["to_email", "subject", "body"]);
+      if (bad) return bad;
+      if (typeof body.to_email !== "string" || typeof body.subject !== "string") {
+        return NextResponse.json(
+          { error: "Fields 'to_email' and 'subject' must be strings." },
+          { status: 400 },
+        );
+      }
+    }
+    // attempts / retry counters are integer columns — reject junk strings
+    // with a 400 instead of letting PostgREST 22P02 bubble up as a 500.
+    {
+      const bad = assertNumeric(body, ["attempts"]);
+      if (bad) return bad;
     }
     body.tenant_id = tid;
     const created = await auth.store.upsertMailQueueEntry(body);

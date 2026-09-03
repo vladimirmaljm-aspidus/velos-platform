@@ -1,6 +1,50 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, audit, resolveTenantId, sanitizeError } from "@/lib/api/helpers";
 import { generateDemandNumber } from "@/lib/api/doc-number";
+// 31-f — shared request-body validation helper (audit 30-a finding 30a-04:
+// demands accepted malformed items[] — string quantity "lots" and negative
+// unit_price stored verbatim into the items JSONB — while offers / invoices
+// / proformas reject the exact same payloads with 400).
+import { requireFields } from "@/lib/api/validate";
+
+/**
+ * 31-f — per-line items[] validation (ported from the offers route's
+ * FIX-ALL-2 / Fix 7 block). Audit 30a-04: POST /api/demands stored
+ * {quantity: "lots", unit_price: 5} verbatim with a 200 — the exact
+ * payload offers rejects with "items[0].quantity must be a non-negative
+ * number.". A string quantity poisons every downstream total computation
+ * (NaN propagation into the deal/offer generators that consume demands),
+ * so demands must reject it at the door. Per the task-31f brief: quantity
+ * must be a POSITIVE number, unit_price a NON-NEGATIVE number.
+ * Exported for demands/[id]/route.ts (the PUT path feeds the same
+ * upsertDemand call — same pattern as whitelistPartnerFields exported
+ * from partners/route.ts).
+ * @returns a ready-to-return 400 NextResponse, or null when valid.
+ */
+export function validateDemandItems(items: unknown): NextResponse | null {
+  if (items === undefined || items === null) return null; // absent = not changing items
+  if (!Array.isArray(items)) {
+    return NextResponse.json({ error: "Field 'items' must be an array." }, { status: 400 });
+  }
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i] as Record<string, unknown>;
+    const qty = Number(it?.quantity);
+    const price = Number(it?.unit_price);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      return NextResponse.json(
+        { error: `items[${i}].quantity must be a positive number.` },
+        { status: 400 },
+      );
+    }
+    if (!Number.isFinite(price) || price < 0) {
+      return NextResponse.json(
+        { error: `items[${i}].unit_price must be a non-negative number.` },
+        { status: 400 },
+      );
+    }
+  }
+  return null;
+}
 
 export const runtime = "nodejs";
 
@@ -48,7 +92,15 @@ export async function POST(req: NextRequest) {
 
     const tid = resolveTenantId(auth, req);
     if (!tid) return NextResponse.json({ error: "No tenant context." }, { status: 400 });
-    const body = await req.json();
+    // 31-f — guard the JSON parse (malformed body previously hit the
+    // generic catch → 500; mirrors the pattern used by every other
+    // high-traffic route).
+    let body;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+    }
     body.tenant_id = tid;
     // FIX-FUNC-4: `demands.partner_id` is NOT NULL (FK to partners, no
     // SET NULL option). Without it the INSERT fails with a NOT NULL
@@ -59,6 +111,22 @@ export async function POST(req: NextRequest) {
         { error: "Partner is required." },
         { status: 400 },
       );
+    }
+    // 31-f — `demands.subject` is also NOT NULL with no DB default; the
+    // audit's empty-body class (30a-08) only stayed a 400 here because the
+    // partner_id guard above fired first. Require it on CREATE (the update
+    // path re-uses the existing row's subject).
+    if (!body.id) {
+      const bad = requireFields(body, ["subject"]);
+      if (bad) return bad;
+    }
+    // 31-f — items[] per-line validation (audit 30a-04). demands previously
+    // accepted string quantities / negative prices and stored them verbatim
+    // (see validateDemandItems docblock). Runs on create AND update — the
+    // PUT route below shares the same upsert path.
+    {
+      const bad = validateDemandItems(body.items);
+      if (bad) return bad;
     }
     // ADMIN-H5: validate that the supplied partner_id actually belongs
     // to the caller's tenant. Without this check, a tenant admin could

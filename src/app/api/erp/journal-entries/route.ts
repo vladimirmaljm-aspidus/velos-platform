@@ -66,6 +66,14 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
+    // BUG 31-e / E1 — defensive shape guard. A JSON body of `null`, `42`, or
+    // `"text"` used to throw a TypeError on `body.lines` below, which the
+    // catch-all turned into an opaque 500. Reject it up-front with a clean
+    // 400 (the same "Invalid JSON body." message the documents route uses).
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+    }
+
     // Validate lines exist
     if (!body.lines || !Array.isArray(body.lines) || body.lines.length === 0) {
       return NextResponse.json({ error: "Journal entry must have at least one line." }, { status: 400 });

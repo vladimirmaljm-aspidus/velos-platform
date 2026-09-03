@@ -3,6 +3,10 @@ import { requireAuth, requireAuthOrApiKey, requireAuthOrApiKeyPermission, audit,
 import { TradeCostLine } from "@/lib/supabase/types";
 import { TRADE_COST_TYPES } from "@/lib/data/reference";
 import { getExchangeRate } from "@/lib/utils/exchange-rates";
+// 31-f — shared numeric-field validation (task brief B-list: the one
+// numeric trade-calc input that previously skipped validation — see the
+// P2-5 / ADMIN-M11 blocks below for the fields that were already covered).
+import { assertNumeric } from "@/lib/api/validate";
 
 export const runtime = "nodejs";
 
@@ -81,6 +85,17 @@ export async function POST(req: NextRequest) {
   }
   body.tenant_id = tenantId;
   if (!body.created_by && "user" in auth) body.created_by = auth.user.id;
+
+  // 31-f — num_containers numeric validation. The P2-5 / Fix 8 blocks
+  // below already coerce quantity / buy_price_per_unit / sell_price_per_unit
+  // / exchange_rate / commission_rate (audit "CRITICAL FIX P2-5"), but
+  // num_containers flows raw into `line.value * numContainers` (NaN
+  // propagation) and into the row's integer column (PostgREST 22P02 → 500).
+  // Coerce numeric strings, 400 on junk — same semantics as the others.
+  {
+    const bad = assertNumeric(body, ["num_containers"]);
+    if (bad) return bad;
+  }
 
   // ── Tenant-ownership validation (audit F-6/P1-6 IDOR) ────────────────
   // The trade calculator links to products, supplier offers, suppliers

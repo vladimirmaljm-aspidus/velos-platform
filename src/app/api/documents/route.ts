@@ -202,6 +202,38 @@ export async function POST(req: NextRequest) {
     } catch {
       return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
     }
+    // BUG 31-e / C3 — validate the fields the INSERT actually requires BEFORE
+    // the DB write. A JSON create that omitted them used to reach the
+    // shared_documents NOT NULL constraints and surface as an opaque 500
+    // "Missing required field." (sanitizeError strips the column name, so the
+    // caller had no idea WHICH field was missing). Same fix pattern as
+    // /api/partners ("Missing required field(s): x, y" 400).
+    //
+    // The list mirrors the live schema (verified against the production
+    // PostgREST spec): partner_id, filename, mime_type, size, storage_path,
+    // category, visible_to_partner are all NOT NULL with no DB default.
+    // tenant_id + uploaded_by are set by this route, so only the remaining
+    // seven are the caller's responsibility. UPDATEs (body.id set) skip the
+    // gate — smartUpsert patches only the supplied columns.
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+    }
+    if (!body.id) {
+      const missing: string[] = [];
+      if (!body.partner_id) missing.push("partner_id");
+      if (!body.filename || String(body.filename).trim() === "") missing.push("filename");
+      if (!body.category) missing.push("category");
+      if (!body.storage_path) missing.push("storage_path");
+      if (!body.mime_type) missing.push("mime_type");
+      if (body.size === undefined || body.size === null || Number(body.size) < 0) missing.push("size");
+      if (body.visible_to_partner === undefined) missing.push("visible_to_partner");
+      if (missing.length > 0) {
+        return NextResponse.json(
+          { error: `Missing required field(s): ${missing.join(", ")}.` },
+          { status: 400 },
+        );
+      }
+    }
     body.tenant_id = tid;
     if (!body.uploaded_by) body.uploaded_by = auth.user.id;
     // Quota gate (monthly_documents) — only on CREATE, never on UPDATE.

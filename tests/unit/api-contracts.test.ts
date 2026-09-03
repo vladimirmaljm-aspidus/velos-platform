@@ -235,9 +235,12 @@ describe("API contract — POST /api/auth/login", () => {
   });
 
   it("returns 400 when the body is not even valid JSON", async () => {
-    // The route's outer try/catch swallows the JSON parse error and returns 500.
-    // We assert it does NOT return 200 — the contract is "any non-2xx is a
-    // failure" and the client surfaces the error.
+    // 31-f (audit 30-c): the route now guards the JSON parse and returns a
+    // clean 400 "Invalid JSON body." — previously the parse throw fell into
+    // the outer catch and surfaced as a 500 (the old assertion below locked
+    // in that buggy behaviour). The client contract is unchanged: any
+    // non-2xx is a failure; 4xx is the correct class for a client-side
+    // syntax error.
     const r = await login(
       req("http://localhost/api/auth/login", {
         method: "POST",
@@ -245,7 +248,9 @@ describe("API contract — POST /api/auth/login", () => {
         body: "this is not json",
       }),
     );
-    expect(r.status).toBe(500);
+    expect(r.status).toBe(400);
+    const body = await r.json();
+    expect(body.error).toMatch(/invalid json/i);
   });
 
   it("returns 401 'Invalid username or password.' when the user does not exist", async () => {

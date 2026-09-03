@@ -41,6 +41,15 @@ import { createHash } from "crypto";
 // bottom of src/lib/crypto/field-encryption.ts.
 import { hmacField, encryptField, isEncrypted } from "@/lib/crypto/field-encryption";
 
+// 31-f (audit 30a-03) — shared query-param clamping + route-body
+// validation helpers. clampPagination is used by paginateQuery below so
+// EVERY list route (partners, offers, invoices, deals, products, demands,
+// supplier-offers, …) gets the same negative/zero/NaN offset+limit
+// protection — the audit found `GET /api/partners?offset=-5` returning
+// 500 "Requested range not satisfiable" because PostgREST rejects a
+// `.range(-5, …)` request.
+import { clampPagination } from "@/lib/api/validate";
+
 type SupaRow = Record<string, unknown>;
 
 function paginate<T>(items: T[], params?: ListParams): ListResult<T> {
@@ -98,8 +107,24 @@ async function paginateQuery<T>(
   // layer (see `Math.min(Number(url.searchParams.get("limit")), 500)`
   // in those route files), so raising the store-layer cap does not
   // expose any list endpoint to a higher request ceiling.
-  const limit = Math.min(params?.limit ?? 50, 10000);
-  const offset = params?.offset ?? 0;
+  // 31-f (audit 30a-03): clamp offset/limit into a safe range BEFORE the
+  // `.range()` call. A negative offset (`?offset=-5`) made PostgREST fail
+  // the whole request with "Requested range not satisfiable" → the generic
+  // route catch mapped it to a 500. A zero / negative limit produces
+  // `range(x, x-1)` — same failure. NaN (e.g. `?limit=abc`) falls back to
+  // the defaults. The upper bound stays 10k (see S-FIX note above — the
+  // export routes rely on it); UI list routes still cap at 500 at the
+  // *route* layer. Fixing this centrally in paginateQuery covers every
+  // list route at once (the audit's preferred fix location), so no
+  // per-route clamping is needed for the routes that forward raw
+  // `?offset=` / `?limit=` values here.
+  const { limit: safeLimit, offset: safeOffset } = clampPagination(
+    params?.limit,
+    params?.offset,
+    10000,
+  );
+  const limit = safeLimit ?? 50;
+  const offset = safeOffset ?? 0;
   const { data, error, count } = await q.range(offset, offset + limit - 1);
   if (error) throw error;
   return { items: (data as T[]) || [], total: count ?? 0 };
@@ -1867,15 +1892,57 @@ export class SupabaseStore implements Store {
   // inventory view's "Low Stock" mode. We don't add a search filter here —
   // the inventory view already has a search box that filters client-side
   // on the paginated result.
+  //
+  // BUG 31-e / E2 — this used to build the predicate with
+  // `.gt("reorder_level", 0).filter("stock", "lte", "reorder_level")`.
+  // PostgREST's .filter(column, op, value) third argument is a LITERAL
+  // value, not a column reference — PostgREST has no column-to-column
+  // comparison syntax at all — so the request hit Postgres as
+  // `stock <= 'reorder_level'` and failed with 22P02 "invalid input syntax
+  // for type numeric: reorder_level". Every /api/inventory?low_stock=1
+  // call returned 500.
+  //
+  // Fix: migration 088 adds `v_low_stock_products` — a plain SQL view whose
+  // WHERE clause (reorder_level > 0 AND stock <= reorder_level) runs the
+  // comparison INSIDE the database. Querying a view through PostgREST is
+  // indistinguishable from querying a table: the tenant filter, ordering,
+  // and Range pagination below keep working unchanged, and the view itself
+  // already encodes the old `.gt("reorder_level", 0)` filter (which is why
+  // it is not repeated here).
+  //
+  // Defensive fallback: if the view query errors (e.g. migration 088 hasn't
+  // been applied to this environment yet — PostgREST would return
+  // "relation does not exist" / PGRST205), fall back to the unfiltered
+  // products query and apply the low-stock predicate in JS. Prod keeps
+  // working during the migration-lag window; the page-level total is the
+  // count of matching rows ON THE PAGE (the DB cannot count the predicate
+  // for us without the view), which is the honest approximation available
+  // without the view.
   async listLowStockProducts(tenantId: string, params?: ListParams): Promise<ListResult<Product>> {
+    try {
+      let q = this.sb()
+        .from("v_low_stock_products")
+        .select("*", { count: "exact" })
+        .eq("tenant_id", tenantId);
+      q = q.order("stock", { ascending: true });
+      return await paginateQuery<Product>(q, params);
+    } catch (e) {
+      console.warn(
+        "[listLowStockProducts] v_low_stock_products query failed " +
+        "(migration 088 not applied?) — falling back to in-JS low-stock filter:",
+        e instanceof Error ? e.message : e,
+      );
+    }
     let q = this.sb()
       .from("products")
       .select("*", { count: "exact" })
-      .eq("tenant_id", tenantId)
-      .gt("reorder_level", 0)
-      .filter("stock", "lte", "reorder_level");
+      .eq("tenant_id", tenantId);
     q = q.order("stock", { ascending: true });
-    return paginateQuery<Product>(q, params);
+    const page = await paginateQuery<Product>(q, params);
+    const low = page.items.filter(
+      (p) => (p.reorder_level ?? 0) > 0 && (p.stock ?? 0) <= (p.reorder_level ?? 0),
+    );
+    return { items: low, total: low.length };
   }
 
   // ---- tenants (multi-tenancy) ----
@@ -3436,6 +3503,90 @@ export class SupabaseStore implements Store {
     return entry;
   }
 
+  /**
+   * BUG 31-e / E1 — mint the next per-tenant journal-entry number.
+   *
+   * `erp_journal_entries.entry_number` is NOT NULL (no DB default), and the
+   * `upsert_journal_entry` RPC (migration 038) inserts `p_entry->>'entry_number'
+   * verbatim — so a caller that doesn't supply one (the default journal-entry
+   * form shape) hit a 23502 not-null violation that surfaced as an opaque
+   * 500 "Missing required field.". This helper closes that gap on the CREATE
+   * path of upsertErpJournalEntry.
+   *
+   * Number format: `JE-<YEAR>-<NNNNNN>` (6-digit zero-padded, per tenant per
+   * year — same shape as the doc numbers minted by migration 063, so GL entry
+   * numbers are auditable and gap-free per tenant).
+   *
+   * Strategy (mirrors nextDocNumber() in src/lib/api/doc-number.ts, but as a
+   * store-internal RPC call — importing doc-number.ts here would create an
+   * import cycle since it also pulls from lib/supabase/client):
+   *   1. Atomic path — `get_next_doc_number('journal', tenant_id)` RPC
+   *      (migration 063 + 087). Allocation is a single INSERT … ON CONFLICT
+   *      DO UPDATE … RETURNING, so two concurrent creates can never mint the
+   *      same number.
+   *   2. Fallback — count of the tenant's entries + 1, zero-padded to 6.
+   *      Covers the rollout window where migration 087 (the 'journal' → 'JE'
+   *      prefix arm) hasn't been applied yet: the pre-087 RPC maps 'journal'
+   *      through the `ELSE upper(left(p_doc_type, 3))` branch and returns a
+   *      `JOU-…` number, which we reject below to keep the documented `JE-`
+   *      format stable across the migration. The count+1 fallback can collide
+   *      under concurrency or with legacy manual numbers; the caller retries
+   *      once on a unique-violation (see upsertErpJournalEntry).
+   *
+   * Returns null only when BOTH paths fail — the caller then lets the INSERT
+   * surface the original not-null error (same failure mode as before, but now
+   * logged and with the RPC root cause visible).
+   */
+  private async nextJournalEntryNumber(tenantId: string): Promise<string | null> {
+    // 1) Atomic per-tenant allocation via the doc-number RPC.
+    try {
+      const { data, error } = await this.sb().rpc("get_next_doc_number", {
+        p_doc_type: "journal",
+        p_tenant_id: tenantId,
+      });
+      if (!error && typeof data === "string" && data.startsWith("JE-")) {
+        return data;
+      }
+      console.warn(
+        "[upsertErpJournalEntry] get_next_doc_number('journal', tenant) unusable " +
+        "(migration 087 not applied or RPC error), falling back to count+1:",
+        error?.message ?? data,
+      );
+    } catch (e) {
+      console.warn(
+        "[upsertErpJournalEntry] get_next_doc_number('journal', tenant) threw, falling back to count+1:",
+        e instanceof Error ? e.message : e,
+      );
+    }
+    // 2) Fallback: JE-<YEAR>-<count of tenant entries + 1 + bump>.
+    return this.fallbackJournalEntryNumber(tenantId, 0);
+  }
+
+  /**
+   * BUG 31-e / E1 — fallback journal-entry number: `JE-<YEAR>-<NNNNNN>`
+   * derived from the tenant's current entry count (+1). `bump` offsets the
+   * sequence for the unique-violation retry (a concurrent create may have
+   * claimed the same count+1 between our count query and the INSERT).
+   */
+  private async fallbackJournalEntryNumber(tenantId: string, bump: number): Promise<string | null> {
+    const year = new Date().getFullYear();
+    try {
+      const { count, error } = await this.sb()
+        .from("erp_journal_entries")
+        .select("id", { count: "exact", head: true })
+        .eq("tenant_id", tenantId);
+      if (error) throw error;
+      const seq = (count ?? 0) + 1 + bump;
+      return `JE-${year}-${String(seq).padStart(6, "0")}`;
+    } catch (e) {
+      console.warn(
+        "[upsertErpJournalEntry] fallback entry-number count query failed:",
+        e instanceof Error ? e.message : e,
+      );
+      return null;
+    }
+  }
+
   async upsertErpJournalEntry(e: Omit<Partial<ErpJournalEntry>, "lines"> & { id?: string; lines?: Partial<ErpJournalLine & { id?: string }>[] }): Promise<ErpJournalEntry> {
     const { lines, ...entryFields } = e;
     // Compute debit/credit totals from lines if provided
@@ -3465,6 +3616,27 @@ export class SupabaseStore implements Store {
     const tenantId = entryFields.tenant_id as string | undefined;
     if (!tenantId) {
       throw new Error("upsertErpJournalEntry: tenant_id is required");
+    }
+
+    // BUG 31-e / E1 — auto-generate entry_number on CREATE. The RPC's INSERT
+    // branch writes `p_entry->>'entry_number'` with no fallback and the table
+    // column is NOT NULL, so an omitted number used to abort the insert with
+    // 23502. Only the create path needs this: the RPC's UPDATE branch
+    // COALESCEs entry_number and preserves the stored one. We remember
+    // whether WE minted the number so the unique-violation retry below knows
+    // it is allowed to swap it for a fresh candidate.
+    let generatedEntryNumber: string | null = null;
+    if (!entryFields.id && !entryFields.entry_number) {
+      generatedEntryNumber = await this.nextJournalEntryNumber(tenantId);
+      if (generatedEntryNumber) {
+        entryFields.entry_number = generatedEntryNumber;
+      } else {
+        console.warn(
+          "[upsertErpJournalEntry] could not generate an entry_number " +
+          "(RPC and count fallback both failed) — the insert will surface the " +
+          "NOT NULL constraint",
+        );
+      }
     }
     // The RPC's INSERT path requires `created_by` (NOT NULL on the table).
     // For UPDATEs, the RPC preserves the existing created_by via COALESCE.
@@ -3556,9 +3728,35 @@ export class SupabaseStore implements Store {
       p_entry,
       p_lines,
     });
-    if (error) throw error;
+    // BUG 31-e / E1 — retry once on an entry_number unique violation. The
+    // (tenant_id, entry_number) unique key makes the count+1 fallback (and,
+    // in exotic cases, an RPC allocation racing a legacy manual number)
+    // collision-prone. A single retry with a fresh candidate resolves the
+    // race: by the time we re-count, the winner's row exists, so count+1
+    // lands on a free number. Only numbers WE generated are replaceable — a
+    // caller-supplied number colliding is a genuine duplicate the caller
+    // must resolve themselves.
+    type RpcError = { code?: string | null; message?: string | null; details?: string | null } | null;
+    let insertError = (error as RpcError) ?? null;
+    let insertData = data;
+    const errText = `${insertError?.message ?? ""} ${insertError?.details ?? ""}`;
+    if (insertError && generatedEntryNumber &&
+        (insertError.code === "23505" || /duplicate key value/i.test(errText)) &&
+        /entry_number/i.test(errText)) {
+      const retryNumber = await this.fallbackJournalEntryNumber(tenantId, 1);
+      if (retryNumber) {
+        p_entry.entry_number = retryNumber;
+        const retried = await this.sb().rpc("upsert_journal_entry", {
+          p_entry,
+          p_lines,
+        });
+        insertData = retried.data;
+        insertError = (retried.error as RpcError) ?? null;
+      }
+    }
+    if (insertError) throw insertError;
 
-    const result = data as { entry: ErpJournalEntry; lines: ErpJournalLine[] } | null;
+    const result = insertData as { entry: ErpJournalEntry; lines: ErpJournalLine[] } | null;
     if (!result || !result.entry) {
       throw new Error("upsert_journal_entry RPC returned no entry");
     }

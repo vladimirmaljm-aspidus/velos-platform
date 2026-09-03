@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, resolveTenantId, audit, sanitizeError } from "@/lib/api/helpers";
+// 31-f — shared request-body validation helpers (audit 30-a findings
+// 30a-07/30a-08: POST {} → 500 "createCommissionPayoutAtomic: partner_id
+// is required" (the RPC's own guard thrown through the generic catch), and
+// {total_amount: "four hundred"} → PostgREST 22P02 numeric cast → 500;
+// now clean 400s before the DB write).
+import { requireFields, assertNumeric } from "@/lib/api/validate";
 
 export const runtime = "nodejs";
 
@@ -45,7 +51,32 @@ export async function POST(req: NextRequest) {
     const tenantId = resolveTenantId(auth, req);
     if (!tenantId) return NextResponse.json({ error: "Tenant ID is required." }, { status: 400 });
 
-    const body = await req.json();
+    // 31-f — guard the JSON parse (malformed body previously hit the
+    // generic catch → 500; mirrors the pattern used by every other
+    // high-traffic route).
+    let body;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+    }
+    // 31-f — required-field + numeric validation BEFORE the RPC (audit
+    // 30a-08: POST {} → 500 "createCommissionPayoutAtomic: partner_id is
+    // required"; 30a-07: {total_amount: "four hundred"} → 500). partner_id
+    // and agent_id are NOT NULL with no defaults — the store's RPC wrapper
+    // only guards partner_id itself, so guard both here for a clean 400.
+    // (total_amount / currency / commission_ids / status are defaulted by
+    // the store's createCommissionPayoutAtomic.)
+    {
+      const bad = requireFields(body, ["partner_id", "agent_id"]);
+      if (bad) return bad;
+    }
+    // total_amount is a numeric column — a junk string is a PostgREST
+    // 22P02, so coerce-or-400 up front.
+    {
+      const bad = assertNumeric(body, ["total_amount"]);
+      if (bad) return bad;
+    }
     body.tenant_id = tenantId;
     body.created_by = auth.user.id;
 

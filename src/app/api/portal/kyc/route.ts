@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { getStore } from "@/lib/data/store";
-import { audit } from "@/lib/api/helpers";
+import { audit, sanitizeError } from "@/lib/api/helpers";
 
 export const runtime = "nodejs";
 
@@ -15,10 +15,18 @@ export const runtime = "nodejs";
  * rewrite tenant_id / partner_id / portal_access_id to point at another
  * tenant's records. We now strip everything that isn't on this allowlist
  * and force the identity fields from the session context.
+ *
+ * BUG 31-e / C2 — "kyc_type" and "notes" were removed from this list: the
+ * LIVE kyc_submissions table has NEITHER column (verified via the
+ * production PostgREST spec). A client sending either one made the upsert
+ * fail with PGRST204 "Could not find the 'kyc_type' column" — and since
+ * smartUpsert's column-strip retry only recognises the UPDATE-path error
+ * shape, the POST handler (which had no try/catch) crashed with a BARE 500
+ * and an empty body. The portal UI never sends these fields, so removing
+ * them changes nothing for legitimate callers.
  */
 const KYC_CLIENT_SETTABLE_FIELDS: ReadonlySet<string> = new Set([
   "entity_type",
-  "kyc_type",
   "legal_name", "trade_name", "registration_number", "tax_id", "vat_number", "company_website",
   "address_line", "city", "state", "postal_code", "country",
   "contact_name", "contact_email", "contact_phone", "contact_position",
@@ -26,7 +34,6 @@ const KYC_CLIENT_SETTABLE_FIELDS: ReadonlySet<string> = new Set([
   "business_activity", "expected_monthly_volume", "source_of_funds",
   "bank_name", "bank_account", "bank_iban", "bank_swift",
   "document_front", "document_back", "selfie", "additional_docs",
-  "notes",
 ]);
 
 function sanitizeKycClientBody(body: Record<string, unknown>): Record<string, unknown> {
@@ -66,7 +73,16 @@ export async function GET() {
 }
 
 // Portal: save/update KYC submission (draft or submit)
+//
+// BUG 31-e / C2 — the whole handler is wrapped in try/catch: previously any
+// throw (e.g. smartUpsert hitting a schema mismatch like the PGRST204
+// kyc_type/notes case above) escaped as a bare 500 with an EMPTY body —
+// the portal client showed a generic "request failed" with nothing to act
+// on, and server logs had no trace. Now the catch returns a proper
+// {error} JSON body (message sanitized through the shared sanitizeError)
+// and logs the underlying error server-side.
 export async function POST(req: NextRequest) {
+  try {
   const access = await getPortalSessionAccess();
   if (!access) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   if (!access.partner_id) {
@@ -129,4 +145,10 @@ export async function POST(req: NextRequest) {
   } catch (e) { console.error("[audit]", e); }
 
   return NextResponse.json(saved);
+  } catch (e) {
+    // See the BUG 31-e / C2 comment above the handler — never let a KYC
+    // upsert failure escape as a bare, body-less 500.
+    console.error("[portal.kyc.POST]", e);
+    return NextResponse.json({ error: sanitizeError(e) }, { status: 500 });
+  }
 }

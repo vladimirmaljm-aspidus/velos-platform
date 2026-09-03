@@ -78,7 +78,15 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       // self-edit restriction below still blocks privilege self-escalation.
     }
 
-    const body = await req.json();
+    // 31-f — guard the JSON parse (top-10-traffic sweep: a malformed body
+    // previously hit the generic catch → 500; mirrors the dedicated
+    // parse-guard pattern used by every other high-traffic route).
+    let body;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+    }
 
     // Only a super-admin can grant super-admin (platform-level) access —
     // otherwise any user could self-promote via PUT on their own record.
@@ -154,6 +162,19 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       delete whitelisted.role;
       delete whitelisted.permissions;
       delete whitelisted.active;
+    }
+    // 31-f — empty-update guard (audit 30-b BUG-1: a PUT whose entire body
+    // is stripped by the whitelist — e.g. {password_hash: "…"} alone, or
+    // `{}` — previously called `upsertUser({id})`, and PostgREST rejects an
+    // UPDATE with zero columns with 500 "Cannot coerce the result to a
+    // single JSON object". Return a clean 400 instead; a mixed body
+    // (real fields + rogue hash) still succeeds with the rogue fields
+    // ignored, so the F-6 backdoor stays closed).
+    if (Object.keys(whitelisted).length === 0) {
+      return NextResponse.json(
+        { error: "No updatable fields provided." },
+        { status: 400 },
+      );
     }
     const updated = await auth.store.upsertUser({ ...whitelisted, id });
     await audit(auth.store, auth.user, req, "user.update", "user", id, { username: updated.username });

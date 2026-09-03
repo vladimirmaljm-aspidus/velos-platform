@@ -117,7 +117,18 @@ function deviceFingerprint(ua: string | null, ip: string): string {
 
 export async function POST(req: NextRequest) {
   try {
-    const { username, password } = await req.json();
+    // 31-f — guard the JSON parse (audit 30-c auth suite: a malformed body
+    // like "{not json" made `req.json()` throw inside the outer try, and
+    // the generic catch returned a 500 — a login endpoint should never
+    // 500 on a client-side syntax error). Mirror the dedicated-parse-guard
+    // pattern used by every other high-traffic route.
+    let parsed: { username?: string; password?: string };
+    try {
+      parsed = await req.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+    }
+    const { username, password } = parsed;
     if (!username || !password) {
       return NextResponse.json({ error: "Please enter username and password." }, { status: 400 });
     }

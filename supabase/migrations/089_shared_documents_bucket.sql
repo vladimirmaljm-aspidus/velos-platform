@@ -1,0 +1,61 @@
+-- 089_shared_documents_bucket.sql
+-- ============================================================================
+-- BUG 31-e / E3 (P1) — shared-documents Storage bucket does not exist.
+--
+-- Background
+-- ----------
+-- The admin document-upload route (src/app/api/documents/route.ts) and the
+-- portal download route (src/app/api/portal/documents/[id]/download/route.ts)
+-- both hardcode `const BUCKET = "shared-documents"`. That bucket was never
+-- created in the live project (existing buckets: documents, kyc-documents,
+-- portal-uploads, tenant-logos), so:
+--   • POST /api/documents (multipart) → 500 "Upload failed: Bucket not found"
+--   • GET /api/portal/documents/[id]/download → 502 "Storage unavailable."
+--
+-- No per-bucket storage.objects policies are needed: storage.objects on this
+-- project has a single service_role_full policy and the app performs all
+-- storage I/O with the service key, exactly like the four existing buckets.
+--
+-- file_size_limit choice — 25 MB (26214400), not 10 MB
+-- --------------------------------------------------
+-- The upload route enforces MAX_UPLOAD_SIZE = 25 * 1024 * 1024 in code
+-- (src/lib/upload/constants.ts — the single source of truth introduced so
+-- route-level and service-level limits could never drift; see its header
+-- comment). The bucket-level limit must match what the route enforces:
+-- a LOWER bucket limit (e.g. 10 MB) would let a 10–25 MB upload pass every
+-- route-level check and then fail inside Storage with an opaque error —
+-- precisely the "confusing 500" class of inconsistency the constants module
+-- was created to eliminate. 26214400 also mirrors the sibling portal-uploads
+-- bucket, which serves the same ALLOWED_MIME_TYPES / MAX_UPLOAD_SIZE route
+-- contract.
+--
+-- allowed_mime_types is NULL: the route already validates the CLAIMED type
+-- against ALLOWED_MIME_TYPES and then verifies the ACTUAL content by magic
+-- bytes (verifyFileContent) — a strictly stronger check than a bucket-level
+-- MIME list, which only sees the (spoofable) declared content-type. The
+-- existing `documents` bucket is likewise NULL.
+--
+-- public = false: shared documents are tenant/partner-scoped and are only
+-- ever served through short-lived signed URLs (createSignedUrl(path, 300)),
+-- never public objects.
+--
+-- Idempotency: ON CONFLICT (id) DO NOTHING — safe to re-run; a manually
+-- pre-created bucket is left untouched.
+-- ============================================================================
+
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES ('shared-documents', 'shared-documents', false, 26214400, NULL)
+ON CONFLICT (id) DO NOTHING;
+
+-- ============================================================================
+-- Verification (run in Supabase Studio after applying):
+--
+--   SELECT id, name, public, file_size_limit, allowed_mime_types
+--   FROM storage.buckets WHERE id = 'shared-documents';
+--   -- Expect one row: public=false, file_size_limit=26214400,
+--   -- allowed_mime_types=NULL.
+--
+--   -- Then from the app (or psql with the service key):
+--   --   POST /api/documents with a small multipart file → 200
+--   --   GET  /api/portal/documents/<id>/download → 302 signed URL
+-- ============================================================================

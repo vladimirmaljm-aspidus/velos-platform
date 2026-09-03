@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, resolveTenantId, audit, sanitizeError } from "@/lib/api/helpers";
+// 31-f — shared request-body validation helpers (audit 30-a findings
+// 30a-07/30a-08: POST {} → commission_agents NOT NULL violation → 500,
+// and {commission_rate: "ten"} → PostgREST 22P02 numeric cast → 500;
+// now clean 400s before the DB write).
+import { requireFields, assertNumeric } from "@/lib/api/validate";
 
 export const runtime = "nodejs";
 
@@ -45,7 +50,24 @@ export async function POST(req: NextRequest) {
     const tenantId = resolveTenantId(auth, req);
     if (!tenantId) return NextResponse.json({ error: "Tenant ID is required." }, { status: 400 });
 
-    const body = await req.json();
+    // 31-f — guard the JSON parse (malformed body previously hit the
+    // generic catch → 500; mirrors the pattern used by every other
+    // high-traffic route).
+    let body;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+    }
+    // 31-f — required-field validation BEFORE the upsert (audit 30a-08:
+    // POST {} → 500 "Missing required field."). partner_id is NOT NULL with
+    // no DB default (the route reads it back via getPartner below);
+    // commission_type / commission_currency are defaulted by the normalize
+    // block below. Skipped on the update path (body.id).
+    if (!body.id) {
+      const bad = requireFields(body, ["partner_id"]);
+      if (bad) return bad;
+    }
     body.tenant_id = tenantId;
 
     // Normalize field names — the DB schema uses commission_* prefixed
@@ -71,6 +93,15 @@ export async function POST(req: NextRequest) {
     // Default active flag
     if (body.active === undefined && body.is_active !== undefined) {
       body.active = body.is_active;
+    }
+
+    // 31-f — numeric-field validation AFTER the short-name → commission_*
+    // normalize block above (audit 30a-07: {commission_rate: "ten"} → 500
+    // "Invalid input format."; the aliases rate / per_unit map onto the
+    // same numeric columns, so check the canonical names post-normalize).
+    {
+      const bad = assertNumeric(body, ["commission_rate", "commission_per_unit"]);
+      if (bad) return bad;
     }
 
     const created = await auth.store.upsertCommissionAgent(body);

@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, requireAuthOrApiKey, requireAuthOrApiKeyPermission, audit, resolveTenantId, sanitizeError } from "@/lib/api/helpers";
+// 31-f — shared request-body validation helpers (audit 30-a findings
+// 30a-07/30a-08: POST {} → supplier_offers NOT NULL violation → 500, and
+// {unit_price: "cheap"} → PostgREST 22P02 numeric cast → 500 "Invalid
+// input format."; now clean 400s before the DB write).
+import { requireFields, assertNumeric } from "@/lib/api/validate";
 
 export const runtime = "nodejs";
 
@@ -62,6 +67,22 @@ export async function POST(req: NextRequest) {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+  }
+  // 31-f — required-field + numeric validation BEFORE the upsert (audit
+  // 30a-08: POST {} → 500 "Missing required field."; 30a-07:
+  // {unit_price: "cheap"} → 500 "Invalid input format."). product_id /
+  // supplier_id / unit_price are NOT NULL with no DB defaults (status,
+  // currency, incoterm have defaults). Skipped on the update path
+  // (body.id) — the existing row already satisfies NOT NULL.
+  if (!body.id) {
+    const bad = requireFields(body, ["product_id", "supplier_id", "unit_price"]);
+    if (bad) return bad;
+  }
+  // unit_price / min_order_qty / lead_time_days are numeric columns — a
+  // non-numeric string is a PostgREST 22P02, so coerce-or-400 up front.
+  {
+    const bad = assertNumeric(body, ["unit_price", "min_order_qty", "lead_time_days"]);
+    if (bad) return bad;
   }
   body.tenant_id = tenantId;
 

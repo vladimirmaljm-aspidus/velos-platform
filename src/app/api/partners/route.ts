@@ -20,6 +20,10 @@ import {
   hmacField,
   isEncrypted,
 } from "@/lib/crypto/field-encryption";
+// 31-f — shared numeric-field validation (audit 30-a finding 30a-02:
+// POST /api/partners {risk_score: "not-a-number"} → 500 "Invalid input
+// format." — PostgREST 22P02 on the integer cast; now a clean 400).
+import { assertNumeric } from "@/lib/api/validate";
 
 export const runtime = "nodejs";
 
@@ -235,6 +239,16 @@ async function _post(req: NextRequest) {
           { status: 400 },
         );
       }
+    }
+
+    // 31-f — numeric-field validation BEFORE the DB write (audit 30-a
+    // finding 30a-02: {risk_score: "not-a-number"} reached PostgREST and
+    // came back as 500 "Invalid input format." — the 22P02 integer cast
+    // error mapped by sanitizeError). risk_score and rating are integer
+    // columns; coerce numeric strings, 400 on junk.
+    {
+      const bad = assertNumeric(body, ["risk_score", "rating"]);
+      if (bad) return bad;
     }
 
     // FIX-ALL-2 / Fix 6 — XSS prevention. Escape `<`/`>`/`"`/`'` in

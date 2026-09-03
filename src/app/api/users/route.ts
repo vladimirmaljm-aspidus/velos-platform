@@ -3,6 +3,11 @@ import { requireAuth, audit, sanitizeError, resolveTenantId } from "@/lib/api/he
 import { hashPassword } from "@/lib/auth/password";
 import { validatePasswordWithPlatformPolicy } from "@/lib/auth/password-policy";
 import { enforceQuota } from "@/lib/api/plan-limits";
+// 31-f — shared request-body validation helpers (audit 30-a findings
+// 30a-08 / 30-b BUG-2: POST /api/users with a partial body surfaced the DB
+// NOT NULL violation as a 500 "Missing required field." — now a clean 400
+// listing the missing fields, before any DB write).
+import { requireFields } from "@/lib/api/validate";
 
 export const runtime = "nodejs";
 
@@ -78,7 +83,28 @@ export async function POST(req: NextRequest) {
   { const { requirePermission } = await import("@/lib/permissions/can");
     const _d = requirePermission(auth, "users.create"); if (_d) return _d; } /* requirePermission wired */
 
-    const body = await req.json();
+    // 31-f — guard the JSON parse (the top-10-traffic sweep in the task
+    // brief: this route had no dedicated parse guard, so a malformed body
+    // hit the generic catch → 500). Mirror the pattern used by every other
+    // high-traffic route (partners/offers/invoices/tasks/vault/webhooks).
+    let body;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+    }
+
+    // 31-f — required-field validation BEFORE the DB write (audit 30-b
+    // BUG-2: {full_name} alone → 500 "Missing required field."). The live
+    // users table requires username, email, role and password_hash — and
+    // password_hash only exists when the handler hashes a client-supplied
+    // plaintext `password` (the F-6 whitelist forbids a client hash), so a
+    // create needs all four from the caller. Skipped on upsert-by-id
+    // (update path) where the existing row already satisfies NOT NULL.
+    if (!body.id) {
+      const bad = requireFields(body, ["username", "email", "role", "password"]);
+      if (bad) return bad;
+    }
 
     // Only a super-admin can grant super-admin (platform-level) access —
     // otherwise any tenant admin could self-promote via this endpoint.
