@@ -16,6 +16,7 @@ export type ViewKey =
   | "documents"
   | "tasks"
   | "audit"
+  | "error-audit"
   // Trade
   | "product-catalog"
   | "supplier-offers"

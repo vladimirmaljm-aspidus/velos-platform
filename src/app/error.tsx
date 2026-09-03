@@ -39,6 +39,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { AlertTriangle, RotateCcw } from "lucide-react";
+import { reportError } from "@/components/error-reporter";
 
 export default function Error({
   error,
@@ -53,6 +54,11 @@ export default function Error({
     // stdout/stderr capture picks it up as the default error trail.
     Sentry.captureException(error);
     console.error("[RouteError]", error);
+    // 8-c (error audit): record the React render error in the in-house
+    // error_logs table via the public /api/client-errors ingest (source
+    // 'client'), carrying the Next.js digest so the admin Error Audit view
+    // can correlate it with the server logs. reportError never throws.
+    reportError(error, { digest: error?.digest, boundary: "route-error" });
   }, [error]);
 
   const displayMessage =

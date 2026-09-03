@@ -288,8 +288,13 @@ export function DashboardView() {
   return (
     <div className="space-y-6">
       {/* ---------- Hero ---------- */}
-      <div className="bg-card border border-border rounded-[var(--radius-lg)] px-5 py-5 md:px-7 md:py-6 shadow-soft smooth">
-        <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+      {/* AUDIT28-DESIGN — distinct brand identity for the hero band: copper
+          spine on the leading edge + soft corner wash. Previously visually
+          identical to the KPI cards below, so nothing anchored the page. */}
+      <div className="relative overflow-hidden bg-card border border-border rounded-[var(--radius-lg)] px-5 py-5 md:px-7 md:py-6 shadow-soft smooth">
+        <div aria-hidden className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-primary via-primary/70 to-primary/30" />
+        <div aria-hidden className="pointer-events-none absolute -top-20 -right-10 size-64 rounded-full bg-primary/[0.06] blur-3xl" />
+        <div className="relative flex flex-col md:flex-row md:items-end md:justify-between gap-3">
           <div className="min-w-0">
             <p className="text-xs text-muted-foreground mb-1.5 tabular">{todayLabel()}</p>
             <h1 className="text-xl md:text-2xl font-semibold tracking-tight text-foreground flex items-center gap-2">
@@ -314,7 +319,7 @@ export function DashboardView() {
       </div>
 
       {/* ---------- KPI Row 1 ---------- */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="min-w-0">
           <KpiCard
             label={t("misc-total-partners")}
@@ -367,7 +372,7 @@ export function DashboardView() {
       </div>
 
       {/* ---------- KPI Row 2 (trade-specific) ---------- */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="min-w-0">
           <KpiCard
             label={t("misc-avg-margin-pct")}

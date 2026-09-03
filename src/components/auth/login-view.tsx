@@ -534,12 +534,12 @@ export function LoginView({ onSwitchToRegister }: LoginViewProps) {
               {/* Client Portal link — clients log in here, not the admin app */}
               <div className="mt-3 flex items-center justify-center gap-1.5 text-sm text-muted-foreground border-t pt-4">
                 <Store className="size-4 text-muted-foreground/70" />
-                <span>Are you a client?</span>
+                <span>{t("login-client-portal-q")}</span>
                 <a
                   href="/portal"
                   className="font-medium text-primary hover:text-primary/80 underline-offset-4 hover:underline transition-colors"
                 >
-                  Go to Client Portal →
+                  {t("login-client-portal-link")} →
                 </a>
               </div>
 

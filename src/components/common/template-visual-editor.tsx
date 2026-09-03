@@ -503,7 +503,7 @@ function renderFieldContent(
           </div>
           <div className="shrink-0 text-right text-[6px] text-slate-600">
             <div>{t("misc-date")}: <span className="font-semibold text-slate-800">14 Mar 2026</span></div>
-            <div>{isLoi ? "Valid until" : t("misc-valid-until")}: <span className="font-semibold text-slate-800">14 Apr 2026</span></div>
+            <div>{t("misc-valid-until")}: <span className="font-semibold text-slate-800">14 Apr 2026</span></div>
             <div>{t("misc-currency")}: <span className="font-semibold text-slate-800">USD</span></div>
           </div>
         </div>

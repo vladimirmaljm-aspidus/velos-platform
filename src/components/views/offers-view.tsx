@@ -1188,13 +1188,20 @@ function OfferDetail({
       const nextVersion = maxVersion + 1;
 
       // 2. Mark previous entries as superseded — scoped strictly to this offer.
+      // AUDIT28 8-a-4 — check .ok: on failure the old entries stayed "current"
+      // while the new version was still created below → duplicate "current"
+      // versions in the register. Throwing aborts the flow (same semantics as
+      // the registerEntry/revision steps below).
       for (const entry of existingEntries) {
         if (entry.status === "current") {
-          await fetch(api(`/api/document-register`), {
+          const supRes = await fetch(api(`/api/document-register`), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ ...entry, status: "superseded" }),
           });
+          if (!supRes.ok) {
+            throw new Error(`Failed to supersede register entry ${entry.id} (HTTP ${supRes.status})`);
+          }
         }
       }
 

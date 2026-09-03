@@ -14,7 +14,7 @@ import {
   ChevronLeft, ChevronRight, Building2, Calculator,
   ToggleRight, LayoutGrid, Plug, DollarSign, BookMarked, Calendar,
   StickyNote, Briefcase, Settings2, TrendingUp, Truck, MapPin,
-  Shield, Globe, Gauge, Store, UserPlus, Bell,
+  Shield, Globe, Gauge, Store, UserPlus, Bell, Bug,
 } from "lucide-react";
 import {
   Tooltip,
@@ -161,6 +161,9 @@ const SECTIONS: NavSection[] = [
       { key: "vault", i18nKey: "vault", i18nSection: "administration", icon: Lock, permission: "vault.read", featureFlag: "module_vault" },
       { key: "api-keys", i18nKey: "api-keys", i18nSection: "administration", icon: Key, permission: "api-keys.read", featureFlag: "module_api_keys" },
       { key: "audit", i18nKey: "audit", i18nSection: "administration", icon: ScrollText, permission: "audit.read" },
+      // AUDIT28 — in-house error audit: client JS errors, unhandled
+      // rejections and server 500s land in error_logs and are triaged here.
+      { key: "error-audit", i18nKey: "error-audit", i18nSection: "administration", icon: Bug, permission: "audit.read" },
       { key: "portal-locations", i18nKey: "portal-locations", i18nSection: "administration", icon: MapPin, permission: "portal.read", featureFlag: "module_portal" },
       { key: "plans", i18nKey: "plans", i18nSection: "administration", icon: TrendingUp, permission: "platform.plans.read" },
       // NOTIF-UX — full-page notifications surface. Sits at the bottom of
@@ -495,8 +498,12 @@ function NavItemButton({ icon: Icon, label, active, collapsed, onClick, badgeCou
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring/50",
         collapsed ? "justify-center px-0 py-2.5" : "px-3 py-2",
         active
-          ? "text-sidebar-foreground"
-          : "text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent"
+          ? // AUDIT28-DESIGN — solid visible active state: the old 8% primary
+            // tint was nearly invisible on the off-white sidebar ("washed out"
+            // in review). sidebar-accent is a clearly readable beige band +
+            // dark copper text, and the label gains semibold weight.
+            "bg-sidebar-accent text-sidebar-accent-foreground font-semibold shadow-xs"
+          : "text-sidebar-foreground/65 hover:text-sidebar-foreground hover:bg-sidebar-accent/60"
       )}
     >
       {/* Active left indicator */}
@@ -512,8 +519,8 @@ function NavItemButton({ icon: Icon, label, active, collapsed, onClick, badgeCou
       {active && (
         <div className={cn(
           "absolute inset-0 rounded-lg -z-10",
-          "bg-sidebar-primary/[0.08]",
-          collapsed && "bg-sidebar-primary/[0.12]"
+          "bg-gradient-to-r from-sidebar-primary/[0.10] to-transparent",
+          collapsed && "bg-sidebar-primary/[0.14]"
         )} />
       )}
 
@@ -524,7 +531,7 @@ function NavItemButton({ icon: Icon, label, active, collapsed, onClick, badgeCou
             "size-[18px] transition-colors duration-200",
             active
               ? "text-sidebar-primary"
-              : "text-sidebar-foreground/45 group-hover:text-sidebar-foreground/80"
+              : "text-sidebar-foreground/50 group-hover:text-sidebar-foreground/85"
           )}
         />
         {/* Collapsed-mode badge dot with count */}

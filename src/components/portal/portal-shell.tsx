@@ -801,18 +801,16 @@ export function PortalShell({
                   </div>
                 </DropdownMenuContent>
               </DropdownMenu>
+              {/* AUDIT28-DESIGN — decluttered header: partner name + avatar
+                  dropdown only. The tier badge and "last login" line used to
+                  sit here as well (VLM review: "fighting for space") — both
+                  are already shown inside the profile dropdown below, so the
+                  prime header real estate now carries just identity + tools. */}
               <div className="hidden sm:flex flex-col items-end leading-tight">
                 <span className="text-sm font-medium max-w-[180px] truncate">
                   {partnerName}
                 </span>
-                <span className="text-xs text-muted-foreground">
-                  {t("portal-last-login")} {fmtRelative(portalAccess.last_login_at)}
-                </span>
               </div>
-              <Badge className={cn("gap-1 capitalize", TIER_META[tier].className)}>
-                <TierIcon className="size-3" />
-                {t(TIER_META[tier].labelKey)}
-              </Badge>
               {/* Theme toggle — light/dark mode */}
               <ThemeToggle />
               {/* Language selector — per-client locale preference */}
@@ -862,6 +860,11 @@ export function PortalShell({
                     <p className="text-xs text-muted-foreground truncate">
                       {t("portal-shell-welcome-short").replace("{name}", partnerName.split(" ")[0])}
                     </p>
+                    {portalAccess.last_login_at && (
+                      <p className="text-xs text-muted-foreground/80 mt-1 tabular">
+                        {t("portal-last-login")} {fmtRelative(portalAccess.last_login_at)}
+                      </p>
+                    )}
                     <div className="mt-2">
                       <Badge className={cn("gap-1 capitalize", TIER_META[tier].className)}>
                         <TierIcon className="size-3" />

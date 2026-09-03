@@ -6,6 +6,10 @@ import { useTheme } from "next-themes";
 import { useThemeCustomStore } from "@/lib/store/theme-store";
 import { useI18nStore } from "@/lib/i18n/store";
 import type { Locale } from "@/lib/i18n/dictionaries";
+// 8-c (error audit): silent client-side error capture — window "error" +
+// "unhandledrejection" listeners POSTing to /api/client-errors. Mounted
+// once here (renders null, no visual UI).
+import { ErrorReporter } from "@/components/error-reporter";
 
 function ThemeInitializer() {
   const applyTheme = useThemeCustomStore((s) => s.applyTheme);
@@ -69,6 +73,7 @@ export function Providers({
       <ThemeInitializer />
       <I18nLocaleBridge initialLocale={initialLocale} />
       <I18nInitializer />
+      <ErrorReporter />
       {children}
     </QueryClientProvider>
   );

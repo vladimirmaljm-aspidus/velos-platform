@@ -354,6 +354,37 @@ export interface AuditLog {
   created_at: string;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Error audit (task 8-c — migration 086).
+// One row per fingerprint (sha256 of source+message+first stack line, first
+// 16 hex chars — computed app-side in src/lib/monitoring/error-audit.ts).
+// Repeated occurrences of the same bug increment occurrence_count via the
+// record_error RPC instead of creating new rows. Service-role only (RLS
+// enabled, no policies) — never exposed to the browser.
+// ─────────────────────────────────────────────────────────────────────────────
+export type ErrorLogSource = "client" | "server";
+export type ErrorLogLevel = "error" | "warning";
+
+export interface ErrorLog {
+  id: string;
+  tenant_id: string | null;
+  source: ErrorLogSource;
+  level: ErrorLogLevel;
+  message: string;
+  stack: string | null;
+  url: string | null;
+  user_agent: string | null;
+  user_email: string | null;
+  user_role: string | null;
+  context: Record<string, unknown> | null;
+  fingerprint: string;
+  occurrence_count: number;
+  first_seen_at: string;
+  last_seen_at: string;
+  resolved_at: string | null;
+  resolved_by: string | null;
+}
+
 export interface Setting {
   tenant_id?: string | null;
   key: string;

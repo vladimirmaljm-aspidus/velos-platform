@@ -34,6 +34,8 @@ const DemandsView = dynamic(() => import("@/components/views/demands-view").then
 const DocumentsView = dynamic(() => import("@/components/views/documents-view").then((m) => m.DocumentsView), { ssr: false });
 const TasksView = dynamic(() => import("@/components/views/tasks-view").then((m) => m.TasksView), { ssr: false });
 const AuditView = dynamic(() => import("@/components/views/audit-view").then((m) => m.AuditView), { ssr: false });
+// AUDIT28 — in-house error audit surface (client JS errors + server 500s).
+const ErrorAuditView = dynamic(() => import("@/components/views/error-audit-view").then((m) => m.ErrorAuditView), { ssr: false });
 const UsersView = dynamic(() => import("@/components/views/users-view").then((m) => m.UsersView), { ssr: false });
 const SettingsView = dynamic(() => import("@/components/views/settings-view").then((m) => m.SettingsView), { ssr: false });
 const InvoicesView = dynamic(() => import("@/components/views/invoices-view").then((m) => m.InvoicesView), { ssr: false });
@@ -107,6 +109,7 @@ function ViewContent({ view }: { view: string }) {
     case "documents":            return <DocumentsView />;
     case "tasks":                return <TasksView />;
     case "audit":                return <AuditView />;
+    case "error-audit":          return <ErrorAuditView />;
     case "users":                return <UsersView />;
     case "settings":             return <SettingsView />;
     case "invoices":             return <InvoicesView />;

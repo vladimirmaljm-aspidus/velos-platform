@@ -935,6 +935,9 @@ export const MISC: Record<Locale, Record<string, string>> = {
     "login-signin-aria": "Sign in to your account",
     "login-signin-failed": "Sign in failed. Please try again.",
     "login-secure-note": "Secure login · Your data is encrypted end-to-end",
+    "login-client-portal-q": "Are you a client?",
+    "login-client-portal-link": "Go to Client Portal",
+    "misc-valid-until": "Valid until",
     "login-rights": "All rights reserved.",
     // ── Login extras (UI-1) ───────────────────────────────────────────────
     "login-brand-tagline": "Trade Management Platform",
@@ -2071,6 +2074,9 @@ export const MISC: Record<Locale, Record<string, string>> = {
     "login-signin-aria": "Prijavite se na svoj nalog",
     "login-signin-failed": "Prijava nije uspela. Pokusajte ponovo.",
     "login-secure-note": "Bezbedna prijava · Vasi podaci su sifrovani end-to-end",
+    "login-client-portal-q": "Jeste li klijent?",
+    "login-client-portal-link": "Idite na klijentski portal",
+    "misc-valid-until": "Važi do",
     "login-rights": "Sva prava zadrzana.",
 
     // ── Verify page extras ─────────────────────────────────────────────
@@ -3199,6 +3205,9 @@ export const MISC: Record<Locale, Record<string, string>> = {
     "login-signin-aria": "Hesabiniza giris yapin",
     "login-signin-failed": "Giris basarisiz. Lütfen tekrar deneyin.",
     "login-secure-note": "Güvenli giris · Verileriniz uctan uca sifrelidir",
+    "login-client-portal-q": "Müşteri misiniz?",
+    "login-client-portal-link": "Müşteri Portalına Git",
+    "misc-valid-until": "Geçerlilik tarihi",
     "login-rights": "Tüm haklari saklidir.",
 
     // ── Verify page extras ─────────────────────────────────────────────
@@ -4327,6 +4336,9 @@ export const MISC: Record<Locale, Record<string, string>> = {
     "login-signin-aria": "Bei Ihrem Konto anmelden",
     "login-signin-failed": "Anmeldung fehlgeschlagen. Bitte erneut versuchen.",
     "login-secure-note": "Sichere Anmeldung · Ihre Daten sind Ende-zu-Ende verschlüsselt",
+    "login-client-portal-q": "Sind Sie Kunde?",
+    "login-client-portal-link": "Zum Kundenportal",
+    "misc-valid-until": "Gültig bis",
     "login-rights": "Alle Rechte vorbehalten.",
 
     // ── Verify page extras ─────────────────────────────────────────────
@@ -5456,6 +5468,9 @@ export const MISC: Record<Locale, Record<string, string>> = {
     "login-signin-aria": "Войти в свой аккаунт",
     "login-signin-failed": "Вход не удался. Попробуйте снова.",
     "login-secure-note": "Безопасный вход · Ваши данные зашифрованы end-to-end",
+    "login-client-portal-q": "Вы клиент?",
+    "login-client-portal-link": "Перейти в клиентский портал",
+    "misc-valid-until": "Действительно до",
     "login-rights": "Все права защищены.",
 
     // ── Verify page extras ─────────────────────────────────────────────

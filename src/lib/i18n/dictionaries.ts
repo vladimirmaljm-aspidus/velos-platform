@@ -27,6 +27,8 @@ export const NAV: Record<Locale, Record<string, string>> = {
     lois: "Letters of Intent",
     "document-register": "Document Register",
     audit: "Audit Log",
+    // 8-c (error audit) — admin Error Audit view nav label.
+    "error-audit": "Error Audit",
     documents: "Documents",
     "kyc-review": "KYC Review",
     "portal-rfqs": "Client Requests",
@@ -86,6 +88,7 @@ export const NAV: Record<Locale, Record<string, string>> = {
     lois: "Pisma o nameri",
     "document-register": "Registar dokumenata",
     audit: "Dnevnik revizije",
+    "error-audit": "Nadzor grešaka",
     documents: "Dokumenti",
     "kyc-review": "KYC pregled",
     "portal-rfqs": "Klijentski zahtevi",
@@ -145,6 +148,7 @@ export const NAV: Record<Locale, Record<string, string>> = {
     lois: "Niyet Mektupları",
     "document-register": "Belge Kayıt Defteri",
     audit: "Denetim Kaydı",
+    "error-audit": "Hata Denetimi",
     documents: "Belgeler",
     "kyc-review": "KYC İncelemesi",
     "portal-rfqs": "Müşteri Talepleri",
@@ -204,6 +208,7 @@ export const NAV: Record<Locale, Record<string, string>> = {
     lois: "Absichtsbriefe",
     "document-register": "Dokumentenregister",
     audit: "Prüfprotokoll",
+    "error-audit": "Fehlerprotokoll",
     documents: "Dokumente",
     "kyc-review": "KYC-Prüfung",
     "portal-rfqs": "Kundenanfragen",
@@ -263,6 +268,7 @@ export const NAV: Record<Locale, Record<string, string>> = {
     lois: "Письма о намерениях",
     "document-register": "Реестр документов",
     audit: "Журнал аудита",
+    "error-audit": "Аудит ошибок",
     documents: "Документы",
     "kyc-review": "Проверка KYC",
     "portal-rfqs": "Запросы клиентов",
@@ -1843,9 +1849,10 @@ import { ADMINISTRATION } from "./domains/administration";
 import { PLATFORM } from "./domains/platform";
 import { MISC } from "./domains/misc";
 import { PORTAL } from "./domains/portal";
+import { ERROR_AUDIT } from "./domains/error-audit";
 
 const DOMAIN_DICTS: Record<Locale, Record<string, string>>[] = [
-  CRM, FINANCE, LOGISTICS, DOCUMENTS, ADMINISTRATION, PLATFORM, MISC, PORTAL,
+  CRM, FINANCE, LOGISTICS, DOCUMENTS, ADMINISTRATION, PLATFORM, MISC, PORTAL, ERROR_AUDIT,
 ];
 
 // ─── Helper ────────────────────────────────────────────────────────────────

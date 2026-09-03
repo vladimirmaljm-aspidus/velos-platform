@@ -237,6 +237,15 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: forgotEmail }),
       });
+      // AUDIT28 8-a-3 — check res.ok BEFORE parsing success: a 429 rate-limit
+      // or 400 used to fall through to the SUCCESS branch ("reset link sent")
+      // so the user waited for an email that was never sent. Mirror the
+      // reset-password handler below.
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({} as { error?: string }));
+        setForgotResult({ ok: false, message: (data as { error?: string }).error || t("portal-login-toast-network") });
+        return;
+      }
       const data = await res.json();
       setForgotResult({ ok: true, message: data.message || t("portal-login-toast-reset-link") });
     } catch {

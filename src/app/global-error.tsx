@@ -15,6 +15,7 @@ import { useEffect } from "react";
 import * as Sentry from "@sentry/nextjs";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, RotateCcw } from "lucide-react";
+import { reportError } from "@/components/error-reporter";
 
 export default function GlobalError({
   error,
@@ -29,6 +30,12 @@ export default function GlobalError({
     // Also log to console — Render captures stdout/stderr so this is the
     // default error trail when Sentry is not configured.
     console.error("[GlobalError]", error);
+    // 8-c (error audit): record the boundary-level crash in the in-house
+    // error_logs table via the public /api/client-errors ingest (source
+    // 'client'), carrying the Next.js digest. reportError never throws —
+    // a failing capture inside the LAST-RESORT boundary would be the worst
+    // possible place to raise.
+    reportError(error, { digest: error?.digest, boundary: "global-error" });
   }, [error]);
 
   return (

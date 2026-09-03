@@ -114,7 +114,9 @@ export function KpiCard({
               {label}
             </p>
 
-            <p className="mt-1.5 text-3xl font-bold tracking-tight tabular leading-none text-foreground whitespace-nowrap">
+            {/* AUDIT28-DESIGN — calmer corporate value: 26px semibold reads
+                "finance report" rather than "marketing dashboard". */}
+            <p className="mt-1.5 text-[26px] font-semibold tracking-tight tabular leading-none text-foreground whitespace-nowrap">
               {value}
             </p>
 
