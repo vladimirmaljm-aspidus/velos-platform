@@ -10,6 +10,7 @@ import { KeyboardShortcuts } from "./keyboard-shortcuts";
 import { useAppStore, useHydrateViewState } from "@/lib/store/app-store";
 import { cn } from "@/lib/utils";
 import { BrandLogo } from "@/components/common/brand-logo";
+import { ViewSkeleton } from "@/components/common/view-skeleton";
 import {
   Sheet,
   SheetContent,
@@ -21,76 +22,78 @@ import { toast } from "sonner";
 import { useSessionHeartbeat } from "@/hooks/use-session-heartbeat";
 
 /* -------------------------------------------------------------------------- */
-/*  Dynamic view imports (unchanged)                                          */
+/*  Dynamic view imports — every import gets the shared ViewSkeleton so the  */
+/*  chunk-download gap shows a structured placeholder instead of a blank     */
+/*  flash (audit 4-d P1-5). ssr stays off as before.                         */
 /* -------------------------------------------------------------------------- */
 
-const DashboardView = dynamic(() => import("@/components/views/dashboard-view").then((m) => m.DashboardView), { ssr: false });
-const PartnersView = dynamic(() => import("@/components/views/partners-view").then((m) => m.PartnersView), { ssr: false });
-const Partner360View = dynamic(() => import("@/components/views/partner-360-view").then((m) => m.Partner360View), { ssr: false });
-const ProductsView = dynamic(() => import("@/components/views/products-view").then((m) => m.ProductsView), { ssr: false });
-const DealsView = dynamic(() => import("@/components/views/deals-view").then((m) => m.DealsView), { ssr: false });
-const OffersView = dynamic(() => import("@/components/views/offers-view").then((m) => m.OffersView), { ssr: false });
-const DemandsView = dynamic(() => import("@/components/views/demands-view").then((m) => m.DemandsView), { ssr: false });
-const DocumentsView = dynamic(() => import("@/components/views/documents-view").then((m) => m.DocumentsView), { ssr: false });
-const TasksView = dynamic(() => import("@/components/views/tasks-view").then((m) => m.TasksView), { ssr: false });
-const AuditView = dynamic(() => import("@/components/views/audit-view").then((m) => m.AuditView), { ssr: false });
+const DashboardView = dynamic(() => import("@/components/views/dashboard-view").then((m) => m.DashboardView), { ssr: false, loading: () => <ViewSkeleton /> });
+const PartnersView = dynamic(() => import("@/components/views/partners-view").then((m) => m.PartnersView), { ssr: false, loading: () => <ViewSkeleton /> });
+const Partner360View = dynamic(() => import("@/components/views/partner-360-view").then((m) => m.Partner360View), { ssr: false, loading: () => <ViewSkeleton /> });
+const ProductsView = dynamic(() => import("@/components/views/products-view").then((m) => m.ProductsView), { ssr: false, loading: () => <ViewSkeleton /> });
+const DealsView = dynamic(() => import("@/components/views/deals-view").then((m) => m.DealsView), { ssr: false, loading: () => <ViewSkeleton /> });
+const OffersView = dynamic(() => import("@/components/views/offers-view").then((m) => m.OffersView), { ssr: false, loading: () => <ViewSkeleton /> });
+const DemandsView = dynamic(() => import("@/components/views/demands-view").then((m) => m.DemandsView), { ssr: false, loading: () => <ViewSkeleton /> });
+const DocumentsView = dynamic(() => import("@/components/views/documents-view").then((m) => m.DocumentsView), { ssr: false, loading: () => <ViewSkeleton /> });
+const TasksView = dynamic(() => import("@/components/views/tasks-view").then((m) => m.TasksView), { ssr: false, loading: () => <ViewSkeleton /> });
+const AuditView = dynamic(() => import("@/components/views/audit-view").then((m) => m.AuditView), { ssr: false, loading: () => <ViewSkeleton /> });
 // AUDIT28 — in-house error audit surface (client JS errors + server 500s).
-const ErrorAuditView = dynamic(() => import("@/components/views/error-audit-view").then((m) => m.ErrorAuditView), { ssr: false });
-const UsersView = dynamic(() => import("@/components/views/users-view").then((m) => m.UsersView), { ssr: false });
-const SettingsView = dynamic(() => import("@/components/views/settings-view").then((m) => m.SettingsView), { ssr: false });
-const InvoicesView = dynamic(() => import("@/components/views/invoices-view").then((m) => m.InvoicesView), { ssr: false });
-const ProformasView = dynamic(() => import("@/components/views/proformas-view").then((m) => m.ProformasView), { ssr: false });
+const ErrorAuditView = dynamic(() => import("@/components/views/error-audit-view").then((m) => m.ErrorAuditView), { ssr: false, loading: () => <ViewSkeleton /> });
+const UsersView = dynamic(() => import("@/components/views/users-view").then((m) => m.UsersView), { ssr: false, loading: () => <ViewSkeleton /> });
+const SettingsView = dynamic(() => import("@/components/views/settings-view").then((m) => m.SettingsView), { ssr: false, loading: () => <ViewSkeleton /> });
+const InvoicesView = dynamic(() => import("@/components/views/invoices-view").then((m) => m.InvoicesView), { ssr: false, loading: () => <ViewSkeleton /> });
+const ProformasView = dynamic(() => import("@/components/views/proformas-view").then((m) => m.ProformasView), { ssr: false, loading: () => <ViewSkeleton /> });
 // BUILD-LOI — admin Letters of Intent view (mirrors proformas-view pattern).
 // Dynamic + ssr:false so the heavy table + dialog stays out of the initial
 // bundle.
-const LoisView = dynamic(() => import("@/components/views/lois-view").then((m) => m.LoisView), { ssr: false });
-const DocumentRegisterView = dynamic(() => import("@/components/views/document-register-view").then((m) => m.DocumentRegisterView), { ssr: false });
-const InventoryView = dynamic(() => import("@/components/views/inventory-view").then((m) => m.InventoryView), { ssr: false });
-const SecurityView = dynamic(() => import("@/components/views/security-view").then((m) => m.SecurityView), { ssr: false });
-const VaultView = dynamic(() => import("@/components/views/vault-view").then((m) => m.VaultView), { ssr: false });
-const ApiKeysView = dynamic(() => import("@/components/views/api-keys-view").then((m) => m.ApiKeysView), { ssr: false });
-const WebhooksView = dynamic(() => import("@/components/views/webhooks-view").then((m) => m.WebhooksView), { ssr: false });
-const MailQueueView = dynamic(() => import("@/components/views/mail-queue-view").then((m) => m.MailQueueView), { ssr: false });
-const ProductCatalogView = dynamic(() => import("@/components/views/product-catalog-view").then((m) => m.ProductCatalogView), { ssr: false });
-const SupplierOffersView = dynamic(() => import("@/components/views/supplier-offers-view").then((m) => m.SupplierOffersView), { ssr: false });
-const TradeCalculatorView = dynamic(() => import("@/components/views/trade-calculator-view").then((m) => m.TradeCalculatorView), { ssr: false });
-const DocumentTemplatesView = dynamic(() => import("@/components/views/document-templates-view").then((m) => m.DocumentTemplatesView), { ssr: false });
-const QuickNotesView = dynamic(() => import("@/components/views/quick-notes-view").then((m) => m.QuickNotesView), { ssr: false });
-const WorkspaceView = dynamic(() => import("@/components/views/workspace-view").then((m) => m.WorkspaceView), { ssr: false });
-const PlansView = dynamic(() => import("@/components/views/plans-view").then((m) => m.PlansView), { ssr: false });
-const PlatformDashboardView = dynamic(() => import("@/components/views/platform-dashboard-view").then((m) => m.PlatformDashboardView), { ssr: false });
-const DocumentVerificationView = dynamic(() => import("@/components/views/document-verification-view").then((m) => m.DocumentVerificationView), { ssr: false });
-const KycReviewView = dynamic(() => import("@/components/views/kyc-review-view").then((m) => m.KycReviewView), { ssr: false });
-const PortalRfqsView = dynamic(() => import("@/components/views/portal-rfqs-view").then((m) => m.PortalRfqsView), { ssr: false });
-const CustomDashboardView = dynamic(() => import("@/components/views/custom-dashboard-view").then((m) => m.CustomDashboardView), { ssr: false });
-const CalendarView = dynamic(() => import("@/components/views/calendar-view").then((m) => m.CalendarView), { ssr: false });
-const EmailTemplatesView = dynamic(() => import("@/components/views/email-templates-view").then((m) => m.EmailTemplatesView), { ssr: false });
-const ApiIntegrationsView = dynamic(() => import("@/components/views/api-integrations-view").then((m) => m.ApiIntegrationsView), { ssr: false });
-const CommissionsView = dynamic(() => import("@/components/views/commissions-view").then((m) => m.CommissionsView), { ssr: false });
-const ErpView = dynamic(() => import("@/components/views/erp-view").then((m) => m.ErpView), { ssr: false });
-const TenantsView = dynamic(() => import("@/components/views/tenants-view").then((m) => m.TenantsView), { ssr: false });
-const SuperAdminOverviewView = dynamic(() => import("@/components/views/super-admin-overview-view").then((m) => m.SuperAdminOverviewView), { ssr: false });
-const SuperAdminSettingsView = dynamic(() => import("@/components/views/super-admin-settings-view").then((m) => m.SuperAdminSettingsView), { ssr: false });
-const FeatureFlagsView = dynamic(() => import("@/components/views/feature-flags-view").then((m) => m.FeatureFlagsView), { ssr: false });
-const PortalUploadsView = dynamic(() => import("@/components/views/portal-uploads-view").then((m) => m.PortalUploadsView), { ssr: false });
-const LogisticsRequestsView = dynamic(() => import("@/components/views/logistics-requests-view").then((m) => m.LogisticsRequestsView), { ssr: false });
-const PlanUpgradeQueueView = dynamic(() => import("@/components/views/plan-upgrade-queue-view").then((m) => m.PlanUpgradeQueueView), { ssr: false });
-const PortalLocationsView = dynamic(() => import("@/components/views/portal-locations-view").then((m) => m.PortalLocationsView), { ssr: false });
-const PlatformAuditView = dynamic(() => import("@/components/views/platform-audit-view").then((m) => m.PlatformAuditView), { ssr: false });
-const PlatformUsersView = dynamic(() => import("@/components/views/platform-users-view").then((m) => m.PlatformUsersView), { ssr: false });
-const PlatformHealthView = dynamic(() => import("@/components/views/platform-health-view").then((m) => m.PlatformHealthView), { ssr: false });
-const VerificationLogsView = dynamic(() => import("@/components/views/verification-logs-view").then((m) => m.VerificationLogsView), { ssr: false });
-const PerformanceView = dynamic(() => import("@/components/views/admin/performance-view").then((m) => m.PerformanceView), { ssr: false });
-const TradeGlobeView = dynamic(() => import("@/components/views/trade-globe-view").then((m) => m.TradeGlobeView), { ssr: false });
-const MarketplaceAdminView = dynamic(() => import("@/components/views/admin/marketplace-admin-view").then((m) => m.MarketplaceAdminView), { ssr: false });
+const LoisView = dynamic(() => import("@/components/views/lois-view").then((m) => m.LoisView), { ssr: false, loading: () => <ViewSkeleton /> });
+const DocumentRegisterView = dynamic(() => import("@/components/views/document-register-view").then((m) => m.DocumentRegisterView), { ssr: false, loading: () => <ViewSkeleton /> });
+const InventoryView = dynamic(() => import("@/components/views/inventory-view").then((m) => m.InventoryView), { ssr: false, loading: () => <ViewSkeleton /> });
+const SecurityView = dynamic(() => import("@/components/views/security-view").then((m) => m.SecurityView), { ssr: false, loading: () => <ViewSkeleton /> });
+const VaultView = dynamic(() => import("@/components/views/vault-view").then((m) => m.VaultView), { ssr: false, loading: () => <ViewSkeleton /> });
+const ApiKeysView = dynamic(() => import("@/components/views/api-keys-view").then((m) => m.ApiKeysView), { ssr: false, loading: () => <ViewSkeleton /> });
+const WebhooksView = dynamic(() => import("@/components/views/webhooks-view").then((m) => m.WebhooksView), { ssr: false, loading: () => <ViewSkeleton /> });
+const MailQueueView = dynamic(() => import("@/components/views/mail-queue-view").then((m) => m.MailQueueView), { ssr: false, loading: () => <ViewSkeleton /> });
+const ProductCatalogView = dynamic(() => import("@/components/views/product-catalog-view").then((m) => m.ProductCatalogView), { ssr: false, loading: () => <ViewSkeleton /> });
+const SupplierOffersView = dynamic(() => import("@/components/views/supplier-offers-view").then((m) => m.SupplierOffersView), { ssr: false, loading: () => <ViewSkeleton /> });
+const TradeCalculatorView = dynamic(() => import("@/components/views/trade-calculator-view").then((m) => m.TradeCalculatorView), { ssr: false, loading: () => <ViewSkeleton /> });
+const DocumentTemplatesView = dynamic(() => import("@/components/views/document-templates-view").then((m) => m.DocumentTemplatesView), { ssr: false, loading: () => <ViewSkeleton /> });
+const QuickNotesView = dynamic(() => import("@/components/views/quick-notes-view").then((m) => m.QuickNotesView), { ssr: false, loading: () => <ViewSkeleton /> });
+const WorkspaceView = dynamic(() => import("@/components/views/workspace-view").then((m) => m.WorkspaceView), { ssr: false, loading: () => <ViewSkeleton /> });
+const PlansView = dynamic(() => import("@/components/views/plans-view").then((m) => m.PlansView), { ssr: false, loading: () => <ViewSkeleton /> });
+const PlatformDashboardView = dynamic(() => import("@/components/views/platform-dashboard-view").then((m) => m.PlatformDashboardView), { ssr: false, loading: () => <ViewSkeleton /> });
+const DocumentVerificationView = dynamic(() => import("@/components/views/document-verification-view").then((m) => m.DocumentVerificationView), { ssr: false, loading: () => <ViewSkeleton /> });
+const KycReviewView = dynamic(() => import("@/components/views/kyc-review-view").then((m) => m.KycReviewView), { ssr: false, loading: () => <ViewSkeleton /> });
+const PortalRfqsView = dynamic(() => import("@/components/views/portal-rfqs-view").then((m) => m.PortalRfqsView), { ssr: false, loading: () => <ViewSkeleton /> });
+const CustomDashboardView = dynamic(() => import("@/components/views/custom-dashboard-view").then((m) => m.CustomDashboardView), { ssr: false, loading: () => <ViewSkeleton /> });
+const CalendarView = dynamic(() => import("@/components/views/calendar-view").then((m) => m.CalendarView), { ssr: false, loading: () => <ViewSkeleton /> });
+const EmailTemplatesView = dynamic(() => import("@/components/views/email-templates-view").then((m) => m.EmailTemplatesView), { ssr: false, loading: () => <ViewSkeleton /> });
+const ApiIntegrationsView = dynamic(() => import("@/components/views/api-integrations-view").then((m) => m.ApiIntegrationsView), { ssr: false, loading: () => <ViewSkeleton /> });
+const CommissionsView = dynamic(() => import("@/components/views/commissions-view").then((m) => m.CommissionsView), { ssr: false, loading: () => <ViewSkeleton /> });
+const ErpView = dynamic(() => import("@/components/views/erp-view").then((m) => m.ErpView), { ssr: false, loading: () => <ViewSkeleton /> });
+const TenantsView = dynamic(() => import("@/components/views/tenants-view").then((m) => m.TenantsView), { ssr: false, loading: () => <ViewSkeleton /> });
+const SuperAdminOverviewView = dynamic(() => import("@/components/views/super-admin-overview-view").then((m) => m.SuperAdminOverviewView), { ssr: false, loading: () => <ViewSkeleton /> });
+const SuperAdminSettingsView = dynamic(() => import("@/components/views/super-admin-settings-view").then((m) => m.SuperAdminSettingsView), { ssr: false, loading: () => <ViewSkeleton /> });
+const FeatureFlagsView = dynamic(() => import("@/components/views/feature-flags-view").then((m) => m.FeatureFlagsView), { ssr: false, loading: () => <ViewSkeleton /> });
+const PortalUploadsView = dynamic(() => import("@/components/views/portal-uploads-view").then((m) => m.PortalUploadsView), { ssr: false, loading: () => <ViewSkeleton /> });
+const LogisticsRequestsView = dynamic(() => import("@/components/views/logistics-requests-view").then((m) => m.LogisticsRequestsView), { ssr: false, loading: () => <ViewSkeleton /> });
+const PlanUpgradeQueueView = dynamic(() => import("@/components/views/plan-upgrade-queue-view").then((m) => m.PlanUpgradeQueueView), { ssr: false, loading: () => <ViewSkeleton /> });
+const PortalLocationsView = dynamic(() => import("@/components/views/portal-locations-view").then((m) => m.PortalLocationsView), { ssr: false, loading: () => <ViewSkeleton /> });
+const PlatformAuditView = dynamic(() => import("@/components/views/platform-audit-view").then((m) => m.PlatformAuditView), { ssr: false, loading: () => <ViewSkeleton /> });
+const PlatformUsersView = dynamic(() => import("@/components/views/platform-users-view").then((m) => m.PlatformUsersView), { ssr: false, loading: () => <ViewSkeleton /> });
+const PlatformHealthView = dynamic(() => import("@/components/views/platform-health-view").then((m) => m.PlatformHealthView), { ssr: false, loading: () => <ViewSkeleton /> });
+const VerificationLogsView = dynamic(() => import("@/components/views/verification-logs-view").then((m) => m.VerificationLogsView), { ssr: false, loading: () => <ViewSkeleton /> });
+const PerformanceView = dynamic(() => import("@/components/views/admin/performance-view").then((m) => m.PerformanceView), { ssr: false, loading: () => <ViewSkeleton /> });
+const TradeGlobeView = dynamic(() => import("@/components/views/trade-globe-view").then((m) => m.TradeGlobeView), { ssr: false, loading: () => <ViewSkeleton /> });
+const MarketplaceAdminView = dynamic(() => import("@/components/views/admin/marketplace-admin-view").then((m) => m.MarketplaceAdminView), { ssr: false, loading: () => <ViewSkeleton /> });
 // FEAT-1 (Trial approval) — super-admin queue of pending_approval
 // tenants. Dynamic + ssr:false so the heavy admin surface stays out of
 // the initial bundle.
-const SignupRequestsView = dynamic(() => import("@/components/views/signup-requests-view").then((m) => m.SignupRequestsView), { ssr: false });
+const SignupRequestsView = dynamic(() => import("@/components/views/signup-requests-view").then((m) => m.SignupRequestsView), { ssr: false, loading: () => <ViewSkeleton /> });
 // NOTIF-UX — full-page notifications surface (Administration section).
 // Dynamic + ssr:false to keep the heavy date-grouping / icon-map logic
 // out of the initial bundle.
-const NotificationsView = dynamic(() => import("@/components/views/notifications-view").then((m) => m.NotificationsView), { ssr: false });
+const NotificationsView = dynamic(() => import("@/components/views/notifications-view").then((m) => m.NotificationsView), { ssr: false, loading: () => <ViewSkeleton /> });
 
 /* -------------------------------------------------------------------------- */
 /*  View renderer                                                             */

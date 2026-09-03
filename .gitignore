@@ -56,3 +56,7 @@ tool-results/
 tmp/
 prisma/db/*.db
 prisma/db/
+
+# ── Editor backups / generated dumps (never commit) ──────────────────────────
+*.backup
+/download/

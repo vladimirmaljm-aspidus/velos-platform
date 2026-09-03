@@ -22,7 +22,11 @@ const jetbrainsMono = JetBrains_Mono({
   display: "swap",
 });
 
-const siteUrl = "https://aspidus.onrender.com";
+// Canonical public base URL. APP_BASE_URL wins when set (Vercel/preview
+// deployments); otherwise fall back to the live Vercel deployment. The old
+// Render host (aspidus.onrender.com) is dead — prod has been on Vercel for a
+// while, so metadataBase/og:url kept pointing at a stale origin (audit 4-d).
+const siteUrl = process.env.APP_BASE_URL || "https://velos-platform.vercel.app";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),

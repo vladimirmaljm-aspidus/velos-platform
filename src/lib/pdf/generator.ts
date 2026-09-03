@@ -5,7 +5,7 @@ import { generateQrCodeDataUrl, generateVerificationCode, computePdfHash } from 
 import { resolveDocumentTemplate, buildPlaceholderData } from "./doc-template";
 import { getStore } from "@/lib/data/store";
 import { getSupabase, isSupabaseConfigured } from "@/lib/supabase/client";
-import type { Offer, Invoice, Proforma, LetterOfIntent, Partner, Tenant, MemorandumSettings, TenantSeal, DocumentTemplate, TenantLetterhead } from "@/lib/supabase/types";
+import type { Offer, Invoice, Proforma, LetterOfIntent, Partner, Tenant, MemorandumSettings, TenantSeal, DocumentTemplate, DocumentVerification, TenantLetterhead } from "@/lib/supabase/types";
 // P0-3 / Feature 2: partner PII (contact_email, phone, tax_id, vat_number)
 // is stored encrypted (enc: prefix). The PDF generator fetches the partner
 // via store.getPartner which returns the raw row — so tax_id shows as
@@ -22,6 +22,16 @@ export interface GeneratePdfOptions {
    *  how the (possibly unsaved) form would look on a real document. The
    *  override never writes verifications (createVerification is forced off). */
   templateOverride?: DocumentTemplate | null;
+  /** PERF (D2 fix): rows the CALLING ROUTE already fetched for its own
+   *  tenant/ownership checks and filename build. When supplied (and the
+   *  ids match), generatePdf skips re-fetching them — previously every
+   * admin PDF request fetched the doc, partner and tenant TWICE (once in
+   * route-factory, once here), i.e. 3 redundant DB round trips. */
+  prefetched?: {
+    doc?: Offer | Invoice | Proforma | LetterOfIntent;
+    partner?: Partner | null;
+    tenant?: Tenant | null;
+  };
 }
 
 export interface GeneratePdfResult {
@@ -52,7 +62,36 @@ export interface GeneratePdfResult {
  * and the user sees a 500 instead of a PDF. By converting to a data: URL
  * ourselves we can detect failures early and gracefully fall back to the
  * no-logo layout.
+ *
+ * PERF (D2 fix): resolution costs a storage signed-URL round trip PLUS a
+ * full HTTP download of the image bytes. Uncached, that's 4 sequential
+ * network round trips per request (logo + seal) — on a cross-region
+ * deployment (e.g. Vercel fra1 → Supabase ap-southeast-2) that alone is
+ * over a second of pure latency. Tenant logos and seals change rarely, so
+ * the resolved data: URLs are cached per lambda instance (5 min TTL,
+ * 60 s for failures) — the cache lives at module scope and is shared by
+ * every request served by the instance.
  */
+interface CachedLogo {
+  dataUrl: string | null;
+  ts: number;
+}
+const logoCache = new Map<string, CachedLogo>();
+const LOGO_CACHE_TTL_MS = 5 * 60_000;
+const LOGO_CACHE_NEGATIVE_TTL_MS = 60_000;
+
+/** Cache lookup. Returns `undefined` when there is no fresh entry. */
+function getCachedLogo(key: string): string | null | undefined {
+  const hit = logoCache.get(key);
+  if (!hit) return undefined;
+  const ttl = hit.dataUrl ? LOGO_CACHE_TTL_MS : LOGO_CACHE_NEGATIVE_TTL_MS;
+  if (Date.now() - hit.ts > ttl) {
+    logoCache.delete(key);
+    return undefined;
+  }
+  return hit.dataUrl;
+}
+
 async function resolveLogoUrl(logoUrl: string | null | undefined): Promise<string | null> {
   if (!logoUrl) return null;
 
@@ -60,6 +99,16 @@ async function resolveLogoUrl(logoUrl: string | null | undefined): Promise<strin
   // @react-pdf/renderer — pass them straight through.
   if (logoUrl.startsWith("data:")) return logoUrl;
 
+  // PERF: warm cache — skip the signed-URL round trip + image download.
+  const cached = getCachedLogo(logoUrl);
+  if (cached !== undefined) return cached;
+
+  const dataUrl = await resolveLogoUrlUncached(logoUrl);
+  logoCache.set(logoUrl, { dataUrl, ts: Date.now() });
+  return dataUrl;
+}
+
+async function resolveLogoUrlUncached(logoUrl: string): Promise<string | null> {
   // If Supabase is not configured, fetch as data URL (dev/mock mode)
   if (!isSupabaseConfigured()) return fetchAsDataUrl(logoUrl);
 
@@ -193,20 +242,81 @@ async function getMemorandumSettings(tenantId: string): Promise<MemorandumSettin
 }
 
 export async function generatePdf(opts: GeneratePdfOptions): Promise<GeneratePdfResult> {
+  const t0 = Date.now();
   const store = await getStore();
 
-  // Fetch the document
-  let doc: Offer | Invoice | Proforma | LetterOfIntent | null = null;
-  if (opts.docType === "offer") doc = await store.getOffer(opts.docId);
-  else if (opts.docType === "invoice") doc = await store.getInvoice(opts.docId);
-  else if (opts.docType === "proforma") doc = await store.getProforma(opts.docId);
-  else if (opts.docType === "loi") doc = await store.getLoi(opts.docId);
+  // Fetch the document — or reuse the row the calling route already fetched
+  // for its tenant/ownership check (route-factory fetches it first to derive
+  // tenant_id; re-fetching it here was a wasted DB round trip per request).
+  // The id-check guards against a caller passing a prefetched row for a
+  // different document — in that case we fall through to a real fetch.
+  let doc: Offer | Invoice | Proforma | LetterOfIntent | null =
+    opts.prefetched?.doc && opts.prefetched.doc.id === opts.docId ? opts.prefetched.doc : null;
+  if (!doc) {
+    if (opts.docType === "offer") doc = await store.getOffer(opts.docId);
+    else if (opts.docType === "invoice") doc = await store.getInvoice(opts.docId);
+    else if (opts.docType === "proforma") doc = await store.getProforma(opts.docId);
+    else if (opts.docType === "loi") doc = await store.getLoi(opts.docId);
+  }
 
   if (!doc) throw new Error(`${opts.docType} not found`);
+  // Frozen const aliases for use inside the async IIFEs below — TS keeps the
+  // null-narrowing only for consts captured by closures.
+  const partnerId = doc.partner_id;
 
-  // Fetch partner + tenant + memorandum settings
-  const rawPartner = doc.partner_id ? await store.getPartner(doc.partner_id) : null;
-  const tenant = await store.getTenant(opts.tenantId);
+  // ── PERF (D2 fix): parallel data-fetch phase 1 ──────────────────────
+  // partner, tenant, memorandum settings, document template and the
+  // existing verification row are all INDEPENDENT given (doc, tenantId).
+  // They used to run as 5 sequential awaits — on a cross-region deployment
+  // (Vercel functions in fra1 ↔ Supabase in ap-southeast-2) every round
+  // trip pays the full network RTT, so this waterfall alone cost seconds.
+  // They now run concurrently via Promise.all; partner/tenant rows already
+  // fetched by the caller (id-checked) skip the round trip entirely.
+  const partnerFetch: Promise<Partner | null> = (async () => {
+    if (!partnerId) return null;
+    const pre = opts.prefetched?.partner;
+    if (pre && pre.id === partnerId) return pre;
+    return store.getPartner(partnerId);
+  })();
+  const tenantFetch: Promise<Tenant | null> = (async () => {
+    const pre = opts.prefetched?.tenant;
+    if (pre && pre.id === opts.tenantId) return pre;
+    return store.getTenant(opts.tenantId);
+  })();
+  const memoFetch: Promise<MemorandumSettings | null> = getMemorandumSettings(opts.tenantId).catch(
+    (memoErr: unknown) => {
+      // Don't fail the whole PDF — fall back to built-in defaults.
+      console.warn("[PDF] MemorandumSettings fetch failed — continuing with defaults:", memoErr);
+      return null;
+    },
+  );
+  // ── DocumentTemplate (audit20 / 20-a) ────────────────────────────────
+  // The template the user edits in the Document Templates view — page size,
+  // margins, header/footer segments, colours, table styling, letterhead +
+  // seal links, QR placement, bank-account selection. Per-field precedence
+  // in templates.tsx: template → memorandum_settings → built-in defaults,
+  // so tenants without template rows render exactly as before.
+  const templateFetch: Promise<DocumentTemplate | null> = (async () => {
+    if (opts.templateOverride) return opts.templateOverride;
+    try {
+      return await resolveDocumentTemplate(store, opts.tenantId, opts.docType);
+    } catch (tplErr) {
+      console.warn("[PDF] DocumentTemplate resolution failed — continuing without template:", tplErr);
+      return null;
+    }
+  })();
+  // Existing verification row — needed by BOTH branches below (issue vs
+  // re-render), fetched once, concurrently with the rest of phase 1.
+  const verificationFetch: Promise<DocumentVerification | null> =
+    store.getDocumentVerificationByDoc(opts.tenantId, opts.docType, opts.docId);
+
+  const [rawPartner, tenant, memorandumSettings, template, existingVerification] = await Promise.all([
+    partnerFetch,
+    tenantFetch,
+    memoFetch,
+    templateFetch,
+    verificationFetch,
+  ]);
 
   // ── Decrypt partner PII for PDF display ─────────────────────────────
   // partner.contact_email, phone, tax_id, vat_number are stored encrypted
@@ -242,41 +352,7 @@ export async function generatePdf(opts: GeneratePdfOptions): Promise<GeneratePdf
     return p as Partner;
   })() : null;
 
-  let memorandumSettings: MemorandumSettings | null = null;
-  try {
-    memorandumSettings = await getMemorandumSettings(opts.tenantId);
-  } catch (memoErr) {
-    // Don't fail the whole PDF — fall back to built-in defaults.
-    console.warn("[PDF] MemorandumSettings fetch failed — continuing with defaults:", memoErr);
-  }
-
-  // ── DocumentTemplate (audit20 / 20-a) ────────────────────────────────
-  // The template the user edits in the Document Templates view — page size,
-  // margins, header/footer segments, colours, table styling, letterhead +
-  // seal links, QR placement, bank-account selection. Per-field precedence
-  // in templates.tsx: template → memorandum_settings → built-in defaults,
-  // so tenants without template rows render exactly as before.
-  let template: DocumentTemplate | null = null;
-  try {
-    template = opts.templateOverride ?? await resolveDocumentTemplate(store, opts.tenantId, opts.docType);
-  } catch (tplErr) {
-    console.warn("[PDF] DocumentTemplate resolution failed — continuing without template:", tplErr);
-  }
-
-  // ── Letterhead (memorandum firme) ─────────────────────────────────────
-  // Template-linked letterhead wins; otherwise the tenant's own logo (the
-  // pre-audit20 behaviour). The letterhead also carries curated company
-  // fields used for {placeholder} substitution in header/footer segments.
-  let letterhead: TenantLetterhead | null = null;
-  if (template?.letterhead_id) {
-    try {
-      letterhead = await store.getLetterhead(template.letterhead_id);
-    } catch (lhErr) {
-      console.warn("[PDF] Letterhead fetch failed — continuing without it:", lhErr);
-    }
-  }
-
-  // Handle verification
+  // Handle verification (existingVerification was fetched in phase 1)
   let verificationCode: string | undefined;
   let qrCodeDataUrl: string | undefined;
   let pdfHash: string | undefined;
@@ -284,64 +360,84 @@ export async function generatePdf(opts: GeneratePdfOptions): Promise<GeneratePdf
 
   if (opts.createVerification !== false) {
     // Check if verification already exists
-    const existing = await store.getDocumentVerificationByDoc(opts.tenantId, opts.docType, opts.docId);
-    if (existing && existing.status === "active") {
-      verificationCode = existing.verification_code;
-      verificationId = existing.id;
+    if (existingVerification && existingVerification.status === "active") {
+      verificationCode = existingVerification.verification_code;
+      verificationId = existingVerification.id;
     } else {
       verificationCode = generateVerificationCode(opts.docType, doc.number);
-    }
-    // Wrap QR generation in try/catch — if the qrcode lib fails (corrupt
-    // input, native module crash, etc.) we still produce a valid PDF
-    // without the QR.
-    try {
-      qrCodeDataUrl = await generateQrCodeDataUrl(verificationCode);
-    } catch (qrErr) {
-      console.warn("[PDF] QR code generation failed — continuing without QR:", qrErr);
-      qrCodeDataUrl = undefined;
     }
   } else {
     // Even when NOT creating a new verification (portal-side PDF re-download),
     // if the admin already issued a verification for this document, we STILL
     // render its QR so scans keep working. Portal never creates a verification
     // but shouldn't strip an existing one either.
-    const existing = await store.getDocumentVerificationByDoc(opts.tenantId, opts.docType, opts.docId);
-    if (existing && existing.status === "active") {
-      verificationCode = existing.verification_code;
-      verificationId = existing.id;
-      try {
-        qrCodeDataUrl = await generateQrCodeDataUrl(verificationCode);
-      } catch (qrErr) {
-        console.warn("[PDF] QR code generation failed — continuing without QR:", qrErr);
-        qrCodeDataUrl = undefined;
-      }
+    if (existingVerification && existingVerification.status === "active") {
+      verificationCode = existingVerification.verification_code;
+      verificationId = existingVerification.id;
     }
   }
 
-  // Resolve the logo URL — the template-linked letterhead's logo wins, then
-  // the tenant's own logo (tenant.logo_url). Resolution converts the storage
-  // path into a data: URL so @react-pdf/renderer can render it without a
-  // network round-trip.
-  const resolvedLogoUrl = await resolveLogoUrl(letterhead?.logo_url || tenant?.logo_url);
+  // QR generation is pure local CPU (the `qrcode` npm lib — no network call),
+  // kicked off NOW so it overlaps with the remaining network fetches instead
+  // of sitting between them. Wrapped in catch — if the qrcode lib fails
+  // (corrupt input, native module crash, etc.) we still produce a valid PDF
+  // without the QR.
+  const qrFetch: Promise<string | undefined> = verificationCode
+    ? generateQrCodeDataUrl(verificationCode).catch((qrErr: unknown) => {
+        console.warn("[PDF] QR code generation failed — continuing without QR:", qrErr);
+        return undefined;
+      })
+    : Promise.resolve(undefined);
+
+  // ── Letterhead (memorandum firme) + seal — parallel phase 2 ──────────
+  // Both depend only on `template`, never on each other → fetched together
+  // (was 2 sequential DB round trips).
+  //
+  // Template-linked letterhead wins; otherwise the tenant's own logo (the
+  // pre-audit20 behaviour). The letterhead also carries curated company
+  // fields used for {placeholder} substitution in header/footer segments.
+  const letterheadFetch: Promise<TenantLetterhead | null> = (async () => {
+    if (!template?.letterhead_id) return null;
+    try {
+      return await store.getLetterhead(template.letterhead_id);
+    } catch (lhErr) {
+      console.warn("[PDF] Letterhead fetch failed — continuing without it:", lhErr);
+      return null;
+    }
+  })();
 
   // ── Seal (optional, branded stamp) ──────────────────────────────────
   // audit20: the template's seal wiring finally takes effect —
   //   • template.seal_enabled === false → NO seal (explicit opt-out)
   //   • template.seal_id → that specific seal
   //   • otherwise → the tenant's default seal (previous behaviour)
-  let seal: TenantSeal | null = null;
-  if (template && template.seal_enabled === false) {
-    seal = null;
-  } else {
+  const sealFetch: Promise<TenantSeal | null> = (async () => {
+    if (template && template.seal_enabled === false) return null;
     try {
-      seal = template?.seal_id
+      return template?.seal_id
         ? await store.getSeal(template.seal_id)
         : await store.getDefaultSeal(opts.tenantId);
     } catch (sealErr) {
       console.warn("[PDF] Seal fetch failed — continuing without seal:", sealErr);
+      return null;
     }
-  }
-  const sealImageUrl = seal ? await resolveLogoUrl(seal.image_url) : null;
+  })();
+
+  const [letterhead, seal] = await Promise.all([letterheadFetch, sealFetch]);
+
+  // Resolve the logo URL — the template-linked letterhead's logo wins, then
+  // the tenant's own logo (tenant.logo_url). Resolution converts the storage
+  // path into a data: URL so @react-pdf/renderer can render it without a
+  // network round-trip. PERF (D2 fix): the logo and the seal image now
+  // resolve CONCURRENTLY (was 4 sequential network round trips — 2
+  // signed-URL calls + 2 image downloads), and each is memoised in the
+  // module-scope logoCache across requests on the same lambda instance.
+  const [resolvedLogoUrl, sealImageUrl, qrDataUrl] = await Promise.all([
+    resolveLogoUrl(letterhead?.logo_url || tenant?.logo_url),
+    seal ? resolveLogoUrl(seal.image_url) : Promise.resolve(null),
+    qrFetch,
+  ]);
+  qrCodeDataUrl = qrDataUrl;
 
   // Build PDF metadata (visible in the PDF document properties dialog)
   // LOI doesn't have a `total` field — it has `total_value` (quantity × unit_price).
@@ -355,6 +451,16 @@ export async function generatePdf(opts: GeneratePdfOptions): Promise<GeneratePdf
     creator: "VELOS CRM System",
     keywords: [opts.docType, doc.number, partner?.name, doc.currency, verificationCode].filter(Boolean).join(", "),
   };
+
+  // PERF (D2 fix): the document-register version lookup is independent of
+  // the render and of the verification write — start it NOW so it overlaps
+  // with renderToBuffer's CPU work instead of adding another sequential DB
+  // round trip after it. The promise never rejects (the store method returns
+  // 0 on error) and the UNIQUE index from migration 075 + the retry loop
+  // below still guard the rare concurrent-slot race.
+  const nextVersionFetch: Promise<number> | null = opts.createVerification !== false
+    ? store.getMaxDocumentRegisterVersion(opts.tenantId, opts.docId, opts.docType)
+    : null;
 
   // Build + render the PDF
   const element = React.createElement(buildPdfDocument, {
@@ -422,7 +528,7 @@ export async function generatePdf(opts: GeneratePdfOptions): Promise<GeneratePdf
   // race-condition duplicate. The retry loop handles the rare race where
   // two concurrent renders both compute the same nextVersion.
   try {
-    const nextVersion = (await store.getMaxDocumentRegisterVersion(opts.tenantId, opts.docId, opts.docType)) + 1;
+    const nextVersion = (await (nextVersionFetch ?? Promise.resolve(0))) + 1;
     let attempts = 0;
     let lastErr: unknown = null;
     let registered = false;
@@ -474,6 +580,12 @@ export async function generatePdf(opts: GeneratePdfOptions): Promise<GeneratePdf
     console.error("[pdf.generator] Document register version lookup failed:", regErr);
   }
   } // end createVerification !== false (audit20 register gating)
+
+  // PERF telemetry (D2): one structured line per PDF render so the
+  // serverless logs show the end-to-end generation time (data fetch +
+  // render + verification/register writes) — grep "[pdf.perf]" in Vercel
+  // logs to track the effect of the D2 fixes after deploy.
+  console.log(`[pdf.perf] ${opts.docType} ${opts.docId} rendered in ${Date.now() - t0}ms (${buffer.length} bytes)`);
 
   return { buffer, verificationCode, pdfHash, verificationId };
 }

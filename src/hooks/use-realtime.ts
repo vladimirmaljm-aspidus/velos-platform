@@ -59,12 +59,15 @@
  *       routes the upgrade to the service (see Caddyfile). Example:
  *       `https://aspidus.onrender.com/?XTransformPort=3001`.
  *
- * Auth:
- *   The admin SPA's `user` from `useAppStore` is passed in the `auth`
- *   handshake so the gateway can join `user:<id>` and `tenant:<tid>` rooms.
- *   The JWT is NOT yet forwarded (the gateway trusts the handshake in dev);
- *   a follow-up will pass the `crm_session` cookie's payload as `auth.jwt`
- *   so the gateway can verify with `JWT_SECRET`.
+ * Auth (audit H3):
+ *   Before connecting we POST /api/realtime/ticket (session-cookie
+ *   authenticated) and append the returned HMAC-signed `ticket` query
+ *   param to the WS URL — the gateway verifies it with the shared
+ *   WS_TICKET_SECRET and no longer trusts the client-asserted userId for
+ *   cross-origin sockets. When ticket minting is unavailable (501 —
+ *   WS_TICKET_SECRET unset on the app side) we fall back to the legacy
+ *   `auth.token` handshake (still accepted while the gateway's secret is
+ *   unset too). Same-origin cookie auth is unaffected either way.
  */
 
 import { useEffect, useRef } from "react";
@@ -75,6 +78,25 @@ import { useAppStore } from "@/lib/store/app-store";
 // many components mount `useRealtime`.
 let socket: Socket | null = null;
 let connectedUserId: string | null = null;
+
+// Guards async socket creation (ticket fetch → io()): every creation attempt
+// bumps the sequence; an attempt whose socket resolves after a NEWER attempt
+// started (user switch, logout, ticket re-mint) discards its socket.
+let connectSeq = 0;
+
+// Live event-wrapper registrations — one entry per mounted `useRealtime`
+// effect. The ticket re-mint path below re-attaches ALL of them to the
+// replacement socket (a bare module var would only remember the last
+// hook's set and silently drop the other subscribers' events).
+const activeSubscriptions = new Map<number, Record<string, EventHandler>>();
+
+// Throttle for the ticket re-mint reconnect: at most one attempt per 30s so
+// an unreachable/misconfigured gateway can't spin a fetch+connect loop.
+let ticketRetryTimer: ReturnType<typeof setTimeout> | null = null;
+
+// Sequence for per-effect subscription registration (see
+// activeSubscriptions) — unique id per mounted hook effect.
+let subscriptionSeq = 0;
 
 // P0 / task D-FIX: polling-fallback state. Module-level so the WS event
 // listeners (attached once per socket lifetime) can toggle it without going
@@ -113,6 +135,143 @@ function getWsUrl(): string {
 type EventHandler = (data: any) => void;
 type EventMap = Record<string, EventHandler>;
 
+// ── Audit H3 (4-b): HMAC-signed WS ticket plumbing ─────────────────────────
+
+/**
+ * Fetch a short-lived HMAC-signed ticket from the session-authenticated
+ * mint route (POST /api/realtime/ticket). Returns null when minting is
+ * unavailable (not configured / logged out / network error) — the caller
+ * then falls back to the legacy `auth.token` handshake, which the gateway
+ * still accepts while ITS WS_TICKET_SECRET is also unset.
+ */
+async function fetchRealtimeTicket(): Promise<string | null> {
+  try {
+    const res = await fetch("/api/realtime/ticket", { method: "POST" });
+    if (!res.ok) return null;
+    const data: unknown = await res.json();
+    const ticket = (data as { ticket?: unknown } | null)?.ticket;
+    return typeof ticket === "string" && ticket ? ticket : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Append the ticket as a query param (base64url + encodeURIComponent). */
+function withTicketParam(url: string, ticket: string): string {
+  // NEXT_PUBLIC_WS_URL may already carry a query (e.g. ?XTransformPort=3001).
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}ticket=${encodeURIComponent(ticket)}`;
+}
+
+/**
+ * Create the singleton socket. Async because the ticket is fetched first
+ * (same-origin POST, session cookie) — the ticket must be in the handshake
+ * URL, and a socket's URL is fixed at creation.
+ *
+ * On a ticket-related connect_error (expired after a long-lived tab
+ * re-handshakes, or the service just started enforcing tickets) we tear the
+ * socket down and re-mint — throttled to one attempt per 30s. The polling
+ * fallback covers the gap, so no events are lost.
+ */
+async function createRealtimeSocket(
+  userId: string,
+  tenantId: string | undefined,
+): Promise<Socket> {
+  const base = getWsUrl();
+  const ticket = await fetchRealtimeTicket();
+  const url = ticket ? withTicketParam(base, ticket) : base;
+  const s = io(url, {
+    transports: ["websocket"],
+    // Legacy fallback handshake — ignored by the gateway whenever it
+    // enforces tickets (WS_TICKET_SECRET set); still needed while both
+    // sides run in the backward-compat (unset) mode.
+    auth: {
+      token: {
+        userId,
+        tenantId,
+      },
+    },
+    // Auto-reconnect with exponential backoff. Socket.IO's defaults
+    // are reasonable; we just cap the retry to avoid hammering the
+    // gateway during an outage.
+    reconnection: true,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 1_000,
+    reconnectionDelayMax: 15_000,
+  });
+
+  s.on("connect", () => {
+    console.debug("[realtime] connected");
+    // P0 / task D-FIX: the WS gateway is reachable — clear the polling
+    // fallback so subsequent interval ticks are no-ops and the live
+    // push path takes over.
+    setPolling(false);
+  });
+  s.on("disconnect", (reason) => {
+    console.debug("[realtime] disconnected:", reason);
+    // A short disconnect may be transient (Socket.IO will auto-retry)
+    // but we flip polling on so the 30s interval covers the outage.
+    // If the reconnect succeeds, `connect` fires and clears it.
+    setPolling(true);
+  });
+  s.on("connect_error", (err) => {
+    // Likely the gateway is down or not yet deployed (the current
+    // state — the mini-service exists in source but is not on
+    // Render). Logged at debug so prod doesn't get spammed during an
+    // outage; the polling fallback keeps the UI updating.
+    console.debug("[realtime] connect_error:", err.message);
+    setPolling(true);
+    // Audit H3: a rejected ticket (expiry is the recoverable case — the
+    // tab outlived the 1h TTL and re-handshook) is fixed by re-minting.
+    // Gateway-down errors don't match, so they keep the plain polling
+    // fallback instead of churning fetch+connect cycles.
+    if (/ticket|unauthenticated/i.test(err.message)) {
+      scheduleTicketRemint(userId, tenantId);
+    }
+  });
+  return s;
+}
+
+/**
+ * Attach every live subscription to a socket. Only called on a FRESHLY
+ * created socket (nobody could have attached during the async creation —
+ * `socket` was null), so no double-registration risk.
+ */
+function attachAllSubscriptions(s: Socket): void {
+  for (const wrappers of activeSubscriptions.values()) {
+    for (const name of Object.keys(wrappers)) {
+      s.on(name, wrappers[name]);
+    }
+  }
+}
+
+/**
+ * Tear down the failing singleton and reconnect with a fresh ticket.
+ * Throttled (one attempt / 30s) and a no-op when a newer user has since
+ * connected. Re-attaches every live subscription to the replacement socket.
+ */
+function scheduleTicketRemint(userId: string, tenantId: string | undefined): void {
+  if (ticketRetryTimer) return; // already scheduled
+  ticketRetryTimer = setTimeout(() => {
+    ticketRetryTimer = null;
+    if (connectedUserId !== userId) return; // user changed / logged out
+    console.debug("[realtime] re-minting WS ticket and reconnecting…");
+    socket?.disconnect();
+    socket = null;
+    connectedUserId = null;
+    const seq = ++connectSeq;
+    void createRealtimeSocket(userId, tenantId).then((s) => {
+      if (seq !== connectSeq) {
+        s.disconnect();
+        return;
+      }
+      socket = s;
+      connectedUserId = userId;
+      attachAllSubscriptions(s);
+    });
+  }, 30_000);
+}
+
 export function useRealtime(events: EventMap, onPoll?: () => void): void {
   const user = useAppStore((s) => s.user);
   // Latest handlers kept in a ref so we never need to resubscribe when a
@@ -138,63 +297,53 @@ export function useRealtime(events: EventMap, onPoll?: () => void): void {
   useEffect(() => {
     if (!user?.id) return; // logged out — nothing to subscribe to
 
-    // Lazy-init the singleton socket the first time we have a user. If the
-    // user CHANGES (super-admin impersonation, login-as, etc.) tear down
-    // and reconnect so the rooms are correct.
-    if (!socket || connectedUserId !== user.id) {
-      socket?.disconnect();
-      socket = io(getWsUrl(), {
-        transports: ["websocket"],
-        auth: {
-          token: {
-            userId: user.id,
-            tenantId: user.tenant_id ?? undefined,
-          },
-        },
-        // Auto-reconnect with exponential backoff. Socket.IO's defaults
-        // are reasonable; we just cap the retry to avoid hammering the
-        // gateway during an outage.
-        reconnection: true,
-        reconnectionAttempts: Infinity,
-        reconnectionDelay: 1_000,
-        reconnectionDelayMax: 15_000,
-      });
-      connectedUserId = user.id;
-
-      socket.on("connect", () => {
-        console.debug("[realtime] connected");
-        // P0 / task D-FIX: the WS gateway is reachable — clear the polling
-        // fallback so subsequent interval ticks are no-ops and the live
-        // push path takes over.
-        setPolling(false);
-      });
-      socket.on("disconnect", (reason) => {
-        console.debug("[realtime] disconnected:", reason);
-        // A short disconnect may be transient (Socket.IO will auto-retry)
-        // but we flip polling on so the 30s interval covers the outage.
-        // If the reconnect succeeds, `connect` fires and clears it.
-        setPolling(true);
-      });
-      socket.on("connect_error", (err) => {
-        // Likely the gateway is down or not yet deployed (the current
-        // state — the mini-service exists in source but is not on
-        // Render). Logged at debug so prod doesn't get spammed during an
-        // outage; the polling fallback keeps the UI updating.
-        console.debug("[realtime] connect_error:", err.message);
-        setPolling(true);
-      });
-    }
-
-    const names = eventKey ? eventKey.split("|") : [];
     // Each event name maps to a stable wrapper that reads the latest handler
     // from the ref. This is what lets callers pass new handler closures on
     // every render without us churning the socket's listener registry.
+    const names = eventKey ? eventKey.split("|") : [];
     const wrappers: Record<string, EventHandler> = {};
     for (const name of names) {
       const wrapper: EventHandler = (data) => handlersRef.current[name]?.(data);
       wrappers[name] = wrapper;
-      socket!.on(name, wrapper);
     }
+    const attach = (s: Socket): void => {
+      for (const name of names) s.on(name, wrappers[name]);
+    };
+
+    // Lazy-init the singleton socket the first time we have a user. If the
+    // user CHANGES (super-admin impersonation, login-as, etc.) tear down
+    // and reconnect so the rooms are correct. Async (audit H3): the signed
+    // ticket is fetched before the socket is created so it rides the
+    // handshake URL.
+    if (!socket || connectedUserId !== user.id) {
+      socket?.disconnect();
+      socket = null;
+      connectedUserId = null;
+      const userId = user.id;
+      const tenantId = user.tenant_id ?? undefined;
+      const seq = ++connectSeq;
+      void createRealtimeSocket(userId, tenantId).then((s) => {
+        if (seq !== connectSeq) {
+          // A newer attempt (user switch / logout / re-mint) superseded us —
+          // discard this socket instead of leaking it.
+          s.disconnect();
+          return;
+        }
+        socket = s;
+        connectedUserId = userId;
+        // Attach ALL live subscriptions, not just this run's — an effect run
+        // that re-ran during the async creation (eventKey change) saw
+        // `socket == null` and could not attach its own wrappers.
+        attachAllSubscriptions(s);
+      });
+    } else if (socket) {
+      attach(socket);
+    }
+
+    // Track this effect's wrappers so the ticket re-mint path can re-attach
+    // them to the replacement socket (see activeSubscriptions above).
+    const subId = ++subscriptionSeq;
+    activeSubscriptions.set(subId, wrappers);
 
     // ── P0 / task D-FIX: 30s polling fallback ───────────────────────────
     // The interval is always running while the hook is mounted; the inner
@@ -211,6 +360,7 @@ export function useRealtime(events: EventMap, onPoll?: () => void): void {
       for (const name of Object.keys(wrappers)) {
         socket?.off(name, wrappers[name]);
       }
+      activeSubscriptions.delete(subId);
       clearInterval(interval);
       // NOTE: we intentionally do NOT disconnect the socket here — the
       // singleton survives unmount so a re-mount (e.g. route change in the
@@ -234,9 +384,19 @@ export function disconnectRealtime(): void {
     socket.disconnect();
     socket = null;
     connectedUserId = null;
-    // Reset the polling flag so a subsequent login doesn't inherit the
-    // stale "WS is down" state — the new socket attempt will re-set it
-    // if the gateway is still unavailable.
-    pollingActive = false;
   }
+  // Invalidate any in-flight creation so its socket is discarded instead
+  // of re-assigning the singleton after logout (audit H3 plumbing). Runs
+  // even when `socket` is null — a creation may still be in flight.
+  connectSeq++;
+  // Cancel a pending ticket re-mint — the login flow re-creates the socket
+  // with a fresh ticket when a new user logs in.
+  if (ticketRetryTimer) {
+    clearTimeout(ticketRetryTimer);
+    ticketRetryTimer = null;
+  }
+  // Reset the polling flag so a subsequent login doesn't inherit the
+  // stale "WS is down" state — the new socket attempt will re-set it
+  // if the gateway is still unavailable.
+  pollingActive = false;
 }

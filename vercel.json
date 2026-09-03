@@ -2,7 +2,7 @@
   "framework": "nextjs",
   "buildCommand": "npm install --legacy-peer-deps && npm run build",
   "installCommand": "npm install --legacy-peer-deps",
-  "regions": ["fra1"],
+  "regions": ["syd1"],
   "functions": {
     "src/app/api/**/route.ts": {
       "maxDuration": 30

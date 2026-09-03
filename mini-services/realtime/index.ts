@@ -23,17 +23,34 @@
  *    extract `sub` (user id), `tenant_id`, and `role` directly from the
  *    JWT payload — no DB round-trip needed.
  *
- * 2. **Handshake `auth.token` (cross-origin fallback):** the useRealtime
- *    hook passes `{ userId, tenantId }` in the Socket.IO `auth` handshake.
- *    When cross-origin (the SPA on `velos-platform.vercel.app` connecting to
- *    the sandbox URL) the cookie is NOT forwarded by the browser (the
- *    `crm_session` cookie is `sameSite: lax`), so we fall back to the
- *    handshake payload. We then verify the user exists + is active in
- *    Supabase via the service-role key, and read the authoritative
- *    `tenant_id` and `role` from the row — never trust the client-supplied
- *    tenant_id/role on its own. If Supabase is not configured (no
- *    `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY`) we accept the handshake
- *    payload as-is (dev-only mode; logged at warn).
+ * 2. **Signed ticket (cross-origin, H3 fix):** the SPA fetches
+ *    `POST /api/realtime/ticket` (session-authenticated) from the Next.js
+ *    app and appends the returned `ticket` query parameter to the WS URL.
+ *    The ticket is `base64url(userId + ":" + exp + ":" + hmac)` where
+ *    hmac = HMAC-SHA256(WS_TICKET_SECRET, userId + ":" + exp) — minted in
+ *    src/app/api/realtime/ticket/route.ts with the SAME shared secret env
+ *    var. We verify the signature + expiry, then resolve the authoritative
+ *    `tenant_id` / `role` from the users row via the service-role key (the
+ *    ticket only proves WHO the user is — never trust it for tenant data
+ *    we can read from the DB).
+ *
+ *    When `WS_TICKET_SECRET` is set, an invalid/expired/missing ticket is
+ *    REJECTED for cross-origin connections (the old client-asserted
+ *    `auth.token.userId` handshake is disabled in this mode — that path
+ *    let anyone with a known user UUID join that tenant's room, audit H3).
+ *
+ *    When `WS_TICKET_SECRET` is NOT set (current default), a loud warning
+ *    is logged at boot and the legacy handshake payload path below stays
+ *    active for backward compatibility.
+ *
+ * 3. **Handshake `auth.token` (LEGACY cross-origin fallback, only when
+ *    `WS_TICKET_SECRET` is unset):** the useRealtime hook passes
+ *    `{ userId, tenantId }` in the Socket.IO `auth` handshake. We verify
+ *    the user exists + is active in Supabase via the service-role key, and
+ *    read the authoritative `tenant_id` and `role` from the row — never
+ *    trust the client-supplied tenant_id/role on its own. If Supabase is
+ *    not configured (no `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY`) the
+ *    connection is rejected.
  *
  * Either path produces `{ userId, tenantId, role }` and joins:
  *   • `tenant:<tenantId>` — every event broadcast to this room
@@ -54,18 +71,21 @@
  *
  * Env (all optional for `/health`; auth needs them to actually admit sockets):
  *   • PORT (default 3001)
- *   • CRON_TOKEN (default "velos-realtime-dev" — DEV ONLY, set in prod)
+ *   • CRON_TOKEN (required, min 16 chars — /emit auth)
  *   • JWT_SECRET_KEY (preferred) or SECRET_KEY (fallback) — must match the
  *     Next.js app's session signing key for cookie-based auth to work
- *   • SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY — for handshake-payload auth
- *     and optional session-revocation cross-check
+ *   • WS_TICKET_SECRET — shared HMAC secret for cross-origin tickets; must
+ *     match the Next.js app's env (see /api/realtime/ticket). Optional:
+ *     unset = legacy handshake path stays active (backward compat).
+ *   • SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY — for ticket/handshake
+ *     identity resolution and optional session-revocation cross-check
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
 import { Server as SocketIOServer, type Socket } from "socket.io";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { jwtVerify } from "jose";
-import { timingSafeEqual } from "crypto";
+import { createHmac, timingSafeEqual } from "crypto";
 
 const PORT = Number(process.env.PORT ?? 3001);
 // Audit 2d-F3 / 2e-F6 fix: remove the "velos-realtime-dev" fallback. A
@@ -84,6 +104,63 @@ if (!CRON_TOKEN_ENV || CRON_TOKEN_ENV.length < 16) {
   process.exit(1);
 }
 const CRON_TOKEN: string = CRON_TOKEN_ENV;
+
+// ── H3 (audit 4-b): signed WS tickets ─────────────────────────────────────
+// Shared HMAC secret with the Next.js app (src/app/api/realtime/ticket/
+// route.ts mints the tickets). When set, cross-origin connections MUST
+// present a valid `ticket` query param; when unset we keep the legacy
+// handshake auth (backward compat) and warn loudly at boot.
+const WS_TICKET_SECRET = process.env.WS_TICKET_SECRET || "";
+if (!WS_TICKET_SECRET) {
+  console.warn(
+    "[realtime] WS_TICKET_SECRET is NOT set — signed-ticket auth for " +
+      "cross-origin sockets is DISABLED and the legacy client-asserted " +
+      "userId handshake is still accepted (audit H3: cross-tenant event " +
+      "disclosure with a known UUID). Set WS_TICKET_SECRET (min 32 chars, " +
+      "e.g. `openssl rand -hex 32`) to the SAME value as the Next.js app's " +
+      "env to require signed tickets.",
+  );
+} else if (WS_TICKET_SECRET.length < 32) {
+  console.error(
+    "[realtime] WS_TICKET_SECRET is set but shorter than 32 chars — " +
+      "refusing to start (weak shared secret).",
+  );
+  process.exit(1);
+}
+
+/**
+ * Verify a WS ticket and return the authenticated userId, or null.
+ *
+ * Format: base64url(userId + ":" + exp + ":" + hmac) where
+ *   hmac = base64url(HMAC-SHA256(WS_TICKET_SECRET, userId + ":" + exp))
+ * and exp is a unix-seconds expiry. userId is a UUID and exp is numeric,
+ * so splitting on ":" always yields exactly 3 parts.
+ *
+ * Mirrors the minting side in src/app/api/realtime/ticket/route.ts (kept
+ * in sync manually — this mini-service is a separate deployable and cannot
+ * import from src/).
+ */
+function verifyWsTicket(ticket: unknown): string | null {
+  if (!WS_TICKET_SECRET || typeof ticket !== "string" || !ticket) return null;
+  let raw: string;
+  try {
+    raw = Buffer.from(ticket, "base64url").toString("utf-8");
+  } catch {
+    return null;
+  }
+  const parts = raw.split(":");
+  if (parts.length !== 3) return null;
+  const [userId, expStr, sig] = parts;
+  if (!userId || !expStr || !sig) return null;
+  const exp = Number(expStr);
+  if (!Number.isFinite(exp) || exp * 1000 < Date.now()) return null; // expired
+  const expected = createHmac("sha256", WS_TICKET_SECRET)
+    .update(`${userId}:${expStr}`)
+    .digest("base64url");
+  // safeCompare = length-checked timingSafeEqual (see below).
+  if (!safeCompare(sig, expected)) return null;
+  return userId;
+}
 
 // JWT verification — must match the Next.js app's session signing secret.
 // `JWT_SECRET_KEY` is preferred (vault key separation, see `.env.example`);
@@ -356,9 +433,39 @@ io.use(async (socket: Socket, next) => {
     }
   }
 
-  // Path 2 — handshake payload (cross-origin fallback). Verify against
-  // Supabase so we don't trust a client-supplied tenant_id/role.
-  if (!identity && authPayload?.userId) {
+  // Path 2 — signed ticket (cross-origin; audit H3 fix). Preferred over the
+  // legacy handshake below and REQUIRED whenever WS_TICKET_SECRET is set:
+  // the ticket is HMAC-signed by the session-authenticated Next.js route
+  // (POST /api/realtime/ticket), so a client can no longer assert an
+  // arbitrary userId and receive that tenant's event stream.
+  if (!identity && WS_TICKET_SECRET) {
+    // `handshake.query` carries URL query params (the client appends
+    // ?ticket=... to the WS URL); also accept it via auth for symmetry.
+    const query = socket.handshake.query as Record<string, unknown> | undefined;
+    const ticket = query?.ticket ?? (authPayload as { ticket?: unknown } | null)?.ticket ?? null;
+    const ticketUserId = verifyWsTicket(ticket);
+    if (!ticketUserId) {
+      // Distinct message — the useRealtime hook matches it to tear down
+      // and re-mint a fresh ticket (expiry is the recoverable case).
+      return next(new Error("Invalid or expired ticket"));
+    }
+    const looked = await lookupUser(ticketUserId);
+    if (looked) {
+      identity = {
+        userId: ticketUserId,
+        tenantId: looked.tenant_id,
+        role: looked.role,
+      };
+    }
+    // lookupUser null (user deleted/disabled, or Supabase unreachable) →
+    // falls through to the rejection below. We refuse to guess a tenant for
+    // an identity we can't resolve, even with a valid ticket.
+  }
+
+  // Path 3 — legacy handshake payload (ONLY when WS_TICKET_SECRET is unset
+  // — backward compat for existing deployments). Verify against Supabase
+  // so we don't trust a client-supplied tenant_id/role.
+  if (!identity && !WS_TICKET_SECRET && authPayload?.userId) {
     const looked = await lookupUser(authPayload.userId);
     if (looked) {
       identity = {

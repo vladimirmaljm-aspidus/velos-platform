@@ -17,10 +17,13 @@ export const runtime = "nodejs";
 //     login page is exactly what we need to see). User email/role/tenant
 //     are enriched from the session cookie WHEN present, but their absence
 //     is not an error.
-//   • 30 req/min per IP via the repo's DB-backed checkRateLimit helper
+//   • 30 req / 5 min per IP via the repo's DB-backed checkRateLimit helper
 //     (same pattern as /api/auth/login). The reporter client dedupes per
 //     page-load, so legit users never come close; the cap exists for a
-//     looping script or an abusive client.
+//     looping script or an abusive client. Audit M8/6-a: the window was
+//     tightened from 30/min to 30/5min (30/min still allowed ~43k rows/day
+//     of spoofed ingest from one client), and the H2 getIp() fix means the
+//     bucket key can no longer be rotated with a fake CF-Connecting-IP.
 //   • Body cap 8KB — oversized payloads (dumped state, giant stacks) are
 //     silently dropped with 204.
 //   • ALWAYS 204, NEVER an error response (except the 429 rate-limit
@@ -35,7 +38,7 @@ export const runtime = "nodejs";
 
 const MAX_BODY_BYTES = 8192;
 const RATE_LIMIT_MAX = 30;
-const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_WINDOW_MS = 5 * 60_000;
 
 /** Best-effort session enrichment — enriches email/role/tenant when the
  *  reporter happens to run while a session cookie is present. NEVER throws

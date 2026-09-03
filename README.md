@@ -52,21 +52,25 @@ tests/            Unit + integration tests (vitest)
 ## Local development
 
 ```bash
-bun install
+npm install
 cp .env.example .env   # fill in your Supabase + admin credentials
-bun run db:generate     # generate Prisma client
-bun run db:push         # sync Prisma schema to local SQLite (dev only)
-bun run dev             # http://localhost:3000
+npm run db:generate     # generate Prisma client
+npm run db:push         # sync Prisma schema to local SQLite (dev only)
+npm run dev             # http://localhost:3000
 ```
 
 For first deploy, call `POST /api/setup` once with the admin credentials from
 your `.env` to create the initial super-admin user.
 
-## Production deploy (Render)
+## Production deploy (Vercel)
 
-`render.yaml` defines the web service. Build command runs Prisma generate +
-`next build`; start runs the standalone server. Set the env vars listed in
-`.env.example` in the Render dashboard.
+Production runs on Vercel: https://velos-platform.vercel.app. The GitHub repo
+is connected to the Vercel project — every push to `main` triggers an
+auto-deploy (`npm install --legacy-peer-deps && npm run build`, see
+`vercel.json`; API routes get a 30s `maxDuration`). Set the env vars listed in
+`.env.example` (Supabase credentials + app secrets) in the Vercel dashboard
+(Project Settings → Environment Variables) — never commit real secrets to
+the repo.
 
 ## Multi-tenancy
 

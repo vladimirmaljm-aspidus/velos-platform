@@ -280,11 +280,13 @@ export const openApiSpec: OpenAPISpec = {
       "Server-error bodies are sanitised (no stack traces leak).",
     contact: {
       name: "VELOS Trade Platform",
-      url: "https://aspidus.onrender.com",
+      url: process.env.APP_BASE_URL || "https://velos-platform.vercel.app",
     },
   },
   servers: [
-    { url: "https://aspidus.onrender.com", description: "Production" },
+    // Stale Render host replaced with the live Vercel deployment (audit 4-d
+    // metadataBase fix) — same APP_BASE_URL fallback pattern as lib/pdf/qr.ts.
+    { url: process.env.APP_BASE_URL || "https://velos-platform.vercel.app", description: "Production" },
     { url: "http://localhost:3000", description: "Local development" },
   ],
   tags: [

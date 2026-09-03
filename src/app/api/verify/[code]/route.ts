@@ -4,6 +4,7 @@ import { getSupabase } from "@/lib/supabase/client";
 import { parseUserAgent } from "@/lib/utils/device-parser";
 import { lookupIp, GeoData, validateGpsAgainstIp } from "@/lib/utils/geo-ip";
 import { getIp } from "@/lib/api/helpers";
+import { checkRateLimit } from "@/lib/security/rate-limiter";
 
 export const runtime = "nodejs";
 
@@ -131,8 +132,40 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ code
 // Resilient: any failure (logging, missing table, supabase down) MUST
 // NOT turn a valid verification into a 500 — the response is `{ ok }`
 // and the page has already rendered the verification result.
+// Audit M6/4-c: DB-backed rate limit for the public GPS-verification POST.
+// The handler writes TWO rows per call (legacy verification_logs + detailed
+// document_verification_logs) with no cap — an unauthenticated loop could
+// farm log-spam (storage + super-admin viewer noise) at request speed. The
+// middleware's in-memory 10/min cap is per-instance (decorative on Vercel
+// serverless); this DB-backed cap is authoritative. Keyed per IP+code so
+// one verifier's retries never block a different document's verifiers.
+const VERIFY_POST_RATE_LIMIT = {
+  maxAttempts: 20,
+  windowMs: 5 * 60 * 1000,
+};
+
 export async function POST(req: NextRequest, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params;
+
+  // ── Rate limit BEFORE any DB read / log write (audit M6) ──────────────
+  // On excess: 429, and NOTHING is written to either log table.
+  const rl = await checkRateLimit(
+    `verify-post:ip:${getIp(req)}:code:${code}`,
+    VERIFY_POST_RATE_LIMIT.maxAttempts,
+    VERIFY_POST_RATE_LIMIT.windowMs,
+  );
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: "Too many verification attempts" },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": String(Math.ceil((rl.retryAfter ?? 60_000) / 1000)),
+          "Cache-Control": "no-store",
+        },
+      },
+    );
+  }
 
   // Body is optional — empty body is fine (treated as IP-only).
   let body: {
@@ -313,10 +346,10 @@ async function logVerificationAttempt(
 ): Promise<void> {
   try {
     // Resolve the caller's IP via the shared `getIp()` helper.
-    // Audit F-6/S-1: previously this read the FIRST value of X-Forwarded-For,
-    // which is attacker-controlled. `getIp()` reads the LAST entry (appended
-    // by Render's trusted proxy), making IP-based GPS-gate keying + audit
-    // attribution unspoofable.
+    // Audit F-6/S-1 + H2: `getIp()` only trusts platform-set forwarded-for
+    // headers (Vercel) — CF-Connecting-IP / X-Real-IP are ignored unless
+    // TRUST_PROXY_HEADERS=true — so IP-based GPS-gate keying and audit
+    // attribution are not spoofable by the client.
     const ip = getIp(req) || "unknown";
 
     const userAgent = req.headers.get("user-agent") || null;

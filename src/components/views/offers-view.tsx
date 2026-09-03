@@ -47,6 +47,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
+import { TableScroll } from "@/components/common/table-scroll";
 import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
 
 import { EmptyState } from "@/components/common/empty-state";
@@ -762,7 +763,8 @@ export function OffersView() {
             />
           ) : (
             <>
-              <div className="overflow-x-auto">
+              {/* D3 mobile fix — shared TableScroll wrapper (aria region + right-edge scroll hint). */}
+              <TableScroll label={t("offers")}>
                 <Table>
                   <TableHeader className="sticky top-0 bg-card z-10">
                     <TableRow>
@@ -822,7 +824,7 @@ export function OffersView() {
                     ))}
                   </TableBody>
                 </Table>
-              </div>
+              </TableScroll>
 
               {/* Pagination + Page size */}
               <div className="flex items-center justify-between px-4 py-3 border-t border-border/60 gap-3 flex-wrap">

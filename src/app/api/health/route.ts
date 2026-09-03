@@ -12,7 +12,10 @@ export const dynamic = "force-dynamic";
  *
  * Behaviour:
  *   • Supabase env vars missing → 503 `{status:"degraded", db:"not_configured"}`
- *   • DB unreachable / query errors → 503 `{status:"degraded", db:"error", error}`
+ *   • DB unreachable / query errors → 503 `{status:"degraded", db:"error",
+ *     error:"db_error"}` — the raw Postgres/Supabase message is logged
+ *     server-side only (audit 4-b LOW: error.message can leak schema/table
+ *     names and connection details to an unauthenticated caller).
  *   • DB reachable                  → 200 `{status:"ok", db:"connected"}`
  *
  * Implementation note: the previous version called `store.listTenants()` but
@@ -65,11 +68,13 @@ export async function GET() {
       .select("id", { count: "exact", head: true });
 
     if (error) {
+      // Log the real detail server-side; return a generic marker publicly.
+      console.error("[health] DB probe failed:", error.message);
       return NextResponse.json(
         {
           status: "degraded",
           db: "error",
-          error: error.message,
+          error: "db_error",
           sentry: getSentryStatus(),
         },
         { status: 503, headers: { "Cache-Control": "no-store" } }
@@ -86,13 +91,14 @@ export async function GET() {
     );
   } catch (err) {
     // `getSupabase()` throws if env vars are missing or the client can't be
-    // constructed; surface that as a 503 too.
-    const message = err instanceof Error ? err.message : "unknown error";
+    // constructed; surface that as a 503 too. Same leak rule as above —
+    // detail goes to the server log, the response stays generic.
+    console.error("[health] DB probe threw:", err instanceof Error ? err.message : err);
     return NextResponse.json(
       {
         status: "degraded",
         db: "error",
-        error: message,
+        error: "db_error",
         sentry: getSentryStatus(),
       },
       { status: 503, headers: { "Cache-Control": "no-store" } }

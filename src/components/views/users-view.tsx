@@ -69,19 +69,42 @@ function initials(name?: string | null): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
+// Crypto-secure randomness: Math.random is NOT unpredictable, so the
+// invite/reset passwords it generated were guessable (audit 4-d P2).
+// Web Crypto (crypto.getRandomValues) works in every browser and in
+// Node >= 19 — this view is client-only ("use client"), so it's safe.
+// Rejection sampling keeps the index distribution uniform (no modulo bias).
+function secureRandomInt(max: number): number {
+  const limit = Math.floor(0x100000000 / max) * max;
+  const buf = new Uint32Array(1);
+  let v = 0;
+  do {
+    crypto.getRandomValues(buf);
+    v = buf[0];
+  } while (v >= limit);
+  return v % max;
+}
+
 function generatePassword(): string {
   const letters = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ";
   const numbers = "23456789";
   const all = letters + numbers;
   let pwd = "";
   // Ensure at least 1 letter and 1 number
-  pwd += letters[Math.floor(Math.random() * letters.length)];
-  pwd += numbers[Math.floor(Math.random() * numbers.length)];
+  pwd += letters[secureRandomInt(letters.length)];
+  pwd += numbers[secureRandomInt(numbers.length)];
   for (let i = 2; i < 8; i++) {
-    pwd += all[Math.floor(Math.random() * all.length)];
+    pwd += all[secureRandomInt(all.length)];
   }
-  // Shuffle
-  return pwd.split("").sort(() => Math.random() - 0.5).join("");
+  // Fisher-Yates shuffle (crypto-secure) so the guaranteed letter/number
+  // don't always sit in the first two positions. Same charset, length (8)
+  // and shape as the previous Math.random version.
+  const chars = pwd.split("");
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = secureRandomInt(i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join("");
 }
 
 const PAGE_SIZE = 20;

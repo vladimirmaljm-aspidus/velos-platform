@@ -52,6 +52,7 @@ import { toast } from "sonner";
 import type { PortalAccess, PortalTier, Partner, Notification } from "@/lib/supabase/types";
 import { getTierMeta } from "@/lib/portal/tiers";
 import { usePortalGeolocation } from "@/lib/portal/use-geolocation";
+import { ViewSkeleton } from "@/components/common/view-skeleton";
 import { disconnectRealtime } from "@/hooks/use-realtime";
 import { useSessionHeartbeat } from "@/hooks/use-session-heartbeat";
 
@@ -61,15 +62,15 @@ import { useSessionHeartbeat } from "@/hooks/use-session-heartbeat";
 // codebase as a fallback but is no longer rendered.
 const PortalDashboard = dynamic(
   () => import("@/components/portal/portal-dashboard-redesign").then((m) => m.PortalDashboardRedesign),
-  { ssr: false }
+  { ssr: false, loading: () => <ViewSkeleton /> }
 );
 const PortalOffers = dynamic(
   () => import("@/components/portal/portal-offers").then((m) => m.PortalOffers),
-  { ssr: false }
+  { ssr: false, loading: () => <ViewSkeleton /> }
 );
 const PortalDocuments = dynamic(
   () => import("@/components/portal/portal-documents").then((m) => m.PortalDocuments),
-  { ssr: false }
+  { ssr: false, loading: () => <ViewSkeleton /> }
 );
 const PortalCatalog = dynamic(
   // P-CATALOG: redesigned grid + drawer + RFQ flow. The previous
@@ -77,46 +78,46 @@ const PortalCatalog = dynamic(
   // `portal-catalog-redesign.tsx`. Old file is kept for reference but no
   // longer rendered anywhere in the portal.
   () => import("@/components/portal/portal-catalog-redesign").then((m) => m.PortalCatalogRedesign),
-  { ssr: false }
+  { ssr: false, loading: () => <ViewSkeleton /> }
 );
 const PortalProfile = dynamic(
   () => import("@/components/portal/portal-profile").then((m) => m.PortalProfile),
-  { ssr: false }
+  { ssr: false, loading: () => <ViewSkeleton /> }
 );
 const PortalKyc = dynamic(
   () => import("@/components/portal/portal-kyc").then((m) => m.PortalKyc),
-  { ssr: false }
+  { ssr: false, loading: () => <ViewSkeleton /> }
 );
 const PortalRfq = dynamic(
   () => import("@/components/portal/portal-rfq").then((m) => m.PortalRfq),
-  { ssr: false }
+  { ssr: false, loading: () => <ViewSkeleton /> }
 );
 const PortalMessages = dynamic(
   () => import("@/components/portal/portal-messages").then((m) => m.PortalMessages),
-  { ssr: false }
+  { ssr: false, loading: () => <ViewSkeleton /> }
 );
 const PortalInvoices = dynamic(
   () => import("@/components/portal/portal-invoices").then((m) => m.PortalInvoices),
-  { ssr: false }
+  { ssr: false, loading: () => <ViewSkeleton /> }
 );
 const PortalProformas = dynamic(
   () => import("@/components/portal/portal-proformas").then((m) => m.PortalProformas),
-  { ssr: false }
+  { ssr: false, loading: () => <ViewSkeleton /> }
 );
 // BUILD-LOI-PORTAL — Letters of Intent addressed to this partner (the
 // partner is the SELLER / recipient; the tenant is the buyer). Same lazy
 // dynamic-import pattern as every other portal view.
 const PortalLois = dynamic(
   () => import("@/components/portal/portal-lois").then((m) => m.PortalLois),
-  { ssr: false }
+  { ssr: false, loading: () => <ViewSkeleton /> }
 );
 const PortalNotifications = dynamic(
   () => import("@/components/portal/portal-notifications").then((m) => m.PortalNotifications),
-  { ssr: false }
+  { ssr: false, loading: () => <ViewSkeleton /> }
 );
 const PortalLogistics = dynamic(
   () => import("@/components/portal/portal-logistics").then((m) => m.PortalLogistics),
-  { ssr: false }
+  { ssr: false, loading: () => <ViewSkeleton /> }
 );
 // Marketplace (Phase 1 — Berza roba): the SPA view router renders the
 // MarketplaceBrowser inside the PortalShell chrome. The standalone routes
@@ -125,7 +126,7 @@ const PortalLogistics = dynamic(
 // page) so deep links land on the right screen.
 const PortalMarketplace = dynamic(
   () => import("@/components/portal/marketplace/marketplace-browser").then((m) => m.MarketplaceBrowser),
-  { ssr: false }
+  { ssr: false, loading: () => <ViewSkeleton /> }
 );
 
 // Marketplace (Phase 3 — company profiles): the standalone route
@@ -136,7 +137,7 @@ const PortalMarketplace = dynamic(
 // detail or marketplace list.
 const PortalMarketplaceCompany = dynamic(
   () => import("@/components/portal/marketplace/company-profile").then((m) => m.CompanyProfile),
-  { ssr: false }
+  { ssr: false, loading: () => <ViewSkeleton /> }
 );
 
 // Marketplace (Phase 2 — negotiation rooms): the standalone route
@@ -148,7 +149,7 @@ const PortalMarketplaceCompany = dynamic(
 // SPA-side drill-down from list → room doesn't need a separate file).
 const PortalNegotiations = dynamic(
   () => import("@/components/portal/marketplace/negotiation-room").then((m) => m.NegotiationsBrowser),
-  { ssr: false }
+  { ssr: false, loading: () => <ViewSkeleton /> }
 );
 
 // Marketplace (Phase 9 — market intelligence): the standalone route
@@ -160,7 +161,7 @@ const PortalNegotiations = dynamic(
 // src/components/portal/marketplace/marketplace-intelligence-dashboard.tsx.
 const PortalMarketplaceIntelligence = dynamic(
   () => import("@/components/portal/marketplace/marketplace-intelligence-dashboard").then((m) => m.MarketplaceIntelligenceDashboard),
-  { ssr: false }
+  { ssr: false, loading: () => <ViewSkeleton /> }
 );
 
 // Marketplace (Phase 10 — community): the standalone route
@@ -171,7 +172,7 @@ const PortalMarketplaceIntelligence = dynamic(
 // component — see src/components/portal/marketplace/community-hub.tsx.
 const PortalMarketplaceCommunity = dynamic(
   () => import("@/components/portal/marketplace/community-hub").then((m) => m.CommunityHub),
-  { ssr: false }
+  { ssr: false, loading: () => <ViewSkeleton /> }
 );
 
 interface NavItem {

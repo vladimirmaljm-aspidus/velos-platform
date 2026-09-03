@@ -41,16 +41,30 @@ const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const PER_USER_LOGIN_MAX_ATTEMPTS = 5;
 const PER_USER_LOGIN_WINDOW_MS = 15 * 60 * 1000; // 15 min
 
+// H1 (audit 4-b) — per-IP super_admin login throttle. super_admin is
+// deliberately exempt from the per-user cap and the account lockout above
+// ("platform owner must always be able to log in"), which made the account
+// an unbounded brute-force target: an attacker who rotates source IPs gets
+// unlimited password guesses (the per-IP cap only stops ONE IP hammering).
+// This dedicated cap counts consecutive super_admin attempts from one IP
+// (a SUCCESSFUL login resets it via resetRateLimit, so the legitimate owner
+// is never blocked by their own fat-fingers); 5 non-successful attempts in
+// 15 min from a single IP → 429. It does NOT reintroduce a per-account
+// lockout — a different IP can still log in with the correct password.
+const SUPER_ADMIN_LOGIN_MAX_ATTEMPTS = 5;
+const SUPER_ADMIN_LOGIN_WINDOW_MS = 15 * 60 * 1000; // 15 min
+
 // F-7 (Rate Limiting): login attempts per IP are now configurable by
 // super-admins via the Settings UI (see src/lib/security/rate-limit-config.ts
 // and GET/PUT /api/settings/rate-limits). Defaults: 20 attempts / 15 min.
 
-// NOTE (audit F-6/S-1): previously this read the FIRST value of
-// X-Forwarded-For, which is attacker-controlled and trivially spoofable.
-// `getIp()` (src/lib/api/helpers.ts) takes the LAST value of the XFF chain
-// (the one appended by Render's trusted proxy), falling back to x-real-ip
-// and then "127.0.0.1". Use `getIp(req)` everywhere IP attribution matters
-// (rate-limiting, audit logs, login history, GPS-gate keying).
+// NOTE (audit F-6/S-1 + H2): `getIp()` (src/lib/utils/ip.ts) only trusts
+// platform-set forwarded-for headers on Vercel (`x-vercel-forwarded-for` /
+// `x-forwarded-for`, leftmost entry); CF-Connecting-IP / X-Real-IP are
+// ignored unless TRUST_PROXY_HEADERS=true, so the per-IP buckets below
+// cannot be rotated with a spoofed header. Use `getIp(req)` everywhere IP
+// attribution matters (rate-limiting, audit logs, login history, GPS-gate
+// keying).
 function getRequestIp(req: NextRequest): string {
   return getIp(req);
 }
@@ -264,6 +278,51 @@ export async function POST(req: NextRequest) {
         const retryAfterSec = Math.ceil((userRl.retryAfter ?? 60_000) / 1000);
         return NextResponse.json(
           { error: "Too many login attempts for this account. Try again later." },
+          { status: 429, headers: { "Retry-After": String(retryAfterSec) } },
+        );
+      }
+    }
+
+    // ── H1: per-IP super_admin login throttle ────────────────────────
+    // Runs BEFORE the password check so a throttled IP never gets another
+    // verifyPassword round. Only super_admin accounts hit this branch —
+    // regular users keep the per-user + lockout protections above and are
+    // unaffected. A success below calls resetRateLimit on this key.
+    if (user.role === "super_admin") {
+      const superAdminKey = `login:superadmin:ip:${ip}`;
+      const saRl = await checkRateLimit(
+        superAdminKey,
+        SUPER_ADMIN_LOGIN_MAX_ATTEMPTS,
+        SUPER_ADMIN_LOGIN_WINDOW_MS,
+      );
+      if (!saRl.allowed) {
+        // Audit + security event BEFORE the 429 — same pattern as the
+        // per-IP and per-user caps above. This is the canonical
+        // super_admin brute-force signal (one IP, one privileged account).
+        try {
+          await store.appendAudit({
+            user_id: user.id,
+            username: user.username,
+            action: "login.rate_limited",
+            entity_type: "auth",
+            entity_id: user.id,
+            details: { scope: "super_admin_per_ip", count: saRl.count },
+            ip,
+            user_agent: userAgent,
+          });
+        } catch (e) {
+          console.error("[login] appendAudit (super_admin per-IP throttle) failed:", e);
+        }
+        reportSecurityEvent({
+          type: "rate.limit.hit",
+          userId: user.id,
+          ip,
+          details: { scope: "super_admin_per_ip", key: superAdminKey, count: saRl.count },
+          severity: "warning",
+        });
+        const retryAfterSec = Math.ceil((saRl.retryAfter ?? 60_000) / 1000);
+        return NextResponse.json(
+          { error: "Too many super-admin login attempts from this address. Try again later." },
           { status: 429, headers: { "Retry-After": String(retryAfterSec) } },
         );
       }
@@ -595,6 +654,11 @@ export async function POST(req: NextRequest) {
     // P0-1: per-user reset is still desirable for the fat-finger case.
     if (user.role !== "super_admin") {
       void resetRateLimit(`login:user:${user.username}`).catch(() => {});
+    } else {
+      // H1: a successful super_admin login resets the per-IP throttle so a
+      // legit owner's fat-fingered attempts never accumulate across an
+      // eventual successful login → subsequent logins.
+      void resetRateLimit(`login:superadmin:ip:${ip}`).catch(() => {});
     }
 
     // ── P0-1: 2FA / TOTP check (super_admin bypasses) ──────────────────

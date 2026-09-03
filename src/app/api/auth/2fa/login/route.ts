@@ -150,6 +150,44 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid TOTP token." }, { status: 400 });
     }
 
+    // ── M1 (audit 4-b): TOTP replay protection ─────────────────────────
+    // otplib's ±1-step tolerance means a code is verifiable for ~90s, but
+    // nothing marked it consumed — a code observed once (shoulder-surf,
+    // proxy/MITM log, client malware) could be replayed within its window
+    // and log the attacker in. There is no users column to persist a
+    // last-used counter (see prisma/schema.prisma User — no totp_last_used)
+    // and adding one would require a migration on the live Postgres schema,
+    // so the least-invasive durable store is the existing `rate_limits`
+    // table via the same check_rate_limit RPC the route already uses: the
+    // key below is set ONCE per (user, code) — the atomic UPSERT makes it
+    // a one-shot marker (max 1 hit), and the 5-min window comfortably
+    // outlives a code's ~90s validity. Keyed by SHA-256 of the 6-digit
+    // token (NOT the raw token) so the table never stores a
+    // credential-equivalent value — same hygiene as the tempTokenHash key
+    // above. The code hash uniquely identifies the time-step window in
+    // practice (each window generates exactly one code; a cross-window
+    // string collision is a 1-in-10^6, harmless false reject). DB-backed,
+    // so it holds across serverless instances — a module-level Map would
+    // be per-lambda and racy. Fails open with the rest of the rate-limiter
+    // (defense-in-depth layer, not the auth gate).
+    const replayKey = `2fa:used:${user.id}:${createHash("sha256").update(token).digest("hex").slice(0, 16)}`;
+    const replay = await checkRateLimit(replayKey, 1, 5 * 60 * 1000);
+    if (!replay.allowed) {
+      await audit(
+        store,
+        { id: user.id, username: user.username, tenant_id: user.tenant_id },
+        req,
+        "auth.2fa.login_failed",
+        "auth",
+        user.id,
+        { reason: "replayed_token" },
+      );
+      return NextResponse.json(
+        { error: "This code has already been used. Wait for your authenticator to generate a new one." },
+        { status: 400 },
+      );
+    }
+
     // ── Success: issue a full session. ───────────────────────────────
     const ip = getIp(req);
     const userAgent = req.headers.get("user-agent") || null;

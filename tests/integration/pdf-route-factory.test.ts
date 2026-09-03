@@ -154,6 +154,11 @@ const invoiceRow = {
   tenant_id: "t1",
   partner_id: "part-1",
 };
+// PERF (D2 fix): the admin route now passes the doc/partner/tenant rows it
+// already fetched into generatePdf (prefetched) — shared fixtures so the
+// toHaveBeenCalledWith assertions stay exact.
+const partnerRow = { id: "part-1", name: "Buyer Co" };
+const tenantRow = { id: "t1", name: "Aspidus Trading" };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -170,8 +175,8 @@ beforeEach(() => {
   mockStore.getInvoice.mockResolvedValue(invoiceRow);
   mockStore.getLoi.mockResolvedValue({ id: "loi-1", number: "LOI-2026-0001", tenant_id: "t1", partner_id: null });
   mockStore.getOffer.mockResolvedValue({ id: "off-1", number: "OF-2026-0001", tenant_id: "t1", partner_id: "part-1" });
-  mockStore.getPartner.mockResolvedValue({ id: "part-1", name: "Buyer Co" });
-  mockStore.getTenant.mockResolvedValue({ id: "t1", name: "Aspidus Trading" });
+  mockStore.getPartner.mockResolvedValue(partnerRow);
+  mockStore.getTenant.mockResolvedValue(tenantRow);
   mockAudit.mockResolvedValue(undefined);
   mockMarkViewed.mockResolvedValue(undefined);
   mockPortalAccess.mockResolvedValue(null);
@@ -238,7 +243,12 @@ describe("makeAdminPdfRoute (uniform admin PDF pipeline)", () => {
   it("success: generatePdf uses the DOC's tenant, uniform audit action + filename + headers", async () => {
     const res = await adminInvoiceRoute(makeReq("http://localhost/api/invoices/inv-1/pdf"), { params: Promise.resolve({ id: "inv-1" }) });
     expect(res.status).toBe(200);
-    expect(mockGeneratePdf).toHaveBeenCalledWith({ docType: "invoice", docId: "inv-1", tenantId: "t1" });
+    expect(mockGeneratePdf).toHaveBeenCalledWith({
+      docType: "invoice",
+      docId: "inv-1",
+      tenantId: "t1",
+      prefetched: { doc: invoiceRow, partner: partnerRow, tenant: tenantRow },
+    });
     // uniform audit action "<docType>.pdf" (was "loi.pdf_downloaded" etc.)
     expect(mockAudit).toHaveBeenCalledWith(
       mockStore,
@@ -271,7 +281,12 @@ describe("makeAdminPdfRoute (uniform admin PDF pipeline)", () => {
     mockStore.getInvoice.mockResolvedValueOnce({ ...invoiceRow, tenant_id: "t-other" });
     const res = await adminInvoiceRoute(makeReq("http://localhost/api/invoices/inv-1/pdf"), { params: Promise.resolve({ id: "inv-1" }) });
     expect(res.status).toBe(200);
-    expect(mockGeneratePdf).toHaveBeenCalledWith({ docType: "invoice", docId: "inv-1", tenantId: "t-other" });
+    expect(mockGeneratePdf).toHaveBeenCalledWith({
+      docType: "invoice",
+      docId: "inv-1",
+      tenantId: "t-other",
+      prefetched: { doc: { ...invoiceRow, tenant_id: "t-other" }, partner: partnerRow, tenant: tenantRow },
+    });
   });
 
   it("missing doc → 404 before generatePdf", async () => {

@@ -44,6 +44,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
+import { TableScroll } from "@/components/common/table-scroll";
 import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
 
 import { EmptyState } from "@/components/common/empty-state";
@@ -549,7 +550,8 @@ export function PartnersView() {
           ) : (
             <>
               <div className="max-h-[calc(100vh-340px)] overflow-y-auto custom-scroll">
-                <div className="overflow-x-auto">
+                {/* D3 mobile fix — shared TableScroll wrapper (aria region + right-edge scroll hint). */}
+                <TableScroll label={t("partners")}>
                 <Table>
                   <TableHeader className="sticky top-0 bg-card z-10">
                     <TableRow>
@@ -662,7 +664,7 @@ export function PartnersView() {
                     ))}
                   </TableBody>
                 </Table>
-                </div>
+                </TableScroll>
               </div>
 
               {/* Pagination */}

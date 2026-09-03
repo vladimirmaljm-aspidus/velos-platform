@@ -32,6 +32,14 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { NextRequest, NextResponse } from "next/server";
+import type {
+  Offer,
+  Invoice,
+  Proforma,
+  LetterOfIntent,
+  Partner,
+  Tenant,
+} from "@/lib/supabase/types";
 import {
   requireAuthOrApiKey,
   audit,
@@ -98,21 +106,24 @@ export interface AdminPdfRouteConfig {
   logTag: string;
 }
 
-/** Map of docType → store getter (avoids per-route switch duplication). */
+/** Map of docType → store getter (avoids per-route switch duplication).
+ * Returns the FULL document row — the route uses tenant_id/partner_id/
+ * number from it, and hands the whole row to generatePdf (see the PERF
+ * note in makeAdminPdfRoute) so the generator doesn't re-fetch it. */
 async function fetchTradeDoc(
   store: NonNullable<Awaited<ReturnType<typeof import("@/lib/data/store").getStore>>>,
   docType: TradeDocType,
   id: string,
-): Promise<{ id: string; number: string | null; tenant_id: string; partner_id: string | null } | null> {
+): Promise<Offer | Invoice | Proforma | LetterOfIntent | null> {
   switch (docType) {
     case "offer":
-      return (await store.getOffer(id)) as any;
+      return store.getOffer(id);
     case "invoice":
-      return (await store.getInvoice(id)) as any;
+      return store.getInvoice(id);
     case "proforma":
-      return (await store.getProforma(id)) as any;
+      return store.getProforma(id);
     case "loi":
-      return (await store.getLoi(id)) as any;
+      return store.getLoi(id);
   }
 }
 
@@ -163,10 +174,22 @@ export function makeAdminPdfRoute(cfg: AdminPdfRouteConfig) {
       }
       const tenantId = doc.tenant_id;
 
-      const partner = doc.partner_id ? await auth.store.getPartner(doc.partner_id) : null;
-      const tenant = await auth.store.getTenant(tenantId);
+      // PERF (D2 fix): partner + tenant are independent → fetched
+      // CONCURRENTLY (was 2 sequential DB round trips), and passed into
+      // generatePdf via `prefetched` so it doesn't re-fetch the doc,
+      // partner and tenant rows (previously all three were fetched TWICE
+      // per request — once here, once inside the generator).
+      const [partner, tenant]: [Partner | null, Tenant | null] = await Promise.all([
+        doc.partner_id ? auth.store.getPartner(doc.partner_id) : Promise.resolve(null),
+        auth.store.getTenant(tenantId),
+      ]);
 
-      const result = await generatePdf({ docType: cfg.docType, docId: id, tenantId });
+      const result = await generatePdf({
+        docType: cfg.docType,
+        docId: id,
+        tenantId,
+        prefetched: { doc, partner, tenant },
+      });
 
       // Audit the download (uniform action name "<docType>.pdf").
       await audit(auth.store, getAuthUser(auth), req, `${cfg.docType}.pdf`, cfg.docType, id, {
@@ -255,12 +278,15 @@ export function makePortalPdfRoute(cfg: PortalPdfRouteConfig) {
 
       // Portal NEVER issues verifications (createVerification: false) — but
       // an EXISTING admin-issued verification QR is still rendered so scans
-      // keep working across re-downloads.
+      // keep working across re-downloads. PERF (D2 fix): the doc row fetched
+      // above for the ownership check is passed to generatePdf so it isn't
+      // fetched a second time.
       const result = await generatePdf({
         docType: cfg.docType,
         docId: id,
         tenantId: access.tenant_id,
         createVerification: false,
+        prefetched: { doc },
       });
 
       // Fire-and-forget: mark as viewed (status sent→viewed on first open).
