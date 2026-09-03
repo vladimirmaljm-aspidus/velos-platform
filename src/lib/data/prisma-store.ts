@@ -1280,7 +1280,7 @@ export class PrismaStore implements Store {
     }));
   }
 
-  async revokeSession(id: string): Promise<void> {
+  async revokeSession(id: string, _opts?: { bumpToken?: boolean }): Promise<void> {
     await db.securitySession.update({ where: { id }, data: { revoked: true, current: false } });
   }
 

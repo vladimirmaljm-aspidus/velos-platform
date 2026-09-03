@@ -203,7 +203,17 @@ export interface Store {
 
   // security
   listSessions(tenantId: string, userId?: string): Promise<SecuritySession[]>;
-  revokeSession(id: string): Promise<void>;
+  /**
+   * Revoke a security-session row.
+   *
+   * `opts.bumpToken` (default true) also bumps the owner's token_version,
+   * invalidating ALL of their live JWTs — the secure default for an
+   * explicit admin/rotate revocation. Callers evicting sessions as part of
+   * the concurrent-session LRU cap MUST pass { bumpToken: false } — evicting
+   * the OLDEST session must not log the user out of EVERY device (that was
+   * the root cause of the long-running "random client logouts" bug).
+   */
+  revokeSession(id: string, opts?: { bumpToken?: boolean }): Promise<void>;
   listLoginHistory(tenantId: string, userId?: string, limit?: number): Promise<LoginHistoryEntry[]>;
   listKnownIps(tenantId: string, userId?: string): Promise<KnownIp[]>;
   trustIp(id: string, trusted: boolean): Promise<void>;

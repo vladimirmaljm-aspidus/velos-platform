@@ -1754,13 +1754,21 @@ export class SupabaseStore implements Store {
     if (error) throw error;
     return (data as SecuritySession[]) || [];
   }
-  async revokeSession(id: string): Promise<void> {
+  async revokeSession(id: string, opts?: { bumpToken?: boolean }): Promise<void> {
     // CRITICAL FIX (audit P0-2/D-2): revoked sessions were still valid for
     // up to 7 days because requireAuth() only checks token_version in the
     // JWT, not the `revoked` flag in the DB. Bumping token_version here
     // forces ALL of the user's JWTs to become invalid immediately.
     // (Yes, this logs out all devices — that's the secure default for an
     // explicit "revoke session" action. The admin can re-login.)
+    //
+    // AUDIT29 ROOT-CAUSE FIX ("random client logouts"): the concurrent-
+    // session LRU eviction also used this method, so every login past
+    // MAX_CONCURRENT_SESSIONS evicted the oldest row AND bumped
+    // token_version — logging the user out of EVERY device. Eviction now
+    // passes { bumpToken: false }; explicit admin/password-rotate
+    // revocations keep the secure all-device default.
+    const bumpToken = opts?.bumpToken !== false;
     const { data: session, error: fetchErr } = await this.sb()
       .from("sessions")
       .select("user_id")
@@ -1769,7 +1777,7 @@ export class SupabaseStore implements Store {
     if (fetchErr) throw fetchErr;
     const { error } = await this.sb().from("sessions").update({ revoked: true }).eq("id", id);
     if (error) throw error;
-    if (session?.user_id) {
+    if (bumpToken && session?.user_id) {
       if (session.user_id.startsWith("portal:")) {
         // Portal session — bump portal_access.token_version atomically.
         const portalId = session.user_id.replace("portal:", "");

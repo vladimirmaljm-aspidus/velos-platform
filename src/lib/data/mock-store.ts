@@ -818,7 +818,7 @@ export class MockStore implements Store {
   async listSessions(_tenantId: string, userId?: string): Promise<SecuritySession[]> {
     return userId ? mock.securitySessions.filter((s) => s.user_id === userId) : [...mock.securitySessions];
   }
-  async revokeSession(id: string): Promise<void> {
+  async revokeSession(id: string, _opts?: { bumpToken?: boolean }): Promise<void> {
     const s = mock.securitySessions.find((x) => x.id === id); if (s) s.revoked = true;
   }
   async listLoginHistory(_tenantId: string, userId?: string, limit?: number): Promise<LoginHistoryEntry[]> {

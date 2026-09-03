@@ -417,7 +417,12 @@ export async function enforceConcurrentSessionLimit(
       const toRevoke = active.slice(0, active.length - max);
       for (const s of toRevoke) {
         try {
-          await store.revokeSession(s.id);
+          // AUDIT29: bumpToken:false — evicting the OLDEST session must only
+          // revoke that row. Bumping token_version here logged the user out
+          // of EVERY device on their 6th login (the "random client logouts"
+          // root cause). The evicted session's JWT still honors its own
+          // absolute/idle TTL (≤8h), which bounds the residual window.
+          await store.revokeSession(s.id, { bumpToken: false });
         } catch (e) {
           console.error("[enforceConcurrentSessionLimit] revokeSession failed:", e);
         }
