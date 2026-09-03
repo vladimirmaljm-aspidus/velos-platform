@@ -55,6 +55,7 @@ import {
   type ContentSegment,
 } from "@/lib/utils/content-config";
 import { parseStyleConfig } from "@/lib/utils/style-config";
+import { readTemplateLayout } from "@/lib/pdf/doc-template";
 import { fmtDate } from "@/lib/utils/format";
 import {
   DocumentTemplate, TenantLetterhead, TenantSeal, Tenant,
@@ -81,6 +82,15 @@ import { MAX_LOGO_UPLOAD_SIZE } from "@/lib/upload/constants";
 // ============================================================
 
 type TemplateType = DocumentTemplate["type"];
+
+// Canonical body-section order — mirrors the PDF renderer's
+// CANONICAL_SECTION_ORDER (templates.tsx) so the draft preview's fallback
+// ordering matches the generated document.
+const CANONICAL_ORDER = [
+  "doc_title", "from_box", "to_box", "trade_terms", "line_items_table",
+  "specifications", "totals", "amount_in_words", "offer_text",
+  "bank_details", "signatures",
+] as const;
 
 // Translation keys (resolved via `t()` at render time) — see TYPE_LABEL_KEYS.
 const TYPE_LABEL_KEYS: Record<TemplateType, string> = {
@@ -2477,7 +2487,8 @@ function TemplateMiniPreview({ form }: { form: TemplateFormState }) {
   const pageH = form.page_size === "Letter" ? 279 : 297;
   const width = 420; // px — the preview pane is ~380-520 wide
   const scale = width / pageW;
-  const height = Math.round(pageH * scale);
+  // audit27: the page grows with the content — a fixed height clipped the
+  // reordered/hidden sections and looked nothing like the real PDF.
   // 1pt = 25.4/72 mm → px (never below ~3px so lines stay visible)
   const ptToPx = (pt: number) => Math.max(3, Math.round(pt * 0.3528 * scale));
 
@@ -2492,13 +2503,193 @@ function TemplateMiniPreview({ form }: { form: TemplateFormState }) {
   // renderer uses, rendered as a rotated overlay like the real output.
   const wm = parseStyleConfig(form.style_json).watermark;
 
+  // audit27: layout_json — same order/visibility semantics as the PDF
+  // renderer (templates.tsx → orderedBody). The draft preview now follows
+  // the Sections & order tab exactly: hidden sections vanish and the order
+  // matches the generated document.
+  const layoutFields = readTemplateLayout(form.layout_json)?.fields ?? [];
+  const isLoi = form.type === "loi";
+  const hidden = (type: string) => {
+    if (layoutFields.length === 0) return false;
+    const f = layoutFields.find((x) => x.type === type);
+    return f ? !f.visible : false;
+  };
+  const orderY = (type: string): number => {
+    const f = layoutFields.find((x) => x.type === type);
+    return f ? f.y : (CANONICAL_ORDER as readonly string[]).indexOf(type) * 10;
+  };
+  const overlays = layoutFields.filter(
+    (f) => f.visible && (f.type === "custom_text" || f.type === "custom_image"),
+  );
+
+  // ── Section blocks (each gated + ordered like the PDF) ──────────────
+  const S = {
+    parties: (
+      <div key="parties" className="mb-2 grid grid-cols-2 gap-3">
+        {!hidden("from_box") && (
+          <div className="min-w-0">
+            <div className="text-[8px] font-bold uppercase tracking-wide text-slate-400">
+              {PREVIEW_PLACEHOLDER_DATA.company_name}
+            </div>
+            <div className="text-slate-500 leading-tight" style={{ fontSize: ptToPx(8) }}>
+              {PREVIEW_PLACEHOLDER_DATA.company_city}, {PREVIEW_PLACEHOLDER_DATA.company_country}
+            </div>
+          </div>
+        )}
+        {!hidden("to_box") && (
+          <div className="min-w-0 text-right">
+            <div className="truncate font-semibold" style={{ fontSize: ptToPx(10) }}>
+              {PREVIEW_PLACEHOLDER_DATA.partner_name}
+            </div>
+            <div className="text-slate-500 leading-tight" style={{ fontSize: ptToPx(8) }}>
+              {PREVIEW_PLACEHOLDER_DATA.partner_address}
+            </div>
+          </div>
+        )}
+      </div>
+    ),
+    doc_title: (
+      <div key="doc_title" className="mb-2">
+        <div
+          className="mb-1 font-bold uppercase tracking-wide"
+          style={{ color: form.primary_color || "#0f766e", fontSize: ptToPx(15) }}
+        >
+          {t(TYPE_LABEL_KEYS[form.type])} · {PREVIEW_PLACEHOLDER_DATA.doc_number}
+        </div>
+        <div className="text-slate-500" style={{ fontSize: ptToPx(8) }}>
+          {PREVIEW_PLACEHOLDER_DATA.doc_date} · {t("doc-var-valid-until")}: {PREVIEW_PLACEHOLDER_DATA.valid_until}
+        </div>
+      </div>
+    ),
+    trade_terms: (
+      <div key="trade_terms" className="mb-2 grid grid-cols-3 gap-2" style={{ fontSize: ptToPx(8) }}>
+        {[
+          ["Incoterm", "EXW · Hamburg"],
+          ["Payment", "Net 30"],
+          ["Origin", "EU"],
+        ].map(([k, v]) => (
+          <div key={k} className="rounded-sm border border-slate-200 px-1.5 py-1">
+            <div className="text-slate-400">{k}</div>
+            <div className="font-semibold text-slate-600">{v}</div>
+          </div>
+        ))}
+      </div>
+    ),
+    line_items_table: (
+      <div
+        key="line_items_table"
+        className="overflow-hidden rounded-sm border"
+        style={{ borderColor: form.table_border_color || "#e2e8f0" }}
+      >
+        <div
+          className="grid grid-cols-[1fr_54px_70px_84px] px-2 py-1 font-semibold"
+          style={{
+            background: form.table_header_bg || "#0f766e",
+            color: form.table_header_color || "#ffffff",
+            fontSize: ptToPx(9),
+          }}
+        >
+          <span className="truncate">{t("misc-product")}</span>
+          <span className="text-right">{t("misc-qty")}</span>
+          <span className="text-right">{t("misc-price")}</span>
+          <span className="text-right">{t("misc-total")}</span>
+        </div>
+        {[0, 1, 2, 3].map((i) => (
+          <div
+            key={i}
+            className="grid grid-cols-[1fr_54px_70px_84px] items-center px-2 py-1.5"
+            style={{ background: form.table_stripe && i % 2 === 1 ? "#f1f5f9" : "#ffffff" }}
+          >
+            <span className="h-2 rounded-sm bg-slate-200" style={{ width: `${58 - i * 9}%` }} />
+            <span className="h-2 justify-self-end rounded-sm bg-slate-200" style={{ width: "60%" }} />
+            <span className="h-2 justify-self-end rounded-sm bg-slate-200" style={{ width: "72%" }} />
+            <span className="h-2 justify-self-end rounded-sm bg-slate-200" style={{ width: "86%" }} />
+          </div>
+        ))}
+      </div>
+    ),
+    specifications: (
+      <div key="specifications" className="mb-2" style={{ fontSize: ptToPx(8) }}>
+        <div className="mb-1 font-semibold text-slate-600">{t("misc-tve-specifications")}</div>
+        <div className="grid grid-cols-2 gap-x-3 text-slate-500">
+          <span>Moisture: ≤14%</span>
+          <span>Foreign matter: ≤2%</span>
+          <span>Broken: ≤5%</span>
+          <span>Packing: 50kg PP bags</span>
+        </div>
+      </div>
+    ),
+    totals: (
+      <div
+        key="totals"
+        className="mt-2 flex w-[46%] flex-col items-end self-end"
+        style={{ fontSize: ptToPx(8.5) }}
+      >
+        <div className="flex w-full justify-between text-slate-500">
+          <span>{t("doc-var-total")}</span>
+          <span className="tabular">{PREVIEW_PLACEHOLDER_DATA.total}</span>
+        </div>
+        <div
+          className="flex w-full justify-between border-t pt-0.5 font-bold"
+          style={{ borderColor: form.table_border_color || "#e2e8f0", color: form.primary_color }}
+        >
+          <span>{t("misc-total")}</span>
+          <span className="tabular">{PREVIEW_PLACEHOLDER_DATA.total}</span>
+        </div>
+      </div>
+    ),
+    amount_in_words: (
+      <p key="amount_in_words" className="mt-1 text-slate-500 italic" style={{ fontSize: ptToPx(8) }}>
+        {t("misc-tve-amount-words")}: Forty-two thousand one hundred ninety-six US dollars only.
+      </p>
+    ),
+    offer_text: (
+      <p key="offer_text" className="mt-2 leading-snug text-slate-500" style={{ fontSize: ptToPx(8) }}>
+        {isLoi
+          ? "Dear partner, we hereby express our firm intention to purchase the goods under the terms stated in this Letter of Intent…"
+          : t("doc-preview-body-placeholder")}
+      </p>
+    ),
+    bank_details: (
+      <p key="bank_details" className="mt-2 text-slate-500" style={{ fontSize: ptToPx(8) }}>
+        {t("misc-tve-bank-label")}: {PREVIEW_PLACEHOLDER_DATA.company_name} Bank · IBAN AE11 0200 0000 1234 5678 901
+      </p>
+    ),
+    signatures: (
+      <div key="signatures" className="mt-4 grid grid-cols-2 gap-8" style={{ fontSize: ptToPx(8) }}>
+        {[
+          t("misc-tve-seller-signature"),
+          t("misc-tve-buyer-signature"),
+        ].map((label) => (
+          <div key={label} className="flex flex-col items-center">
+            <div className="w-full border-t border-slate-400" />
+            <div className="mt-0.5 text-slate-400">{label}</div>
+          </div>
+        ))}
+      </div>
+    ),
+  };
+
+  // Sections the doc type actually uses (LOI vs offer/invoice/proforma) —
+  // mirrors the PDF generator's section list.
+  const sectionKeys = isLoi
+    ? ["doc_title", "parties", "offer_text", "specifications", "trade_terms", "signatures"]
+    : ["doc_title", "parties", "trade_terms", "line_items_table", "specifications",
+       "totals", "amount_in_words", "offer_text", "bank_details", "signatures"];
+
+  const orderedSections = sectionKeys
+    .filter((k) => !hidden(k))
+    .sort((a, b) => orderY(a) - orderY(b))
+    .map((k) => (S as Record<string, React.ReactNode>)[k])
+    .filter(Boolean);
+
   return (
     <div className="flex flex-col items-center gap-2">
       <div
         className="relative flex flex-col rounded-sm border border-border bg-white text-slate-800 shadow-sm"
         style={{
           width,
-          height,
+          minHeight: Math.round(pageH * scale * 0.9),
           padding: `${(form.page_margin_top ?? 20) * scale}px ${(form.page_margin_right ?? 18) * scale}px ${(form.page_margin_bottom ?? 20) * scale}px ${(form.page_margin_left ?? 18) * scale}px`,
           fontFamily: form.body_font_family || undefined,
           fontSize: ptToPx(form.body_font_size ?? 11),
@@ -2544,85 +2735,50 @@ function TemplateMiniPreview({ form }: { form: TemplateFormState }) {
           </div>
         )}
 
-        {/* Party block — seller / buyer */}
-        <div className="mb-2 grid grid-cols-2 gap-3">
-          <div className="min-w-0">
-            <div className="text-[8px] font-bold uppercase tracking-wide text-slate-400">
-              {PREVIEW_PLACEHOLDER_DATA.company_name}
-            </div>
-            <div className="text-slate-500 leading-tight" style={{ fontSize: ptToPx(8) }}>
-              {PREVIEW_PLACEHOLDER_DATA.company_city}, {PREVIEW_PLACEHOLDER_DATA.company_country}
-            </div>
-          </div>
-          <div className="min-w-0 text-right">
-            <div className="truncate font-semibold" style={{ fontSize: ptToPx(10) }}>
-              {PREVIEW_PLACEHOLDER_DATA.partner_name}
-            </div>
-            <div className="text-slate-500 leading-tight" style={{ fontSize: ptToPx(8) }}>
-              {PREVIEW_PLACEHOLDER_DATA.partner_address}
-            </div>
-          </div>
-        </div>
+        {/* audit27: body sections — ordered + gated exactly like the PDF */}
+        {orderedSections}
 
-        {/* Doc title + number + dates */}
-        <div
-          className="mb-1 font-bold uppercase tracking-wide"
-          style={{ color: form.primary_color || "#0f766e", fontSize: ptToPx(15) }}
-        >
-          {t(TYPE_LABEL_KEYS[form.type])} · {PREVIEW_PLACEHOLDER_DATA.doc_number}
-        </div>
-        <div className="mb-2 text-slate-500" style={{ fontSize: ptToPx(8) }}>
-          {PREVIEW_PLACEHOLDER_DATA.doc_date} · {t("doc-var-valid-until")}: {PREVIEW_PLACEHOLDER_DATA.valid_until}
-        </div>
-
-        {/* Line-items table */}
-        <div className="overflow-hidden rounded-sm border" style={{ borderColor: form.table_border_color || "#e2e8f0" }}>
-          <div
-            className="grid grid-cols-[1fr_54px_70px_84px] px-2 py-1 font-semibold"
-            style={{
-              background: form.table_header_bg || "#0f766e",
-              color: form.table_header_color || "#ffffff",
-              fontSize: ptToPx(9),
-            }}
-          >
-            <span className="truncate">{t("misc-product")}</span>
-            <span className="text-right">{t("misc-qty")}</span>
-            <span className="text-right">{t("misc-price")}</span>
-            <span className="text-right">{t("misc-total")}</span>
-          </div>
-          {[0, 1, 2, 3].map((i) => (
-            <div
-              key={i}
-              className="grid grid-cols-[1fr_54px_70px_84px] items-center px-2 py-1.5"
-              style={{ background: form.table_stripe && i % 2 === 1 ? "#f1f5f9" : "#ffffff" }}
-            >
-              <span className="h-2 rounded-sm bg-slate-200" style={{ width: `${58 - i * 9}%` }} />
-              <span className="h-2 justify-self-end rounded-sm bg-slate-200" style={{ width: "60%" }} />
-              <span className="h-2 justify-self-end rounded-sm bg-slate-200" style={{ width: "72%" }} />
-              <span className="h-2 justify-self-end rounded-sm bg-slate-200" style={{ width: "86%" }} />
-            </div>
-          ))}
-        </div>
-
-        {/* Totals */}
-        <div className="mt-2 flex w-[46%] flex-col items-end self-end" style={{ fontSize: ptToPx(8.5) }}>
-          <div className="flex w-full justify-between text-slate-500">
-            <span>{t("doc-var-total")}</span>
-            <span className="tabular">{PREVIEW_PLACEHOLDER_DATA.total}</span>
-          </div>
-          <div
-            className="flex w-full justify-between border-t pt-0.5 font-bold"
-            style={{ borderColor: form.table_border_color || "#e2e8f0", color: form.primary_color }}
-          >
-            <span>{t("misc-total")}</span>
-            <span className="tabular">{PREVIEW_PLACEHOLDER_DATA.total}</span>
-          </div>
-        </div>
-
-        {/* Notice */}
-        <p className="mt-2 italic leading-snug text-slate-500" style={{ fontSize: ptToPx(8) }}>
-          {t("doc-preview-body-placeholder")}
-        </p>
+        {/* audit27: custom overlays from layout_json (absolute, every page) */}
+        {overlays.map((f) => {
+          const text =
+            typeof f.props?.text === "string"
+              ? f.props.text
+              : typeof f.props?.content === "string"
+                ? f.props.content
+                : "";
+          if (f.type === "custom_text" && text.trim()) {
+            return (
+              <div
+                key={f.id}
+                className="absolute rounded-sm border border-dashed border-teal-400 bg-teal-50/30 px-1 text-slate-600"
+                style={{
+                  left: f.x * scale,
+                  top: f.y * scale,
+                  width: f.width * scale,
+                  fontSize: ptToPx(10),
+                }}
+              >
+                {text}
+              </div>
+            );
+          }
+          if (f.type === "custom_image") {
+            const src = typeof f.props?.src === "string" ? f.props.src : (f.props?.imageUrl as string | undefined);
+            if (src) {
+              return (
+                 
+                <img
+                  key={f.id}
+                  src={src}
+                  alt="Placed block"
+                  className="absolute rounded-sm border border-dashed border-teal-400"
+                  style={{ left: f.x * scale, top: f.y * scale, width: f.width * scale, height: f.height * scale, objectFit: "contain" }}
+                />
+              );
+            }
+          }
+          return null;
+        })}
 
         {/* Footer segments (substituted, styled) */}
         {footerSegs.length > 0 && (

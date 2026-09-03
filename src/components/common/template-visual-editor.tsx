@@ -1,47 +1,59 @@
 "use client";
 
 /**
- * TemplateVisualEditor
- * --------------------
- * A drag-and-drop WYSIWYG editor for designing the layout of a PDF document
- * template. Users see a scaled A4/Letter page rendered with REAL content
- * (company name, logo, sample line items, totals, etc.) — not just labels.
+ * TemplateVisualEditor (audit27 redesign)
+ * ----------------------------------------
+ * A REAL sections editor for document templates. The previous incarnation
+ * looked like a free-form WYSIWYG canvas (drag fields anywhere, ruler, grid,
+ * snap) — but the drag positions were preview-only, which taught users the
+ * hard way that "nothing you arrange here reaches the PDF".
  *
- * Features:
- *   • Live content preview — every field shows actual letterhead / template data
- *   • Logo size + position control — drag corner to resize, drag body to move
- *   • Multi-page preview — render 1 / 2 / 3 / 5 stacked pages
- *   • Inline text editing — header / footer / custom text via properties panel
- *   • Toolbar — ruler, grid, snap, add text, add image, zoom, page count
- *   • Snap engine — to page edges, page center, and other elements
- *   • mm ruler on top and left edges
+ * The new model is honest by construction:
+ *   • Document sections render as a vertical FLOW in the exact order the
+ *     generated PDF uses. Dragging a section up/down (list, canvas handle or
+ *     ↑/↓ buttons) rewrites its sort key (layout_json y) and the PDF
+ *     renderer honours it (see templates.tsx → orderedBody).
+ *   • The eye-toggle per section gates the PDF render.
+ *   • Text / image blocks are freely-placed overlays — they render at their
+ *     absolute x/y on EVERY page (already honoured by the PDF renderer).
+ *   • Header / logo / footer are page furniture (fixed on every page); the
+ *     logo eye-toggle gates the rendered logo, header/footer content is
+ *     edited through their fields (persisted columns).
  */
 
 import * as React from "react";
 import {
-  Ruler,
-  Move,
-  AlignLeft,
-  AlignCenter,
-  AlignRight,
-  AlignVerticalJustifyStart,
-  AlignVerticalJustifyCenter,
-  AlignVerticalJustifyEnd,
-  Lock,
-  Unlock,
   Eye,
   EyeOff,
   RotateCcw,
   Maximize2,
-  Grid3x3,
   Plus,
   Type,
   Image as ImageIcon,
   ZoomIn,
   ZoomOut,
   GripVertical,
+  Lock,
+  ArrowUp,
+  ArrowDown,
+  Trash2,
   Info,
 } from "lucide-react";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,7 +61,6 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -58,7 +69,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import type { DocumentTemplate, TenantLetterhead } from "@/lib/supabase/types";
 import { useT } from "@/lib/i18n/store";
 import { readTemplateLayout } from "@/lib/pdf/doc-template";
@@ -76,10 +86,7 @@ import {
 export type FieldType =
   | "header"
   | "logo"
-  | "company_name"
-  | "company_address"
   | "doc_title"
-  | "doc_meta"
   | "from_box"
   | "to_box"
   | "trade_terms"
@@ -90,7 +97,6 @@ export type FieldType =
   | "offer_text"
   | "bank_details"
   | "signatures"
-  | "seal"
   | "footer"
   | "custom_text"
   | "custom_image";
@@ -99,28 +105,32 @@ export interface FieldElement {
   id: string;
   type: FieldType;
   label: string;
-  x: number; // mm from left
-  y: number; // mm from top
-  width: number; // mm
-  height: number; // mm
+  x: number; // mm from left (overlays: real; flow: unused)
+  y: number; // mm from top  (overlays: real; flow: SORT KEY — reindexed 10,20,30…)
+  width: number; // mm (overlays)
+  height: number; // mm (overlays)
   visible: boolean;
   locked: boolean;
-  props?: Record<string, unknown>; // field-specific props (e.g. content, logoUrl, logoWidth)
+  props?: Record<string, unknown>;
 }
 
-interface SnapGuide {
-  orientation: "horizontal" | "vertical";
-  position: number; // mm
-  type: "edge" | "center" | "element";
-}
+/** Fields that participate in the reorderable body flow. */
+const FLOW_TYPES = new Set<FieldType>([
+  "doc_title", "from_box", "to_box", "trade_terms", "line_items_table",
+  "specifications", "totals", "amount_in_words", "offer_text",
+  "bank_details", "signatures",
+]);
+
+/** Fixed page furniture — always first (header zone) / last (footer zone). */
+const FIXED_TOP: FieldType[] = ["logo", "header"];
+const FIXED_BOTTOM: FieldType[] = ["footer"];
+
+type TemplateType = NonNullable<DocumentTemplate["type"]>;
 
 interface TemplateVisualEditorProps {
   template: Partial<DocumentTemplate>;
   onChange: (template: Partial<DocumentTemplate>) => void;
-  /** Optional override; falls back to template.page_size, then A4. */
   pageSize?: "A4" | "Letter";
-  /** Linked letterhead supplies real company name, logo URL, bank details, etc.
-   *  Pass null when no letterhead is linked — the editor falls back to sample data. */
   letterhead: TenantLetterhead | null;
 }
 
@@ -129,35 +139,70 @@ interface TemplateVisualEditorProps {
 // ============================================================
 
 const PAGE_DIMENSIONS = {
-  A4: { width: 210, height: 297 }, // mm
+  A4: { width: 210, height: 297 },
   Letter: { width: 216, height: 279 },
 } as const;
 
-// Base screen scale: 1 mm → 2 px on screen at 100% zoom.
-const BASE_SCALE = 2;
+const BASE_SCALE = 2; // 1 mm → 2 px at 100% zoom
 
-// Snap threshold in mm.
-const SNAP_THRESHOLD = 3;
+interface FieldSpec {
+  type: FieldType;
+  labelKey: string;
+}
 
-// Default field layout (positions in mm on A4). Logo is its own draggable element.
-// `label` is a translation key (resolved via `t()` at render time).
-const DEFAULT_FIELDS: FieldElement[] = [
-  { id: "logo", type: "logo", label: "misc-tve-logo", x: 15, y: 8, width: 40, height: 15, visible: true, locked: false, props: { logoWidth: 40, logoHeight: 15 } },
-  { id: "header", type: "header", label: "misc-tve-header-memorandum", x: 60, y: 8, width: 135, height: 15, visible: true, locked: false },
-  { id: "doc_title", type: "doc_title", label: "misc-tve-doc-title", x: 15, y: 40, width: 180, height: 12, visible: true, locked: false },
-  { id: "doc_meta", type: "doc_meta", label: "misc-tve-doc-meta", x: 15, y: 54, width: 180, height: 14, visible: true, locked: false },
-  { id: "from_box", type: "from_box", label: "misc-tve-from-box", x: 15, y: 74, width: 87, height: 40, visible: true, locked: false },
-  { id: "to_box", type: "to_box", label: "misc-tve-to-box", x: 108, y: 74, width: 87, height: 40, visible: true, locked: false },
-  { id: "trade_terms", type: "trade_terms", label: "misc-tve-trade-terms", x: 15, y: 118, width: 180, height: 22, visible: true, locked: false },
-  { id: "line_items_table", type: "line_items_table", label: "misc-tve-line-items", x: 15, y: 145, width: 180, height: 50, visible: true, locked: false },
-  { id: "specifications", type: "specifications", label: "misc-tve-specifications", x: 15, y: 200, width: 180, height: 30, visible: true, locked: false },
-  { id: "totals", type: "totals", label: "misc-tve-totals", x: 120, y: 235, width: 75, height: 25, visible: true, locked: false },
-  { id: "amount_in_words", type: "amount_in_words", label: "misc-tve-amount-words", x: 15, y: 235, width: 100, height: 20, visible: true, locked: false },
-  { id: "offer_text", type: "offer_text", label: "misc-tve-offer-text", x: 15, y: 255, width: 180, height: 18, visible: true, locked: false },
-  { id: "bank_details", type: "bank_details", label: "misc-tve-bank-details", x: 15, y: 263, width: 180, height: 12, visible: true, locked: false },
-  { id: "signatures", type: "signatures", label: "misc-tve-signatures", x: 15, y: 277, width: 180, height: 14, visible: true, locked: false },
-  { id: "footer", type: "footer", label: "misc-tve-footer", x: 15, y: 286, width: 180, height: 8, visible: true, locked: false },
-];
+/** Sections the PDF actually renders, per template type (honesty first:
+ *  an LOI template never offers "Line items" / "Totals"). */
+const FLOW_SECTIONS_BY_TYPE: Record<string, FieldSpec[]> = {
+  loi: [
+    { type: "doc_title", labelKey: "misc-tve-doc-title-block" },
+    { type: "from_box", labelKey: "misc-tve-from-buyer" },
+    { type: "to_box", labelKey: "misc-tve-to-seller" },
+    { type: "offer_text", labelKey: "misc-tve-loi-text" },
+    { type: "specifications", labelKey: "misc-tve-product-specs" },
+    { type: "trade_terms", labelKey: "misc-tve-delivery-terms" },
+    { type: "signatures", labelKey: "misc-tve-signatures" },
+  ],
+  default: [
+    { type: "doc_title", labelKey: "misc-tve-doc-title-block" },
+    { type: "from_box", labelKey: "misc-tve-from-box" },
+    { type: "to_box", labelKey: "misc-tve-to-box" },
+    { type: "trade_terms", labelKey: "misc-tve-trade-terms" },
+    { type: "line_items_table", labelKey: "misc-tve-line-items" },
+    { type: "specifications", labelKey: "misc-tve-specifications" },
+    { type: "totals", labelKey: "misc-tve-totals" },
+    { type: "amount_in_words", labelKey: "misc-tve-amount-words" },
+    { type: "offer_text", labelKey: "misc-tve-offer-text" },
+    { type: "bank_details", labelKey: "misc-tve-bank-details" },
+    { type: "signatures", labelKey: "misc-tve-signatures" },
+  ],
+};
+
+function flowSectionsFor(type: TemplateType | undefined): FieldSpec[] {
+  return (FLOW_SECTIONS_BY_TYPE[type ?? "offer"] ?? FLOW_SECTIONS_BY_TYPE.default);
+}
+
+function defaultFieldsFor(type: TemplateType | undefined): FieldElement[] {
+  const fields: FieldElement[] = [];
+  FIXED_TOP.forEach((t) =>
+    fields.push({
+      id: t, type: t, label: t === "logo" ? "misc-tve-logo" : "misc-tve-header-memorandum",
+      x: 0, y: 0, width: 0, height: 0, visible: true, locked: false,
+    }),
+  );
+  flowSectionsFor(type).forEach((spec, i) =>
+    fields.push({
+      id: spec.type, type: spec.type, label: spec.labelKey,
+      x: 0, y: (i + 1) * 10, width: 0, height: 0, visible: true, locked: false,
+    }),
+  );
+  FIXED_BOTTOM.forEach((t) =>
+    fields.push({
+      id: t, type: t, label: "misc-tve-footer",
+      x: 0, y: 9999, width: 0, height: 0, visible: true, locked: false,
+    }),
+  );
+  return fields;
+}
 
 // ============================================================
 // Sample data (realistic trade document examples)
@@ -175,9 +220,6 @@ interface SampleRow {
 const SAMPLE_LINE_ITEMS: SampleRow[] = [
   { sku: "SUG-IC45", name: "White Sugar ICUMSA 45", qty: 24, unit: "MT", price: 540, total: 12960 },
   { sku: "WHT-1250", name: "Hard Red Winter Wheat", qty: 68, unit: "MT", price: 374, total: 25400 },
-  { sku: "OIL-SUN", name: "Refined Sunflower Oil", qty: 8, unit: "MT", price: 1160, total: 9280 },
-  { sku: "CMT-PC42", name: "Portland Cement 42.5N", qty: 200, unit: "MT", price: 78, total: 15600 },
-  { sku: "ALU-A7", name: "Aluminium Ingot A7", qty: 40, unit: "MT", price: 2150, total: 86000 },
 ];
 
 const DOC_TYPE_LABELS: Record<NonNullable<DocumentTemplate["type"]>, string> = {
@@ -189,14 +231,7 @@ const DOC_TYPE_LABELS: Record<NonNullable<DocumentTemplate["type"]>, string> = {
   generic: "DOCUMENT",
 };
 
-// ============================================================
-// Draggable placeholder chips for inline text fields
-// (header / footer / custom_text / offer_text / bank_details).
-// Keys use the canonical {token} syntax consumed by the shared
-// substitutePlaceholders() engine in content-config.ts — the same
-// engine the PDF generator uses, so chips dropped into a field
-// actually substitute at render time. `label` is a translation key.
-// ============================================================
+// Draggable placeholder chips for the inline content editors.
 const PLACEHOLDERS: { key: string; label: string }[] = [
   { key: "{company_name}", label: "doc-var-company-name" },
   { key: "{company_legal_name}", label: "doc-var-legal-name" },
@@ -205,7 +240,6 @@ const PLACEHOLDERS: { key: string; label: string }[] = [
   { key: "{company_country}", label: "doc-var-country" },
   { key: "{company_reg}", label: "doc-var-reg" },
   { key: "{company_vat}", label: "doc-var-vat" },
-  { key: "{company_tax_id}", label: "doc-var-tax-id" },
   { key: "{company_phone}", label: "doc-var-phone" },
   { key: "{company_email}", label: "doc-var-email" },
   { key: "{company_website}", label: "doc-var-website" },
@@ -217,7 +251,6 @@ const PLACEHOLDERS: { key: string; label: string }[] = [
   { key: "{valid_until}", label: "doc-var-valid-until" },
   { key: "{due_date}", label: "doc-var-due-date" },
   { key: "{partner_name}", label: "doc-var-partner-name" },
-  { key: "{partner_address}", label: "doc-var-partner-address" },
   { key: "{total}", label: "doc-var-total" },
   { key: "{currency}", label: "doc-var-currency" },
   { key: "{page_number}", label: "doc-var-page-num" },
@@ -225,7 +258,7 @@ const PLACEHOLDERS: { key: string; label: string }[] = [
 ];
 
 // ============================================================
-// Live content helpers — pull real data from template + letterhead
+// Live content helpers
 // ============================================================
 
 function buildCompanyAddress(letterhead: TenantLetterhead | null): string {
@@ -241,11 +274,7 @@ function buildCompanyAddress(letterhead: TenantLetterhead | null): string {
 }
 
 function getCompanyName(letterhead: TenantLetterhead | null): string {
-  return (
-    letterhead?.company_name ||
-    letterhead?.company_legal_name ||
-    "VELOS Trading"
-  );
+  return letterhead?.company_name || letterhead?.company_legal_name || "VELOS Trading";
 }
 
 function getLogoUrl(letterhead: TenantLetterhead | null): string | null {
@@ -253,36 +282,27 @@ function getLogoUrl(letterhead: TenantLetterhead | null): string | null {
 }
 
 function getRegNumber(letterhead: TenantLetterhead | null): string {
-  return (
-    letterhead?.company_registration_number ||
-    "DMCC-889293"
-  );
+  return letterhead?.company_registration_number || "DMCC-889293";
 }
 
 function getVatNumber(letterhead: TenantLetterhead | null): string | null {
   return letterhead?.company_vat_number || null;
 }
 
-/** Normalize the legacy {{token}} syntax to the canonical {token} syntax so
- *  both forms substitute through the shared engine, and map legacy token
- *  names (offered by the old {{...}} palettes) onto the engine's set. */
 function normalizeLegacyTokens(text: string): string {
   return text
     .replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, "{$1}")
-    .replace(/{company_bank}/g, "{bank_name}")
-    .replace(/{company_iban}/g, "{bank_iban}")
-    .replace(/{company_swift}/g, "{bank_swift}")
-    .replace(/{doc_valid}/g, "{valid_until}")
-    .replace(/{page_total}/g, "{total_pages}")
-    .replace(/{address}/g, "{company_address}")
-    .replace(/{reg}/g, "{company_reg}")
-    .replace(/{vat}/g, "{company_vat}")
-    .replace(/{date}/g, "{doc_date}");
+    .replace(/\{company_bank\}/g, "{bank_name}")
+    .replace(/\{company_iban\}/g, "{bank_iban}")
+    .replace(/\{company_swift\}/g, "{bank_swift}")
+    .replace(/\{doc_valid\}/g, "{valid_until}")
+    .replace(/\{page_total\}/g, "{total_pages}")
+    .replace(/\{address\}/g, "{company_address}")
+    .replace(/\{reg\}/g, "{company_reg}")
+    .replace(/\{vat\}/g, "{company_vat}")
+    .replace(/\{date\}/g, "{doc_date}");
 }
 
-/** Substitute {placeholders} (plus legacy {{placeholders}}) with live data for
- *  inline text rendering. Delegates to the SAME substitution engine the PDF
- *  generator uses (content-config.ts) so the editor preview matches the PDF. */
 function substituteForFieldPreview(
   text: string,
   letterhead: TenantLetterhead | null
@@ -319,9 +339,6 @@ function substituteForFieldPreview(
   return substituteEnginePlaceholders(normalizeLegacyTokens(text || ""), data);
 }
 
-/** Convert stored header/footer content (segments JSON or legacy plain text)
- *  into the PLAIN TEXT shown in the content Textarea (segments joined with
- *  "\n" — never the raw JSON string). */
 function contentToPlainText(content: string | null | undefined): string {
   if (!content) return "";
   return parseContentConfig(content)
@@ -329,11 +346,6 @@ function contentToPlainText(content: string | null | undefined): string {
     .join("\n");
 }
 
-/** Persist edited plain text back into the segments JSON format used by
- *  header_content / footer_content:
- *  • exactly one existing segment → its text is updated in place (styling kept);
- *  • otherwise → the text is wrapped as a single default segment.
- *  Sibling JSON keys (e.g. the reserved `_qrConfig`) are preserved. */
 function plainTextToContentJson(
   text: string,
   existing: string | null | undefined,
@@ -371,7 +383,6 @@ function plainTextToContentJson(
   return JSON.stringify(parsed ? { ...parsed, segments: [segment] } : { segments: [segment] });
 }
 
-/** Resolve the text content to render for header / footer / custom_text fields. */
 function resolveFieldContent(
   field: FieldElement,
   template: Partial<DocumentTemplate>
@@ -384,7 +395,7 @@ function resolveFieldContent(
 }
 
 // ============================================================
-// Live field content renderer
+// Live field content renderer (canvas preview)
 // ============================================================
 
 function MiniLineItemsTable({ rows, t }: { rows: SampleRow[]; t: (k: string) => string }) {
@@ -403,7 +414,7 @@ function MiniLineItemsTable({ rows, t }: { rows: SampleRow[]; t: (k: string) => 
         {rows.map((r, i) => (
           <tr key={r.sku} className={i % 2 === 1 ? "bg-slate-100" : ""}>
             <td className="border border-slate-300 px-0.5 py-0.5 text-teal-700 font-semibold">{r.sku}</td>
-            <td className="border border-slate-300 px-0.5 py-0.5 truncate max-w-[60px]">{r.name}</td>
+            <td className="border border-slate-300 px-0.5 py-0.5 truncate">{r.name}</td>
             <td className="border border-slate-300 px-0.5 py-0.5 text-right">{r.qty} {r.unit}</td>
             <td className="border border-slate-300 px-0.5 py-0.5 text-right">${r.price.toLocaleString()}</td>
             <td className="border border-slate-300 px-0.5 py-0.5 text-right font-semibold">${r.total.toLocaleString()}</td>
@@ -424,26 +435,20 @@ function renderFieldContent(
   const logoUrl = getLogoUrl(letterhead);
   const address = buildCompanyAddress(letterhead);
   const vat = getVatNumber(letterhead);
-  const reg = getRegNumber(letterhead);
   const docType = template.type || "offer";
+  const isLoi = docType === "loi";
   const docTypeLabel = DOC_TYPE_LABELS[docType] || "DOCUMENT";
   const primaryColor = template.primary_color || letterhead?.primary_color || "#0f766e";
-  const accentColor = template.accent_color || letterhead?.accent_color || "#0d9488";
   const bankName = letterhead?.bank_name || "Abu Dhabi Islamic Bank";
   const iban = letterhead?.bank_iban || "AE11 0200 0000 1234 5678 901";
 
   switch (field.type) {
     case "logo":
       return logoUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={logoUrl}
-          alt="Company logo"
-          className="h-full w-full object-contain"
-          draggable={false}
-        />
+         
+        <img src={logoUrl} alt="Company logo" className="h-full max-h-8 w-full object-contain" draggable={false} />
       ) : (
-        <div className="flex h-full w-full items-center justify-center bg-teal-700/10 text-[7px] font-semibold text-teal-700">
+        <div className="flex h-6 items-center justify-center rounded bg-teal-700/10 px-2 text-[7px] font-semibold text-teal-700">
           {t("misc-tve-logo-placeholder")}
         </div>
       );
@@ -451,185 +456,8 @@ function renderFieldContent(
     case "header": {
       const cfg = parseContentConfig(resolveFieldContent(field, template));
       if (cfg.segments.length > 0) {
-        // Render the real segments (styled + substituted) — never raw JSON.
         return (
-          <div className="flex h-full w-full flex-col justify-center overflow-hidden">
-            {cfg.segments.map((seg) => (
-              <div
-                key={seg.id}
-                className="leading-tight"
-                style={{
-                  fontSize: `${Math.max(4, Math.round(seg.fontSize * 0.7))}px`,
-                  fontWeight: seg.bold ? 700 : 400,
-                  fontStyle: seg.italic ? "italic" : "normal",
-                  color: seg.color,
-                  textAlign: seg.alignment,
-                }}
-              >
-                {substituteForFieldPreview(seg.text, letterhead)}
-              </div>
-            ))}
-          </div>
-        );
-      }
-      return (
-        <div className="flex h-full w-full flex-col justify-center text-[6.5px] leading-tight">
-          {template.header_show_company_name !== false && (
-            <div className="text-[8px] font-bold leading-none" style={{ color: primaryColor }}>
-              {companyName}
-            </div>
-          )}
-          {template.header_show_contact !== false && (
-            <div className="mt-0.5 text-slate-500 truncate">
-              {address}
-              {letterhead?.company_email ? ` · ${letterhead.company_email}` : ""}
-              {letterhead?.company_phone ? ` · ${letterhead.company_phone}` : ""}
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    case "company_name":
-      return (
-        <div className="text-[8px] font-bold" style={{ color: primaryColor }}>
-          {companyName}
-        </div>
-      );
-
-    case "company_address":
-      return (
-        <div className="text-[6px] text-slate-500 leading-tight">{address}</div>
-      );
-
-    case "doc_title":
-      return (
-        <div className="flex h-full w-full items-center">
-          <span className="text-xs font-extrabold tracking-[0.15em]" style={{ color: primaryColor }}>
-            {docTypeLabel}
-          </span>
-        </div>
-      );
-
-    case "doc_meta":
-      return (
-        <div className="flex h-full w-full items-center justify-between text-[6.5px] text-slate-600">
-          <span>{t("misc-number")}: <span className="font-semibold text-slate-800">OF-2026-0014</span></span>
-          <span>{t("misc-date")}: <span className="font-semibold text-slate-800">14 Mar 2026</span></span>
-          <span>Valid: <span className="font-semibold text-slate-800">14 Apr 2026</span></span>
-        </div>
-      );
-
-    case "from_box":
-      return (
-        <div className="h-full w-full text-[6px] leading-tight">
-          <div className="text-[6px] font-bold uppercase tracking-wide text-slate-400">{t("misc-tve-from-label")}</div>
-          <div className="text-[7px] font-bold" style={{ color: primaryColor }}>{companyName}</div>
-          <div className="text-slate-500">{address}</div>
-          {vat && <div className="text-slate-500">{t("misc-tve-vat-label")}: {vat}</div>}
-          {letterhead?.company_email && <div className="text-slate-500">{letterhead.company_email}</div>}
-        </div>
-      );
-
-    case "to_box":
-      return (
-        <div className="h-full w-full text-[6px] leading-tight">
-          <div className="text-[6px] font-bold uppercase tracking-wide text-slate-400">{t("misc-bill-to")}</div>
-          <div className="text-[7px] font-bold text-slate-800">Mediterra Exports GmbH</div>
-          <div className="text-slate-500">Hafenstraße 4, 20457 Hamburg</div>
-          <div className="text-slate-500">Germany</div>
-          <div className="text-slate-500">{t("misc-tve-vat-label")}: DE876543210</div>
-        </div>
-      );
-
-    case "trade_terms":
-      return (
-        <div className="flex h-full w-full items-center justify-between text-[6.5px]">
-          <span className="font-semibold text-slate-800">{t("misc-tve-incoterm")}: <span style={{ color: primaryColor }}>EXW · Hamburg</span></span>
-          <span className="text-slate-500">{t("misc-tve-payment")}: <span className="font-semibold">Net 30</span></span>
-        </div>
-      );
-
-    case "line_items_table":
-      return <MiniLineItemsTable rows={SAMPLE_LINE_ITEMS.slice(0, 2)} t={t} />;
-
-    case "specifications":
-      return (
-        <div className="h-full w-full text-[6px] leading-tight">
-          <div className="text-[7px] font-bold text-slate-800">{t("misc-tve-specifications")}</div>
-          <div className="text-slate-600">Moisture: ≤14% · Foreign matter: ≤2% · Broken: ≤5%</div>
-          <div className="text-slate-600">Packing: 50kg PP bags · Origin: EU</div>
-          <div className="text-slate-600">Inspection: SGS at loading port</div>
-        </div>
-      );
-
-    case "totals": {
-      const subtotal = 12960 + 25400; // matches SAMPLE_LINE_ITEMS.slice(0,2)
-      const vat10 = Math.round(subtotal * 0.1);
-      const total = subtotal + vat10;
-      return (
-        <div className="h-full w-full text-right text-[6.5px] leading-tight">
-          <div className="flex justify-between text-slate-600"><span>{t("misc-subtotal")}</span><span>${subtotal.toLocaleString()}.00</span></div>
-          <div className="flex justify-between text-slate-500"><span>{t("misc-tax")} (10%)</span><span>${vat10.toLocaleString()}.00</span></div>
-          <div className="mt-0.5 flex justify-between border-t pt-0.5 font-bold" style={{ borderColor: primaryColor, color: primaryColor }}>
-            <span>{t("misc-total")}</span><span>${total.toLocaleString()}.00</span>
-          </div>
-        </div>
-      );
-    }
-
-    case "amount_in_words":
-      return (
-        <div className="h-full w-full text-[6px] italic leading-tight text-slate-600">
-          <span className="font-semibold not-italic">{t("misc-tve-amount-words")}:</span> Forty-two thousand one hundred ninety-six US dollars only.
-        </div>
-      );
-
-    case "offer_text":
-      return (
-        <div className="h-full w-full text-[6px] leading-tight text-slate-600">
-          <span className="font-semibold" style={{ color: accentColor }}>{t("misc-terms")}: </span>
-          30% advance, 70% before shipment. Delivery CIF Hamburg port. Inspection by SGS at loading.
-        </div>
-      );
-
-    case "bank_details":
-      return (
-        <div className="h-full w-full text-[6px] leading-tight">
-          <span className="font-semibold text-slate-800">{t("misc-tve-bank-label")}: </span>
-          <span className="text-slate-700">{bankName}</span>
-          <span className="text-slate-500"> · {t("misc-tve-iban-label")}: {iban}</span>
-          {letterhead?.bank_swift && <span className="text-slate-500"> · {t("misc-tve-swift-label")}: {letterhead.bank_swift}</span>}
-        </div>
-      );
-
-    case "signatures":
-      return (
-        <div className="flex h-full w-full items-end justify-between text-[6px] text-slate-600">
-          <div className="flex flex-col items-center">
-            <div className="border-t border-slate-500" style={{ width: 50 }} />
-            <div className="mt-0.5">{t("misc-tve-seller-signature")}</div>
-          </div>
-          <div className="flex flex-col items-center">
-            <div className="border-t border-slate-500" style={{ width: 50 }} />
-            <div className="mt-0.5">{t("misc-tve-buyer-signature")}</div>
-          </div>
-        </div>
-      );
-
-    case "seal":
-      return (
-        <div className="flex h-full w-full items-center justify-center rounded-full border border-dashed border-slate-300 text-[6px] text-slate-400">
-          {t("misc-tve-seal-placeholder")}
-        </div>
-      );
-
-    case "footer": {
-      const cfg = parseContentConfig(resolveFieldContent(field, template));
-      if (cfg.segments.length > 0) {
-        // Render the real segments (styled + substituted) — never raw JSON.
-        return (
-          <div className="flex h-full w-full flex-col justify-center overflow-hidden">
+          <div className="flex w-full flex-col justify-center overflow-hidden">
             {cfg.segments.map((seg) => (
               <div
                 key={seg.id}
@@ -649,8 +477,179 @@ function renderFieldContent(
         );
       }
       return (
-        <div className="h-full w-full truncate text-[6px] text-slate-500">
-          {`${companyName} · Reg#${reg}${vat ? ` · ${t("misc-tve-vat-label")}: ${vat}` : ""} · ${t("misc-tve-page-n-of-m").replace("{n}", "1").replace("{m}", "5")}`}
+        <div className="flex w-full flex-col justify-center">
+          <div className="text-[8px] font-bold leading-none" style={{ color: primaryColor }}>
+            {companyName}
+          </div>
+          <div className="mt-0.5 truncate text-[6px] text-slate-500">
+            {address}
+            {letterhead?.company_email ? ` · ${letterhead.company_email}` : ""}
+          </div>
+        </div>
+      );
+    }
+
+    // Title + document number/date/currency — ONE section in the PDF.
+    case "doc_title":
+      return (
+        <div className="flex w-full items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-[11px] font-extrabold tracking-[0.12em]" style={{ color: primaryColor }}>
+              {docTypeLabel}
+            </div>
+            <div className="mt-0.5 text-[6px] text-slate-500">
+              {t("misc-number")}: <span className="font-semibold text-slate-700">OF-2026-0014</span>
+            </div>
+          </div>
+          <div className="shrink-0 text-right text-[6px] text-slate-600">
+            <div>{t("misc-date")}: <span className="font-semibold text-slate-800">14 Mar 2026</span></div>
+            <div>{isLoi ? "Valid until" : t("misc-valid-until")}: <span className="font-semibold text-slate-800">14 Apr 2026</span></div>
+            <div>{t("misc-currency")}: <span className="font-semibold text-slate-800">USD</span></div>
+          </div>
+        </div>
+      );
+
+    case "from_box":
+      return (
+        <div className="w-full text-[6px] leading-tight">
+          <div className="text-[6px] font-bold uppercase tracking-wide text-slate-400">
+            {isLoi ? "FROM (BUYER)" : "FROM (SELLER)"}
+          </div>
+          <div className="text-[7px] font-bold" style={{ color: primaryColor }}>{companyName}</div>
+          <div className="text-slate-500">{address}</div>
+          {vat && <div className="text-slate-500">{t("misc-tve-vat-label")}: {vat}</div>}
+        </div>
+      );
+
+    case "to_box":
+      return (
+        <div className="w-full text-[6px] leading-tight">
+          <div className="text-[6px] font-bold uppercase tracking-wide text-slate-400">
+            {isLoi ? "TO (SELLER)" : "TO (BUYER)"}
+          </div>
+          <div className="text-[7px] font-bold text-slate-800">Mediterra Exports GmbH</div>
+          <div className="text-slate-500">Hafenstraße 4, 20457 Hamburg</div>
+          <div className="text-slate-500">Germany</div>
+        </div>
+      );
+
+    case "trade_terms":
+      return isLoi ? (
+        <div className="w-full text-[6px] leading-tight">
+          <div className="text-[7px] font-bold text-slate-800">{t("misc-tve-delivery-terms")}</div>
+          <div className="text-slate-600">Delivery Terms: CIF Hamburg · Payment: 30% advance, 70% at sight</div>
+          <div className="text-slate-600">Delivery Date: 30 Apr 2026 · Valid Until: 14 Apr 2026</div>
+        </div>
+      ) : (
+        <div className="flex w-full items-center justify-between text-[6.5px]">
+          <span className="font-semibold text-slate-800">{t("misc-tve-incoterm")}: <span style={{ color: primaryColor }}>EXW · Hamburg</span></span>
+          <span className="text-slate-500">{t("misc-tve-payment")}: <span className="font-semibold">Net 30</span></span>
+        </div>
+      );
+
+    case "line_items_table":
+      return <MiniLineItemsTable rows={SAMPLE_LINE_ITEMS} t={t} />;
+
+    case "specifications":
+      return isLoi ? (
+        <div className="w-full text-[6px] leading-tight">
+          <div className="text-[7px] font-bold text-slate-800">{t("misc-tve-product-specs")}</div>
+          <div className="text-slate-600">Product Name: Refined Sunflower Oil · Quantity: 500 MT</div>
+          <div className="text-slate-600">Unit Price: $1,160.00 · Total Value: $580,000.00</div>
+          <div className="text-slate-600">Origin Country: Ukraine · HS Code: 15121110</div>
+        </div>
+      ) : (
+        <div className="w-full text-[6px] leading-tight">
+          <div className="text-[7px] font-bold text-slate-800">{t("misc-tve-specifications")}</div>
+          <div className="text-slate-600">Moisture: ≤14% · Foreign matter: ≤2% · Broken: ≤5%</div>
+          <div className="text-slate-600">Packing: 50kg PP bags · Origin: EU</div>
+        </div>
+      );
+
+    case "totals": {
+      const subtotal = 12960 + 25400;
+      const vat10 = Math.round(subtotal * 0.1);
+      const total = subtotal + vat10;
+      return (
+        <div className="w-1/2 text-right text-[6.5px] leading-tight">
+          <div className="flex justify-between text-slate-600"><span>{t("misc-subtotal")}</span><span>${subtotal.toLocaleString()}.00</span></div>
+          <div className="flex justify-between text-slate-500"><span>{t("misc-tax")} (10%)</span><span>${vat10.toLocaleString()}.00</span></div>
+          <div className="mt-0.5 flex justify-between border-t pt-0.5 font-bold" style={{ borderColor: primaryColor, color: primaryColor }}>
+            <span>{t("misc-total")}</span><span>${total.toLocaleString()}.00</span>
+          </div>
+        </div>
+      );
+    }
+
+    case "amount_in_words":
+      return (
+        <div className="w-full text-[6px] italic leading-tight text-slate-600">
+          <span className="font-semibold not-italic">{t("misc-tve-amount-words")}:</span> Forty-two thousand one hundred ninety-six US dollars only.
+        </div>
+      );
+
+    case "offer_text":
+      return isLoi ? (
+        <div className="w-full text-[6px] leading-relaxed text-slate-600">
+          <span className="font-semibold" style={{ color: primaryColor }}>Dear Mediterra Exports GmbH,</span>
+          <div className="mt-0.5">We, {companyName}, hereby express our firm intention to purchase the following goods under the terms and conditions stated in this Letter of Intent…</div>
+        </div>
+      ) : (
+        <div className="w-full text-[6px] leading-tight text-slate-600">
+          <span className="font-semibold" style={{ color: primaryColor }}>{t("misc-terms")}: </span>
+          30% advance, 70% before shipment. Delivery CIF Hamburg port. Inspection by SGS at loading.
+        </div>
+      );
+
+    case "bank_details":
+      return (
+        <div className="w-full text-[6px] leading-tight">
+          <span className="font-semibold text-slate-800">{t("misc-tve-bank-label")}: </span>
+          <span className="text-slate-700">{bankName}</span>
+          <span className="text-slate-500"> · {t("misc-tve-iban-label")}: {iban}</span>
+        </div>
+      );
+
+    case "signatures":
+      return (
+        <div className="flex w-full items-end justify-between px-6 text-[6px] text-slate-600">
+          <div className="flex flex-col items-center">
+            <div className="border-t border-slate-500" style={{ width: 60 }} />
+            <div className="mt-0.5">{t("misc-tve-seller-signature")}</div>
+          </div>
+          <div className="flex flex-col items-center">
+            <div className="border-t border-slate-500" style={{ width: 60 }} />
+            <div className="mt-0.5">{t("misc-tve-buyer-signature")}</div>
+          </div>
+        </div>
+      );
+
+    case "footer": {
+      const cfg = parseContentConfig(resolveFieldContent(field, template));
+      if (cfg.segments.length > 0) {
+        return (
+          <div className="flex w-full flex-col justify-center overflow-hidden">
+            {cfg.segments.map((seg) => (
+              <div
+                key={seg.id}
+                className="truncate leading-tight"
+                style={{
+                  fontSize: `${Math.max(4, Math.round(seg.fontSize * 0.7))}px`,
+                  fontWeight: seg.bold ? 700 : 400,
+                  fontStyle: seg.italic ? "italic" : "normal",
+                  color: seg.color,
+                  textAlign: seg.alignment,
+                }}
+              >
+                {substituteForFieldPreview(seg.text, letterhead)}
+              </div>
+            ))}
+          </div>
+        );
+      }
+      return (
+        <div className="w-full truncate text-[6px] text-slate-500">
+          {`${companyName} · Reg#${getRegNumber(letterhead)} · ${t("misc-tve-page-n-of-m").replace("{n}", "1").replace("{m}", "5")}`}
         </div>
       );
     }
@@ -667,7 +666,7 @@ function renderFieldContent(
     case "custom_image": {
       const url = (field.props?.imageUrl as string) || null;
       return url ? (
-        // eslint-disable-next-line @next/next/no-img-element
+         
         <img src={url} alt={field.label} className="h-full w-full object-contain" draggable={false} />
       ) : (
         <div className="flex h-full w-full items-center justify-center text-[7px] text-slate-400">
@@ -682,237 +681,88 @@ function renderFieldContent(
 }
 
 // ============================================================
-// Ruler Component
+// Sortable section row (left panel)
 // ============================================================
 
-/**
- * RulerBar renders a tick-marked ruler in mm units.
- * Renamed from `Ruler` to avoid clashing with the lucide-react icon of the same name.
- */
-function RulerBar({
-  orientation,
-  length,
-  scale,
+function SortableSectionRow({
+  field,
+  position,
+  total,
+  selected,
+  onSelect,
+  onToggleVisible,
 }: {
-  orientation: "horizontal" | "vertical";
-  length: number;
-  scale: number;
+  field: FieldElement;
+  position: number;
+  total: number;
+  selected: boolean;
+  onSelect: () => void;
+  onToggleVisible: () => void;
 }) {
-  const ticks: React.ReactNode[] = [];
-  for (let i = 0; i <= length; i += 10) {
-    const isMajor = i % 50 === 0;
-    const tickLength = isMajor ? 8 : 4;
-    const pos = i * scale;
-    if (pos < 0) continue;
-    ticks.push(
-      <div
-        key={i}
-        className="absolute"
-        style={
-          orientation === "horizontal"
-            ? { left: pos, top: 0, width: 1, height: tickLength }
-            : { top: pos, left: 0, width: tickLength, height: 1 }
-        }
-      >
-        <div className="h-full w-full bg-muted-foreground/40" />
-        {isMajor && (
-          <span
-            className="absolute text-[8px] leading-none text-muted-foreground"
-            style={
-              orientation === "horizontal"
-                ? { top: 10, left: 2 }
-                : { left: 10, top: -2 }
-            }
-          >
-            {i}
-          </span>
-        )}
-      </div>
-    );
-  }
+  const t = useT();
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: field.id,
+  });
+  const isFixed = !FLOW_TYPES.has(field.type);
+
   return (
     <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
       className={cn(
-        "relative overflow-hidden border-border bg-muted/20",
-        orientation === "horizontal" ? "h-6 border-b" : "w-6 border-r"
+        "flex items-center gap-1.5 rounded-md border p-1.5 pr-2 text-sm transition-colors",
+        selected ? "border-primary/40 bg-primary/10" : "border-transparent hover:bg-muted/60",
+        isDragging && "z-10 shadow-md ring-1 ring-primary/30",
+        !field.visible && "opacity-60"
       )}
+      onClick={onSelect}
     >
-      {ticks}
+      {isFixed ? (
+        <span className="flex size-6 shrink-0 items-center justify-center text-muted-foreground/50">
+          <Lock className="size-3" />
+        </span>
+      ) : (
+        <button
+          type="button"
+          className="flex size-6 shrink-0 cursor-grab touch-none items-center justify-center text-muted-foreground/70 hover:text-foreground active:cursor-grabbing"
+          title={t("misc-tve-drag-reorder")}
+          {...attributes}
+          {...listeners}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <GripVertical className="size-3.5" />
+        </button>
+      )}
+      <span className={cn("flex-1 truncate", !field.visible && "line-through")}>
+        {t(field.label)}
+      </span>
+      {isFixed ? (
+        <Badge variant="secondary" className="shrink-0 px-1.5 py-0 text-[9px] font-medium">
+          {t("misc-tve-fixed")}
+        </Badge>
+      ) : (
+        <span className="shrink-0 text-[9px] tabular-nums text-muted-foreground">
+          {position}/{total}
+        </span>
+      )}
+      <button
+        type="button"
+        className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+        title={field.visible ? t("misc-tve-hide-field") : t("misc-tve-show-field")}
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleVisible();
+        }}
+      >
+        {field.visible ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
+      </button>
     </div>
   );
 }
 
 // ============================================================
-// Snap Engine
+// Main editor
 // ============================================================
-
-function calculateSnapGuides(
-  dragging: FieldElement,
-  fields: FieldElement[],
-  pageWidth: number,
-  pageHeight: number
-): SnapGuide[] {
-  const guides: SnapGuide[] = [];
-
-  // Page edge + center guides
-  guides.push({ orientation: "vertical", position: 0, type: "edge" });
-  guides.push({ orientation: "vertical", position: pageWidth, type: "edge" });
-  guides.push({ orientation: "vertical", position: pageWidth / 2, type: "center" });
-  guides.push({ orientation: "horizontal", position: 0, type: "edge" });
-  guides.push({ orientation: "horizontal", position: pageHeight, type: "edge" });
-  guides.push({ orientation: "horizontal", position: pageHeight / 2, type: "center" });
-
-  // Other element edges + centers (the dragging element is excluded).
-  for (const f of fields) {
-    if (f.id === dragging.id || !f.visible) continue;
-    guides.push({ orientation: "vertical", position: f.x, type: "element" });
-    guides.push({ orientation: "vertical", position: f.x + f.width, type: "element" });
-    guides.push({ orientation: "vertical", position: f.x + f.width / 2, type: "element" });
-    guides.push({ orientation: "horizontal", position: f.y, type: "element" });
-    guides.push({ orientation: "horizontal", position: f.y + f.height, type: "element" });
-    guides.push({ orientation: "horizontal", position: f.y + f.height / 2, type: "element" });
-  }
-
-  return guides;
-}
-
-function findSnap(
-  dragging: FieldElement,
-  guides: SnapGuide[],
-  threshold: number = SNAP_THRESHOLD
-): { x?: number; y?: number; guides: SnapGuide[] } {
-  const activeGuides: SnapGuide[] = [];
-  let snapX: number | undefined;
-  let snapY: number | undefined;
-
-  const dragLeft = dragging.x;
-  const dragRight = dragging.x + dragging.width;
-  const dragCenterX = dragging.x + dragging.width / 2;
-
-  for (const g of guides) {
-    if (g.orientation !== "vertical") continue;
-    if (snapX === undefined && Math.abs(g.position - dragLeft) < threshold) {
-      snapX = g.position;
-      activeGuides.push(g);
-      continue;
-    }
-    if (snapX === undefined && Math.abs(g.position - dragRight) < threshold) {
-      snapX = g.position - dragging.width;
-      activeGuides.push(g);
-      continue;
-    }
-    if (snapX === undefined && Math.abs(g.position - dragCenterX) < threshold) {
-      snapX = g.position - dragging.width / 2;
-      activeGuides.push(g);
-      continue;
-    }
-  }
-
-  const dragTop = dragging.y;
-  const dragBottom = dragging.y + dragging.height;
-  const dragCenterY = dragging.y + dragging.height / 2;
-
-  for (const g of guides) {
-    if (g.orientation !== "horizontal") continue;
-    if (snapY === undefined && Math.abs(g.position - dragTop) < threshold) {
-      snapY = g.position;
-      activeGuides.push(g);
-      continue;
-    }
-    if (snapY === undefined && Math.abs(g.position - dragBottom) < threshold) {
-      snapY = g.position - dragging.height;
-      activeGuides.push(g);
-      continue;
-    }
-    if (snapY === undefined && Math.abs(g.position - dragCenterY) < threshold) {
-      snapY = g.position - dragging.height / 2;
-      activeGuides.push(g);
-      continue;
-    }
-  }
-
-  return { x: snapX, y: snapY, guides: activeGuides };
-}
-
-// ============================================================
-// Continuation Page (page 2+) — static preview
-// ============================================================
-
-function ContinuationPage({
-  pageIdx,
-  pageCount,
-  template,
-  letterhead,
-  page,
-  scale,
-  t,
-}: {
-  pageIdx: number;
-  pageCount: number;
-  template: Partial<DocumentTemplate>;
-  letterhead: TenantLetterhead | null;
-  page: { width: number; height: number };
-  scale: number;
-  t: (k: string) => string;
-}) {
-  const companyName = getCompanyName(letterhead);
-  const logoUrl = getLogoUrl(letterhead);
-  const reg = getRegNumber(letterhead);
-  const primaryColor = template.primary_color || letterhead?.primary_color || "#0f766e";
-  // Show one extra sample row per continuation page (cycling through the list).
-  const rowIndex = (pageIdx - 1) % SAMPLE_LINE_ITEMS.length;
-  const row = SAMPLE_LINE_ITEMS[rowIndex];
-
-  return (
-    <div
-      className="relative bg-white shadow-lg"
-      style={{ width: page.width * scale, height: page.height * scale }}
-    >
-      {/* Continued header */}
-      <div
-        className="absolute left-0 right-0 flex items-center gap-1 border-b-2"
-        style={{ top: 8 * scale, height: 15 * scale, paddingLeft: 15 * scale, paddingRight: 15 * scale, borderColor: primaryColor }}
-      >
-        {logoUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={logoUrl} alt="" className="shrink-0 object-contain" style={{ width: 20, height: 12 }} draggable={false} />
-        )}
-        <span className="text-[8px] font-bold" style={{ color: primaryColor }}>{companyName}</span>
-        <span className="ml-auto text-[6px] text-slate-500">{t("misc-tve-continued")}</span>
-      </div>
-
-      {/* Continued table */}
-      <div className="absolute" style={{ top: 30 * scale, left: 15 * scale, right: 15 * scale }}>
-        <MiniLineItemsTable rows={[row]} t={t} />
-        <div className="mt-1 text-[6px] italic text-slate-400">{t("misc-tve-continued-from")}</div>
-      </div>
-
-      {/* Footer */}
-      <div
-        className="absolute left-0 right-0 flex items-center justify-between border-t border-slate-300 text-[6px] text-slate-500"
-        style={{ bottom: 6 * scale, paddingLeft: 15 * scale, paddingRight: 15 * scale, paddingTop: 3 }}
-      >
-        <span className="truncate">{companyName} · Reg#{reg}</span>
-        <span>{t("misc-tve-page-n-of-m").replace("{n}", String(pageIdx + 1)).replace("{m}", String(pageCount))}</span>
-      </div>
-    </div>
-  );
-}
-
-// ============================================================
-// Main Component
-// ============================================================
-
-type DragState = {
-  id: string;
-  startX: number; // client px
-  startY: number; // client px
-  origX: number; // mm
-  origY: number; // mm
-  origW: number; // mm
-  origH: number; // mm
-  mode: "move" | "resize";
-};
 
 export function TemplateVisualEditor({
   template,
@@ -921,40 +771,55 @@ export function TemplateVisualEditor({
   letterhead,
 }: TemplateVisualEditorProps) {
   const t = useT();
-  const [fields, setFields] = React.useState<FieldElement[]>(
-    DEFAULT_FIELDS.map((f) => ({ ...f }))
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const [fields, setFields] = React.useState<FieldElement[]>(() =>
+    defaultFieldsFor(template.type)
   );
 
-  // ── audit22: layout persistence ────────────────────────────────────
-  // Hydrate the persisted visual layout (template.layout_json, written by
-  // this editor on every field mutation) when the TEMPLATE IDENTITY
-  // changes — not on every parent form update (form re-renders produce a
-  // new object each keystroke; hydrating then would reset in-progress
-  // drags). Built-in fields keep their translated label when the stored
-  // layout row doesn't carry one.
+  // ── layout persistence: hydrate on template identity change ────────
   const hydratedFor = React.useRef<string | null>(null);
   React.useEffect(() => {
-    const key = `${(template as { id?: string })?.id ?? "new"}`;
+    const key = `${(template as { id?: string })?.id ?? "new"}:${template.type ?? "offer"}`;
     if (hydratedFor.current === key) return;
     hydratedFor.current = key;
     const parsed = readTemplateLayout((template as { layout_json?: unknown }).layout_json);
+    const allowed = new Set<string>([
+      ...FIXED_TOP, ...FIXED_BOTTOM,
+      ...flowSectionsFor(template.type).map((s) => s.type),
+      "custom_text", "custom_image",
+    ]);
+    let base: FieldElement[] = defaultFieldsFor(template.type);
     if (parsed && parsed.fields.length > 0) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setFields(parsed.fields.map((f) => ({
-        ...f,
-        type: f.type as FieldType,
-        label: f.label ?? DEFAULT_FIELDS.find((d) => d.id === f.id)?.label ?? "Custom",
-      })));
+      const canonicalLabels = new Map<string, string>(
+        defaultFieldsFor(template.type).map((d) => [d.id, d.label] as [string, string]),
+      );
+      const stored = parsed.fields
+        .filter((f) => allowed.has(f.type))
+        .map((f) => ({
+          ...f,
+          type: f.type as FieldType,
+          // Built-in sections always carry the canonical label for the
+          // template type (stored labels are pre-audit27 relics); only
+          // custom fields keep their user-edited label.
+          label:
+            f.type === "custom_text" || f.type === "custom_image"
+              ? (f.label ?? "Custom")
+              : (canonicalLabels.get(f.id) ?? canonicalLabels.get(f.type) ?? "Custom"),
+        }));
+      if (stored.length > 0) base = stored;
     }
+    // Reindex the flow sort keys (y) to a clean 10, 20, 30… sequence so the
+    // order survives round-trips deterministically.
+    const flows = base.filter((f) => FLOW_TYPES.has(f.type)).sort((a, b) => a.y - b.y);
+    flows.forEach((f, i) => { f.y = (i + 1) * 10; });
+    const fixedTop = base.filter((f) => FIXED_TOP.includes(f.type));
+    const fixedBottom = base.filter((f) => FIXED_BOTTOM.includes(f.type));
+    const customs = base.filter((f) => f.type === "custom_text" || f.type === "custom_image");
+     
+    setFields([...fixedTop, ...flows, ...fixedBottom, ...customs]);
   }, [template]);
 
-  // Emit the layout into the parent form on every field change (drag move,
-  // resize, add/delete, visibility/lock toggles, custom-field edits) so it
-  // PERSISTS to layout_json on save and the PDF renderer can honor it.
-  // Echo guards:
-  //   • the PRISTINE default layout is never emitted (opening the editor
-  //     alone must not dirty layout_json on templates that have none);
-  //   • identical serializations are skipped (label-only churn ignored).
+  // ── emit into the parent form on every change (persist to layout_json)
   const lastLayoutEmitted = React.useRef<string>("");
   const suppressNextEmit = React.useRef(true);
   React.useEffect(() => {
@@ -967,133 +832,43 @@ export function TemplateVisualEditor({
     if (json === lastLayoutEmitted.current) return;
     lastLayoutEmitted.current = json;
     onChange({ ...template, layout_json: { fields } });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [fields]);
 
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
-  const [dragging, setDragging] = React.useState<DragState | null>(null);
-  const [activeGuides, setActiveGuides] = React.useState<SnapGuide[]>([]);
-  const [showRuler, setShowRuler] = React.useState(true);
-  const [showGrid, setShowGrid] = React.useState(false);
-  const [snapEnabled, setSnapEnabled] = React.useState(true);
   const [zoom, setZoom] = React.useState(1);
-  const [pageCount, setPageCount] = React.useState(1);
   const [customFieldCounter, setCustomFieldCounter] = React.useState(0);
-  // "vertical" = stacked pages (default), "grid" = 2-column side-by-side.
-  const [pageLayout, setPageLayout] = React.useState<"vertical" | "grid">("vertical");
-  // True while a placeholder chip is being dragged over the content Textarea.
-  const [dragOverContent, setDragOverContent] = React.useState(false);
-  // Ref to the scrollable canvas container — used by the "Fit" button to
-  // calculate the zoom level that fits the page width in the visible area.
   const canvasContainerRef = React.useRef<HTMLDivElement | null>(null);
+  const flowRefs = React.useRef<Map<string, HTMLDivElement>>(new Map());
+  const [dragOverContent, setDragOverContent] = React.useState(false);
 
-  // Effective scale combines the base pixel-per-mm with zoom factor.
   const renderScale = BASE_SCALE * zoom;
-
-  // Effective page size: explicit prop wins, then template.page_size, then A4.
   const effectivePageSize: "A4" | "Letter" =
     pageSize ?? (template.page_size === "Letter" ? "Letter" : "A4");
   const page = PAGE_DIMENSIONS[effectivePageSize];
   const pageWidthPx = page.width * renderScale;
-  const pageHeightPx = page.height * renderScale;
+
+  // Ordered flow fields (sort by y — the same key the PDF renderer uses).
+  const flowFields = React.useMemo(
+    () => fields.filter((f) => FLOW_TYPES.has(f.type)).sort((a, b) => a.y - b.y),
+    [fields]
+  );
+  const overlays = fields.filter((f) => f.type === "custom_text" || f.type === "custom_image");
+  const logoField = fields.find((f) => f.type === "logo");
+  const headerField = fields.find((f) => f.type === "header");
+  const footerField = fields.find((f) => f.type === "footer");
 
   const selected = fields.find((f) => f.id === selectedId) ?? null;
+  const selectedIsOverlay = selected?.type === "custom_text" || selected?.type === "custom_image";
+  const selectedFlowIndex = selected ? flowFields.findIndex((f) => f.id === selected.id) : -1;
+
+  const marginTop = template.page_margin_top ?? 20;
+  const marginBottom = template.page_margin_bottom ?? 20;
+  const marginLeft = template.page_margin_left ?? 18;
+  const marginRight = template.page_margin_right ?? 18;
 
   // ---------------------------------------------------------
-  // Drag / resize handlers
-  // ---------------------------------------------------------
-
-  const startDrag = (
-    e: React.MouseEvent,
-    field: FieldElement,
-    mode: "move" | "resize"
-  ) => {
-    if (field.locked) return;
-    e.preventDefault();
-    e.stopPropagation();
-    setSelectedId(field.id);
-    setDragging({
-      id: field.id,
-      startX: e.clientX,
-      startY: e.clientY,
-      origX: field.x,
-      origY: field.y,
-      origW: field.width,
-      origH: field.height,
-      mode,
-    });
-  };
-
-  React.useEffect(() => {
-    if (!dragging) return;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      const dx = (e.clientX - dragging.startX) / renderScale;
-      const dy = (e.clientY - dragging.startY) / renderScale;
-
-      setFields((prev) =>
-        prev.map((f) => {
-          if (f.id !== dragging.id) return f;
-
-          if (dragging.mode === "resize") {
-            // Resize: update width/height based on drag delta, keep x/y clamped
-            // to original so the field's top-left stays fixed.
-            const newWidth = Math.max(
-              10,
-              Math.min(page.width - dragging.origX, dragging.origW + dx)
-            );
-            const newHeight = Math.max(
-              6,
-              Math.min(page.height - dragging.origY, dragging.origH + dy)
-            );
-            return { ...f, width: newWidth, height: newHeight };
-          }
-
-          // Move mode.
-          let newX = Math.max(
-            0,
-            Math.min(page.width - f.width, dragging.origX + dx)
-          );
-          let newY = Math.max(
-            0,
-            Math.min(page.height - f.height, dragging.origY + dy)
-          );
-
-          if (snapEnabled) {
-            const candidate: FieldElement = { ...f, x: newX, y: newY };
-            const guides = calculateSnapGuides(
-              candidate,
-              prev,
-              page.width,
-              page.height
-            );
-            const snap = findSnap(candidate, guides);
-            if (snap.x !== undefined) newX = snap.x;
-            if (snap.y !== undefined) newY = snap.y;
-            setActiveGuides(snap.guides);
-          }
-
-          return { ...f, x: newX, y: newY };
-        })
-      );
-    };
-
-    const handleMouseUp = () => {
-      setDragging(null);
-      setActiveGuides([]);
-    };
-
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dragging, snapEnabled, page.width, page.height, renderScale]);
-
-  // ---------------------------------------------------------
-  // Template / field mutations
+  // Mutations
   // ---------------------------------------------------------
 
   const updateTemplate = (updates: Partial<DocumentTemplate>) => {
@@ -1101,116 +876,158 @@ export function TemplateVisualEditor({
   };
 
   const updateField = (id: string, updates: Partial<FieldElement>) => {
-    setFields((prev) =>
-      prev.map((f) => (f.id === id ? { ...f, ...updates } : f))
-    );
+    setFields((prev) => prev.map((f) => (f.id === id ? { ...f, ...updates } : f)));
   };
 
   const updateFieldProps = (id: string, props: Record<string, unknown>) => {
     setFields((prev) =>
-      prev.map((f) =>
-        f.id === id ? { ...f, props: { ...(f.props || {}), ...props } } : f
-      )
+      prev.map((f) => (f.id === id ? { ...f, props: { ...(f.props || {}), ...props } } : f))
     );
   };
 
-  // ---------------------------------------------------------
-  // Inline content editing (properties panel Textarea)
-  //
-  // header / footer content is PERSISTED through the parent form state
-  // (template.header_content / template.footer_content, segments JSON) so
-  // edits survive tab switches and are included in the save payload.
-  // custom_text / offer_text / bank_details keep their content in local
-  // field props (preview-only, as before).
-  // ---------------------------------------------------------
-  const selectedPersistedKey: "header_content" | "footer_content" | null =
-    selected?.type === "header"
-      ? "header_content"
-      : selected?.type === "footer"
-        ? "footer_content"
-        : null;
-
-  const getSelectedContentText = (): string => {
-    if (!selected) return "";
-    if (selectedPersistedKey) {
-      return contentToPlainText(template[selectedPersistedKey]);
-    }
-    return (selected.props?.content as string) || "";
+  /** Reindex the flow y keys after any reorder (10, 20, 30…). */
+  const reindexFlow = (next: FieldElement[]): FieldElement[] => {
+    const flows = next.filter((f) => FLOW_TYPES.has(f.type)).sort((a, b) => a.y - b.y);
+    const keyed = new Map(flows.map((f, i) => [f.id, (i + 1) * 10]));
+    return next.map((f) => (keyed.has(f.id) ? { ...f, y: keyed.get(f.id)! } : f));
   };
 
-  const setSelectedContentText = (text: string) => {
-    if (!selected) return;
-    if (selectedPersistedKey) {
-      // Write through to the parent form (QR config etc. are untouched — the
-      // parent re-serializes _qrConfig from its own state at save time and
-      // plainTextToContentJson preserves sibling JSON keys anyway).
-      updateTemplate({
-        [selectedPersistedKey]: plainTextToContentJson(
-          text,
-          template[selectedPersistedKey],
-          `visual-${selected.type}`
-        ),
-      } as Partial<DocumentTemplate>);
-    } else {
-      updateFieldProps(selected.id, { content: text });
-    }
+  /** Move a flow field one position up/down. */
+  const moveFlow = (id: string, dir: -1 | 1) => {
+    setFields((prev) => {
+      const flows = prev.filter((f) => FLOW_TYPES.has(f.type)).sort((a, b) => a.y - b.y);
+      const idx = flows.findIndex((f) => f.id === id);
+      const target = idx + dir;
+      if (idx < 0 || target < 0 || target >= flows.length) return prev;
+      const moved = arrayMove(flows, idx, target);
+      const keyed = new Map(moved.map((f, i) => [f.id, (i + 1) * 10]));
+      return reindexFlow(prev.map((f) => (keyed.has(f.id) ? { ...f, y: keyed.get(f.id)! } : f)));
+    });
   };
 
-  const alignField = (id: string, alignment: string) => {
-    setFields((prev) =>
-      prev.map((f) => {
-        if (f.id !== id) return f;
-        switch (alignment) {
-          case "left":
-            return { ...f, x: 0 };
-          case "center-h":
-            return { ...f, x: (page.width - f.width) / 2 };
-          case "right":
-            return { ...f, x: page.width - f.width };
-          case "top":
-            return { ...f, y: 0 };
-          case "middle":
-            return { ...f, y: (page.height - f.height) / 2 };
-          case "bottom":
-            return { ...f, y: page.height - f.height };
-          default:
-            return f;
+  /** dnd-kit reorder from the section list. */
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const activeId = String(active.id);
+    const overId = String(over.id);
+    setFields((prev) => {
+      const flows = prev.filter((f) => FLOW_TYPES.has(f.type)).sort((a, b) => a.y - b.y);
+      const from = flows.findIndex((f) => f.id === activeId);
+      const to = flows.findIndex((f) => f.id === overId);
+      if (from < 0 || to < 0) return prev;
+      const moved = arrayMove(flows, from, to);
+      const keyed = new Map(moved.map((f, i) => [f.id, (i + 1) * 10]));
+      return reindexFlow(prev.map((f) => (keyed.has(f.id) ? { ...f, y: keyed.get(f.id)! } : f)));
+    });
+  };
+
+  // ---------------------------------------------------------
+  // Canvas flow-section drag (mousedown on a section header bar →
+  // live-swap when the pointer crosses a neighbour's midpoint)
+  // ---------------------------------------------------------
+
+  const flowDrag = React.useRef<{ id: string; startY: number } | null>(null);
+
+  const startFlowDrag = (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    setSelectedId(id);
+    flowDrag.current = { id, startY: e.clientY };
+    const onMove = (ev: MouseEvent) => {
+      const d = flowDrag.current;
+      if (!d) return;
+      const draggedEl = flowRefs.current.get(d.id);
+      if (!draggedEl) return;
+      const r = draggedEl.getBoundingClientRect();
+      const center = r.top + r.height / 2;
+      for (const [otherId, el] of flowRefs.current) {
+        if (otherId === d.id) continue;
+        const or = el.getBoundingClientRect();
+        if (center > or.top + or.height * 0.35 && center < or.bottom - or.height * 0.35) {
+          // Crossed far enough into the neighbour → swap the sort keys.
+          setFields((prev) => {
+            const a = prev.find((f) => f.id === d.id);
+            const b = prev.find((f) => f.id === otherId);
+            if (!a || !b) return prev;
+            const yA = a.y, yB = b.y;
+            return reindexFlow(prev.map((f) =>
+              f.id === d.id ? { ...f, y: yB } : f.id === otherId ? { ...f, y: yA } : f
+            ));
+          });
+          break;
         }
-      })
-    );
+      }
+    };
+    const onUp = () => {
+      flowDrag.current = null;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
   };
 
-  const resetLayout = () => {
-    setFields(DEFAULT_FIELDS.map((f) => ({ ...f })));
-    setSelectedId(null);
-    setActiveGuides([]);
-    setCustomFieldCounter(0);
+  // ---------------------------------------------------------
+  // Overlay drag / resize (free absolute placement — real in the PDF)
+  // ---------------------------------------------------------
+
+  const overlayDrag = React.useRef<{
+    id: string; startX: number; startY: number; origX: number; origY: number;
+    origW: number; origH: number; mode: "move" | "resize";
+  } | null>(null);
+
+  const startOverlayDrag = (e: React.MouseEvent, field: FieldElement, mode: "move" | "resize") => {
+    if (field.locked) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setSelectedId(field.id);
+    overlayDrag.current = {
+      id: field.id, startX: e.clientX, startY: e.clientY,
+      origX: field.x, origY: field.y, origW: field.width, origH: field.height, mode,
+    };
+    const onMove = (ev: MouseEvent) => {
+      const d = overlayDrag.current;
+      if (!d) return;
+      const dx = (ev.clientX - d.startX) / renderScale;
+      const dy = (ev.clientY - d.startY) / renderScale;
+      setFields((prev) => prev.map((f) => {
+        if (f.id !== d.id) return f;
+        if (d.mode === "resize") {
+          return {
+            ...f,
+            width: Math.max(10, Math.min(page.width - d.origX, d.origW + dx)),
+            height: Math.max(6, Math.min(page.height - d.origY, d.origH + dy)),
+          };
+        }
+        return {
+          ...f,
+          x: Math.max(0, Math.min(page.width - f.width, d.origX + dx)),
+          y: Math.max(0, Math.min(page.height - f.height, d.origY + dy)),
+        };
+      }));
+    };
+    const onUp = () => {
+      overlayDrag.current = null;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
   };
 
-  // Fit-to-width: zoom so the full page width (ruler excluded) fits inside the
-  // visible canvas area. Falls back to 1 if the container isn't measured yet.
-  const fitToWidth = () => {
-    const containerWidth = canvasContainerRef.current?.clientWidth || 800;
-    const pageWidthPx = page.width * BASE_SCALE;
-    // Account for ~32px of padding on each side + the left ruler (~24px).
-    const padding = showRuler ? 56 : 32;
-    const newZoom = (containerWidth - padding) / pageWidthPx;
-    setZoom(Math.max(0.25, Math.min(3, newZoom)));
-  };
+  // ---------------------------------------------------------
+  // Add / delete / reset
+  // ---------------------------------------------------------
 
   const addCustomText = () => {
     const idx = customFieldCounter + 1;
     const newField: FieldElement = {
       id: `custom_text_${Date.now()}`,
       type: "custom_text",
-      label: `Custom Text ${idx}`,
-      x: 60,
-      y: 60 + idx * 4,
-      width: 90,
-      height: 12,
-      visible: true,
-      locked: false,
-      props: { content: "Enter your text here..." },
+      label: `Custom text ${idx}`,
+      x: 40, y: 40, width: 90, height: 12,
+      visible: true, locked: false,
+      props: { content: "" },
     };
     setFields((prev) => [...prev, newField]);
     setCustomFieldCounter(idx);
@@ -1222,13 +1039,9 @@ export function TemplateVisualEditor({
     const newField: FieldElement = {
       id: `custom_image_${Date.now()}`,
       type: "custom_image",
-      label: `Custom Image ${idx}`,
-      x: 80,
-      y: 100 + idx * 4,
-      width: 50,
-      height: 25,
-      visible: true,
-      locked: false,
+      label: `Custom image ${idx}`,
+      x: 60, y: 100, width: 50, height: 25,
+      visible: true, locked: false,
       props: { imageUrl: null },
     };
     setFields((prev) => [...prev, newField]);
@@ -1237,447 +1050,355 @@ export function TemplateVisualEditor({
   };
 
   const deleteField = (id: string) => {
-    // Prevent deletion of built-in default fields.
-    if (DEFAULT_FIELDS.some((f) => f.id === id)) return;
     setFields((prev) => prev.filter((f) => f.id !== id));
     if (selectedId === id) setSelectedId(null);
   };
 
-  // ---------------------------------------------------------
-  // Margins (with safe fallbacks)
-  // ---------------------------------------------------------
-  const marginTop = template.page_margin_top ?? 20;
-  const marginBottom = template.page_margin_bottom ?? 20;
-  const marginLeft = template.page_margin_left ?? 18;
-  const marginRight = template.page_margin_right ?? 18;
+  const resetLayout = () => {
+    setFields(defaultFieldsFor(template.type));
+    setSelectedId(null);
+    setCustomFieldCounter(0);
+  };
+
+  const fitToWidth = () => {
+    const containerWidth = canvasContainerRef.current?.clientWidth || 800;
+    const padding = 48;
+    const newZoom = (containerWidth - padding) / (page.width * BASE_SCALE);
+    setZoom(Math.max(0.4, Math.min(2, newZoom)));
+  };
 
   // ---------------------------------------------------------
-  // Render the editable page (interactive field canvas)
+  // Inline content editing (header / footer persist to the template
+  // columns; custom_text overlays persist in field props — both are REAL
+  // and render in the PDF.)
   // ---------------------------------------------------------
-  const renderEditorPage = () => (
-    <div
-      className="relative bg-white shadow-lg"
-      style={{ width: pageWidthPx, height: pageHeightPx }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) setSelectedId(null);
-      }}
-    >
-      {/* Page margin guides (dashed blue) */}
-      <div
-        className="absolute border-l border-dashed border-blue-300/50"
-        style={{ left: marginLeft * renderScale, top: 0, bottom: 0 }}
-      />
-      <div
-        className="absolute border-r border-dashed border-blue-300/50"
-        style={{ right: marginRight * renderScale, top: 0, bottom: 0 }}
-      />
-      <div
-        className="absolute border-t border-dashed border-blue-300/50"
-        style={{ top: marginTop * renderScale, left: 0, right: 0 }}
-      />
-      <div
-        className="absolute border-b border-dashed border-blue-300/50"
-        style={{ bottom: marginBottom * renderScale, left: 0, right: 0 }}
-      />
 
-      {/* Grid overlay (5mm squares) */}
-      {showGrid && (
-        <div className="pointer-events-none absolute inset-0">
-          {Array.from({ length: Math.floor(page.width / 5) - 1 }).map((_, i) => (
-            <div
-              key={`gv-${i}`}
-              className="absolute top-0 bottom-0 border-l border-blue-200/30"
-              style={{ left: (i + 1) * 5 * renderScale }}
-            />
-          ))}
-          {Array.from({ length: Math.floor(page.height / 5) - 1 }).map((_, i) => (
-            <div
-              key={`gh-${i}`}
-              className="absolute left-0 right-0 border-t border-blue-200/30"
-              style={{ top: (i + 1) * 5 * renderScale }}
-            />
-          ))}
+  const selectedPersistedKey: "header_content" | "footer_content" | null =
+    selected?.type === "header" ? "header_content" : selected?.type === "footer" ? "footer_content" : null;
+
+  const getSelectedContentText = (): string => {
+    if (!selected) return "";
+    if (selectedPersistedKey) return contentToPlainText(template[selectedPersistedKey]);
+    return (selected.props?.content as string) || "";
+  };
+
+  const setSelectedContentText = (text: string) => {
+    if (!selected) return;
+    if (selectedPersistedKey) {
+      updateTemplate({
+        [selectedPersistedKey]: plainTextToContentJson(text, template[selectedPersistedKey], `visual-${selected.type}`),
+      } as Partial<DocumentTemplate>);
+    } else {
+      updateFieldProps(selected.id, { content: text });
+    }
+  };
+
+  // ---------------------------------------------------------
+  // Canvas
+  // ---------------------------------------------------------
+
+  const canvasHeaderFooterStrip = (field: FieldElement | undefined, zone: "top" | "bottom") => {
+    if (!field) return null;
+    const isSelected = selectedId === field.id;
+    return (
+      <div
+        className={cn(
+          "flex cursor-pointer items-center gap-2 border-b border-dashed px-2 py-1.5 transition-colors",
+          zone === "bottom" && "border-b-0 border-t",
+          isSelected ? "bg-primary/10" : "bg-slate-50/80 hover:bg-slate-100"
+        )}
+        onClick={() => setSelectedId(field.id)}
+        title={t("misc-tve-fixed-every-page")}
+      >
+        {field.type === "logo" ? (
+          <div className="w-24 shrink-0">
+            {renderFieldContent(field, template, letterhead, t)}
+          </div>
+        ) : null}
+        <div className="min-w-0 flex-1">
+          {renderFieldContent(field, template, letterhead, t)}
         </div>
-      )}
-
-      {/* Active snap guides (red) */}
-      {activeGuides.map((g, i) =>
-        g.orientation === "vertical" ? (
-          <div
-            key={`snap-v-${i}`}
-            className="absolute bg-red-500/60"
-            style={{
-              left: g.position * renderScale,
-              top: 0,
-              width: 1,
-              height: pageHeightPx,
-            }}
-          />
-        ) : (
-          <div
-            key={`snap-h-${i}`}
-            className="absolute bg-red-500/60"
-            style={{
-              top: g.position * renderScale,
-              left: 0,
-              height: 1,
-              width: pageWidthPx,
-            }}
-          />
-        )
-      )}
-
-      {/* Fields */}
-      {fields
-        .filter((f) => f.visible)
-        .map((f) => {
-          const isSelected = selectedId === f.id;
-          return (
-            <div
-              key={f.id}
-              onMouseDown={(e) => startDrag(e, f, "move")}
-              className={cn(
-                "absolute flex select-none flex-col overflow-hidden border text-[9px] font-medium leading-tight",
-                isSelected
-                  ? "z-10 cursor-move border-primary bg-primary/10"
-                  : "cursor-move border-blue-300 bg-blue-50/50 hover:bg-blue-50",
-                f.locked && "cursor-default opacity-60"
-              )}
-              style={{
-                left: f.x * renderScale,
-                top: f.y * renderScale,
-                width: f.width * renderScale,
-                height: f.height * renderScale,
-              }}
-              title={`${f.label} — (${Math.round(f.x)}, ${Math.round(
-                f.y
-              )}) mm · ${Math.round(f.width)}×${Math.round(f.height)}mm`}
-            >
-              {/* Live content */}
-              <div className="pointer-events-none flex-1 overflow-hidden p-0.5">
-                {renderFieldContent(f, template, letterhead, t)}
-              </div>
-
-              {/* Tiny label badge so users still know what each block is */}
-              <span className="pointer-events-none absolute -top-4 left-0 rounded bg-slate-700 px-1 py-px text-[7px] font-medium text-white opacity-0 group-hover:opacity-100" />
-
-              {/* Coordinates badge */}
-              {isSelected && (
-                <span className="absolute -top-5 left-0 rounded bg-primary px-1.5 py-0.5 text-[8px] font-medium text-primary-foreground">
-                  {Math.round(f.x)}, {Math.round(f.y)}
-                </span>
-              )}
-
-              {/* Resize handle (bottom-right) */}
-              {isSelected && !f.locked && (
-                <div
-                  onMouseDown={(e) => startDrag(e, f, "resize")}
-                  className="absolute -bottom-1 -right-1 flex size-3 cursor-nwse-resize items-center justify-center rounded-sm border border-primary bg-white"
-                  title="Drag to resize"
-                >
-                  <Maximize2 className="size-2 text-primary" />
-                </div>
-              )}
-            </div>
-          );
-        })}
-    </div>
-  );
+        <Badge variant="secondary" className="shrink-0 px-1.5 py-0 text-[8px]">
+          <Lock className="mr-1 size-2.5" />
+          {t("misc-tve-fixed")}
+        </Badge>
+      </div>
+    );
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* ─── Toolbar ─── */}
       <div className="flex flex-wrap items-center gap-2 border-b bg-background p-2">
-        <Button
-          size="sm"
-          variant={showRuler ? "default" : "outline"}
-          onClick={() => setShowRuler(!showRuler)}
-        >
-          <Ruler className="size-4" /> {t("misc-tve-ruler")}
+        <Button size="sm" variant="outline" onClick={addCustomText} title={t("misc-tve-add-text-block")}>
+          <Plus className="size-3.5" /> <Type className="size-3.5" /> {t("misc-tve-text-block")}
         </Button>
-        <Button
-          size="sm"
-          variant={showGrid ? "default" : "outline"}
-          onClick={() => setShowGrid(!showGrid)}
-        >
-          <Grid3x3 className="size-4" /> {t("misc-tve-grid")}
-        </Button>
-        <Button
-          size="sm"
-          variant={snapEnabled ? "default" : "outline"}
-          onClick={() => setSnapEnabled(!snapEnabled)}
-        >
-          <Move className="size-4" /> {snapEnabled ? t("misc-tve-snap-on") : t("misc-tve-snap-off")}
+        <Button size="sm" variant="outline" onClick={addCustomImage} title={t("misc-tve-add-image-block")}>
+          <Plus className="size-3.5" /> <ImageIcon className="size-3.5" /> {t("misc-tve-image-block")}
         </Button>
         <div className="h-6 w-px bg-border" />
-        <Button size="sm" variant="outline" onClick={addCustomText}>
-          <Type className="size-4" /> {t("misc-tve-text")}
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={resetLayout}
+          title={t("misc-tve-reset-layout")}
+        >
+          <RotateCcw className="size-3.5" /> {t("misc-tve-reset-layout")}
         </Button>
-        <Button size="sm" variant="outline" onClick={addCustomImage}>
-          <ImageIcon className="size-4" /> {t("misc-tve-image")}
-        </Button>
-        <div className="h-6 w-px bg-border" />
-        <Button size="sm" variant="outline" onClick={resetLayout}>
-          <RotateCcw className="size-4" /> {t("misc-tve-reset")}
-        </Button>
-
-        <div className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
-          {/* Zoom: slider + buttons */}
-          <div className="flex items-center gap-1">
-            <Label className="text-xs">{t("misc-tve-zoom")}</Label>
-            <Button
-              size="sm"
-              variant="outline"
-              className="size-8 p-0"
-              onClick={() => setZoom(Math.max(0.25, Math.round((zoom - 0.25) * 100) / 100))}
-              title={t("misc-tve-zoom-out")}
-            >
-              <ZoomOut className="size-3" />
-            </Button>
-            <Slider
-              value={[zoom]}
-              onValueChange={(v) => setZoom(v[0])}
-              min={0.25}
-              max={3}
-              step={0.05}
-              className="w-28"
-              aria-label="Zoom level"
-            />
-            <Button
-              size="sm"
-              variant="outline"
-              className="size-8 p-0"
-              onClick={() => setZoom(Math.min(3, Math.round((zoom + 0.25) * 100) / 100))}
-              title={t("misc-tve-zoom-in")}
-            >
-              <ZoomIn className="size-3" />
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-8 px-2"
-              onClick={() => setZoom(1)}
-              title={t("misc-tve-reset-100")}
-            >
-              100%
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-8 px-2"
-              onClick={fitToWidth}
-              title={t("misc-tve-fit-hint")}
-            >
-              <Maximize2 className="size-3" /> {t("misc-tve-fit")}
-            </Button>
-            <span className="w-10 text-right tabular-nums">
-              {Math.round(zoom * 100)}%
-            </span>
-          </div>
-          {/* Pages selector */}
-          <div className="flex items-center gap-1">
-            <Label className="text-xs">{t("misc-tve-pages")}</Label>
-            <Select
-              value={String(pageCount)}
-              onValueChange={(v) => setPageCount(Number(v))}
-            >
-              <SelectTrigger className="h-8 w-[60px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="1">1</SelectItem>
-                <SelectItem value="2">2</SelectItem>
-                <SelectItem value="3">3</SelectItem>
-                <SelectItem value="5">5</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          {/* Page layout: stacked vs grid */}
-          <div className="flex items-center gap-1">
-            <Label className="text-xs">{t("misc-tve-layout")}</Label>
-            <Select
-              value={pageLayout}
-              onValueChange={(v) => setPageLayout(v as "vertical" | "grid")}
-            >
-              <SelectTrigger className="h-8 w-[88px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="vertical">{t("misc-tve-stacked")}</SelectItem>
-                <SelectItem value="grid">{t("misc-tve-grid-2col")}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <span>
+        <div className="ml-auto flex items-center gap-1">
+          <Button size="sm" variant="outline" className="size-8 p-0" onClick={() => setZoom((z) => Math.max(0.4, Math.round((z - 0.15) * 100) / 100))} title={t("misc-tve-zoom-out")}>
+            <ZoomOut className="size-3" />
+          </Button>
+          <span className="w-11 text-center text-xs tabular-nums">{Math.round(zoom * 100)}%</span>
+          <Button size="sm" variant="outline" className="size-8 p-0" onClick={() => setZoom((z) => Math.min(2, Math.round((z + 0.15) * 100) / 100))} title={t("misc-tve-zoom-in")}>
+            <ZoomIn className="size-3" />
+          </Button>
+          <Button size="sm" variant="outline" className="h-8 px-2" onClick={fitToWidth} title={t("misc-tve-fit-hint")}>
+            <Maximize2 className="size-3" /> {t("misc-tve-fit")}
+          </Button>
+          <span className="ml-2 hidden text-xs text-muted-foreground lg:inline">
             {effectivePageSize} · {page.width}×{page.height}mm
           </span>
         </div>
       </div>
 
-      {/* ─── Honest-labeling hint: drag positions are preview-only ─── */}
+      {/* ─── Honest hint — everything here is real ─── */}
       <div className="flex items-center gap-1.5 border-b bg-muted/30 px-3 py-1.5 text-[11px] leading-tight text-muted-foreground">
         <Info className="size-3 shrink-0" />
-        <span>{t("doc-visual-preview-hint")}</span>
+        <span>{t("doc-visual-flow-hint")}</span>
       </div>
 
       {/* ─── Body: 3 panels ─── */}
       <div className="flex min-h-0 flex-1">
-        {/* LEFT — Fields list */}
-        <ScrollArea className="w-48 shrink-0 border-r">
-          <div className="space-y-1 p-3">
-            <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
-              {t("misc-tve-fields-count").replace("{n}", String(fields.length))}
+        {/* LEFT — Sections (sortable list) */}
+        <div className="w-56 shrink-0 overflow-y-auto border-r custom-scroll">
+          <div className="space-y-1 p-2.5">
+            <h3 className="mb-1.5 px-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {t("misc-tve-sections")}
             </h3>
-            {fields.map((f) => (
-              <div
-                key={f.id}
-                className={cn(
-                  "flex cursor-pointer items-center gap-2 rounded p-2 text-sm",
-                  selectedId === f.id
-                    ? "border border-primary/30 bg-primary/10"
-                    : "hover:bg-muted/50"
-                )}
-                onClick={() => setSelectedId(f.id)}
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={flowFields.map((f) => f.id)}
+                strategy={verticalListSortingStrategy}
               >
-                <button
-                  className="shrink-0"
-                  title={f.visible ? t("misc-tve-hide-field") : t("misc-tve-show-field")}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    updateField(f.id, { visible: !f.visible });
-                  }}
-                >
-                  {f.visible ? (
-                    <Eye className="size-3.5" />
-                  ) : (
-                    <EyeOff className="size-3.5 text-muted-foreground" />
-                  )}
-                </button>
-                <span
-                  className={cn(
-                    "flex-1 truncate",
-                    !f.visible && "text-muted-foreground line-through"
-                  )}
-                >
-                  {t(f.label)}
-                </span>
-                {f.locked && <Lock className="size-3 text-muted-foreground" />}
-              </div>
-            ))}
-            <div className="mt-3 border-t pt-3">
-              <p className="mb-2 text-xs text-muted-foreground">
-                {t("misc-tve-quick-add")}
-              </p>
-              <div className="flex flex-col gap-1">
-                <Button size="sm" variant="outline" onClick={addCustomText}>
-                  <Type className="size-3.5" /> {t("misc-tve-text-block")}
-                </Button>
-                <Button size="sm" variant="outline" onClick={addCustomImage}>
-                  <ImageIcon className="size-3.5" /> {t("misc-tve-image-block")}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </ScrollArea>
+                {flowFields.map((f, i) => (
+                  <SortableSectionRow
+                    key={f.id}
+                    field={f}
+                    position={i + 1}
+                    total={flowFields.length}
+                    selected={selectedId === f.id}
+                    onSelect={() => setSelectedId(f.id)}
+                    onToggleVisible={() => updateField(f.id, { visible: !f.visible })}
+                  />
+                ))}
+              </SortableContext>
+            </DndContext>
 
-        {/* CENTER — Canvas (scrollable: pan by scrolling when zoomed in) */}
-        <div
-          ref={canvasContainerRef}
-          className="flex-1 overflow-auto bg-muted/20 p-4"
-        >
-          <div className="inline-block">
-            {/* Ruler row */}
-            {showRuler && (
-              <div className="flex">
-                {/* Top-left corner square */}
-                <div className="size-6 shrink-0 bg-muted/20" />
-                {/* Top ruler */}
-                <RulerBar
-                  orientation="horizontal"
-                  length={page.width}
-                  scale={renderScale}
-                />
+            <div className="mt-2 border-t pt-2">
+              <p className="mb-1.5 px-1.5 text-[10px] text-muted-foreground">
+                {t("misc-tve-fixed-every-page")}
+              </p>
+              {[logoField, headerField, footerField].map((f) =>
+                f ? (
+                  <div
+                    key={f.id}
+                    className={cn(
+                      "flex cursor-pointer items-center gap-1.5 rounded-md border border-transparent p-1.5 pr-2 text-sm transition-colors",
+                      selectedId === f.id ? "border-primary/40 bg-primary/10" : "hover:bg-muted/60",
+                      !f.visible && "opacity-60"
+                    )}
+                    onClick={() => setSelectedId(f.id)}
+                  >
+                    <span className="flex size-6 shrink-0 items-center justify-center text-muted-foreground/50">
+                      <Lock className="size-3" />
+                    </span>
+                    <span className={cn("flex-1 truncate", !f.visible && "line-through")}>{t(f.label)}</span>
+                    {f.type === "logo" ? (
+                      <button
+                        type="button"
+                        className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+                        title={f.visible ? t("misc-tve-hide-field") : t("misc-tve-show-field")}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          updateField(f.id, { visible: !f.visible });
+                        }}
+                      >
+                        {f.visible ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null
+              )}
+            </div>
+
+            {overlays.length > 0 && (
+              <div className="mt-2 border-t pt-2">
+                <p className="mb-1.5 px-1.5 text-[10px] text-muted-foreground">
+                  {t("misc-tve-overlays")}
+                </p>
+                {overlays.map((f) => (
+                  <div
+                    key={f.id}
+                    className={cn(
+                      "flex cursor-pointer items-center gap-1.5 rounded-md border border-transparent p-1.5 pr-2 text-sm transition-colors",
+                      selectedId === f.id ? "border-primary/40 bg-primary/10" : "hover:bg-muted/60",
+                      !f.visible && "opacity-60"
+                    )}
+                    onClick={() => setSelectedId(f.id)}
+                  >
+                    <span className="flex size-6 shrink-0 items-center justify-center text-muted-foreground/70">
+                      {f.type === "custom_text" ? <Type className="size-3" /> : <ImageIcon className="size-3" />}
+                    </span>
+                    <span className={cn("flex-1 truncate", !f.visible && "line-through")}>{t(f.label)}</span>
+                    <button
+                      type="button"
+                      className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+                      title={f.visible ? t("misc-tve-hide-field") : t("misc-tve-show-field")}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        updateField(f.id, { visible: !f.visible });
+                      }}
+                    >
+                      {f.visible ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
+          </div>
+        </div>
 
-            {/* Pages — stacked (vertical) or side-by-side grid (2-col) */}
+        {/* CENTER — Canvas */}
+        <div ref={canvasContainerRef} className="flex-1 overflow-y-auto bg-muted/20 p-4 custom-scroll">
+          <div
+            className="relative mx-auto flex flex-col bg-white shadow-lg"
+            style={{ width: pageWidthPx }}
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setSelectedId(null);
+            }}
+          >
+            {/* Fixed header zone */}
+            {canvasHeaderFooterStrip(logoField && logoField.visible ? logoField : undefined, "top")}
+            {canvasHeaderFooterStrip(headerField, "top")}
+
+            {/* Flow body */}
             <div
-              className={
-                pageLayout === "grid"
-                  ? "grid grid-cols-2 gap-4"
-                  : "flex flex-col gap-4"
-              }
+              className="relative border-x border-dashed"
+              style={{
+                borderColor: "rgba(147,197,253,0.6)",
+                margin: 0,
+                padding: `${Math.max(4, marginTop * 0.25 * zoom)}px ${Math.max(4, marginRight * 0.3 * zoom)}px`,
+              }}
             >
-              {Array.from({ length: pageCount }).map((_, pageIdx) => (
-                <div key={pageIdx} className="flex flex-col">
-                  {/* Page label */}
-                  <div className="mb-1 flex items-center justify-between">
-                    <span className="text-xs font-medium text-muted-foreground">
-                      {t("misc-tve-page-n-of-m").replace("{n}", String(pageIdx + 1)).replace("{m}", String(pageCount))}
-                    </span>
-                    {pageIdx > 0 && (
-                      <span className="text-[9px] text-muted-foreground">
-                        {t("misc-tve-auto-continued")}
+              {flowFields.map((f, i) => {
+                const isSelected = selectedId === f.id;
+                return (
+                  <div
+                    key={f.id}
+                    ref={(el) => {
+                      if (el) flowRefs.current.set(f.id, el);
+                      else flowRefs.current.delete(f.id);
+                    }}
+                    className={cn(
+                      "group mb-1.5 rounded-md border transition-colors",
+                      isSelected
+                        ? "border-primary bg-primary/5"
+                        : "border-slate-200 hover:border-slate-300",
+                      !f.visible && "opacity-40"
+                    )}
+                  >
+                    {/* Drag bar */}
+                    <div
+                      className="flex cursor-grab select-none items-center gap-1.5 border-b border-slate-100 bg-slate-50/80 px-1.5 py-1 active:cursor-grabbing"
+                      onMouseDown={(e) => startFlowDrag(e, f.id)}
+                    >
+                      <GripVertical className="size-3 shrink-0 text-slate-400" />
+                      <span className="truncate text-[9px] font-medium text-slate-500">
+                        {t(f.label)}
                       </span>
+                      <span className="ml-auto text-[8px] tabular-nums text-slate-400">
+                        {i + 1}/{flowFields.length}
+                      </span>
+                      <button
+                        type="button"
+                        className="flex size-4 items-center justify-center rounded text-slate-400 hover:text-slate-700"
+                        title={f.visible ? t("misc-tve-hide-field") : t("misc-tve-show-field")}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          updateField(f.id, { visible: !f.visible });
+                        }}
+                      >
+                        {f.visible ? <Eye className="size-3" /> : <EyeOff className="size-3" />}
+                      </button>
+                    </div>
+                    {/* Content preview */}
+                    <div
+                      className="cursor-pointer px-2 py-1.5"
+                      onClick={() => setSelectedId(f.id)}
+                    >
+                      {f.visible ? (
+                        renderFieldContent(f, template, letterhead, t)
+                      ) : (
+                        <div className="py-1 text-center text-[9px] italic text-slate-400">
+                          {t("misc-tve-hidden-section")}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Free overlays — real absolute placement (every PDF page) */}
+              {overlays.filter((f) => f.visible).map((f) => {
+                const isSelected = selectedId === f.id;
+                return (
+                  <div
+                    key={f.id}
+                    onMouseDown={(e) => startOverlayDrag(e, f, "move")}
+                    className={cn(
+                      "absolute z-10 flex select-none flex-col overflow-hidden border text-[9px] leading-tight",
+                      isSelected
+                        ? "cursor-move border-primary bg-primary/10"
+                        : "cursor-move border-dashed border-teal-400 bg-teal-50/40 hover:bg-teal-50",
+                      f.locked && "cursor-default opacity-60"
+                    )}
+                    style={{
+                      left: f.x * renderScale,
+                      top: f.y * renderScale,
+                      width: f.width * renderScale,
+                      height: f.height * renderScale,
+                    }}
+                    title={t("misc-tve-overlay-hint")}
+                  >
+                    <div className="pointer-events-none flex-1 overflow-hidden p-0.5">
+                      {renderFieldContent(f, template, letterhead, t)}
+                    </div>
+                    {isSelected && !f.locked && (
+                      <div
+                        onMouseDown={(e) => startOverlayDrag(e, f, "resize")}
+                        className="absolute -bottom-1 -right-1 flex size-3 cursor-nwse-resize items-center justify-center rounded-sm border border-primary bg-white"
+                        title="Drag to resize"
+                      >
+                        <Maximize2 className="size-2 text-primary" />
+                      </div>
                     )}
                   </div>
-
-                  <div className="flex">
-                    {/* Left ruler only beside page 1 */}
-                    {showRuler && (
-                      <RulerBar
-                        orientation="vertical"
-                        length={page.height}
-                        scale={renderScale}
-                      />
-                    )}
-
-                    {pageIdx === 0 ? (
-                      renderEditorPage()
-                    ) : (
-                      <ContinuationPage
-                        pageIdx={pageIdx}
-                        pageCount={pageCount}
-                        template={template}
-                        letterhead={letterhead}
-                        page={page}
-                        scale={renderScale}
-                        t={t}
-                      />
-                    )}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
-            {/* Legend */}
-            <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1">
-                <span className="inline-block size-2.5 rounded-sm border border-primary bg-primary/10" />
-                {t("misc-tve-selected")}
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="inline-block size-2.5 rounded-sm border border-blue-300 bg-blue-50/50" />
-                {t("misc-tve-field")}
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="inline-block h-2 w-3 border-t border-dashed border-blue-300" />
-                {t("misc-tve-page-margin")}
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="inline-block h-2 w-3 border-t border-blue-200/60" />
-                {t("misc-tve-grid-5mm")}
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="inline-block h-2 w-3 bg-red-500/60" />
-                {t("misc-tve-active-snap")}
-              </span>
-            </div>
+            {/* Fixed footer zone */}
+            {canvasHeaderFooterStrip(footerField, "bottom")}
           </div>
         </div>
 
         {/* RIGHT — Properties */}
-        <ScrollArea className="w-72 shrink-0 border-l">
+        <div className="w-72 shrink-0 overflow-y-auto border-l custom-scroll">
           <div className="space-y-4 p-3">
             {selected ? (
               <>
@@ -1685,271 +1406,140 @@ export function TemplateVisualEditor({
                   <h3 className="text-xs font-semibold uppercase text-muted-foreground">
                     {t("misc-tve-properties")}
                   </h3>
-                  <Badge variant="outline" className="text-xs">
-                    {selected.type}
+                  <Badge variant="outline" className="text-[10px]">
+                    {selectedIsOverlay
+                      ? t("misc-tve-overlay-badge")
+                      : FLOW_TYPES.has(selected.type)
+                        ? `${selectedFlowIndex + 1} / ${flowFields.length}`
+                        : t("misc-tve-fixed")}
                   </Badge>
                 </div>
 
-                {/* Editable label */}
+                {/* Label */}
                 <div>
                   <Label className="text-xs">{t("misc-tve-label")}</Label>
                   <Input
                     value={selected.label}
-                    onChange={(e) =>
-                      updateField(selected.id, { label: e.target.value })
-                    }
+                    onChange={(e) => updateField(selected.id, { label: e.target.value })}
                   />
                 </div>
 
-                {/* Position & size */}
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <Label className="text-xs">{t("misc-tve-x-mm")}</Label>
-                    <Input
-                      type="number"
-                      value={Math.round(selected.x)}
-                      onChange={(e) =>
-                        updateField(selected.id, {
-                          x: Number(e.target.value) || 0,
-                        })
-                      }
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs">{t("misc-tve-y-mm")}</Label>
-                    <Input
-                      type="number"
-                      value={Math.round(selected.y)}
-                      onChange={(e) =>
-                        updateField(selected.id, {
-                          y: Number(e.target.value) || 0,
-                        })
-                      }
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs">{t("misc-tve-width-mm")}</Label>
-                    <Input
-                      type="number"
-                      value={Math.round(selected.width)}
-                      onChange={(e) =>
-                        updateField(selected.id, {
-                          width: Math.max(10, Number(e.target.value) || 10),
-                        })
-                      }
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs">{t("misc-tve-height-mm")}</Label>
-                    <Input
-                      type="number"
-                      value={Math.round(selected.height)}
-                      onChange={(e) =>
-                        updateField(selected.id, {
-                          height: Math.max(6, Number(e.target.value) || 6),
-                        })
-                      }
-                    />
-                  </div>
+                {/* Visibility */}
+                <div className="flex items-center justify-between">
+                  <Label className="flex items-center gap-1 text-xs">
+                    <Eye className="size-3" /> {t("misc-tve-visible")}
+                  </Label>
+                  <Switch
+                    checked={selected.visible}
+                    onCheckedChange={(v) => updateField(selected.id, { visible: v })}
+                    aria-label={t("misc-tve-visible")}
+                  />
                 </div>
 
-                {/* Toggles */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label className="flex items-center gap-1 text-xs">
-                      <Eye className="size-3" /> {t("misc-tve-visible")}
-                    </Label>
-                    <Switch
-                      checked={selected.visible}
-                      onCheckedChange={(v) =>
-                        updateField(selected.id, { visible: v })
-                      }
-                      aria-label={t("misc-tve-visible")}
-                    />
+                {/* Order — flow sections only */}
+                {!selectedIsOverlay && FLOW_TYPES.has(selected.type) && (
+                  <div>
+                    <Label className="mb-1.5 block text-xs">{t("misc-tve-order")}</Label>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 flex-1"
+                        disabled={selectedFlowIndex <= 0}
+                        onClick={() => moveFlow(selected.id, -1)}
+                        title={t("misc-tve-move-up")}
+                      >
+                        <ArrowUp className="size-3.5" /> {t("misc-tve-move-up")}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 flex-1"
+                        disabled={selectedFlowIndex < 0 || selectedFlowIndex >= flowFields.length - 1}
+                        onClick={() => moveFlow(selected.id, 1)}
+                        title={t("misc-tve-move-down")}
+                      >
+                        <ArrowDown className="size-3.5" /> {t("misc-tve-move-down")}
+                      </Button>
+                    </div>
+                    <p className="mt-1.5 text-xs text-muted-foreground">
+                      {t("misc-tve-order-hint")}
+                    </p>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <Label className="flex items-center gap-1 text-xs">
-                      {selected.locked ? (
-                        <Lock className="size-3" />
-                      ) : (
-                        <Unlock className="size-3" />
-                      )}{" "}
-                      {t("misc-tve-locked")}
-                    </Label>
-                    <Switch
-                      checked={selected.locked}
-                      onCheckedChange={(v) =>
-                        updateField(selected.id, { locked: v })
-                      }
-                      aria-label={t("misc-tve-locked")}
-                    />
-                  </div>
-                </div>
+                )}
 
                 <Separator />
 
-                {/* Logo field controls */}
-                {selected.type === "logo" && (
-                  <div className="space-y-3">
-                    <h4 className="text-xs font-semibold uppercase text-muted-foreground">
-                      {t("misc-tve-logo")}
-                    </h4>
-                    <div>
-                      <div className="mb-1 flex items-center justify-between">
-                        <Label className="text-xs">{t("misc-tve-width-mm")}</Label>
-                        <span className="text-xs tabular text-muted-foreground">
-                          {Math.round(selected.width)}mm
-                        </span>
-                      </div>
-                      <Slider
-                        value={[selected.width]}
-                        min={10}
-                        max={100}
-                        step={1}
-                        onValueChange={(v) =>
-                          updateField(selected.id, { width: v[0] })
-                        }
-                      />
-                    </div>
-                    <div>
-                      <div className="mb-1 flex items-center justify-between">
-                        <Label className="text-xs">{t("misc-tve-height-mm")}</Label>
-                        <span className="text-xs tabular text-muted-foreground">
-                          {Math.round(selected.height)}mm
-                        </span>
-                      </div>
-                      <Slider
-                        value={[selected.height]}
-                        min={5}
-                        max={50}
-                        step={1}
-                        onValueChange={(v) =>
-                          updateField(selected.id, { height: v[0] })
-                        }
-                      />
-                    </div>
-                    <div>
-                      <Label className="mb-1 block text-xs">{t("misc-tve-alignment")}</Label>
-                      <div className="grid grid-cols-3 gap-1">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          title={t("misc-tve-align-left")}
-                          onClick={() => alignField(selected.id, "left")}
-                        >
-                          <AlignLeft className="size-3" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          title={t("misc-tve-align-center-h")}
-                          onClick={() => alignField(selected.id, "center-h")}
-                        >
-                          <AlignCenter className="size-3" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          title={t("misc-tve-align-right")}
-                          onClick={() => alignField(selected.id, "right")}
-                        >
-                          <AlignRight className="size-3" />
-                        </Button>
-                      </div>
-                    </div>
-                    <div className="rounded border bg-muted/30 p-2 text-xs text-muted-foreground">
-                      {letterhead?.logo_url
-                        ? t("misc-tve-source-from-letterhead")
-                        : t("misc-tve-no-logo-hint")}
-                    </div>
-                  </div>
-                )}
-
-                {/* Custom image field controls */}
-                {selected.type === "custom_image" && (
-                  <div className="space-y-2">
-                    <h4 className="text-xs font-semibold uppercase text-muted-foreground">
-                      {t("misc-tve-image")}
-                    </h4>
-                    <div>
-                      <Label className="text-xs">{t("misc-tve-image-url")}</Label>
-                      <Input
-                        placeholder="https://… or /uploads/…"
-                        value={(selected.props?.imageUrl as string) || ""}
-                        onChange={(e) =>
-                          updateFieldProps(selected.id, {
-                            imageUrl: e.target.value,
-                          })
-                        }
-                      />
+                {/* Geometry — overlays only (REAL absolute placement) */}
+                {selectedIsOverlay && (
+                  <div>
+                    <div className="mb-1.5 flex items-center gap-1.5">
+                      <Label className="text-xs">{t("misc-tve-position-size")}</Label>
+                      <span className="text-[10px] text-muted-foreground">{t("misc-tve-overlay-hint")}</span>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <div className="mb-1 flex items-center justify-between">
-                          <Label className="text-xs">{t("misc-tve-width-mm")}</Label>
-                          <span className="text-xs tabular text-muted-foreground">
-                            {Math.round(selected.width)}
-                          </span>
+                      {(["x", "y", "width", "height"] as const).map((k) => (
+                        <div key={k}>
+                          <Label className="text-[10px] capitalize text-muted-foreground">
+                            {k === "x" ? "X (mm)" : k === "y" ? "Y (mm)" : k === "width" ? t("misc-tve-width-mm") : t("misc-tve-height-mm")}
+                          </Label>
+                          <Input
+                            type="number"
+                            value={Math.round(selected[k])}
+                            onChange={(e) => {
+                              const v = Number(e.target.value) || 0;
+                              updateField(selected.id, { [k]: Math.max(k === "x" || k === "y" ? 0 : 6, v) } as Partial<FieldElement>);
+                            }}
+                          />
                         </div>
-                        <Slider
-                          value={[selected.width]}
-                          min={10}
-                          max={180}
-                          step={1}
-                          onValueChange={(v) =>
-                            updateField(selected.id, { width: v[0] })
-                          }
-                        />
-                      </div>
-                      <div>
-                        <div className="mb-1 flex items-center justify-between">
-                          <Label className="text-xs">{t("misc-tve-height-mm")}</Label>
-                          <span className="text-xs tabular text-muted-foreground">
-                            {Math.round(selected.height)}
-                          </span>
-                        </div>
-                        <Slider
-                          value={[selected.height]}
-                          min={5}
-                          max={100}
-                          step={1}
-                          onValueChange={(v) =>
-                            updateField(selected.id, { height: v[0] })
-                          }
-                        />
-                      </div>
+                      ))}
                     </div>
                   </div>
                 )}
 
-                {/* Content editor for header / footer / custom_text */}
-                {["header", "footer", "custom_text", "offer_text", "bank_details"].includes(
-                  selected.type
-                ) && (
+                {/* Image URL — custom images */}
+                {selected.type === "custom_image" && (
+                  <div>
+                    <Label className="text-xs">{t("misc-tve-image-url")}</Label>
+                    <Input
+                      placeholder="https://… or /uploads/…"
+                      value={(selected.props?.imageUrl as string) || ""}
+                      onChange={(e) => updateFieldProps(selected.id, { imageUrl: e.target.value })}
+                    />
+                  </div>
+                )}
+
+                {/* Content editor — header / footer (persisted columns) and
+                    custom_text overlays (field props). Both render in the PDF. */}
+                {["header", "footer", "custom_text"].includes(selected.type) && (
                   <div className="space-y-2">
                     <h4 className="text-xs font-semibold uppercase text-muted-foreground">
                       {t("misc-tve-content")}
                     </h4>
-                    {/* Draggable placeholder palette — drag a chip into the text area below */}
                     <div>
                       <Label className="text-xs text-muted-foreground">
-                        {t("misc-tve-drag-placeholders")}
+                        {t("misc-tve-click-placeholders")}
                       </Label>
-                      <div className="mt-1 flex max-h-28 flex-wrap gap-1 overflow-y-auto rounded border bg-muted/30 p-1.5">
+                      <div className="mt-1 flex max-h-24 flex-wrap gap-1 overflow-y-auto rounded border bg-muted/30 p-1.5 custom-scroll">
                         {PLACEHOLDERS.map((ph) => (
-                          <div
+                          <button
                             key={ph.key}
+                            type="button"
                             draggable
                             onDragStart={(e) => {
                               e.dataTransfer.setData("text/plain", ph.key);
                               e.dataTransfer.effectAllowed = "copy";
                             }}
-                            className="flex items-center gap-1 rounded border bg-background px-1.5 py-0.5 text-xs cursor-grab hover:border-primary/40 hover:bg-primary/5 active:cursor-grabbing select-none"
-                            title={`Drag into the text area: ${ph.key}`}
+                            onClick={() => {
+                              // Click = append (faster than dragging).
+                              const current = getSelectedContentText();
+                              setSelectedContentText(current.trim() ? `${current} ${ph.key}` : ph.key);
+                            }}
+                            className="flex items-center gap-1 rounded border bg-background px-1.5 py-0.5 text-[10px] cursor-grab hover:border-primary/40 hover:bg-primary/5 select-none"
+                            title={`${t(ph.label)} — ${ph.key}`}
                           >
-                            <GripVertical className="size-2.5 text-muted-foreground/70" />
                             {t(ph.label)}
-                          </div>
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -1971,130 +1561,60 @@ export function TemplateVisualEditor({
                         e.preventDefault();
                         const ph = e.dataTransfer.getData("text/plain");
                         if (ph) {
-                          // Append the chip to the current text. For header /
-                          // footer this writes through to the persisted segments
-                          // JSON (see setSelectedContentText); for other fields
-                          // it stays in local field props.
                           const current = getSelectedContentText();
-                          const next = current.trim() ? `${current} ${ph}` : ph;
-                          setSelectedContentText(next);
+                          setSelectedContentText(current.trim() ? `${current} ${ph}` : ph);
                         }
                         setDragOverContent(false);
                       }}
                       placeholder={t("misc-tve-content-placeholder")}
-                      className={cn(
-                        "text-xs",
-                        dragOverContent && "ring-2 ring-primary ring-offset-1"
-                      )}
+                      className={cn("text-xs", dragOverContent && "ring-2 ring-primary ring-offset-1")}
                     />
-                    <p className="text-xs text-muted-foreground">
-                      Placeholders: {"{company_name}"}, {"{company_address}"}, {"{company_reg}"},{" "}
-                      {"{company_vat}"}, {"{doc_number}"}, {"{page_number}"}
-                    </p>
-                    {selected.type !== "custom_text" && (
-                      <p className="text-xs italic text-muted-foreground">
-                        {t("misc-tve-default-text-hint").replace("{type}", selected.type)}
+                    {selectedPersistedKey && (
+                      <p className="text-[10px] text-muted-foreground">
+                        {t("misc-tve-content-persists-hint")}
                       </p>
                     )}
                   </div>
                 )}
 
-                <Separator />
-
-                {/* Alignment buttons */}
-                <div>
-                  <Label className="mb-2 block text-xs">{t("misc-tve-align-to-page")}</Label>
-                  <div className="grid grid-cols-3 gap-1">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      title={t("misc-tve-align-left")}
-                      onClick={() => alignField(selected.id, "left")}
-                    >
-                      <AlignLeft className="size-3" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      title={t("misc-tve-align-center-h")}
-                      onClick={() => alignField(selected.id, "center-h")}
-                    >
-                      <AlignCenter className="size-3" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      title={t("misc-tve-align-right")}
-                      onClick={() => alignField(selected.id, "right")}
-                    >
-                      <AlignRight className="size-3" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      title={t("misc-tve-align-top")}
-                      onClick={() => alignField(selected.id, "top")}
-                    >
-                      <AlignVerticalJustifyStart className="size-3" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      title={t("misc-tve-align-center-v")}
-                      onClick={() => alignField(selected.id, "middle")}
-                    >
-                      <AlignVerticalJustifyCenter className="size-3" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      title={t("misc-tve-align-bottom")}
-                      onClick={() => alignField(selected.id, "bottom")}
-                    >
-                      <AlignVerticalJustifyEnd className="size-3" />
-                    </Button>
+                {/* Honest hints for auto-filled sections */}
+                {!selectedIsOverlay &&
+                  ["offer_text", "bank_details", "trade_terms", "specifications",
+                    "line_items_table", "totals", "amount_in_words", "doc_title",
+                    "from_box", "to_box", "signatures"].includes(selected.type) && (
+                  <div className="rounded-md border bg-muted/30 p-2.5 text-xs text-muted-foreground">
+                    <Info className="mb-1 size-3.5" />
+                    {t("misc-tve-auto-content-hint")}
                   </div>
-                </div>
+                )}
 
-                <Separator />
+                {/* Logo hint */}
+                {selected.type === "logo" && (
+                  <div className="rounded-md border bg-muted/30 p-2.5 text-xs text-muted-foreground">
+                    {letterhead?.logo_url
+                      ? t("misc-tve-source-from-letterhead")
+                      : t("misc-tve-no-logo-hint")}
+                  </div>
+                )}
 
-                {/* Quick geometry info + delete */}
-                <div className="rounded border bg-muted/30 p-2 text-xs text-muted-foreground">
-                  <div className="flex justify-between">
-                    <span>{t("misc-tve-right-edge")}</span>
-                    <span className="font-mono">
-                      {Math.round(selected.x + selected.width)} mm
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>{t("misc-tve-bottom-edge")}</span>
-                    <span className="font-mono">
-                      {Math.round(selected.y + selected.height)} mm
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>{t("misc-tve-center")}</span>
-                    <span className="font-mono">
-                      ({Math.round(selected.x + selected.width / 2)},{" "}
-                      {Math.round(selected.y + selected.height / 2)})
-                    </span>
-                  </div>
-                </div>
-
-                {!DEFAULT_FIELDS.some((f) => f.id === selected.id) && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="w-full text-destructive hover:text-destructive"
-                    onClick={() => deleteField(selected.id)}
-                  >
-                    {t("misc-tve-delete-field")}
-                  </Button>
+                {/* Delete — custom fields only */}
+                {selectedIsOverlay && (
+                  <>
+                    <Separator />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full text-destructive hover:text-destructive"
+                      onClick={() => deleteField(selected.id)}
+                    >
+                      <Trash2 className="size-3.5" /> {t("misc-tve-delete-field")}
+                    </Button>
+                  </>
                 )}
               </>
             ) : (
               <div className="py-8 text-center text-sm text-muted-foreground">
-                <Move className="mx-auto mb-2 size-6 opacity-40" />
+                <GripVertical className="mx-auto mb-2 size-6 opacity-40" />
                 {t("misc-tve-select-field-hint")}
               </div>
             )}
@@ -2109,18 +1629,14 @@ export function TemplateVisualEditor({
               <Label className="text-xs">{t("misc-tve-size")}</Label>
               <Select
                 value={template.page_size ?? "A4"}
-                onValueChange={(v) =>
-                  updateTemplate({ page_size: v as "A4" | "Letter" })
-                }
+                onValueChange={(v) => updateTemplate({ page_size: v as "A4" | "Letter" })}
               >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder={t("misc-tve-page-size")} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="A4">{t("misc-tve-page-size-a4")}</SelectItem>
-                  <SelectItem value="Letter">
-                    {t("misc-tve-page-size-letter")}
-                  </SelectItem>
+                  <SelectItem value="Letter">{t("misc-tve-page-size-letter")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -2128,17 +1644,17 @@ export function TemplateVisualEditor({
             <div>
               <Label className="mb-1 block text-xs">{t("misc-tve-margins-mm")}</Label>
               <div className="grid grid-cols-2 gap-2">
-                {(["top", "bottom", "left", "right"] as const).map((m) => (
-                  <div key={m}>
-                    <Label className="text-xs capitalize text-muted-foreground">
-                      {t(`misc-tve-margin-${m}`)}
+                {(["top", "bottom", "left", "right"] as const).map((mm) => (
+                  <div key={mm}>
+                    <Label className="text-[10px] capitalize text-muted-foreground">
+                      {t(`misc-tve-margin-${mm}`)}
                     </Label>
                     <Input
                       type="number"
-                      value={template[`page_margin_${m}`] ?? 20}
+                      value={template[`page_margin_${mm}`] ?? 20}
                       onChange={(e) =>
                         updateTemplate({
-                          [`page_margin_${m}`]: Number(e.target.value) || 0,
+                          [`page_margin_${mm}`]: Number(e.target.value) || 0,
                         } as Partial<DocumentTemplate>)
                       }
                     />
@@ -2146,15 +1662,8 @@ export function TemplateVisualEditor({
                 ))}
               </div>
             </div>
-
-            <p className="text-xs text-muted-foreground">
-              {t("misc-tve-snap-threshold-hint")
-                .replace("{n}", String(SNAP_THRESHOLD))
-                .replace("{s}", String(BASE_SCALE))
-                .replace("{z}", String(Math.round(zoom * 100)))}
-            </p>
           </div>
-        </ScrollArea>
+        </div>
       </div>
     </div>
   );

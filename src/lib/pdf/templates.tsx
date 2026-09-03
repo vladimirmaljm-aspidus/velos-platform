@@ -121,6 +121,48 @@ export function buildPdfDocument({
   const accentColor = tpl?.accent_color || "#666666";
   const bodyTextColor = m?.body_text_color || "#1a1a1a";
 
+  // ── audit22/27: visual layout (layout_json) — parsed FIRST so every ──
+  // later block (logo gate, body section order) can consult it.
+  // Body-section visibility + custom absolute-position text/image
+  // overlays + the body section ORDER (y = sort key). Null → built-in
+  // layout (all sections visible, canonical order, no custom overlays
+  // — previous behaviour).
+  const layout = readTemplateLayout(tpl?.layout_json);
+  const layoutFields = layout?.fields ?? [];
+  const layoutHidden = (type: string): boolean => {
+    if (layoutFields.length === 0) return false;
+    const f = layoutFields.find((x) => x.type === type);
+    return f ? !f.visible : false;
+  };
+  const customOverlays = layoutFields.filter(
+    (f) => f.visible && (f.type === "custom_text" || f.type === "custom_image"),
+  );
+
+  // ── audit27: body section ORDER (layout_json y = sort key) ─────────
+  // The Template Studio's Layout tab is a REAL editor now: dragging a
+  // section up/down reorders it in the generated PDF. Each field's y
+  // coordinate acts as the sort key; sections missing from layout_json
+  // keep the canonical order for the doc type (index × 10). The y values
+  // are relative keys, not absolute page positions — the body still
+  // flows top→bottom so multi-page tables paginate correctly.
+  // LOI's canonical order differs from offers/invoices: the letter intro
+  // (offer_text) sits directly after the parties, BEFORE the specs and
+  // delivery terms — matching the pre-audit27 LOI layout exactly.
+  const canonicalOrder = docType === "loi"
+    ? ["doc_title", "from_box", "to_box", "offer_text", "specifications", "trade_terms", "signatures"]
+    : ["doc_title", "from_box", "to_box", "trade_terms", "line_items_table",
+       "specifications", "totals", "amount_in_words", "offer_text",
+       "bank_details", "signatures"];
+  const layoutYOf = (type: string): number => {
+    const f = layoutFields.find((x) => x.type === type);
+    if (f) return f.y;
+    const idx = canonicalOrder.indexOf(type);
+    return idx >= 0 ? idx * 10 : 9999;
+  };
+  // The FROM/TO boxes render as ONE parties row — they share a sort key
+  // (the smaller y wins so dragging either box reorders the row).
+  const partiesSortY = Math.min(layoutYOf("from_box"), layoutYOf("to_box"));
+
   // ── Typography ──────────────────────────────────────────────────────
   const fontFamily = mapFont(tpl?.body_font_family ?? m?.body_font_family, "NotoSans");
   const headingFontFamily = boldVariant(fontFamily);
@@ -179,7 +221,8 @@ export function buildPdfDocument({
   const logoHeightPts = mmToPoints(m?.logo_max_height_mm ?? 20);
   const logoOffsetXPts = mmToPoints(m?.logo_position_x_mm ?? 0);
   const logoOffsetYPts = mmToPoints(m?.logo_position_y_mm ?? 0);
-  const showLogo = logoEnabled && !!logoUrl;
+  // audit27: layout_json "logo" eye-toggle gates the rendered logo.
+  const showLogo = logoEnabled && !!logoUrl && !layoutHidden("logo");
 
   // ── Footer (repeats on every page) ──────────────────────────────────
   // audit20 redesign — three-zone footer driven by the template:
@@ -242,21 +285,6 @@ export function buildPdfDocument({
   const stTableBorderColor = tpl?.table_border_color || st.table.borderColor;
   const stStripe = tpl ? (tpl.table_stripe !== false && st.table.stripe !== false) : st.table.stripe;
   const stStripeBg = tpl?.style_json ? st.table.stripeColor : stripeBg;
-
-  // ── audit22: visual layout (layout_json) ────────────────────────────
-  // Body-section visibility + custom absolute-position text/image
-  // overlays. Null → built-in layout (all sections visible, no custom
-  // overlays — previous behaviour).
-  const layout = readTemplateLayout(tpl?.layout_json);
-  const layoutFields = layout?.fields ?? [];
-  const layoutHidden = (type: string): boolean => {
-    if (layoutFields.length === 0) return false;
-    const f = layoutFields.find((x) => x.type === type);
-    return f ? !f.visible : false;
-  };
-  const customOverlays = layoutFields.filter(
-    (f) => f.visible && (f.type === "custom_text" || f.type === "custom_image"),
-  );
 
   // ── audit22: line-items column widths (percent → flex) ──────────────
   const cw = st.table.columnWidths;
@@ -1059,6 +1087,674 @@ export function buildPdfDocument({
     }
   }
 
+  // ── audit27: build the ordered body sections ───────────────────────────
+  // Each body section becomes a { key, y, node } entry; the node JSX is the
+  // exact markup that used to sit inline in the body. `y` comes from
+  // layout_json (the Template Studio's Layout tab) — the sections render
+  // top→bottom in that order, so dragging a section there REALLY reorders
+  // the generated PDF. Sections the doc type doesn't use are never added;
+  // unknown/missing y values fall back to the canonical order.
+  const bodySections: Array<{ key: string; y: number; node: React.ReactNode }> = [];
+
+  // ── LOI-specific values (lifted from the old inline IIFE so each LOI
+  //    body section can be ordered + gated individually) ──────────────────
+  const loiDoc = docType === "loi" ? (doc as LetterOfIntent) : null;
+  const loiBuyerName = loiDoc ? (loiDoc.buyer_name || tenant?.legal_name || tenant?.name || "the Buyer") : "";
+  const loiSellerName = loiDoc ? (partner?.name || "the Seller") : "";
+  const loiValidUntilStr = loiDoc ? fmtDate(loiDoc.validity_until) : "";
+  const loiDefaultIntro = loiDoc
+    ? `Dear ${loiSellerName},\n\n` +
+      `We, ${loiBuyerName}, hereby express our firm intention to purchase the following goods under the terms and conditions stated in this Letter of Intent. This LOI is non-binding and serves as a formal expression of our intent to proceed with the purchase, subject to the execution of a definitive purchase agreement.\n\n` +
+      `We look forward to your response by ${loiValidUntilStr}.`
+    : "";
+  const loiCoaEntries: [string, string][] = loiDoc && loiDoc.coa_params && typeof loiDoc.coa_params === "object"
+    ? Object.entries(loiDoc.coa_params as Record<string, unknown>)
+        .filter(([, v]) => v != null && v !== "")
+        .map(([k, v]) => [k, String(v)] as [string, string])
+    : [];
+  const loiSpecSource = loiDoc ? (loiDoc.specifications as any) : null;
+  let loiSpecEntries: [string, string][] = [];
+  if (Array.isArray(loiSpecSource)) {
+    loiSpecEntries = loiSpecSource
+      .filter((s: any) => s && s.name && s.value != null)
+      .map((s: any) => [String(s.name), String(s.value)] as [string, string]);
+  } else if (loiSpecSource && typeof loiSpecSource === "object") {
+    loiSpecEntries = Object.entries(loiSpecSource)
+      .filter(([, v]) => v != null && v !== "")
+      .map(([k, v]) => [k, String(v)] as [string, string]);
+  }
+
+  const hasItemSpecs = items.some((it: any) => {
+    const specs = it.specifications;
+    const hasSpecs = Array.isArray(specs)
+      ? specs.length > 0
+      : (specs && typeof specs === "object" && Object.keys(specs).length > 0);
+    return hasSpecs || it.detailed_spec;
+  });
+
+  // ── 1. Document title & meta (the proforma banner travels with it) ─────
+  if (!layoutHidden("doc_title")) {
+    bodySections.push({
+      key: "doc_title",
+      y: layoutYOf("doc_title"),
+      node: (<>
+        <View style={styles.docTitleRow}>
+          <View style={styles.docTitleBlock}>
+            <Text style={styles.docTitle}>{docTitleMap[docType]}</Text>
+            {doc.subject && <Text style={styles.docSubtitle}>{doc.subject}</Text>}
+          </View>
+          <View style={styles.docMetaBlock}>
+            <View style={styles.docMetaRow}>
+              <Text style={styles.docMetaLabel}>Document No.:</Text>
+              <Text style={styles.docMetaValue}>{doc.number}</Text>
+            </View>
+            <View style={styles.docMetaRow}>
+              <Text style={styles.docMetaLabel}>Date of Issue:</Text>
+              <Text style={styles.docMetaValue}>
+                {fmtDate((doc as any).issue_date || doc.created_at)}
+              </Text>
+            </View>
+            {docType === "offer" && (doc as Offer).valid_until && (
+              <View style={styles.docMetaRow}>
+                <Text style={styles.docMetaLabel}>Valid Until:</Text>
+                <Text style={styles.docMetaValue}>
+                  {fmtDate((doc as Offer).valid_until as string)}
+                </Text>
+              </View>
+            )}
+            {docType === "loi" && (doc as LetterOfIntent).validity_until && (
+              <View style={styles.docMetaRow}>
+                <Text style={styles.docMetaLabel}>Valid Until:</Text>
+                <Text style={styles.docMetaValue}>
+                  {fmtDate((doc as LetterOfIntent).validity_until as string)}
+                </Text>
+              </View>
+            )}
+            {(docType === "invoice" || docType === "proforma") && (doc as any).due_date && (
+              <View style={styles.docMetaRow}>
+                <Text style={styles.docMetaLabel}>Due Date:</Text>
+                <Text style={styles.docMetaValue}>
+                  {fmtDate((doc as any).due_date)}
+                </Text>
+              </View>
+            )}
+            <View style={styles.docMetaRow}>
+              <Text style={styles.docMetaLabel}>Currency:</Text>
+              <Text style={styles.docMetaValue}>{currency}</Text>
+            </View>
+          </View>
+        </View>
+        {/* Proforma banner — clearly marked "PROFORMA — NOT A TAX INVOICE" */}
+        {docType === "proforma" && (
+          <View style={styles.proformaBanner}>
+            <Text style={styles.proformaBannerText}>PROFORMA — NOT A TAX INVOICE</Text>
+          </View>
+        )}
+      </>),
+    });
+  }
+
+  // ── 2. Parties (FROM/TO boxes render as ONE row — one sort key) ────────
+  if (!layoutHidden("from_box") || !layoutHidden("to_box")) {
+    bodySections.push({
+      key: "parties",
+      y: partiesSortY,
+      node: (
+        <View style={styles.partiesSection}>
+          {!layoutHidden("from_box") && (
+          <PartyBox
+            title={docType === "loi" ? "FROM (BUYER)" : "FROM (SELLER)"}
+            name={tenant?.legal_name || tenant?.name || "Company"}
+            addressLine={tenant?.address_line}
+            city={tenant?.city}
+            postal={tenant?.postal_code}
+            country={tenant?.country}
+            reg={tenant?.registration_number}
+            vat={tenant?.vat_number}
+            taxId={tenant?.tax_id}
+            phone={tenant?.phone}
+            email={tenant?.email}
+            website={tenant?.website}
+          />
+          )}
+          {!layoutHidden("to_box") && (
+          <PartyBox
+            title={docType === "loi" ? "TO (SELLER)" : "TO (BUYER)"}
+            name={partner?.name || "—"}
+            addressLine={partner?.address_line}
+            city={partner?.city}
+            postal={partner?.postal_code}
+            country={partner?.country}
+            reg={partner?.registration_number}
+            vat={partner?.vat_number}
+            taxId={partner?.tax_id}
+            phone={partner?.phone}
+            email={partner?.email}
+            website={partner?.website}
+          />
+          )}
+        </View>
+      ),
+    });
+  }
+
+  if (docType !== "loi") {
+    // ── 3. Trade terms ──
+    if (!layoutHidden("trade_terms")) {
+      bodySections.push({
+        key: "trade_terms",
+        y: layoutYOf("trade_terms"),
+        node: (<>
+        <Text style={styles.sectionHeader}>Trade Terms</Text>
+        <View style={styles.tradeTerms} wrap={false}>
+          <View style={styles.tradeTermsRow}>
+            <View style={styles.tradeTermsCell}>
+              <Text style={styles.tradeTermsLabel}>Incoterm</Text>
+              {/* 2g-F18 fix (round 4): only the incoterm code here — POL has its own cell below. */}
+              <Text style={styles.tradeTermsValue}>{incoterm}</Text>
+            </View>
+            <View style={styles.tradeTermsCell}>
+              <Text style={styles.tradeTermsLabel}>Origin</Text>
+              {/* 2g-F19 fix (round 4): common origin (or "Multiple") instead of first-item-only. */}
+              <Text style={styles.tradeTermsValue}>{originCountry === "—" ? "—" : (originCountry.startsWith("Multiple") ? originCountry : countryName(originCountry))}</Text>
+            </View>
+            <View style={styles.tradeTermsCellLast}>
+              <Text style={styles.tradeTermsLabel}>Payment</Text>
+              <Text style={styles.tradeTermsValue}>{paymentTerms}</Text>
+            </View>
+          </View>
+          <View style={styles.tradeTermsRow}>
+            <View style={styles.tradeTermsCell}>
+              <Text style={styles.tradeTermsLabel}>POL</Text>
+              <Text style={styles.tradeTermsValue}>{pol}</Text>
+            </View>
+            <View style={styles.tradeTermsCell}>
+              <Text style={styles.tradeTermsLabel}>POD</Text>
+              <Text style={styles.tradeTermsValue}>{pod}</Text>
+            </View>
+            <View style={styles.tradeTermsCellLast}>
+              <Text style={styles.tradeTermsLabel}>Lead Time</Text>
+              <Text style={styles.tradeTermsValue}>{leadTime}</Text>
+            </View>
+          </View>
+          <View style={styles.tradeTermsRow}>
+            <View style={styles.tradeTermsCell}>
+              <Text style={styles.tradeTermsLabel}>Packaging</Text>
+              <Text style={styles.tradeTermsValue}>{packaging}</Text>
+            </View>
+            <View style={styles.tradeTermsCell}>
+              <Text style={styles.tradeTermsLabel}>Vessel</Text>
+              <Text style={styles.tradeTermsValue}>{vessel}</Text>
+            </View>
+            <View style={styles.tradeTermsCellLast}>
+              <Text style={styles.tradeTermsLabel}>Container</Text>
+              <Text style={styles.tradeTermsValue}>{containerNo}</Text>
+            </View>
+          </View>
+        </View>
+        </>),
+      });
+    }
+
+    // ── 4. Line items table ──
+    if (!layoutHidden("line_items_table")) {
+      bodySections.push({
+        key: "line_items_table",
+        y: layoutYOf("line_items_table"),
+        node: (<>
+        <Text style={styles.sectionHeader}>Line Items</Text>
+        <View style={styles.table}>
+          <View style={styles.tableHeader} fixed>
+            <Text style={[styles.th, { flex: flexRowNum }]}>#</Text>
+            <Text style={[styles.th, { flex: flexDescription }]}>Description</Text>
+            <Text style={[styles.th, { flex: flexHsCode }]}>HS Code</Text>
+            <Text style={[styles.th, { flex: flexOrigin }]}>Origin</Text>
+            <Text style={[styles.th, { flex: flexQuantity }]}>Quantity</Text>
+            <Text style={[styles.th, { flex: flexUnitPrice, textAlign: numericAlign }]}>Unit Price</Text>
+            <Text style={[styles.th, { flex: flexTotal, textAlign: numericAlign }]}>Total</Text>
+          </View>
+          {items.map((item, i) => {
+            // 2g-F7 fix (round 4): the "Total" column previously rendered
+            // `item.total` verbatim — but for offers/invoices/proformas the
+            // backend stores the line total as the TAX-INCLUSIVE amount
+            // (lineTotal = net + tax in invoices-view.ts), while the
+            // Subtotal row sums TAX-EXCLUSIVE line totals. The column
+            // therefore didn't foot to the Subtotal. Now we render the
+            // per-line tax-EXCLUSIVE amount (qty × unit_price) so the
+            // column visually sums to the Subtotal row — matching the
+            // tax breakdown below (Tax / VAT line then adds to Grand Total).
+            const lineNet = (typeof item.unit_price === "number" && typeof item.quantity === "number")
+              ? item.unit_price * item.quantity
+              : (typeof item.total === "number" ? item.total : 0);
+            return (
+              <View
+                key={i}
+                style={[styles.tableRow, ...(tableStripe && i % 2 === 1 ? [styles.tableRowEven] : [])]}
+              >
+                <Text style={[styles.td, { flex: flexRowNum }]}>{i + 1}</Text>
+                <Text style={[styles.td, { flex: flexDescription }]}>
+                  {item.product_name}
+                  {item.sku ? `\nSKU: ${item.sku}` : ""}
+                  {item.brand ? `\nBrand: ${item.brand}` : ""}
+                </Text>
+                <Text style={[styles.td, { flex: flexHsCode }]}>{(item as any).hs_code || "—"}</Text>
+                <Text style={[styles.td, { flex: flexOrigin }]}>{countryName((item as any).origin_country)}</Text>
+                <Text style={[styles.td, { flex: flexQuantity, textAlign: numericAlign }]}>
+                  {fmtQty(item.quantity)} {item.unit || "kg"}
+                </Text>
+                <Text style={[styles.td, { flex: flexUnitPrice, textAlign: numericAlign }]}>
+                  {fmtMoney(item.unit_price, currency)}
+                </Text>
+                <Text style={[styles.td, { flex: flexTotal, textAlign: numericAlign, fontFamily: headingFontFamily }]}>
+                  {fmtMoney(lineNet, currency)}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+        </>),
+      });
+    }
+
+    // ── 5. Specifications ──
+    if (!layoutHidden("specifications") && hasItemSpecs) {
+      bodySections.push({
+        key: "specifications",
+        y: layoutYOf("specifications"),
+        node: (
+          <View style={styles.specSection}>
+            <Text style={styles.sectionHeader}>Specifications</Text>
+            {items.map((item: any, i: number) => {
+              const specs = item.specifications;
+              const specArray: Array<{ name: string; value: string }> = Array.isArray(specs)
+                ? specs
+                : (specs && typeof specs === "object"
+                    ? Object.entries(specs).map(([k, v]) => ({ name: k, value: String(v) }))
+                    : []);
+              return (specArray.length > 0 || item.detailed_spec) ? (
+                <View key={`spec-${i}`} style={styles.specItem}>
+                  <View wrap={false}>
+                    <Text style={styles.specItemTitle}>{item.product_name}</Text>
+                    {specArray.length > 0 && (
+                      <View style={styles.specTable}>
+                        {specArray.map((spec, j) => (
+                          <View key={j} style={styles.specRow}>
+                            <Text style={styles.specName}>{spec.name}</Text>
+                            <Text style={styles.specValue}>{spec.value}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                  {item.detailed_spec && (
+                    <Text style={styles.specDetail}>{item.detailed_spec}</Text>
+                  )}
+                </View>
+              ) : null;
+            })}
+          </View>
+        ),
+      });
+    }
+
+    // ── 6. Totals (amount-in-words gated inside the node) ──
+    if (!layoutHidden("totals")) {
+      bodySections.push({
+        key: "totals",
+        y: layoutYOf("totals"),
+        node: (
+        <View style={styles.totals} wrap={false}>
+          <View style={styles.totalRow}>
+            <Text style={styles.totalLabel}>Subtotal:</Text>
+            <Text style={styles.totalValue}>{fmtMoney((doc as any).subtotal, currency)}</Text>
+          </View>
+          {(doc as any).discount_total > 0 && (
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>Discount:</Text>
+              <Text style={styles.totalValue}>-{fmtMoney((doc as any).discount_total, currency)}</Text>
+            </View>
+          )}
+          {(doc as any).tax_total > 0 ? (
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>{docType === "offer" ? "Tax / VAT:" : "VAT:"}</Text>
+              <Text style={styles.totalValue}>{fmtMoney((doc as any).tax_total, currency)}</Text>
+            </View>
+          ) : (doc as any).tax_total === 0 ? (
+            /* 2g-F11: when tax_total is EXPLICITLY 0 on a commercial
+               invoice/proforma/offer, this is a reverse-charge (B2B
+               cross-border) scenario. Tax authorities require the "Reverse
+               charge" legend — omitting it makes the document look like a
+               tax-exempt consumer sale.
+               audit20 fix: the legend used to print when tax_total was
+               null/undefined too (unknown ≠ zero) — a missing tax field
+               asserted a legally-weighty statement the issuer never made.
+               Unknown tax now renders NO VAT row at all. */
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>VAT:</Text>
+              <Text style={styles.totalValue}>Reverse charge — VAT settled by recipient</Text>
+            </View>
+          ) : null}
+          <View style={styles.grandTotal}>
+            <Text style={styles.grandTotalLabel}>GRAND TOTAL:</Text>
+            <Text style={styles.grandTotalValue}>{fmtMoney((doc as any).total, currency)}</Text>
+          </View>
+          {/* audit27: amount-in-words has its own eye-toggle — hiding it
+              no longer removes the whole totals table. */}
+          {!layoutHidden("amount_in_words") && (
+          <View style={styles.amountInWords}>
+            <Text style={styles.amountInWordsLabel}>Amount in Words</Text>
+            <Text style={styles.amountInWordsValue}>{amountInWords((doc as any).total, currency)}</Text>
+          </View>
+          )}
+        </View>
+        ),
+      });
+    }
+
+    // ── 7. Offer text / terms & conditions ──
+    if (!layoutHidden("offer_text") && ((doc as any).terms || doc.notes)) {
+      bodySections.push({
+        key: "offer_text",
+        y: layoutYOf("offer_text"),
+        node: (
+          <View style={styles.termsBox}>
+            <Text style={styles.sectionHeader} wrap={false}>
+              {docType === "offer" ? "Offer Text / Terms" : "Terms & Conditions"}
+            </Text>
+            {(doc as any).terms && <Text style={styles.termsText}>{(doc as any).terms}</Text>}
+            {doc.notes && (doc as any).terms !== doc.notes && (
+              <Text style={styles.termsText}>{doc.notes}</Text>
+            )}
+          </View>
+        ),
+      });
+    }
+
+    // ── 8. Bank details ──
+    if (!layoutHidden("bank_details") && (bankAccountsList.length > 0 || bankDetails ||
+      (!bankDetails && (tenant?.bank_name || tenant?.bank_iban || tenant?.bank_swift)))) {
+      bodySections.push({
+        key: "bank_details",
+        y: layoutYOf("bank_details"),
+        node: (
+          <View style={styles.termsBox}>
+            <Text style={styles.sectionHeader} wrap={false}>Bank Details</Text>
+
+            {/* If document has a specific bank_details override (user selected
+                one account in the form), show ONLY that — not all accounts. */}
+            {bankDetails ? (
+              <View style={styles.bankList}>
+                <View style={styles.bankAccountRow} wrap={false}>
+                  <Text style={styles.bankAccountDetails}>{bankDetails}</Text>
+                </View>
+              </View>
+            ) : bankAccountsList.length > 0 ? (
+              /* Modern: render every tenant account as its own row. */
+              <View style={styles.bankList}>
+                {bankAccountsList.map((acct: any, i: number) => (
+                  <View key={i} style={styles.bankAccountRow} wrap={false}>
+                    <Text style={styles.bankAccountName}>
+                      {acct.bankName || acct.bank_name || "Bank"}
+                      {acct.currency ? ` (${acct.currency})` : ""}
+                    </Text>
+                    <Text style={styles.bankAccountDetails}>
+                      Account: {acct.accountNumber || acct.account_number || "—"}
+                      {"   "}
+                      SWIFT: {acct.swiftCode || acct.swift_code || "—"}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              /* Legacy: tenant has only single-bank fields. */
+              <View style={styles.bankList}>
+                {tenant?.bank_name && (
+                  <View style={styles.bankAccountRow} wrap={false}>
+                    <Text style={styles.bankAccountName}>{tenant.bank_name}</Text>
+                  </View>
+                )}
+                {tenant?.bank_iban && (
+                  <View style={styles.bankAccountRow} wrap={false}>
+                    <Text style={styles.bankAccountDetails}>IBAN: {tenant.bank_iban}</Text>
+                  </View>
+                )}
+                {tenant?.bank_swift && (
+                  <View style={styles.bankAccountRow} wrap={false}>
+                    <Text style={styles.bankAccountDetails}>SWIFT/BIC: {tenant.bank_swift}</Text>
+                  </View>
+                )}
+              </View>
+            )}
+          </View>
+        ),
+      });
+    }
+  } else if (loiDoc) {
+    // ── LOI body — each piece is an orderable, gateable section ──────────
+    // (LOI does NOT render the line items table / totals / bank details.)
+    if (!layoutHidden("offer_text")) {
+      bodySections.push({
+        key: "offer_text",
+        y: layoutYOf("offer_text"),
+        node: (
+                  <View style={styles.termsBox}>
+                    <Text style={styles.termsText}>{loiDoc.terms_text || loiDefaultIntro}</Text>
+                  </View>
+        ),
+      });
+    }
+    if (!layoutHidden("specifications")) {
+      bodySections.push({
+        key: "specifications",
+        y: layoutYOf("specifications"),
+        node: (<>
+                  {/* Product Specifications — single product, key/value rows.
+                      audit13: header + table wrapped in a wrap={false} View so
+                      the section header can never be orphaned at the bottom of
+                      a page while its table starts on the next. */}
+                  <View wrap={false}>
+                    <Text style={styles.sectionHeader}>Product Specifications</Text>
+                    <View style={styles.specTable} wrap={false}>
+                    <View style={styles.specRow}>
+                      <Text style={styles.specName}>Product Name</Text>
+                      <Text style={styles.specValue}>{loiDoc.product_name}</Text>
+                    </View>
+                    {loiDoc.product_description ? (
+                      <View style={styles.specRow}>
+                        <Text style={styles.specName}>Description</Text>
+                        <Text style={styles.specValue}>{loiDoc.product_description}</Text>
+                      </View>
+                    ) : null}
+                    {loiDoc.hs_code ? (
+                      <View style={styles.specRow}>
+                        <Text style={styles.specName}>HS Code</Text>
+                        <Text style={styles.specValue}>{loiDoc.hs_code}</Text>
+                      </View>
+                    ) : null}
+                    {loiDoc.origin_country ? (
+                      <View style={styles.specRow}>
+                        <Text style={styles.specName}>Origin Country</Text>
+                        <Text style={styles.specValue}>{countryName(loiDoc.origin_country)}</Text>
+                      </View>
+                    ) : null}
+                    <View style={styles.specRow}>
+                      <Text style={styles.specName}>Quantity</Text>
+                      <Text style={styles.specValue}>{fmtQty(loiDoc.quantity)} {loiDoc.unit}</Text>
+                    </View>
+                    <View style={styles.specRow}>
+                      <Text style={styles.specName}>Unit Price</Text>
+                      <Text style={styles.specValue}>{fmtMoney(loiDoc.unit_price, currency)}</Text>
+                    </View>
+                    <View style={styles.specRow}>
+                      <Text style={styles.specName}>Total Value</Text>
+                      <Text style={[styles.specValue, { fontFamily: headingFontFamily }]}>
+                        {fmtMoney(loiDoc.total_value, currency)}
+                      </Text>
+                    </View>
+                  </View>
+                  </View>
+
+                  {/* COA (Certificate of Analysis) — rendered only when data
+                      exists. audit13: keep header + table together. */}
+                  {loiCoaEntries.length > 0 ? (
+                    <View wrap={false}>
+                      <Text style={styles.sectionHeader}>Certificate of Analysis (COA)</Text>
+                      <View style={styles.specTable} wrap={false}>
+                        {loiCoaEntries.map(([key, val], idx) => (
+                          <View key={`coa-${idx}`} style={styles.specRow}>
+                            <Text style={styles.specName}>{key}</Text>
+                            <Text style={styles.specValue}>{val}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  ) : null}
+
+                  {/* Technical Specifications — rendered only when data
+                      exists. audit13: keep header + table together. */}
+                  {loiSpecEntries.length > 0 ? (
+                    <View wrap={false}>
+                      <Text style={styles.sectionHeader}>Technical Specifications</Text>
+                      <View style={styles.specTable} wrap={false}>
+                        {loiSpecEntries.map(([key, val], idx) => (
+                          <View key={`spec-${idx}`} style={styles.specRow}>
+                            <Text style={styles.specName}>{key}</Text>
+                            <Text style={styles.specValue}>{val}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  ) : null}
+        </>),
+      });
+    }
+    if (!layoutHidden("trade_terms")) {
+      bodySections.push({
+        key: "trade_terms",
+        y: layoutYOf("trade_terms"),
+        node: (<>
+                  {/* Delivery & Payment Terms. audit13: keep header + table
+                      together (was orphaned at the bottom of page 1 with its
+                      table on page 2). */}
+                  <View wrap={false}>
+                  <Text style={styles.sectionHeader}>Delivery &amp; Payment Terms</Text>
+                  <View style={styles.specTable} wrap={false}>
+                    <View style={styles.specRow}>
+                      <Text style={styles.specName}>Delivery Terms</Text>
+                      <Text style={styles.specValue}>{loiDoc.delivery_terms || "—"}</Text>
+                    </View>
+                    <View style={styles.specRow}>
+                      <Text style={styles.specName}>Delivery Date</Text>
+                      <Text style={styles.specValue}>{fmtDate(loiDoc.delivery_date)}</Text>
+                    </View>
+                    <View style={styles.specRow}>
+                      <Text style={styles.specName}>Payment Terms</Text>
+                      <Text style={styles.specValue}>{loiDoc.payment_terms || "—"}</Text>
+                    </View>
+                    <View style={styles.specRow}>
+                      <Text style={styles.specName}>Valid Until</Text>
+                      <Text style={styles.specValue}>{loiValidUntilStr}</Text>
+                    </View>
+                  </View>
+                  </View>
+        </>),
+      });
+    }
+  }
+
+  // ── 9. Authorized signatures + company seal ──
+  if (!layoutHidden("signatures")) {
+    bodySections.push({
+      key: "signatures",
+      y: layoutYOf("signatures"),
+      node: (
+        <View style={styles.signatureWrap} wrap={false}>
+          <View style={styles.signatureBlock}>
+            <View style={styles.signatureCol}>
+              <Text style={styles.signatureParty}>For {tenant?.legal_name || tenant?.name || "Company"}:</Text>
+              <View style={styles.signatureLine} />
+              <Text style={styles.signatureLabel}>{docType === "loi" ? "Buyer Signature" : "Authorized Signature"}</Text>
+            </View>
+            <View style={styles.signatureCol}>
+              <Text style={styles.signatureParty}>For {partner?.name || (docType === "loi" ? "Seller" : "Buyer")}:</Text>
+              <View style={styles.signatureLine} />
+              <Text style={styles.signatureLabel}>{docType === "loi" ? "Seller Acceptance" : "Accepted & Signed"}</Text>
+            </View>
+          </View>
+
+          {/* Company seal (zigled) — only rendered when a seal image is
+              available. Placement / opacity / rotation come from the
+              TenantSeal relation (passed in via the `seal` prop), with
+              sensible defaults. memorandum_settings doesn't carry a
+              seal_enabled flag — the seal is rendered whenever the tenant
+              has a default seal configured (resolved by the generator). */}
+          {sealImageUrl && seal && (() => {
+            const position = seal.position || "bottom-right";
+            const opacity = typeof seal.opacity === "number" ? seal.opacity : 1;
+            const rotation = typeof seal.rotation_deg === "number" ? seal.rotation_deg : 0;
+            // Seal dimensions in mm → points; fall back to a 30mm square.
+            const wPts = mmToPoints(seal.image_width_mm || 30);
+            const hPts = mmToPoints(seal.image_height_mm || 30);
+            const offXPts = mmToPoints(seal.offset_x_mm || 0);
+            const offYPts = mmToPoints(seal.offset_y_mm || 0);
+
+            // Translate position + offset into left/top/right/bottom anchors.
+            const placement: Record<string, any> = {
+              "bottom-right": { right: 10 + offXPts, bottom: 0 + offYPts },
+              "bottom-left":  { left:  10 + offXPts, bottom: 0 + offYPts },
+              "bottom-center": { left: "50%", marginLeft: -wPts / 2 + offXPts, bottom: 0 + offYPts },
+              "top-right":    { right: 10 + offXPts, top:    0 + offYPts },
+              "top-left":     { left:  10 + offXPts, top:    0 + offYPts },
+              "top-center":   { left: "50%", marginLeft: -wPts / 2 + offXPts, top: 0 + offYPts },
+            };
+            const posStyle = placement[position] || placement["bottom-right"];
+
+            // @react-pdf/renderer accepts a `transform` string array; older
+            // builds only honour a single string. We use a single string for
+            // broad compatibility — a 0deg rotation produces an identity
+            // transform, so omitting it is also fine.
+            const transform = rotation ? `rotate(${rotation}deg)` : undefined;
+
+            return (
+              <View
+                style={[
+                  styles.sealOverlay,
+                  posStyle,
+                  { width: wPts, height: hPts, opacity },
+                  transform ? ({ transform } as any) : {},
+                ]}
+                wrap={false}
+              >
+                {/* eslint-disable-next-line jsx-a11y/alt-text */}
+                <Image style={styles.sealImage} src={sealImageUrl} />
+              </View>
+            );
+          })()}
+        </View>
+      ),
+    });
+  }
+
+  // ── LOI notes — trailing block (not orderable) ──
+  if (loiDoc?.notes) {
+    bodySections.push({
+      key: "loi_notes",
+      y: 9995,
+      node: (
+                    <View style={styles.termsBox}>
+                      <Text style={styles.sectionHeader} wrap={false}>Notes</Text>
+                      <Text style={styles.termsText}>{loiDoc.notes}</Text>
+                    </View>
+      ),
+    });
+  }
+
+  // Sort by the layout's y key (stable sort → ties keep insertion order,
+  // which is the canonical order) and materialize the fragment list.
+  const orderedBody = [...bodySections]
+    .sort((a, b) => a.y - b.y)
+    .map((s) => <React.Fragment key={s.key}>{s.node}</React.Fragment>);
+
   return (
     <Document
       title={pdfMeta?.title || `${docTitleMap[docType]} ${doc.number}`}
@@ -1256,629 +1952,11 @@ export function buildPdfDocument({
             signatures, notices) renders inside it. */}
         <View style={styles.bodyBlock}>
 
-        {/* Document title + meta block */}
-        {/* audit22: layout_json section visibility — the visual editor's
-            eye-toggle for each body field now actually gates the render. */}
-        {!layoutHidden("doc_title") && (
-        <View style={styles.docTitleRow}>
-          <View style={styles.docTitleBlock}>
-            <Text style={styles.docTitle}>{docTitleMap[docType]}</Text>
-            {doc.subject && <Text style={styles.docSubtitle}>{doc.subject}</Text>}
-          </View>
-          <View style={styles.docMetaBlock}>
-            <View style={styles.docMetaRow}>
-              <Text style={styles.docMetaLabel}>Document No.:</Text>
-              <Text style={styles.docMetaValue}>{doc.number}</Text>
-            </View>
-            <View style={styles.docMetaRow}>
-              <Text style={styles.docMetaLabel}>Date of Issue:</Text>
-              <Text style={styles.docMetaValue}>
-                {fmtDate((doc as any).issue_date || doc.created_at)}
-              </Text>
-            </View>
-            {docType === "offer" && (doc as Offer).valid_until && (
-              <View style={styles.docMetaRow}>
-                <Text style={styles.docMetaLabel}>Valid Until:</Text>
-                <Text style={styles.docMetaValue}>
-                  {fmtDate((doc as Offer).valid_until as string)}
-                </Text>
-              </View>
-            )}
-            {docType === "loi" && (doc as LetterOfIntent).validity_until && (
-              <View style={styles.docMetaRow}>
-                <Text style={styles.docMetaLabel}>Valid Until:</Text>
-                <Text style={styles.docMetaValue}>
-                  {fmtDate((doc as LetterOfIntent).validity_until as string)}
-                </Text>
-              </View>
-            )}
-            {(docType === "invoice" || docType === "proforma") && (doc as any).due_date && (
-              <View style={styles.docMetaRow}>
-                <Text style={styles.docMetaLabel}>Due Date:</Text>
-                <Text style={styles.docMetaValue}>
-                  {fmtDate((doc as any).due_date)}
-                </Text>
-              </View>
-            )}
-            <View style={styles.docMetaRow}>
-              <Text style={styles.docMetaLabel}>Currency:</Text>
-              <Text style={styles.docMetaValue}>{currency}</Text>
-            </View>
-          </View>
-        </View>
-        )}
-
-        {/* Proforma banner — clearly marked "PROFORMA — NOT A TAX INVOICE" */}
-        {docType === "proforma" && (
-          <View style={styles.proformaBanner}>
-            <Text style={styles.proformaBannerText}>PROFORMA — NOT A TAX INVOICE</Text>
-          </View>
-        )}
-
-        {/* FROM / TO party boxes — for offers/invoices/proformas the
-            tenant (issuer) is the SELLER and the partner is the BUYER.
-            For LOIs the roles are reversed: the tenant (issuer) is the
-            BUYER and the partner is the SELLER. The box titles branch
-            on docType so the labels stay correct in both cases.
-            audit22: layout_json visibility gates each box; both hidden
-            → the whole row collapses (either visible keeps the row). */}
-        {(!layoutHidden("from_box") || !layoutHidden("to_box")) && (
-        <View style={styles.partiesSection}>
-          {!layoutHidden("from_box") && (
-          <PartyBox
-            title={docType === "loi" ? "FROM (BUYER)" : "FROM (SELLER)"}
-            name={tenant?.legal_name || tenant?.name || "Company"}
-            addressLine={tenant?.address_line}
-            city={tenant?.city}
-            postal={tenant?.postal_code}
-            country={tenant?.country}
-            reg={tenant?.registration_number}
-            vat={tenant?.vat_number}
-            taxId={tenant?.tax_id}
-            phone={tenant?.phone}
-            email={tenant?.email}
-            website={tenant?.website}
-          />
-          )}
-          {!layoutHidden("to_box") && (
-          <PartyBox
-            title={docType === "loi" ? "TO (SELLER)" : "TO (BUYER)"}
-            name={partner?.name || "—"}
-            addressLine={partner?.address_line}
-            city={partner?.city}
-            postal={partner?.postal_code}
-            country={partner?.country}
-            reg={partner?.registration_number}
-            vat={partner?.vat_number}
-            taxId={partner?.tax_id}
-            phone={partner?.phone}
-            email={partner?.email}
-            website={partner?.website}
-          />
-          )}
-        </View>
-        )}
-
-        {/* ── OFFER / INVOICE / PROFORMA BODY ──────────────────────────
-            LOI uses a separate body branch (intro text + product specs
-            + delivery terms + validity + notes) and skips this whole
-            trade terms / line items / totals block — see the LOI branch
-            further below. */}
-        {docType !== "loi" && (<>
-
-        {/* TRADE TERMS (Incoterm, Origin, POL, POD, Payment, Lead time, Packaging, Vessel, Container) —
-            audit22: layout_json visibility gate. */}
-        {!layoutHidden("trade_terms") && (<>
-        <Text style={styles.sectionHeader}>Trade Terms</Text>
-        <View style={styles.tradeTerms} wrap={false}>
-          <View style={styles.tradeTermsRow}>
-            <View style={styles.tradeTermsCell}>
-              <Text style={styles.tradeTermsLabel}>Incoterm</Text>
-              {/* 2g-F18 fix (round 4): only the incoterm code here — POL has its own cell below. */}
-              <Text style={styles.tradeTermsValue}>{incoterm}</Text>
-            </View>
-            <View style={styles.tradeTermsCell}>
-              <Text style={styles.tradeTermsLabel}>Origin</Text>
-              {/* 2g-F19 fix (round 4): common origin (or "Multiple") instead of first-item-only. */}
-              <Text style={styles.tradeTermsValue}>{originCountry === "—" ? "—" : (originCountry.startsWith("Multiple") ? originCountry : countryName(originCountry))}</Text>
-            </View>
-            <View style={styles.tradeTermsCellLast}>
-              <Text style={styles.tradeTermsLabel}>Payment</Text>
-              <Text style={styles.tradeTermsValue}>{paymentTerms}</Text>
-            </View>
-          </View>
-          <View style={styles.tradeTermsRow}>
-            <View style={styles.tradeTermsCell}>
-              <Text style={styles.tradeTermsLabel}>POL</Text>
-              <Text style={styles.tradeTermsValue}>{pol}</Text>
-            </View>
-            <View style={styles.tradeTermsCell}>
-              <Text style={styles.tradeTermsLabel}>POD</Text>
-              <Text style={styles.tradeTermsValue}>{pod}</Text>
-            </View>
-            <View style={styles.tradeTermsCellLast}>
-              <Text style={styles.tradeTermsLabel}>Lead Time</Text>
-              <Text style={styles.tradeTermsValue}>{leadTime}</Text>
-            </View>
-          </View>
-          <View style={styles.tradeTermsRow}>
-            <View style={styles.tradeTermsCell}>
-              <Text style={styles.tradeTermsLabel}>Packaging</Text>
-              <Text style={styles.tradeTermsValue}>{packaging}</Text>
-            </View>
-            <View style={styles.tradeTermsCell}>
-              <Text style={styles.tradeTermsLabel}>Vessel</Text>
-              <Text style={styles.tradeTermsValue}>{vessel}</Text>
-            </View>
-            <View style={styles.tradeTermsCellLast}>
-              <Text style={styles.tradeTermsLabel}>Container</Text>
-              <Text style={styles.tradeTermsValue}>{containerNo}</Text>
-            </View>
-          </View>
-        </View>
-        </>)}
-
-        {/* LINE ITEMS — header is `fixed` so it repeats on every page.
-            audit22: column flex ratios + numeric alignment come from
-            style_json (st.table.columnWidths / numericAlign);
-            layout_json can hide the whole table. */}
-        {!layoutHidden("line_items_table") && (<>
-        <Text style={styles.sectionHeader}>Line Items</Text>
-        <View style={styles.table}>
-          <View style={styles.tableHeader} fixed>
-            <Text style={[styles.th, { flex: flexRowNum }]}>#</Text>
-            <Text style={[styles.th, { flex: flexDescription }]}>Description</Text>
-            <Text style={[styles.th, { flex: flexHsCode }]}>HS Code</Text>
-            <Text style={[styles.th, { flex: flexOrigin }]}>Origin</Text>
-            <Text style={[styles.th, { flex: flexQuantity }]}>Quantity</Text>
-            <Text style={[styles.th, { flex: flexUnitPrice, textAlign: numericAlign }]}>Unit Price</Text>
-            <Text style={[styles.th, { flex: flexTotal, textAlign: numericAlign }]}>Total</Text>
-          </View>
-          {items.map((item, i) => {
-            // 2g-F7 fix (round 4): the "Total" column previously rendered
-            // `item.total` verbatim — but for offers/invoices/proformas the
-            // backend stores the line total as the TAX-INCLUSIVE amount
-            // (lineTotal = net + tax in invoices-view.ts), while the
-            // Subtotal row sums TAX-EXCLUSIVE line totals. The column
-            // therefore didn't foot to the Subtotal. Now we render the
-            // per-line tax-EXCLUSIVE amount (qty × unit_price) so the
-            // column visually sums to the Subtotal row — matching the
-            // tax breakdown below (Tax / VAT line then adds to Grand Total).
-            const lineNet = (typeof item.unit_price === "number" && typeof item.quantity === "number")
-              ? item.unit_price * item.quantity
-              : (typeof item.total === "number" ? item.total : 0);
-            return (
-              <View
-                key={i}
-                style={[styles.tableRow, ...(tableStripe && i % 2 === 1 ? [styles.tableRowEven] : [])]}
-              >
-                <Text style={[styles.td, { flex: flexRowNum }]}>{i + 1}</Text>
-                <Text style={[styles.td, { flex: flexDescription }]}>
-                  {item.product_name}
-                  {item.sku ? `\nSKU: ${item.sku}` : ""}
-                  {item.brand ? `\nBrand: ${item.brand}` : ""}
-                </Text>
-                <Text style={[styles.td, { flex: flexHsCode }]}>{(item as any).hs_code || "—"}</Text>
-                <Text style={[styles.td, { flex: flexOrigin }]}>{countryName((item as any).origin_country)}</Text>
-                <Text style={[styles.td, { flex: flexQuantity, textAlign: numericAlign }]}>
-                  {fmtQty(item.quantity)} {item.unit || "kg"}
-                </Text>
-                <Text style={[styles.td, { flex: flexUnitPrice, textAlign: numericAlign }]}>
-                  {fmtMoney(item.unit_price, currency)}
-                </Text>
-                <Text style={[styles.td, { flex: flexTotal, textAlign: numericAlign, fontFamily: headingFontFamily }]}>
-                  {fmtMoney(lineNet, currency)}
-                </Text>
-              </View>
-            );
-          })}
-        </View>
-        </>)}
-
-        {/* SPECIFICATIONS — coa_params (key/value table) + detailed_spec
-            (audit22: layout_json visibility gate) */}
-        {!layoutHidden("specifications") && items.some((it: any) => {
-          const specs = it.specifications;
-          const hasSpecs = Array.isArray(specs)
-            ? specs.length > 0
-            : (specs && typeof specs === "object" && Object.keys(specs).length > 0);
-          return hasSpecs || it.detailed_spec;
-        }) && (
-          <View style={styles.specSection}>
-            <Text style={styles.sectionHeader}>Specifications</Text>
-            {items.map((item: any, i: number) => {
-              const specs = item.specifications;
-              const specArray: Array<{ name: string; value: string }> = Array.isArray(specs)
-                ? specs
-                : (specs && typeof specs === "object"
-                    ? Object.entries(specs).map(([k, v]) => ({ name: k, value: String(v) }))
-                    : []);
-              return (specArray.length > 0 || item.detailed_spec) ? (
-                <View key={`spec-${i}`} style={styles.specItem}>
-                  <View wrap={false}>
-                    <Text style={styles.specItemTitle}>{item.product_name}</Text>
-                    {specArray.length > 0 && (
-                      <View style={styles.specTable}>
-                        {specArray.map((spec, j) => (
-                          <View key={j} style={styles.specRow}>
-                            <Text style={styles.specName}>{spec.name}</Text>
-                            <Text style={styles.specValue}>{spec.value}</Text>
-                          </View>
-                        ))}
-                      </View>
-                    )}
-                  </View>
-                  {item.detailed_spec && (
-                    <Text style={styles.specDetail}>{item.detailed_spec}</Text>
-                  )}
-                </View>
-              ) : null;
-            })}
-          </View>
-        )}
-
-        {/* TOTALS + Amount in Words (kept together, never split across pages)
-            audit22: layout_json visibility gates (totals / amount_in_words) */}
-        {!layoutHidden("totals") && !layoutHidden("amount_in_words") && (
-        <View style={styles.totals} wrap={false}>
-          <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Subtotal:</Text>
-            <Text style={styles.totalValue}>{fmtMoney((doc as any).subtotal, currency)}</Text>
-          </View>
-          {(doc as any).discount_total > 0 && (
-            <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>Discount:</Text>
-              <Text style={styles.totalValue}>-{fmtMoney((doc as any).discount_total, currency)}</Text>
-            </View>
-          )}
-          {(doc as any).tax_total > 0 ? (
-            <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>{docType === "offer" ? "Tax / VAT:" : "VAT:"}</Text>
-              <Text style={styles.totalValue}>{fmtMoney((doc as any).tax_total, currency)}</Text>
-            </View>
-          ) : (doc as any).tax_total === 0 ? (
-            /* 2g-F11: when tax_total is EXPLICITLY 0 on a commercial
-               invoice/proforma/offer, this is a reverse-charge (B2B
-               cross-border) scenario. Tax authorities require the "Reverse
-               charge" legend — omitting it makes the document look like a
-               tax-exempt consumer sale.
-               audit20 fix: the legend used to print when tax_total was
-               null/undefined too (unknown ≠ zero) — a missing tax field
-               asserted a legally-weighty statement the issuer never made.
-               Unknown tax now renders NO VAT row at all. */
-            <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>VAT:</Text>
-              <Text style={styles.totalValue}>Reverse charge — VAT settled by recipient</Text>
-            </View>
-          ) : null}
-          <View style={styles.grandTotal}>
-            <Text style={styles.grandTotalLabel}>GRAND TOTAL:</Text>
-            <Text style={styles.grandTotalValue}>{fmtMoney((doc as any).total, currency)}</Text>
-          </View>
-          <View style={styles.amountInWords}>
-            <Text style={styles.amountInWordsLabel}>Amount in Words</Text>
-            <Text style={styles.amountInWordsValue}>{amountInWords((doc as any).total, currency)}</Text>
-          </View>
-        </View>
-        )}
-
-        {/* OFFER TEXT / TERMS & CONDITIONS (audit22: layout_json gate) */}
-        {!layoutHidden("offer_text") && ((doc as any).terms || doc.notes) && (
-          <View style={styles.termsBox}>
-            <Text style={styles.sectionHeader} wrap={false}>
-              {docType === "offer" ? "Offer Text / Terms" : "Terms & Conditions"}
-            </Text>
-            {(doc as any).terms && <Text style={styles.termsText}>{(doc as any).terms}</Text>}
-            {doc.notes && (doc as any).terms !== doc.notes && (
-              <Text style={styles.termsText}>{doc.notes}</Text>
-            )}
-          </View>
-        )}
-
-        {/* BANK DETAILS — show as a clean vertical list, not a cramped grid.
-            audit22: layout_json visibility gate.
-            Modern: tenant.bank_accounts JSON array → one row per account
-              (optionally filtered by memorandum_settings.selected_bank_accounts).
-            Legacy: if no bank_accounts array, fall back to tenant's
-              single-bank fields.
-            Per-doc bank_details override always appended at the bottom. */}
-        {!layoutHidden("bank_details") && (bankAccountsList.length > 0 || bankDetails ||
-          (!bankDetails && (tenant?.bank_name || tenant?.bank_iban || tenant?.bank_swift))) && (
-          <View style={styles.termsBox}>
-            <Text style={styles.sectionHeader} wrap={false}>Bank Details</Text>
-
-            {/* If document has a specific bank_details override (user selected
-                one account in the form), show ONLY that — not all accounts. */}
-            {bankDetails ? (
-              <View style={styles.bankList}>
-                <View style={styles.bankAccountRow} wrap={false}>
-                  <Text style={styles.bankAccountDetails}>{bankDetails}</Text>
-                </View>
-              </View>
-            ) : bankAccountsList.length > 0 ? (
-              /* Modern: render every tenant account as its own row. */
-              <View style={styles.bankList}>
-                {bankAccountsList.map((acct: any, i: number) => (
-                  <View key={i} style={styles.bankAccountRow} wrap={false}>
-                    <Text style={styles.bankAccountName}>
-                      {acct.bankName || acct.bank_name || "Bank"}
-                      {acct.currency ? ` (${acct.currency})` : ""}
-                    </Text>
-                    <Text style={styles.bankAccountDetails}>
-                      Account: {acct.accountNumber || acct.account_number || "—"}
-                      {"   "}
-                      SWIFT: {acct.swiftCode || acct.swift_code || "—"}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            ) : (
-              /* Legacy: tenant has only single-bank fields. */
-              <View style={styles.bankList}>
-                {tenant?.bank_name && (
-                  <View style={styles.bankAccountRow} wrap={false}>
-                    <Text style={styles.bankAccountName}>{tenant.bank_name}</Text>
-                  </View>
-                )}
-                {tenant?.bank_iban && (
-                  <View style={styles.bankAccountRow} wrap={false}>
-                    <Text style={styles.bankAccountDetails}>IBAN: {tenant.bank_iban}</Text>
-                  </View>
-                )}
-                {tenant?.bank_swift && (
-                  <View style={styles.bankAccountRow} wrap={false}>
-                    <Text style={styles.bankAccountDetails}>SWIFT/BIC: {tenant.bank_swift}</Text>
-                  </View>
-                )}
-              </View>
-            )}
-          </View>
-        )}
-
-        </>)}
-
-        {/* ── LOI BODY ─────────────────────────────────────────────────────
-            LOI is a single-product intent document. The body is:
-             1. Introductory paragraph (default or the LOI's terms_text
-                when the issuer has provided a custom one)
-             2. Product Specifications table (single product, key/value rows)
-             3. Delivery & Payment Terms table (incoterm + delivery date +
-                payment terms + valid until)
-             4. Optional Notes
-            LOI does NOT render the line items table, the subtotal/discount/
-            tax/total breakdown, or the bank details block — it carries a
-            single product + total_value and the legal body is the intro /
-            terms_text. */}
-        {docType === "loi" && (
-          <View>
-            {/* LOI-specific variables computed inline */}
-            {(() => {
-              const loi = doc as LetterOfIntent;
-              const buyerName = loi.buyer_name || tenant?.legal_name || tenant?.name || "the Buyer";
-              const sellerName = partner?.name || "the Seller";
-              const validUntilStr = fmtDate(loi.validity_until);
-              const defaultIntro =
-                `Dear ${sellerName},\n\n` +
-                `We, ${buyerName}, hereby express our firm intention to purchase the following goods under the terms and conditions stated in this Letter of Intent. This LOI is non-binding and serves as a formal expression of our intent to proceed with the purchase, subject to the execution of a definitive purchase agreement.\n\n` +
-                `We look forward to your response by ${validUntilStr}.`;
-              // Compute COA entries
-              const coaEntries: [string, string][] = loi.coa_params && typeof loi.coa_params === "object"
-                ? Object.entries(loi.coa_params as Record<string, unknown>)
-                    .filter(([, v]) => v != null && v !== "")
-                    .map(([k, v]) => [k, String(v)] as [string, string])
-                : [];
-              // Compute spec entries
-              const specSource = loi.specifications as any;
-              let specEntries: [string, string][] = [];
-              if (Array.isArray(specSource)) {
-                specEntries = specSource
-                  .filter((s: any) => s && s.name && s.value != null)
-                  .map((s: any) => [String(s.name), String(s.value)] as [string, string]);
-              } else if (specSource && typeof specSource === "object") {
-                specEntries = Object.entries(specSource)
-                  .filter(([, v]) => v != null && v !== "")
-                  .map(([k, v]) => [k, String(v)] as [string, string]);
-              }
-              return (
-                <View>
-                  {/* Introductory paragraph / full LOI body.
-                      audit13: no "Letter of Intent" section header here — the
-                      document title block at the top of page 1 already reads
-                      "LETTER OF INTENT" in 18pt; repeating it mid-body made
-                      the title appear 3× per page (title + body header +
-                      footer). The salutation ("Dear X") reads naturally on
-                      its own, like a real letter. */}
-                  <View style={styles.termsBox}>
-                    <Text style={styles.termsText}>{loi.terms_text || defaultIntro}</Text>
-                  </View>
-
-                  {/* Product Specifications — single product, key/value rows.
-                      audit13: header + table wrapped in a wrap={false} View so
-                      the section header can never be orphaned at the bottom of
-                      a page while its table starts on the next. */}
-                  <View wrap={false}>
-                    <Text style={styles.sectionHeader}>Product Specifications</Text>
-                    <View style={styles.specTable} wrap={false}>
-                    <View style={styles.specRow}>
-                      <Text style={styles.specName}>Product Name</Text>
-                      <Text style={styles.specValue}>{loi.product_name}</Text>
-                    </View>
-                    {loi.product_description ? (
-                      <View style={styles.specRow}>
-                        <Text style={styles.specName}>Description</Text>
-                        <Text style={styles.specValue}>{loi.product_description}</Text>
-                      </View>
-                    ) : null}
-                    {loi.hs_code ? (
-                      <View style={styles.specRow}>
-                        <Text style={styles.specName}>HS Code</Text>
-                        <Text style={styles.specValue}>{loi.hs_code}</Text>
-                      </View>
-                    ) : null}
-                    {loi.origin_country ? (
-                      <View style={styles.specRow}>
-                        <Text style={styles.specName}>Origin Country</Text>
-                        <Text style={styles.specValue}>{countryName(loi.origin_country)}</Text>
-                      </View>
-                    ) : null}
-                    <View style={styles.specRow}>
-                      <Text style={styles.specName}>Quantity</Text>
-                      <Text style={styles.specValue}>{fmtQty(loi.quantity)} {loi.unit}</Text>
-                    </View>
-                    <View style={styles.specRow}>
-                      <Text style={styles.specName}>Unit Price</Text>
-                      <Text style={styles.specValue}>{fmtMoney(loi.unit_price, currency)}</Text>
-                    </View>
-                    <View style={styles.specRow}>
-                      <Text style={styles.specName}>Total Value</Text>
-                      <Text style={[styles.specValue, { fontFamily: headingFontFamily }]}>
-                        {fmtMoney(loi.total_value, currency)}
-                      </Text>
-                    </View>
-                  </View>
-                  </View>
-
-                  {/* COA (Certificate of Analysis) — rendered only when data
-                      exists. audit13: keep header + table together. */}
-                  {coaEntries.length > 0 ? (
-                    <View wrap={false}>
-                      <Text style={styles.sectionHeader}>Certificate of Analysis (COA)</Text>
-                      <View style={styles.specTable} wrap={false}>
-                        {coaEntries.map(([key, val], idx) => (
-                          <View key={`coa-${idx}`} style={styles.specRow}>
-                            <Text style={styles.specName}>{key}</Text>
-                            <Text style={styles.specValue}>{val}</Text>
-                          </View>
-                        ))}
-                      </View>
-                    </View>
-                  ) : null}
-
-                  {/* Technical Specifications — rendered only when data
-                      exists. audit13: keep header + table together. */}
-                  {specEntries.length > 0 ? (
-                    <View wrap={false}>
-                      <Text style={styles.sectionHeader}>Technical Specifications</Text>
-                      <View style={styles.specTable} wrap={false}>
-                        {specEntries.map(([key, val], idx) => (
-                          <View key={`spec-${idx}`} style={styles.specRow}>
-                            <Text style={styles.specName}>{key}</Text>
-                            <Text style={styles.specValue}>{val}</Text>
-                          </View>
-                        ))}
-                      </View>
-                    </View>
-                  ) : null}
-
-                  {/* Delivery & Payment Terms. audit13: keep header + table
-                      together (was orphaned at the bottom of page 1 with its
-                      table on page 2). */}
-                  <View wrap={false}>
-                  <Text style={styles.sectionHeader}>Delivery &amp; Payment Terms</Text>
-                  <View style={styles.specTable} wrap={false}>
-                    <View style={styles.specRow}>
-                      <Text style={styles.specName}>Delivery Terms</Text>
-                      <Text style={styles.specValue}>{loi.delivery_terms || "—"}</Text>
-                    </View>
-                    <View style={styles.specRow}>
-                      <Text style={styles.specName}>Delivery Date</Text>
-                      <Text style={styles.specValue}>{fmtDate(loi.delivery_date)}</Text>
-                    </View>
-                    <View style={styles.specRow}>
-                      <Text style={styles.specName}>Payment Terms</Text>
-                      <Text style={styles.specValue}>{loi.payment_terms || "—"}</Text>
-                    </View>
-                    <View style={styles.specRow}>
-                      <Text style={styles.specName}>Valid Until</Text>
-                      <Text style={styles.specValue}>{validUntilStr}</Text>
-                    </View>
-                  </View>
-                  </View>
-
-                  {/* Optional Notes */}
-                  {loi.notes ? (
-                    <View style={styles.termsBox}>
-                      <Text style={styles.sectionHeader} wrap={false}>Notes</Text>
-                      <Text style={styles.termsText}>{loi.notes}</Text>
-                    </View>
-                  ) : null}
-                </View>
-              );
-            })()}
-          </View>
-        )}
-
-        {/* AUTHORIZED SIGNATURES — seller + buyer/acceptholder */}
-        {/* Wrapped in a relative-positioned container so the company seal
-            (when configured) can be absolutely positioned over the signature
-            area, as is customary for stamped business documents. */}
-        {/* 2g-F24 fix (round 4): in LOI the partner is the SELLER (the
-            tenant issues the LOI as the BUYER). The prior fallback said
-            "Buyer" for the partner column in LOIs — wrong role. Now the
-            fallback labels match the docType's party roles. */}
-        <View style={styles.signatureWrap} wrap={false}>
-          <View style={styles.signatureBlock}>
-            <View style={styles.signatureCol}>
-              <Text style={styles.signatureParty}>For {tenant?.legal_name || tenant?.name || "Company"}:</Text>
-              <View style={styles.signatureLine} />
-              <Text style={styles.signatureLabel}>{docType === "loi" ? "Buyer Signature" : "Authorized Signature"}</Text>
-            </View>
-            <View style={styles.signatureCol}>
-              <Text style={styles.signatureParty}>For {partner?.name || (docType === "loi" ? "Seller" : "Buyer")}:</Text>
-              <View style={styles.signatureLine} />
-              <Text style={styles.signatureLabel}>{docType === "loi" ? "Seller Acceptance" : "Accepted & Signed"}</Text>
-            </View>
-          </View>
-
-          {/* Company seal (zigled) — only rendered when a seal image is
-              available. Placement / opacity / rotation come from the
-              TenantSeal relation (passed in via the `seal` prop), with
-              sensible defaults. memorandum_settings doesn't carry a
-              seal_enabled flag — the seal is rendered whenever the tenant
-              has a default seal configured (resolved by the generator). */}
-          {sealImageUrl && seal && (() => {
-            const position = seal.position || "bottom-right";
-            const opacity = typeof seal.opacity === "number" ? seal.opacity : 1;
-            const rotation = typeof seal.rotation_deg === "number" ? seal.rotation_deg : 0;
-            // Seal dimensions in mm → points; fall back to a 30mm square.
-            const wPts = mmToPoints(seal.image_width_mm || 30);
-            const hPts = mmToPoints(seal.image_height_mm || 30);
-            const offXPts = mmToPoints(seal.offset_x_mm || 0);
-            const offYPts = mmToPoints(seal.offset_y_mm || 0);
-
-            // Translate position + offset into left/top/right/bottom anchors.
-            const placement: Record<string, any> = {
-              "bottom-right": { right: 10 + offXPts, bottom: 0 + offYPts },
-              "bottom-left":  { left:  10 + offXPts, bottom: 0 + offYPts },
-              "bottom-center": { left: "50%", marginLeft: -wPts / 2 + offXPts, bottom: 0 + offYPts },
-              "top-right":    { right: 10 + offXPts, top:    0 + offYPts },
-              "top-left":     { left:  10 + offXPts, top:    0 + offYPts },
-              "top-center":   { left: "50%", marginLeft: -wPts / 2 + offXPts, top: 0 + offYPts },
-            };
-            const posStyle = placement[position] || placement["bottom-right"];
-
-            // @react-pdf/renderer accepts a `transform` string array; older
-            // builds only honour a single string. We use a single string for
-            // broad compatibility — a 0deg rotation produces an identity
-            // transform, so omitting it is also fine.
-            const transform = rotation ? `rotate(${rotation}deg)` : undefined;
-
-            return (
-              <View
-                style={[
-                  styles.sealOverlay,
-                  posStyle,
-                  { width: wPts, height: hPts, opacity },
-                  transform ? ({ transform } as any) : {},
-                ]}
-                wrap={false}
-              >
-                {/* eslint-disable-next-line jsx-a11y/alt-text */}
-                <Image style={styles.sealImage} src={sealImageUrl} />
-              </View>
-            );
-          })()}
-        </View>
+        {/* audit27: ordered body sections — every section is built above as
+            a node and rendered in the order the Template Studio's Layout tab
+            defines (layout_json y). The header + footer stay fixed on every
+            page and multi-page tables still paginate naturally. */}
+        {orderedBody}
 
         {/* DOCUMENT NOTICE — legally required disclaimer per doc type.
             audit20: skipped when a template footer segment already carries
