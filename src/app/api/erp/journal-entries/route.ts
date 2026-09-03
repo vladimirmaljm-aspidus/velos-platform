@@ -94,6 +94,14 @@ export async function POST(req: NextRequest) {
     // The bare `Number(l.debit)` returns NaN for invalid input, which the
     // `!Number.isFinite(d)` check now correctly rejects.
     for (const l of body.lines) {
+      // 32 (audit re-verify): a line without `account_id` passed the FK
+      // pre-check below (it only validates ids that ARE strings) and then
+      // hit the erp_journal_lines.account_id NOT NULL violation → sanitized
+      // 500 "Missing required field." Reject it up-front with a 400 naming
+      // the field, mirroring the requireFields contract.
+      if (typeof l.account_id !== "string" || l.account_id.length === 0) {
+        return NextResponse.json({ error: "Each journal line requires an account_id." }, { status: 400 });
+      }
       const d = Number(l.debit);
       const c = Number(l.credit);
       if (!Number.isFinite(d) || d < 0) {
