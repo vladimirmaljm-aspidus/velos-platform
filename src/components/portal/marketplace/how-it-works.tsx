@@ -77,7 +77,6 @@ export function HowItWorks({
     >
       {/* Decorative mesh background — subtle, doesn't impede readability. */}
       <div className="absolute inset-0 bg-mesh-portal opacity-40 pointer-events-none" />
-      <div className="absolute -top-12 -right-12 size-40 bg-emerald-500/10 blur-3xl rounded-full pointer-events-none" />
 
       <div className="relative p-6 sm:p-8">
         <header className="text-center max-w-2xl mx-auto">

@@ -680,8 +680,8 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     "portal-profile-toast-password-failed": "Failed to change password",
 
     // ─── Login ───────────────────────────────────────────────────────────
-    "portal-login-welcome": "Welcome back",
-    "portal-login-signin-desc": "Sign in to access your offers, documents, and catalog.",
+    "portal-login-welcome": "Sign in",
+    "portal-login-signin-desc": "Access your offers, documents and catalog.",
     "portal-login-email": "Email",
     "portal-login-password": "Password",
     "portal-login-signin": "Sign in",
@@ -1363,7 +1363,7 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     "marketplace-document-scanner-ai-unavailable": "AI vision service is not configured. Contact your administrator.",
     "marketplace-document-scanner-invalid-format": "Only PNG, JPEG, WebP, or PDF files are supported.",
     "marketplace-document-scanner-too-large": "File too large (images ≤ 5 MB, PDFs ≤ 15 MB).",
-    "marketplace-document-scanner-ai-hint": "Powered by AI vision — verify the extracted data before publishing.",
+    "marketplace-document-scanner-ai-hint": "AI-assisted extraction — check the data before publishing.",
     "marketplace-document-scanner-manufacturer": "Manufacturer",
     "marketplace-document-scanner-grade": "Grade",
     "marketplace-document-scanner-origin": "Origin",
@@ -2798,8 +2798,8 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     "portal-profile-toast-password-failed": "Neuspešna promena lozinke",
 
     // ─── Login ───────────────────────────────────────────────────────────
-    "portal-login-welcome": "Dobrodošli nazad",
-    "portal-login-signin-desc": "Prijavite se da pristupite ponudama, dokumentima i katalogu.",
+    "portal-login-welcome": "Prijava",
+    "portal-login-signin-desc": "Pristupite ponudama, dokumentima i katalogu.",
     "portal-login-email": "Email",
     "portal-login-password": "Lozinka",
     "portal-login-signin": "Prijava",
@@ -3443,7 +3443,7 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     "marketplace-document-scanner-ai-unavailable": "AI servis za viziju nije konfigurisan. Kontaktirajte administratora.",
     "marketplace-document-scanner-invalid-format": "Samo PNG, JPEG, WebP i PDF fajlovi su podržani.",
     "marketplace-document-scanner-too-large": "Fajl je preveliki (slike ≤ 5 MB, PDF ≤ 15 MB).",
-    "marketplace-document-scanner-ai-hint": "Pokreće AI vizija — proverite izdvojene podatke pre objavljivanja.",
+    "marketplace-document-scanner-ai-hint": "AI pomoć pri izdvajanju — proverite podatke pre objavljivanja.",
     "marketplace-document-scanner-manufacturer": "Proizvodjac",
     "marketplace-document-scanner-grade": "Klasa",
     "marketplace-document-scanner-origin": "Poreklo",
@@ -4869,8 +4869,8 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     "portal-profile-toast-password-failed": "Şifre değiştirilemedi",
 
     // ─── Login ───────────────────────────────────────────────────────────
-    "portal-login-welcome": "Tekrar hoş geldiniz",
-    "portal-login-signin-desc": "Tekliflerinize, belgelerinize ve kataloğa erişmek için giriş yapın.",
+    "portal-login-welcome": "Giriş",
+    "portal-login-signin-desc": "Tekliflerinize, belgelerinize ve kataloğa erişin.",
     "portal-login-email": "E-posta",
     "portal-login-password": "Şifre",
     "portal-login-signin": "Giriş",
@@ -5517,7 +5517,7 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     "marketplace-document-scanner-ai-unavailable": "AI görüş servisi yapılandırılmamış. Yöneticinize başvurun.",
     "marketplace-document-scanner-invalid-format": "Yalnızca PNG, JPEG, WebP veya PDF dosyaları desteklenir.",
     "marketplace-document-scanner-too-large": "Dosya çok büyük (görüntü ≤ 5 MB, PDF ≤ 15 MB).",
-    "marketplace-document-scanner-ai-hint": "AI görüşü tarafından desteklenmektedir — yayınlamadan önce çıkarılan verileri doğrulayın.",
+    "marketplace-document-scanner-ai-hint": "AI destekli çıkarma — yayınlamadan önce verileri kontrol edin.",
     "marketplace-document-scanner-manufacturer": "Üretici",
     "marketplace-document-scanner-grade": "Sınıf",
     "marketplace-document-scanner-origin": "Menşei",
@@ -6943,8 +6943,8 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     "portal-profile-toast-password-failed": "Passwort konnte nicht geändert werden",
 
     // ─── Login ───────────────────────────────────────────────────────────
-    "portal-login-welcome": "Willkommen zurück",
-    "portal-login-signin-desc": "Melden Sie sich an, um auf Ihre Angebote, Dokumente und den Katalog zuzugreifen.",
+    "portal-login-welcome": "Anmelden",
+    "portal-login-signin-desc": "Greifen Sie auf Ihre Angebote, Dokumente und den Katalog zu.",
     "portal-login-email": "E-Mail",
     "portal-login-password": "Passwort",
     "portal-login-signin": "Anmelden",
@@ -7588,7 +7588,7 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     "marketplace-document-scanner-ai-unavailable": "KI-Vision-Service ist nicht konfiguriert. Wenden Sie sich an Ihren Administrator.",
     "marketplace-document-scanner-invalid-format": "Es werden nur PNG-, JPEG-, WebP- oder PDF-Dateien unterstützt.",
     "marketplace-document-scanner-too-large": "Datei zu groß (Bilder ≤ 5 MB, PDF ≤ 15 MB).",
-    "marketplace-document-scanner-ai-hint": "Unterstützt durch KI-Vision — überprüfen Sie die extrahierten Daten vor der Veröffentlichung.",
+    "marketplace-document-scanner-ai-hint": "KI-gestützte Extraktion — prüfen Sie die Daten vor der Veröffentlichung.",
     "marketplace-document-scanner-manufacturer": "Hersteller",
     "marketplace-document-scanner-grade": "Qualität",
     "marketplace-document-scanner-origin": "Herkunft",
@@ -9014,8 +9014,8 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     "portal-profile-toast-password-failed": "Не удалось изменить пароль",
 
     // ─── Login ───────────────────────────────────────────────────────────
-    "portal-login-welcome": "С возвращением",
-    "portal-login-signin-desc": "Войдите, чтобы получить доступ к предложениям, документам и каталогу.",
+    "portal-login-welcome": "Вход",
+    "portal-login-signin-desc": "Доступ к вашим предложениям, документам и каталогу.",
     "portal-login-email": "Email",
     "portal-login-password": "Пароль",
     "portal-login-signin": "Вход",
@@ -9659,7 +9659,7 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     "marketplace-document-scanner-ai-unavailable": "AI-сервис зрения не настроен. Обратитесь к администратору.",
     "marketplace-document-scanner-invalid-format": "Поддерживаются только файлы PNG, JPEG, WebP или PDF.",
     "marketplace-document-scanner-too-large": "Файл слишком большой (изображения ≤ 5 МБ, PDF ≤ 15 МБ).",
-    "marketplace-document-scanner-ai-hint": "Работает на AI-зрении — проверьте извлечённые данные перед публикацией.",
+    "marketplace-document-scanner-ai-hint": "Извлечение с помощью ИИ — проверьте данные перед публикацией.",
     "marketplace-document-scanner-manufacturer": "Производитель",
     "marketplace-document-scanner-grade": "Сорт",
     "marketplace-document-scanner-origin": "Происхождение",

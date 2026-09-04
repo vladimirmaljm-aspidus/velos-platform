@@ -25,7 +25,6 @@ import {
   AlertTriangle,
   Info,
   XCircle,
-  Sparkles,
   Handshake,
   FileCheck2,
 } from "lucide-react";
@@ -369,7 +368,6 @@ export function PortalDashboardRedesign() {
       <div className="border-gradient shadow-soft-lg">
         <div className="relative bg-card rounded-[calc(var(--radius-xl)-1px)] overflow-hidden">
           <div className="absolute inset-0 bg-mesh-portal opacity-70" />
-          <div className="absolute top-0 right-0 h-32 w-32 bg-emerald-500/10 blur-3xl rounded-full" />
           <div className="relative p-6 sm:p-8">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="min-w-0">

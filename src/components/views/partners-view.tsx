@@ -41,6 +41,7 @@ import {
   ChevronDown, ChevronRight,
   ExternalLink, Send, Zap, CheckCircle2, Clock, AlertCircle, XCircle, KeyRound,
   Loader2, Copy, Check, Link as LinkIcon, Download, MessageSquare, Upload, FileDown,
+  ShoppingCart, Package, RefreshCw, Briefcase, Paperclip,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
@@ -1614,10 +1615,10 @@ function PartnerDetail({ partner, deals }: { partner: Partner; deals: any[] }) {
 
 // ---- Visual type buttons for the form ----
 const TYPE_BUTTONS = [
-  { value: "buyer" as PartnerType, labelKey: "crm-type-buyer", descriptionKey: "crm-type-buyer-desc", icon: "🛒" },
-  { value: "supplier" as PartnerType, labelKey: "crm-type-supplier", descriptionKey: "crm-type-supplier-desc", icon: "📦" },
-  { value: "both" as PartnerType, labelKey: "crm-type-both", descriptionKey: "crm-type-both-desc", icon: "🔄" },
-  { value: "agent" as PartnerType, labelKey: "crm-type-agent", descriptionKey: "crm-type-agent-desc", icon: "💼" },
+  { value: "buyer" as PartnerType, labelKey: "crm-type-buyer", descriptionKey: "crm-type-buyer-desc", icon: ShoppingCart },
+  { value: "supplier" as PartnerType, labelKey: "crm-type-supplier", descriptionKey: "crm-type-supplier-desc", icon: Package },
+  { value: "both" as PartnerType, labelKey: "crm-type-both", descriptionKey: "crm-type-both-desc", icon: RefreshCw },
+  { value: "agent" as PartnerType, labelKey: "crm-type-agent", descriptionKey: "crm-type-agent-desc", icon: Briefcase },
 ] as const;
 
 const OTHER_TYPES = [
@@ -1842,7 +1843,7 @@ function PartnerFormDialog({
                               : "border-border/60 hover:border-border hover:bg-muted/30"
                           }`}
                         >
-                          <span className="text-xl">{tb.icon}</span>
+                          <span className="text-xl"><tb.icon className="size-5" /></span>
                           <div>
                             <p className={`font-medium text-sm ${isSelected ? "text-primary" : ""}`}>{t(tb.labelKey)}</p>
                             <p className="text-xs text-muted-foreground">{t(tb.descriptionKey)}</p>
@@ -1938,7 +1939,7 @@ function PartnerFormDialog({
                                 : "border-border/60 hover:border-border hover:bg-muted/30"
                             }`}
                           >
-                            <span className="text-lg">{tb.icon}</span>
+                            <span className="text-lg"><tb.icon className="size-4" /></span>
                             <p className={`text-xs font-medium ${isSelected ? "text-primary" : ""}`}>{t(tb.labelKey)}</p>
                           </button>
                         );
@@ -2286,7 +2287,7 @@ function PortalMessageThread({
               rel="noopener noreferrer"
               className={`mt-1 inline-flex items-center gap-1 underline underline-offset-2 ${msg.direction === "outgoing" ? "text-primary-foreground" : "text-primary"}`}
             >
-              📎 {msg.attachment_name}
+              <Paperclip className="size-3" /> {msg.attachment_name}
             </a>
           )}
           <p className={`text-[9px] mt-1 ${msg.direction === "outgoing" ? "text-primary-foreground/60" : "text-muted-foreground"}`}>

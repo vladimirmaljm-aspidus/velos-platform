@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Building2, CheckCircle2, XCircle, Loader2, Info } from "lucide-react";
+import { Building2, CheckCircle2, XCircle, Loader2, Info, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -196,9 +196,9 @@ export function IbanInput({
       {entityType && (
         <div className="text-xs text-muted-foreground">
           {entityType === "individual" ? (
-            <span>👤 {t("misc-iban-personal")}</span>
+            <span className="inline-flex items-center gap-1"><User className="size-3" /> {t("misc-iban-personal")}</span>
           ) : (
-            <span>🏢 {t("misc-iban-corporate")}</span>
+            <span className="inline-flex items-center gap-1"><Building2 className="size-3" /> {t("misc-iban-corporate")}</span>
           )}
         </div>
       )}

@@ -6,7 +6,6 @@ import {
   Shield,
   Award,
   Crown,
-  Sparkles,
 } from "lucide-react";
 import { useT } from "@/lib/i18n/store";
 import type { MarketplaceVerificationLevel } from "@/lib/supabase/marketplace-profile-types";
@@ -121,8 +120,5 @@ export function VerificationIconOnly({
   if (lvl === "none") return null;
   const meta = LEVEL_META[lvl];
   const Icon = meta.icon;
-  // Sparkles is imported to keep the icon in the bundle for future
-  // "verified_at just now" decorations.
-  void Sparkles;
   return <Icon className={cn("h-3.5 w-3.5", meta.cls.split(" ").filter((c) => c.startsWith("text-")).join(" "), className)} />;
 }

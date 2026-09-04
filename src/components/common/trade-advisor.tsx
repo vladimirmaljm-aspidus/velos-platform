@@ -4,7 +4,7 @@ import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Globe, CheckCircle2, AlertTriangle, Info, FileText,
-  ChevronDown, ChevronRight, Loader2,
+  ChevronDown, ChevronRight, Loader2, Leaf,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -159,7 +159,7 @@ export function TradeAdvisor({ reporterCode, partnerCode, hsCode }: TradeAdvisor
               </div>
               {data.tariff.foodExemptions && (
                 <p className="text-xs text-muted-foreground">
-                  <span className="font-medium">🥗 {t("misc-ta-food-exemptions")}</span> {data.tariff.foodExemptions}
+                  <span className="font-medium inline-flex items-center gap-1"><Leaf className="size-3.5" /> {t("misc-ta-food-exemptions")}</span> {data.tariff.foodExemptions}
                 </p>
               )}
             </div>

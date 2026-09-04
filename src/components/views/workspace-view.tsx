@@ -2,7 +2,7 @@
 
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Bell, Clock, Receipt, FileText, MessageSquare, FolderOpen, KanbanSquare, Sparkles } from "lucide-react";
+import { Bell, Clock, Receipt, FileText, MessageSquare, FolderOpen, KanbanSquare, CalendarClock } from "lucide-react";
 import { PageHeader } from "@/components/common/page-header";
 import { useT } from "@/lib/i18n/store";
 
@@ -28,7 +28,7 @@ export function WorkspaceView() {
         <CardContent className="p-8 space-y-6">
           <div className="flex items-start gap-4">
             <div className="size-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
-              <Sparkles className="size-6" />
+              <CalendarClock className="size-6" />
             </div>
             <div>
               <div className="flex items-center gap-2">

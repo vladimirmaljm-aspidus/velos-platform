@@ -16,6 +16,8 @@ import {
   Fingerprint,
   Clock,
   Building2,
+  Smartphone,
+  Laptop,
 } from "lucide-react";
 import type { DocumentVerification } from "@/lib/supabase/types";
 import { useT } from "@/lib/i18n/store";
@@ -185,9 +187,9 @@ export function VerifyClient({ exists, documentType, code, cipheredRecipient = "
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-left space-y-2">
               <p className="text-xs font-semibold text-slate-700">{t("misc-verify-how-to-enable")}</p>
               <div className="text-xs text-slate-500 space-y-1.5">
-                <p>📱 <strong>{t("misc-verify-ios-safari")}</strong></p>
-                <p>🤖 <strong>{t("misc-verify-android-chrome")}</strong></p>
-                <p>💻 <strong>{t("misc-verify-desktop")}</strong></p>
+                <p className="flex items-center gap-1.5"><Smartphone className="size-3.5 shrink-0" /> <strong>{t("misc-verify-ios-safari")}</strong></p>
+                <p className="flex items-center gap-1.5"><Smartphone className="size-3.5 shrink-0" /> <strong>{t("misc-verify-android-chrome")}</strong></p>
+                <p className="flex items-center gap-1.5"><Laptop className="size-3.5 shrink-0" /> <strong>{t("misc-verify-desktop")}</strong></p>
               </div>
             </div>
 

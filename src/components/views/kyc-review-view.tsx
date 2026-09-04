@@ -1055,7 +1055,6 @@ function ApprovedState({
     <div className="px-6 py-8">
       <div className="flex flex-col items-center text-center mb-6">
         <div className="relative mb-4">
-          <div className="absolute inset-0 bg-emerald-500/20 blur-2xl rounded-full animate-pulse" />
           <div className="relative size-16 rounded-full bg-emerald-600 text-white flex items-center justify-center shadow-soft-lg">
             <Check className="size-9" strokeWidth={3} />
           </div>

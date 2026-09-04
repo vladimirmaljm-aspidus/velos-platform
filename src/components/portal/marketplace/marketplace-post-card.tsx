@@ -6,6 +6,7 @@ import {
   Clock,
   FileText,
   Gavel,
+  Globe,
   MapPin,
   MessageSquare,
   Eye,
@@ -93,11 +94,10 @@ const TYPE_META: Record<
   },
 };
 
-/** Country flag emoji from ISO code; falls back to 🌐. */
-function flagEmoji(code: string | null | undefined): string {
-  if (!code) return "🌐";
-  const c = getCountry(code);
-  return c?.flag || "🌐";
+/** Country flag emoji from ISO code; falls back to a Globe lucide icon. */
+function flagNode(code: string | null | undefined) {
+  const flag = code ? getCountry(code)?.flag : undefined;
+  return flag ?? <Globe className="size-4" />;
 }
 
 export function MarketplacePostCard({
@@ -111,7 +111,7 @@ export function MarketplacePostCard({
   const meta = TYPE_META[post.post_type] ?? TYPE_META.sell;
   const TypeIcon = meta.icon;
   const country = post.delivery_country ? getCountry(post.delivery_country) : null;
-  const flag = flagEmoji(post.delivery_country);
+  const flag = flagNode(post.delivery_country);
 
   const isOnRequest =
     !post.price_visible || post.price_type === "on_request";

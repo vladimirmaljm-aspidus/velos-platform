@@ -1019,10 +1019,6 @@ function SidebarContent({
       {/* Partner card — premium feel. Collapsed mode shows avatar only. */}
       <div className={cn("border-b border-border/60 shrink-0", collapsed ? "px-2 py-3" : "px-3 py-4")}>
         <div className={cn("rounded-xl bg-card border border-border/60 shadow-soft relative overflow-hidden", collapsed ? "p-1.5 flex justify-center" : "p-3")}>
-          {/* Subtle accent for premium */}
-          {tier === "premium" && (
-            <div className="absolute top-0 right-0 h-12 w-12 bg-amber-500/10 blur-2xl rounded-full" />
-          )}
           {profileLoading ? (
             <div className="flex items-center gap-2">
               <Loader2 className="size-4 animate-spin text-muted-foreground" />

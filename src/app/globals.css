@@ -4,9 +4,19 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   VELOS — Corporate Trade Management Platform Design System
-   oklch color space · Copper/amber primary (Veles: god of earth & wealth),
-   warm neutral canvas · Light sidebar
+   VELOS — Trading-house design system
+   oklch color space · burnished copper primary (Veles: god of earth & trade),
+   warm paper canvas · ink text · hairline rules · serif display (Fraunces)
+
+   Redesign principles (2026, "human hand" pass):
+   1. Paper & ink, not glass & glow — flat surfaces, hairline borders.
+   2. Copper as letterpress ink — solid fills, never gradients.
+   3. One grain, no mesh — a faint paper tooth (SVG noise) instead of
+      radial-gradient washes.
+   4. Legacy utility class names (glass, bg-mesh, text-gradient,
+      border-gradient, glow-emerald, card-premium…) are KEPT as API but
+      redefined flat — so ~90 call-sites across the app inherit the new
+      language without component rewrites.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /* Remap the built-in Tailwind "emerald"/"teal" scales to the platform's copper
@@ -15,29 +25,29 @@
    token; overriding the scale here keeps every one of those call sites in
    sync with the VELOS palette without a component-by-component rewrite. */
 @theme {
-  --color-emerald-50: oklch(0.975 0.008 55);
-  --color-emerald-100: oklch(0.945 0.018 55);
-  --color-emerald-200: oklch(0.895 0.032 55);
-  --color-emerald-300: oklch(0.80 0.058 55);
-  --color-emerald-400: oklch(0.68 0.09 55);
-  --color-emerald-500: oklch(0.55 0.12 55);
-  --color-emerald-600: oklch(0.46 0.13 55);
-  --color-emerald-700: oklch(0.395 0.115 55);
-  --color-emerald-800: oklch(0.30 0.085 55);
-  --color-emerald-900: oklch(0.22 0.06 55);
-  --color-emerald-950: oklch(0.15 0.04 55);
+  --color-emerald-50: oklch(0.975 0.007 45);
+  --color-emerald-100: oklch(0.947 0.017 45);
+  --color-emerald-200: oklch(0.897 0.031 45);
+  --color-emerald-300: oklch(0.802 0.057 45);
+  --color-emerald-400: oklch(0.68 0.089 45);
+  --color-emerald-500: oklch(0.552 0.119 45);
+  --color-emerald-600: oklch(0.46 0.115 45);
+  --color-emerald-700: oklch(0.395 0.104 45);
+  --color-emerald-800: oklch(0.30 0.078 45);
+  --color-emerald-900: oklch(0.22 0.055 45);
+  --color-emerald-950: oklch(0.15 0.037 45);
 
-  --color-teal-50: oklch(0.975 0.008 55);
-  --color-teal-100: oklch(0.945 0.018 55);
-  --color-teal-200: oklch(0.895 0.032 55);
-  --color-teal-300: oklch(0.80 0.058 55);
-  --color-teal-400: oklch(0.68 0.09 55);
-  --color-teal-500: oklch(0.55 0.12 55);
-  --color-teal-600: oklch(0.46 0.13 55);
-  --color-teal-700: oklch(0.395 0.115 55);
-  --color-teal-800: oklch(0.30 0.085 55);
-  --color-teal-900: oklch(0.22 0.06 55);
-  --color-teal-950: oklch(0.15 0.04 55);
+  --color-teal-50: oklch(0.975 0.007 45);
+  --color-teal-100: oklch(0.947 0.017 45);
+  --color-teal-200: oklch(0.897 0.031 45);
+  --color-teal-300: oklch(0.802 0.057 45);
+  --color-teal-400: oklch(0.68 0.089 45);
+  --color-teal-500: oklch(0.552 0.119 45);
+  --color-teal-600: oklch(0.46 0.115 45);
+  --color-teal-700: oklch(0.395 0.104 45);
+  --color-teal-800: oklch(0.30 0.078 45);
+  --color-teal-900: oklch(0.22 0.055 45);
+  --color-teal-950: oklch(0.15 0.037 45);
 }
 
 @theme inline {
@@ -45,6 +55,7 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-inter);
   --font-mono: var(--font-jetbrains);
+  --font-display: var(--font-fraunces), Georgia, "Times New Roman", serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -95,147 +106,137 @@
   --animate-scale-in: scale-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-/* ─── Light Mode ────────────────────────────────────────────────────────── */
+/* ─── Light Mode — "paper" ────────────────────────────────────────────────── */
 :root {
-  --radius: 0.5rem;
+  /* Slightly tighter radii — stationery, not bubble gum. */
+  --radius: 0.375rem;
 
-  /* Canvas: warm-cool neutral with subtle blue undertone */
-  --background: oklch(0.988 0.001 250);
-  --foreground: oklch(0.141 0.005 255);
+  /* Canvas: warm cream paper */
+  --background: oklch(0.981 0.004 85);
+  --foreground: oklch(0.245 0.014 55);
 
-  /* Cards & Popovers: pristine white with faint warmth */
-  --card: oklch(0.998 0.0005 250);
-  --card-foreground: oklch(0.141 0.005 255);
-  --popover: oklch(0.998 0.0005 250);
-  --popover-foreground: oklch(0.141 0.005 255);
+  /* Cards & popovers: crisp white sheets on the paper canvas */
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.245 0.014 55);
+  --popover: oklch(0.998 0.002 85);
+  --popover-foreground: oklch(0.245 0.014 55);
 
-  /* Primary: deep copper — Veles, god of earth & wealth */
-  --primary: oklch(0.395 0.115 55);
-  --primary-foreground: oklch(0.98 0.01 80);
+  /* Primary: burnished copper — letterpress ink of the house */
+  --primary: oklch(0.46 0.115 45);
+  --primary-foreground: oklch(0.975 0.015 85);
 
-  /* Secondary: ultra-subtle cool gray */
-  --secondary: oklch(0.965 0.003 255);
-  --secondary-foreground: oklch(0.195 0.005 255);
+  /* Secondary: parchment */
+  --secondary: oklch(0.952 0.008 80);
+  --secondary-foreground: oklch(0.32 0.02 55);
 
-  /* Muted: soft neutral for backgrounds & labels */
-  --muted: oklch(0.968 0.002 255);
-  --muted-foreground: oklch(0.498 0.008 255);
+  /* Muted: warm neutral for backgrounds & labels */
+  --muted: oklch(0.952 0.007 80);
+  --muted-foreground: oklch(0.487 0.016 60);
 
-  /* Accent: copper tinted */
-  --accent: oklch(0.94 0.018 55);
-  --accent-foreground: oklch(0.28 0.07 55);
+  /* Accent: copper wash */
+  --accent: oklch(0.928 0.024 55);
+  --accent-foreground: oklch(0.30 0.05 45);
 
-  /* Semantic: Destructive */
-  --destructive: oklch(0.545 0.22 25);
+  /* Semantic: Destructive — oxblood */
+  --destructive: oklch(0.49 0.185 27);
 
-  /* Semantic: Success — muted, corporate green (not neon) */
-  --success: oklch(0.44 0.1 152);
-  --success-foreground: oklch(0.99 0.002 155);
+  /* Semantic: Success — sage, corporate */
+  --success: oklch(0.44 0.085 150);
+  --success-foreground: oklch(0.985 0.005 150);
 
-  /* Semantic: Warning */
-  --warning: oklch(0.665 0.135 65);
-  --warning-foreground: oklch(0.215 0.055 65);
+  /* Semantic: Warning — ochre */
+  --warning: oklch(0.64 0.125 68);
+  --warning-foreground: oklch(0.20 0.05 68);
 
-  /* Semantic: Info */
-  --info: oklch(0.53 0.105 235);
-  --info-foreground: oklch(0.99 0.002 235);
+  /* Semantic: Info — steel */
+  --info: oklch(0.50 0.08 235);
+  --info-foreground: oklch(0.985 0.005 235);
 
-  /* Muted brass accent — used sparingly for premium/enterprise emphasis */
-  --brand-gold: oklch(0.685 0.105 82);
-  --brand-gold-foreground: oklch(0.24 0.03 82);
+  /* Brass accent — used sparingly */
+  --brand-gold: oklch(0.665 0.10 85);
+  --brand-gold-foreground: oklch(0.24 0.03 85);
 
-  /* Borders & Input */
-  --border: oklch(0.912 0.004 55);
-  --input: oklch(0.93 0.004 55);
-  --ring: oklch(0.395 0.115 55);
+  /* Borders & Input — warm hairlines */
+  --border: oklch(0.898 0.009 70);
+  --input: oklch(0.916 0.009 70);
+  --ring: oklch(0.46 0.115 45);
 
-  /* Chart palette — cohesive with copper primary */
-  --chart-1: oklch(0.395 0.115 55);
-  --chart-2: oklch(0.685 0.105 82);
-  --chart-3: oklch(0.53 0.105 235);
-  --chart-4: oklch(0.44 0.1 152);
-  --chart-5: oklch(0.5 0.13 25);
+  /* Chart palette — earthy set */
+  --chart-1: oklch(0.46 0.115 45);
+  --chart-2: oklch(0.665 0.10 85);
+  --chart-3: oklch(0.50 0.08 235);
+  --chart-4: oklch(0.44 0.085 150);
+  --chart-5: oklch(0.49 0.185 27);
 
-  /* ─── Light Sidebar ────────────────────────────────────────────────── */
-  /* Off-white, copper-tinted — clean corporate nav, not a dark panel */
-  --sidebar: oklch(0.973 0.005 55);
-  --sidebar-foreground: oklch(0.32 0.025 55);
-  --sidebar-primary: oklch(0.395 0.115 55);
-  --sidebar-primary-foreground: oklch(0.98 0.01 80);
-  --sidebar-accent: oklch(0.926 0.016 55);
-  --sidebar-accent-foreground: oklch(0.28 0.07 55);
-  --sidebar-border: oklch(0.902 0.008 55);
-  --sidebar-ring: oklch(0.395 0.115 55);
+  /* ─── Light Sidebar — warm linen ──────────────────────────────────── */
+  --sidebar: oklch(0.966 0.007 75);
+  --sidebar-foreground: oklch(0.335 0.02 55);
+  --sidebar-primary: oklch(0.46 0.115 45);
+  --sidebar-primary-foreground: oklch(0.975 0.015 85);
+  --sidebar-accent: oklch(0.93 0.012 65);
+  --sidebar-accent-foreground: oklch(0.28 0.05 45);
+  --sidebar-border: oklch(0.898 0.009 70);
+  --sidebar-ring: oklch(0.46 0.115 45);
 }
 
-/* ─── Dark Mode ────────────────────────────────────────────────────────── */
+/* ─── Dark Mode — "espresso" ──────────────────────────────────────────────── */
 .dark {
-  /* Deep, rich darks — no pure black */
-  --background: oklch(0.125 0.005 255);
-  --foreground: oklch(0.948 0.003 255);
+  /* Deep warm umber — coffee, not navy */
+  --background: oklch(0.192 0.009 55);
+  --foreground: oklch(0.935 0.008 85);
 
-  /* Cards: slightly elevated from background */
-  --card: oklch(0.165 0.005 255);
-  --card-foreground: oklch(0.948 0.003 255);
-  --popover: oklch(0.165 0.005 255);
-  --popover-foreground: oklch(0.948 0.003 255);
+  --card: oklch(0.232 0.011 55);
+  --card-foreground: oklch(0.935 0.008 85);
+  --popover: oklch(0.232 0.011 55);
+  --popover-foreground: oklch(0.935 0.008 85);
 
-  /* Primary: bright copper for dark backgrounds */
-  --primary: oklch(0.68 0.14 58);
-  --primary-foreground: oklch(0.14 0.02 55);
+  /* Primary: bright copper for dark grounds */
+  --primary: oklch(0.71 0.125 50);
+  --primary-foreground: oklch(0.16 0.02 45);
 
-  /* Secondary: muted slate */
-  --secondary: oklch(0.215 0.005 255);
-  --secondary-foreground: oklch(0.948 0.003 255);
+  --secondary: oklch(0.26 0.01 55);
+  --secondary-foreground: oklch(0.935 0.008 85);
 
-  /* Muted */
-  --muted: oklch(0.195 0.005 255);
-  --muted-foreground: oklch(0.635 0.008 255);
+  --muted: oklch(0.246 0.01 55);
+  --muted-foreground: oklch(0.632 0.014 70);
 
-  /* Accent */
-  --accent: oklch(0.255 0.04 55);
-  --accent-foreground: oklch(0.9 0.03 55);
+  --accent: oklch(0.28 0.03 50);
+  --accent-foreground: oklch(0.9 0.04 55);
 
-  /* Semantic: Destructive */
-  --destructive: oklch(0.675 0.195 22);
+  --destructive: oklch(0.66 0.19 25);
 
-  /* Semantic: Success */
-  --success: oklch(0.62 0.11 152);
-  --success-foreground: oklch(0.125 0.005 255);
+  --success: oklch(0.62 0.11 150);
+  --success-foreground: oklch(0.192 0.009 55);
 
-  /* Semantic: Warning */
-  --warning: oklch(0.775 0.145 65);
-  --warning-foreground: oklch(0.125 0.005 255);
+  --warning: oklch(0.75 0.14 68);
+  --warning-foreground: oklch(0.192 0.009 55);
 
-  /* Semantic: Info */
-  --info: oklch(0.645 0.105 235);
-  --info-foreground: oklch(0.125 0.005 255);
+  --info: oklch(0.66 0.10 235);
+  --info-foreground: oklch(0.192 0.009 55);
 
-  /* Muted brass accent */
-  --brand-gold: oklch(0.72 0.1 82);
-  --brand-gold-foreground: oklch(0.2 0.03 82);
+  --brand-gold: oklch(0.72 0.10 85);
+  --brand-gold-foreground: oklch(0.2 0.03 85);
 
-  /* Borders & Input */
-  --border: oklch(1 0 0 / 6%);
-  --input: oklch(1 0 0 / 9%);
-  --ring: oklch(0.68 0.14 58);
+  --border: oklch(1 0 0 / 8%);
+  --input: oklch(1 0 0 / 11%);
+  --ring: oklch(0.71 0.125 50);
 
   /* Chart palette — brighter for dark mode */
-  --chart-1: oklch(0.68 0.14 58);
-  --chart-2: oklch(0.72 0.1 82);
-  --chart-3: oklch(0.645 0.105 235);
-  --chart-4: oklch(0.62 0.11 152);
-  --chart-5: oklch(0.63 0.14 25);
+  --chart-1: oklch(0.71 0.125 50);
+  --chart-2: oklch(0.72 0.10 85);
+  --chart-3: oklch(0.66 0.10 235);
+  --chart-4: oklch(0.62 0.11 150);
+  --chart-5: oklch(0.63 0.17 25);
 
-  /* ─── Dark Sidebar (deeper) ──────────────────────────────────────── */
-  --sidebar: oklch(0.108 0.01 55);
-  --sidebar-foreground: oklch(0.875 0.008 55);
-  --sidebar-primary: oklch(0.68 0.14 58);
-  --sidebar-primary-foreground: oklch(0.14 0.02 55);
-  --sidebar-accent: oklch(0.195 0.014 55);
-  --sidebar-accent-foreground: oklch(0.9 0.03 55);
-  --sidebar-border: oklch(1 0 0 / 5%);
-  --sidebar-ring: oklch(0.68 0.14 58);
+  /* ─── Dark Sidebar — deeper espresso ──────────────────────────────── */
+  --sidebar: oklch(0.165 0.01 50);
+  --sidebar-foreground: oklch(0.875 0.01 75);
+  --sidebar-primary: oklch(0.71 0.125 50);
+  --sidebar-primary-foreground: oklch(0.16 0.02 45);
+  --sidebar-accent: oklch(0.24 0.016 50);
+  --sidebar-accent-foreground: oklch(0.9 0.04 55);
+  --sidebar-border: oklch(1 0 0 / 6%);
+  --sidebar-ring: oklch(0.71 0.125 50);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -248,7 +249,7 @@
 
   html {
     scroll-behavior: smooth;
-    -webkit-tap-highlight-color: oklch(0.395 0.115 55 / 0.08);
+    -webkit-tap-highlight-color: oklch(0.46 0.115 45 / 0.08);
   }
 
   body {
@@ -264,7 +265,7 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* Typography — tight, professional headings */
+  /* Typography — tight headings; serif display opted-in via font-display */
   h1, h2, h3, h4, h5, h6 {
     letter-spacing: -0.025em;
     font-weight: 600;
@@ -276,14 +277,14 @@
     @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
   }
 
-  /* Copper-tinted selection — matches VELOS brand primary */
+  /* Copper selection — matches the house ink */
   ::selection {
-    background: oklch(0.395 0.115 55 / 0.18);
-    color: oklch(0.28 0.07 55);
+    background: oklch(0.46 0.115 45 / 0.16);
+    color: oklch(0.28 0.06 45);
   }
   .dark ::selection {
-    background: oklch(0.68 0.14 58 / 0.25);
-    color: oklch(0.92 0.02 55);
+    background: oklch(0.71 0.125 50 / 0.28);
+    color: oklch(0.95 0.02 85);
   }
 
   /* Tabular numbers for data-heavy contexts */
@@ -328,26 +329,6 @@
   100% { background-position: -200% 0; }
 }
 
-@keyframes float {
-  0%, 100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-6px);
-  }
-}
-
-@keyframes pulse-glow {
-  0%, 100% {
-    box-shadow: 0 0 0 3px oklch(0.395 0.115 55 / 0.1),
-                0 0 12px oklch(0.395 0.115 55 / 0.08);
-  }
-  50% {
-    box-shadow: 0 0 0 3px oklch(0.395 0.115 55 / 0.15),
-                0 0 24px oklch(0.395 0.115 55 / 0.12);
-  }
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════
    UTILITIES LAYER
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -356,16 +337,16 @@
   /* ─── Custom Scrollbar ────────────────────────────────────────────────── */
   .custom-scroll {
     scrollbar-width: thin;
-    scrollbar-color: oklch(0.82 0.003 255 / 0.6) transparent;
+    scrollbar-color: oklch(0.85 0.01 70 / 0.6) transparent;
   }
   .custom-scroll::-webkit-scrollbar { width: 5px; height: 5px; }
   .custom-scroll::-webkit-scrollbar-track { background: transparent; }
   .custom-scroll::-webkit-scrollbar-thumb {
-    background-color: oklch(0.82 0.003 255 / 0.6);
+    background-color: oklch(0.85 0.01 70 / 0.6);
     border-radius: 999px;
   }
   .custom-scroll::-webkit-scrollbar-thumb:hover {
-    background-color: oklch(0.72 0.005 255 / 0.8);
+    background-color: oklch(0.74 0.02 65 / 0.8);
   }
   .dark .custom-scroll {
     scrollbar-color: oklch(1 0 0 / 8%) transparent;
@@ -377,33 +358,55 @@
     background-color: oklch(1 0 0 / 14%);
   }
 
-  /* ─── Premium Elevation System ────────────────────────────────────────── */
+  /* ─── Stationery details ──────────────────────────────────────────────── */
+
+  /* Small-caps letterspaced label — form labels, colophons, section marks. */
+  .label-caps {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+  }
+
+  /* Double hairline — the classic letterhead rule. */
+  .rule-double {
+    border-top: 3px double color-mix(in oklch, var(--primary) 55%, var(--border));
+  }
+
+  /* Paper tooth — a faint SVG-noise grain (no gradients, no glow). */
+  .paper-grain {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  }
+  .dark .paper-grain {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.045'/%3E%3C/svg%3E");
+  }
+
+  /* ─── Elevation — real, warm, quiet shadows ───────────────────────────── */
   .shadow-soft {
     box-shadow:
-      0 1px 2px 0 oklch(0.16 0.005 255 / 0.04),
-      0 1px 3px 0 oklch(0.16 0.005 255 / 0.04);
+      0 1px 2px 0 oklch(0.24 0.02 55 / 0.04),
+      0 1px 3px 0 oklch(0.24 0.02 55 / 0.03);
   }
   .shadow-soft-md {
     box-shadow:
-      0 2px 4px -1px oklch(0.16 0.005 255 / 0.05),
-      0 4px 8px -2px oklch(0.16 0.005 255 / 0.04);
+      0 2px 4px -1px oklch(0.24 0.02 55 / 0.05),
+      0 4px 8px -2px oklch(0.24 0.02 55 / 0.04);
   }
   .shadow-soft-lg {
     box-shadow:
-      0 4px 6px -2px oklch(0.16 0.005 255 / 0.05),
-      0 10px 20px -4px oklch(0.16 0.005 255 / 0.06);
+      0 4px 6px -2px oklch(0.24 0.02 55 / 0.05),
+      0 10px 20px -4px oklch(0.24 0.02 55 / 0.06);
   }
   .shadow-soft-xl {
     box-shadow:
-      0 8px 16px -4px oklch(0.16 0.005 255 / 0.06),
-      0 20px 40px -8px oklch(0.16 0.005 255 / 0.08);
+      0 8px 16px -4px oklch(0.24 0.02 55 / 0.06),
+      0 20px 40px -8px oklch(0.24 0.02 55 / 0.07);
   }
   .shadow-soft-2xl {
     box-shadow:
-      0 12px 24px -6px oklch(0.16 0.005 255 / 0.08),
-      0 32px 64px -12px oklch(0.16 0.005 255 / 0.1);
+      0 12px 24px -6px oklch(0.24 0.02 55 / 0.08),
+      0 32px 64px -12px oklch(0.24 0.02 55 / 0.09);
   }
-  /* Dark mode: shadows use warmer, more subtle dark */
   .dark .shadow-soft {
     box-shadow:
       0 1px 2px 0 oklch(0 0 0 / 0.2),
@@ -430,182 +433,71 @@
       0 32px 64px -12px oklch(0 0 0 / 0.3);
   }
 
-  /* ─── Glassmorphism ───────────────────────────────────────────────────── */
+  /* ─── "Glass" — redefined as OPAQUE paper (class name kept for the ~40
+     call-sites; blur and translucency removed — flat stationery) ───────── */
   .glass {
-    background: oklch(0.998 0.0005 250 / 0.72);
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    background: var(--card);
   }
-  .dark .glass {
-    background: oklch(0.165 0.005 255 / 0.72);
-  }
-
   .glass-strong {
-    background: oklch(0.998 0.0005 250 / 0.85);
-    backdrop-filter: blur(28px) saturate(200%);
-    -webkit-backdrop-filter: blur(28px) saturate(200%);
+    background: var(--card);
   }
-  .dark .glass-strong {
-    background: oklch(0.165 0.005 255 / 0.85);
-  }
-
   .glass-sidebar {
-    background: color-mix(in oklch, var(--sidebar) 92%, transparent);
-    backdrop-filter: blur(24px) saturate(160%);
-    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    background: var(--sidebar);
   }
 
-  /* ─── Premium Card ────────────────────────────────────────────────────── */
+  /* ─── Card — hairline sheet; hover warms the border (no lift, no ring) ── */
   .card-premium {
     background: var(--card);
-    border: 1px solid oklch(0.922 0.002 255 / 0.7);
+    border: 1px solid var(--border);
     border-radius: var(--radius-xl);
-    box-shadow:
-      0 1px 2px 0 oklch(0.16 0.005 255 / 0.04),
-      0 1px 3px 0 oklch(0.16 0.005 255 / 0.04);
-    transition:
-      box-shadow 250ms cubic-bezier(0.4, 0, 0.2, 1),
-      transform 250ms cubic-bezier(0.4, 0, 0.2, 1),
-      border-color 250ms cubic-bezier(0.4, 0, 0.2, 1);
+    transition: border-color 200ms cubic-bezier(0.4, 0, 0.2, 1);
   }
   .card-premium:hover {
-    transform: translateY(-1px);
-    box-shadow:
-      0 2px 4px -1px oklch(0.16 0.005 255 / 0.05),
-      0 8px 16px -4px oklch(0.16 0.005 255 / 0.06),
-      0 0 0 1px oklch(0.395 0.115 55 / 0.06);
-    border-color: oklch(0.395 0.115 55 / 0.15);
+    border-color: color-mix(in oklch, var(--primary) 30%, var(--border));
   }
   .dark .card-premium {
-    border-color: oklch(1 0 0 / 7%);
+    border-color: oklch(1 0 0 / 8%);
   }
   .dark .card-premium:hover {
-    transform: translateY(-1px);
-    box-shadow:
-      0 2px 4px -1px oklch(0 0 0 / 0.25),
-      0 8px 16px -4px oklch(0 0 0 / 0.2),
-      0 0 0 1px oklch(0.68 0.14 58 / 0.08);
-    border-color: oklch(0.68 0.14 58 / 0.15);
+    border-color: color-mix(in oklch, var(--primary) 35%, var(--border));
   }
 
-  /* ─── Gradient Utilities ──────────────────────────────────────────────── */
+  /* ─── "Mesh" backgrounds — redefined as flat paper with a tooth ───────── */
   .bg-mesh {
-    background-image:
-      radial-gradient(at 15% 20%, oklch(0.395 0.115 55 / 0.045) 0px, transparent 50%),
-      radial-gradient(at 85% 10%, oklch(0.515 0.105 195 / 0.035) 0px, transparent 50%),
-      radial-gradient(at 50% 90%, oklch(0.685 0.105 82 / 0.025) 0px, transparent 50%);
+    background-color: var(--background);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
   }
-  .dark .bg-mesh {
-    background-image:
-      radial-gradient(at 15% 20%, oklch(0.68 0.14 58 / 0.04) 0px, transparent 50%),
-      radial-gradient(at 85% 10%, oklch(0.625 0.115 195 / 0.03) 0px, transparent 50%),
-      radial-gradient(at 50% 90%, oklch(0.775 0.145 65 / 0.02) 0px, transparent 50%);
-  }
-
   .bg-mesh-portal {
-    background-image:
-      radial-gradient(at 20% 30%, oklch(0.395 0.115 55 / 0.055) 0px, transparent 50%),
-      radial-gradient(at 80% 20%, oklch(0.685 0.105 82 / 0.035) 0px, transparent 50%),
-      radial-gradient(at 40% 80%, oklch(0.515 0.105 195 / 0.035) 0px, transparent 50%);
+    background-color: var(--background);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
   }
+  .dark .bg-mesh,
   .dark .bg-mesh-portal {
-    background-image:
-      radial-gradient(at 20% 30%, oklch(0.68 0.14 58 / 0.05) 0px, transparent 50%),
-      radial-gradient(at 80% 20%, oklch(0.72 0.1 82 / 0.03) 0px, transparent 50%),
-      radial-gradient(at 40% 80%, oklch(0.625 0.115 195 / 0.03) 0px, transparent 50%);
+    background-color: var(--background);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.045'/%3E%3C/svg%3E");
   }
 
+  /* ─── "Gradient" fills — redefined as SOLID copper ink ────────────────── */
   .bg-gradient-emerald {
-    background-image: linear-gradient(
-      135deg,
-      oklch(0.68 0.14 58) 0%,
-      oklch(0.46 0.13 55) 50%,
-      oklch(0.30 0.085 55) 100%
-    );
+    background: var(--primary);
   }
-  .dark .bg-gradient-emerald {
-    background-image: linear-gradient(
-      135deg,
-      oklch(0.72 0.14 58) 0%,
-      oklch(0.62 0.13 55) 50%,
-      oklch(0.52 0.115 55) 100%
-    );
-  }
-
   .bg-gradient-subtle {
-    background-image: linear-gradient(
-      135deg,
-      var(--card) 0%,
-      var(--muted) 100%
-    );
+    background: var(--secondary);
   }
 
+  /* ─── "Gradient text" — redefined as solid ink (copper / foreground) ──── */
   .text-gradient-emerald {
-    background: linear-gradient(
-      135deg,
-      oklch(0.46 0.13 55) 0%,
-      oklch(0.30 0.085 55) 100%
-    );
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
+    color: var(--primary);
   }
-  .dark .text-gradient-emerald {
-    background: linear-gradient(
-      135deg,
-      oklch(0.72 0.14 58) 0%,
-      oklch(0.55 0.13 55) 100%
-    );
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-  }
-
   .text-gradient {
-    background: linear-gradient(
-      135deg,
-      var(--foreground) 0%,
-      var(--muted-foreground) 100%
-    );
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
+    color: var(--foreground);
   }
 
-  /* ─── Gradient Border ─────────────────────────────────────────────────── */
+  /* ─── "Gradient border" — redefined as a plain hairline sheet ─────────── */
   .border-gradient {
-    position: relative;
     background: var(--card);
+    border: 1px solid var(--border);
     border-radius: var(--radius-xl);
-  }
-  .border-gradient::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    padding: 1px;
-    background: linear-gradient(
-      135deg,
-      oklch(0.395 0.115 55 / 0.3),
-      oklch(0.685 0.105 82 / 0.2),
-      oklch(0.515 0.105 195 / 0.1),
-      transparent
-    );
-    -webkit-mask:
-      linear-gradient(#fff 0 0) content-box,
-      linear-gradient(#fff 0 0);
-    -webkit-mask-composite: xor;
-    mask-composite: exclude;
-    pointer-events: none;
-  }
-  .dark .border-gradient::before {
-    background: linear-gradient(
-      135deg,
-      oklch(0.68 0.14 58 / 0.25),
-      oklch(0.72 0.1 82 / 0.15),
-      oklch(0.625 0.115 195 / 0.08),
-      transparent
-    );
   }
 
   /* ─── Animation Utilities ─────────────────────────────────────────────── */
@@ -627,23 +519,16 @@
     animation: shimmer 1.8s ease-in-out infinite;
   }
 
+  /* ─── "Glow" — redefined as a quiet inset ring (active-state marker) ──── */
   .glow-emerald {
-    box-shadow:
-      0 0 0 3px oklch(0.395 0.115 55 / 0.1),
-      0 0 16px oklch(0.395 0.115 55 / 0.12);
+    box-shadow: inset 0 0 0 1px oklch(0.46 0.115 45 / 0.2);
   }
   .dark .glow-emerald {
-    box-shadow:
-      0 0 0 3px oklch(0.68 0.14 58 / 0.1),
-      0 0 16px oklch(0.68 0.14 58 / 0.1);
+    box-shadow: inset 0 0 0 1px oklch(0.71 0.125 50 / 0.22);
   }
 
   .step-connector {
-    background: linear-gradient(
-      90deg,
-      var(--primary) 0%,
-      var(--border) 100%
-    );
+    background: color-mix(in oklch, var(--primary) 30%, var(--border));
   }
 
   .animate-fade-in {
@@ -668,68 +553,52 @@
       box-shadow 150ms cubic-bezier(0.4, 0, 0.2, 1);
   }
   .input-modern:hover {
-    border-color: oklch(0.82 0.003 255 / 0.6);
+    border-color: oklch(0.82 0.012 65 / 0.7);
   }
   .dark .input-modern:hover {
     border-color: oklch(1 0 0 / 12%);
   }
   .input-modern:focus-within {
     border-color: var(--primary);
-    box-shadow: 0 0 0 3px oklch(0.395 0.115 55 / 0.1);
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 12%, transparent);
   }
   .dark .input-modern:focus-within {
-    box-shadow: 0 0 0 3px oklch(0.68 0.14 58 / 0.12);
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 15%, transparent);
   }
 
   /* ─── Inner Border ────────────────────────────────────────────────────── */
   .inner-border {
-    box-shadow: inset 0 0 0 1px oklch(0.922 0.002 255);
+    box-shadow: inset 0 0 0 1px oklch(0.92 0.005 70);
   }
   .dark .inner-border {
     box-shadow: inset 0 0 0 1px oklch(1 0 0 / 6%);
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   VERIFY PAGE (public document verification) — flat espresso paper,
+   no animated gradients. Class names kept; effects flattened.
+   ═══════════════════════════════════════════════════════════════════════════ */
 .verify-bg {
-  background: #0a0e1a;
+  background: oklch(0.21 0.022 45);
   position: relative;
   overflow: hidden;
 }
 .verify-bg::before {
   content: "";
   position: absolute;
-  top: -50%; left: -50%; right: -50%; bottom: -50%;
-  width: 200%; height: 200%;
-  background:
-    radial-gradient(circle at 20% 30%, rgba(13, 148, 136, 0.12) 0%, transparent 40%),
-    radial-gradient(circle at 80% 70%, rgba(59, 130, 246, 0.10) 0%, transparent 40%),
-    radial-gradient(circle at 50% 50%, rgba(139, 92, 246, 0.06) 0%, transparent 50%);
-  animation: verify-bg-shift 20s ease-in-out infinite alternate;
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
-}
-.verify-bg::after {
-  content: "";
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  /* No backdrop-filter here — Safari iOS bugs out when backdrop-filter
-     is on a pseudo-element of an overflow:hidden parent. The blur
-     effect is achieved by the ::before gradients being semi-transparent. */
-}
-@keyframes verify-bg-shift {
-  0% { transform: translate(0, 0) rotate(0deg); }
-  100% { transform: translate(5%, -3%) rotate(2deg); }
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+  pointer-events: none;
 }
 .verify-card {
   position: relative;
   z-index: 10;
-  background: rgba(255, 255, 255, 0.98);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 24px;
-  box-shadow: 0 25px 80px -20px rgba(0, 0, 0, 0.6);
+  background: oklch(0.982 0.004 85);
+  border: 1px solid oklch(0.898 0.009 70);
+  border-radius: 12px;
+  box-shadow: 0 16px 40px -16px oklch(0.1 0.02 45 / 0.5);
   overflow: hidden;
-  /* No backdrop-filter — Safari iOS has issues with it inside
-     overflow:hidden + z-index stacking. Solid background works
-     cross-platform without visual regression. */
 }
 .verify-glow {
   position: absolute;
@@ -737,12 +606,12 @@
   left: -50%;
   width: 200%;
   height: 200%;
-  background: radial-gradient(circle at center, rgba(13, 148, 136, 0.06) 0%, transparent 60%);
+  background: transparent;
   pointer-events: none;
   z-index: 0;
 }
 .verify-glow-red {
-  background: radial-gradient(circle at center, rgba(239, 68, 68, 0.08) 0%, transparent 60%);
+  background: transparent;
 }
 .verify-brand {
   display: flex;
@@ -754,13 +623,13 @@
   align-items: center;
   gap: 8px;
   padding: 10px 14px;
-  background: rgba(241, 245, 249, 0.5);
-  border: 1px solid rgba(226, 232, 240, 0.6);
-  border-radius: 10px;
+  background: oklch(0.952 0.008 80);
+  border: 1px solid oklch(0.898 0.009 70);
+  border-radius: 8px;
   transition: background 0.15s;
 }
 .verify-detail-row:hover {
-  background: rgba(241, 245, 249, 0.8);
+  background: oklch(0.93 0.012 75);
 }
 .verify-detail-icon {
   width: 24px;
@@ -769,19 +638,19 @@
   align-items: center;
   justify-content: center;
   border-radius: 6px;
-  background: rgba(15, 23, 42, 0.06);
-  color: #64748b;
+  background: oklch(0.30 0.02 55 / 0.06);
+  color: oklch(0.487 0.016 60);
   flex-shrink: 0;
 }
 .verify-detail-label {
   font-size: 12px;
-  color: #64748b;
+  color: oklch(0.487 0.016 60);
   flex: 1;
 }
 .verify-detail-value {
   font-size: 13px;
   font-weight: 500;
-  color: #1e293b;
+  color: oklch(0.245 0.014 55);
   text-align: right;
 }
 @keyframes verify-ping-slow {
@@ -844,8 +713,8 @@
 .dark .swagger-ui-wrap .swagger-ui .info *,
 .dark .swagger-ui-wrap .swagger-ui .opblock .opblock-summary,
 .dark .swagger-ui-wrap .swagger-ui .opblock .opblock-summary *,
-.dark .swagger-ui-wrap .swagger-ui .opblock-description,
-.dark .swagger-ui-wrap .swagger-ui .opblock-description *,
+.dark .swagger-ui-wrap .swagger-ui .opblock .opblock-description,
+.dark .swagger-ui-wrap .swagger-ui .opblock .opblock-description *,
 .dark .swagger-ui-wrap .swagger-ui .parameters *,
 .dark .swagger-ui-wrap .swagger-ui .responses *,
 .dark .swagger-ui-wrap .swagger-ui .model-box *,

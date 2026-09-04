@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { Sparkles, Zap, Crown, Star, Check, X, TrendingUp, AlertTriangle, Clock, CheckCircle2, XCircle } from "lucide-react";
+import { Hourglass, Zap, Crown, Star, Check, X, TrendingUp, AlertTriangle, Clock, CheckCircle2, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
 import { useApiUrl, useTenantKey } from "@/lib/hooks/use-api-url";
@@ -25,7 +25,7 @@ interface Plan {
   custom_branding: boolean; api_access: boolean; priority_support: boolean; white_label: boolean;
 }
 
-const PLAN_ICONS: Record<string, React.ComponentType<{ className?: string }>> = { trial: Sparkles, starter: Zap, business: Crown, enterprise: Star };
+const PLAN_ICONS: Record<string, React.ComponentType<{ className?: string }>> = { trial: Hourglass, starter: Zap, business: Crown, enterprise: Star };
 
 interface TenantSubscription {
   id: string; name: string; plan: string; status: string;
@@ -41,7 +41,7 @@ function StatusBadge({ level, isExpired, isTrial }: { level: string; isExpired: 
   if (isExpired) return <Badge className="bg-destructive/15 text-destructive border-destructive/30"><XCircle className="size-3 mr-1" />{t("admin-plans-status-expired")}</Badge>;
   if (level === "critical") return <Badge className="bg-red-500/15 text-red-600 border-red-500/30"><AlertTriangle className="size-3 mr-1" />{t("admin-plans-status-critical")}</Badge>;
   if (level === "warning") return <Badge className="bg-amber-500/15 text-amber-600 border-amber-500/30"><Clock className="size-3 mr-1" />{t("admin-plans-status-warning")}</Badge>;
-  if (isTrial) return <Badge className="bg-blue-500/15 text-blue-600 border-blue-500/30"><Sparkles className="size-3 mr-1" />{t("admin-plans-status-trial")}</Badge>;
+  if (isTrial) return <Badge className="bg-blue-500/15 text-blue-600 border-blue-500/30"><Hourglass className="size-3 mr-1" />{t("admin-plans-status-trial")}</Badge>;
   return <Badge className="bg-emerald-500/15 text-emerald-600 border-emerald-500/30"><CheckCircle2 className="size-3 mr-1" />{t("admin-active-badge")}</Badge>;
 }
 

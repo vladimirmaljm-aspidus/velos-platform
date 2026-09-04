@@ -217,8 +217,6 @@ function ProfileForm({ partner, portalAccess }: { partner: Partner; portalAccess
     <div className="space-y-5">
       {/* Identity card — premium with avatar + tier badge */}
       <div className="card-premium p-6 relative overflow-hidden">
-        {/* Decorative accent */}
-        <div className="absolute top-0 right-0 h-24 w-24 bg-primary/[0.06] blur-3xl rounded-full" />
         <div className="relative">
           <h3 className="text-base font-semibold flex items-center gap-2 mb-4">
             <User className="size-4 text-primary" /> {t("portal-profile-account-overview")}

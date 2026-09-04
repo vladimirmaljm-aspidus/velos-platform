@@ -19,18 +19,12 @@ import {
 } from "@/components/ui/dialog";
 import {
   Loader2,
-  Lock,
   Mail,
   ArrowRight,
-  FileText,
-  Download,
-  BookOpen,
-  Receipt,
   KeyRound,
   ShieldCheck,
   Eye,
   EyeOff,
-  Store,
   Info,
   Clock,
 } from "lucide-react";
@@ -39,6 +33,7 @@ import { useAppStore } from "@/lib/store/app-store";
 import { cn } from "@/lib/utils";
 import { useT, useI18nStore } from "@/lib/i18n/store";
 import { useIsHydrated } from "@/hooks/use-is-hydrated";
+import { GlobeMark } from "@/components/common/globe-mark";
 
 const FIRM_NAME = "VELOS";
 
@@ -504,41 +499,37 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
     }
   }
 
+  // The letterhead ledger — what the client portal carries, numbered rows
+  // with hairline rules (no icon tiles).
+  const features = [
+    { title: t("portal-login-feature-offers-title"), desc: t("portal-login-feature-offers-desc") },
+    { title: t("portal-login-feature-docs-title"), desc: t("portal-login-feature-docs-desc") },
+    { title: t("portal-login-feature-catalog-title"), desc: t("portal-login-feature-catalog-desc") },
+    { title: t("portal-login-feature-invoices-title"), desc: t("portal-login-feature-invoices-desc") },
+  ];
+
   return (
-    <div className="min-h-screen flex bg-background">
-      {/* Left — login form with mesh background */}
-      <div className="flex-1 flex flex-col items-center justify-center p-6 lg:p-10 bg-mesh-portal relative">
-        {/* VELOS copper gradient overlay — layers the brand colour under the
-            existing dotted mesh so the login screen reads as VELOS, not as a
-            generic white card. The overlay is opaque enough to feel branded
-            but transparent enough that the underlying bg-mesh-portal texture
-            still shows through. */}
-        <div
-          aria-hidden
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            background:
-              "radial-gradient(800px 400px at 0% 0%, oklch(0.395 0.115 55 / 0.06), transparent 60%)," +
-              "radial-gradient(700px 500px at 100% 100%, oklch(0.685 0.105 82 / 0.04), transparent 60%)",
-          }}
-        />
-        <div className="w-full max-w-md relative z-10">
+    <div className="flex min-h-screen bg-background">
+      {/* Left — the sign-in sheet (paper with a faint tooth) */}
+      <div className="relative flex flex-1 flex-col items-center justify-center bg-mesh-portal p-6 lg:p-10">
+        <div className="relative z-10 w-full max-w-md">
           {/* Brand — VELOS client portal mark */}
-          <div className="flex items-center gap-3 mb-10">
-            <div className="size-12 rounded-xl overflow-hidden shadow-soft-md ring-1 ring-border">
-              <Image src="/logo.svg" alt="VELOS" width={48} height={48} priority />
+          <div className="mb-10 flex items-center gap-3">
+            <div className="size-11 shrink-0 overflow-hidden rounded-md ring-1 ring-border">
+              <Image src="/logo.svg" alt="VELOS" width={44} height={44} priority />
             </div>
             <div>
-              <h1 className="text-xl font-semibold tracking-tight">{t("portal-brand-title")}</h1>
-              <p className="text-sm text-muted-foreground">{FIRM_NAME}</p>
+              <h1 className="font-display text-xl font-medium leading-none tracking-tight">{FIRM_NAME}</h1>
+              <p className="label-caps mt-1.5 text-muted-foreground">{t("portal-brand-title")}</p>
             </div>
           </div>
 
-          {/* Card with animated gradient border */}
-          <div className="border-gradient shadow-soft-lg">
-            <div className="bg-card rounded-[calc(var(--radius-xl)-1px)] p-7 sm:p-8">
-              <div className="space-y-1.5 mb-6">
-                <h2 className="text-2xl font-semibold tracking-tight">
+          {/* The sheet — form directly on paper; double rule as the mark */}
+          <div>
+            <div>
+              <div className="rule-double w-9" aria-hidden />
+              <div className="mb-6 mt-6 space-y-1.5">
+                <h2 className="font-display text-[1.8rem] font-medium leading-tight tracking-[-0.01em]">
                   {t("portal-login-welcome")}
                 </h2>
                 <p className="text-sm text-muted-foreground">
@@ -612,34 +603,30 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
 
               <form onSubmit={submit} className="space-y-5">
                 <div className="space-y-2">
-                  <Label htmlFor="email" className="text-sm font-medium">
+                  <Label htmlFor="email" className="label-caps text-foreground/60">
                     {t("portal-login-email")}
                   </Label>
-                  <div className="relative group">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground transition-colors group-focus-within:text-primary" />
-                    <Input
-                      id="email"
-                      type="email"
-                      autoComplete="email"
-                      value={email}
-                      onChange={(e) => {
-                        setEmail(e.target.value);
-                        if (loginError) setLoginError(null);
-                      }}
-                      className="pl-10 h-11 smooth focus-visible:ring-primary/40 focus-visible:border-primary/40"
-                      placeholder="you@company.com"
-                      disabled={loading}
-                      aria-required="true"
-                    />
-                  </div>
+                  <Input
+                    id="email"
+                    type="email"
+                    autoComplete="email"
+                    value={email}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (loginError) setLoginError(null);
+                    }}
+                    className="h-11"
+                    placeholder="you@company.com"
+                    disabled={loading}
+                    aria-required="true"
+                  />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="password" className="text-sm font-medium">
+                  <Label htmlFor="password" className="label-caps text-foreground/60">
                     {t("portal-login-password")}
                   </Label>
-                  <div className="relative group">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground transition-colors group-focus-within:text-primary" />
+                  <div className="relative">
                     <Input
                       id="password"
                       type={showPassword ? "text" : "password"}
@@ -649,7 +636,7 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
                         setPassword(e.target.value);
                         if (loginError) setLoginError(null);
                       }}
-                      className="pl-10 pr-10 h-11 smooth focus-visible:ring-primary/40 focus-visible:border-primary/40"
+                      className="h-11 pr-10"
                       placeholder="••••••••"
                       disabled={loading}
                       aria-required="true"
@@ -658,7 +645,7 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
                       type="button"
                       onClick={() => setShowPassword((v) => !v)}
                       tabIndex={-1}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground smooth"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/60 hover:text-foreground transition-colors"
                       aria-label={showPassword ? t("portal-login-hide-password") : t("portal-login-show-password")}
                     >
                       {showPassword ? (
@@ -672,7 +659,7 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
 
                 <Button
                   type="submit"
-                  className="w-full h-11 text-sm font-medium shadow-soft hover:shadow-soft-md smooth"
+                  className="h-11 w-full text-sm font-medium"
                   // FIX-AUDIT3 #8 — keep the button disabled while the
                   // 429 / 423 lockout countdown is running so a frustrated
                   // user can't keep re-submitting (which would just
@@ -928,11 +915,8 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
               the primary sign-in CTA but is still discoverable. */}
           <Link
             href="/portal/marketplace"
-            className="mt-6 group flex items-center gap-3 rounded-lg border border-border/70 bg-card/60 px-4 py-3 text-left transition-colors hover:border-primary/40 hover:bg-primary/[0.04] smooth"
+            className="group mt-6 flex items-center gap-3 rounded-lg border border-border bg-transparent px-4 py-3 text-left transition-colors hover:border-primary/40"
           >
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary group-hover:bg-primary/15 smooth">
-              <Store className="size-4.5" />
-            </span>
             <span className="min-w-0 flex-1">
               <span className="block text-sm font-medium text-foreground">
                 {t("portal-login-marketplace-link")}
@@ -941,7 +925,7 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
                 {t("portal-login-marketplace-desc")}
               </span>
             </span>
-            <ArrowRight className="size-4 shrink-0 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 smooth" />
+            <ArrowRight className="size-4 shrink-0 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
           </Link>
 
           {/* ── Need an account? Contact your account manager ─────────── */}
@@ -968,80 +952,53 @@ export function PortalLogin({ initialDialog = null }: { initialDialog?: InitialD
         </div>
       </div>
 
-      {/* Right — emerald gradient welcome panel */}
-      <div className="hidden lg:flex flex-1 bg-gradient-emerald relative overflow-hidden">
-        {/* Subtle pattern overlay */}
-        <div
-          className="absolute inset-0 opacity-30"
-          style={{
-            backgroundImage:
-              "radial-gradient(circle at 1px 1px, rgba(255,255,255,0.18) 1px, transparent 0)",
-            backgroundSize: "28px 28px",
-          }}
-        />
-        {/* Floating accent shapes */}
-        <div className="absolute -top-32 -right-32 size-96 rounded-full bg-white/[0.08] blur-3xl" />
-        <div className="absolute -bottom-40 -left-20 size-96 rounded-full bg-white/[0.06] blur-3xl" />
+      {/* ═══ Right — the firm's letterhead (parchment panel) ═══════════
+          The client-facing mirror of the admin ink panel: warm parchment
+          ground, ink serif type, a numbered ledger of portal features and
+          the engraved globe as a stationery watermark. No gradients, no
+          dots, no blobs. */}
+      <div className="relative hidden flex-1 flex-col justify-between overflow-hidden bg-[oklch(0.952_0.016_78)] px-14 py-12 paper-grain lg:flex xl:px-16">
+        <GlobeMark className="pointer-events-none absolute -right-24 -top-24 size-[24rem] text-[oklch(0.46_0.115_45)] opacity-[0.10]" />
 
-        <div className="relative z-10 flex flex-col justify-center p-12 xl:p-16 max-w-2xl text-primary-foreground">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/15 text-xs font-medium w-fit mb-8 backdrop-blur-sm">
-            <ShieldCheck className="size-3.5" />
-            {t("portal-login-encrypted")}
-          </div>
+        {/* Firm mark */}
+        <div className="relative z-10">
+          <p className="font-display text-[1.5rem] font-medium leading-none text-foreground">{FIRM_NAME}</p>
+          <p className="label-caps mt-1.5 text-muted-foreground">{t("portal-brand-title")}</p>
+        </div>
 
-          <h2 className="text-4xl xl:text-5xl font-semibold tracking-tight mb-5 leading-[1.1]">
+        {/* Headline + ledger */}
+        <div className="relative z-10 w-full max-w-lg">
+          <div className="rule-double w-9" aria-hidden />
+          <h2 className="font-display mt-6 text-[2.2rem] leading-[1.14] tracking-[-0.01em] text-foreground xl:text-[2.5rem]">
             {t("portal-login-hero-title")}
             <br />
-            <span className="text-white/90">{t("portal-login-hero-title-2")}</span>
+            <span className="text-primary">{t("portal-login-hero-title-2")}</span>
           </h2>
-          <p className="text-white/80 text-lg leading-relaxed mb-12 max-w-md">
+          <p className="mt-4 max-w-md text-[15px] leading-relaxed text-muted-foreground">
             {t("portal-login-hero-desc").replace("{firm}", FIRM_NAME)}
           </p>
 
-          <div className="space-y-5">
-            {[
-              {
-                icon: FileText,
-                title: t("portal-login-feature-offers-title"),
-                desc: t("portal-login-feature-offers-desc"),
-              },
-              {
-                icon: Download,
-                title: t("portal-login-feature-docs-title"),
-                desc: t("portal-login-feature-docs-desc"),
-              },
-              {
-                icon: BookOpen,
-                title: t("portal-login-feature-catalog-title"),
-                desc: t("portal-login-feature-catalog-desc"),
-              },
-              {
-                icon: Receipt,
-                title: t("portal-login-feature-invoices-title"),
-                desc: t("portal-login-feature-invoices-desc"),
-              },
-            ].map((f) => {
-              const Icon = f.icon;
-              return (
-                <div key={f.title} className="flex items-start gap-4 group">
-                  <div className="size-11 rounded-xl bg-white/10 border border-white/15 flex items-center justify-center shrink-0 backdrop-blur-sm smooth group-hover:bg-white/15">
-                    <Icon className="size-5 text-white" />
-                  </div>
+          <div className="mt-9 max-w-md border-t border-border/70">
+            {features.map((f, i) => (
+              <div key={f.title} className="border-b border-border/70 py-3">
+                <div className="flex items-baseline gap-4">
+                  <span className="font-mono text-[11px] tabular text-primary">
+                    {String(i + 1).padStart(2, "0")}
+                  </span>
                   <div className="min-w-0">
-                    <p className="font-medium text-white text-sm">{f.title}</p>
-                    <p className="text-sm text-white/70 leading-relaxed">
-                      {f.desc}
-                    </p>
+                    <p className="text-sm font-medium text-foreground">{f.title}</p>
+                    <p className="mt-0.5 text-[13px] leading-snug text-muted-foreground">{f.desc}</p>
                   </div>
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
+        </div>
 
-          <div className="mt-12 pt-8 border-t border-white/15 flex items-center gap-2 text-xs text-white/60">
-            <ShieldCheck className="size-3.5" />
-            <span>{t("portal-login-security-badges")}</span>
-          </div>
+        {/* Colophon */}
+        <div className="relative z-10 flex items-center gap-2">
+          <ShieldCheck className="size-3.5 text-muted-foreground" />
+          <span className="label-caps text-muted-foreground">{t("portal-login-encrypted")}</span>
         </div>
       </div>
     </div>
@@ -1061,7 +1018,7 @@ function PortalLoginLanguageSelector() {
   // effect fired between hydration chunks.
   const hydrated = useIsHydrated();
   if (!hydrated) return null;
-  const flags: Record<string, string> = { en: "🇬🇧", sr: "🇷🇸", tr: "🇹🇷", de: "🇩🇪", ru: "🇷🇺" };
+  const codes: Record<string, string> = { en: "EN", sr: "SR", tr: "TR", de: "DE", ru: "RU" };
   const labels: Record<string, string> = { en: "English", sr: "Srpski", tr: "Türkçe", de: "Deutsch", ru: "Русский" };
   return (
     <div className="flex items-center justify-center gap-1 mt-4">
@@ -1077,7 +1034,7 @@ function PortalLoginLanguageSelector() {
           )}
           title={labels[loc]}
         >
-          <span className="text-base">{flags[loc]}</span>
+          <span className="label-caps">{codes[loc]}</span>
         </button>
       ))}
     </div>

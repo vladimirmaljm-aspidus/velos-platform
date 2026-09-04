@@ -3,32 +3,13 @@
 import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import {
-  Loader2,
-  Lock,
-  User,
-  ArrowRight,
-  ShieldCheck,
-  TrendingUp,
-  Globe,
-  Eye,
-  EyeOff,
-  Building2,
-  Store,
-  Clock,
-} from "lucide-react";
+import { GlobeMark } from "@/components/common/globe-mark";
+import { Loader2, ArrowRight, Eye, EyeOff, Clock } from "lucide-react";
 import { useAppStore } from "@/lib/store/app-store";
 import { useI18nStore, useT } from "@/lib/i18n/store";
 
@@ -83,7 +64,7 @@ export function LoginView({ onSwitchToRegister }: LoginViewProps) {
       if (lockCountdown === 0) {
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setError("");
-         
+
         setLockCountdown(null);
       }
       return;
@@ -201,360 +182,314 @@ export function LoginView({ onSwitchToRegister }: LoginViewProps) {
     }
   }
 
-  const highlights = [
-    { icon: Globe, text: "Offers, invoices and LOIs in one place" },
-    { icon: TrendingUp, text: "Landed cost and margin calculations" },
-    { icon: ShieldCheck, text: "KYC verification for every partner" },
+  // The ledger — what the house actually handles, one line per trade
+  // document. Numbered rows with hairline rules; no icon bullets.
+  const ledger = [
+    t("login-lead-1"),
+    t("login-lead-2"),
+    t("login-lead-3"),
+    t("login-lead-4"),
   ];
 
   return (
-    <div className="min-h-screen flex flex-col lg:flex-row">
+    <div className="min-h-screen flex flex-col lg:flex-row bg-background">
       {/* ═══════════════════════════════════════════════════════════════════════
-          LEFT — BRANDING PANEL (VELOS copper gradient)
-          On mobile: compact header strip (logo + tagline) so the login form is
-          reachable without scrolling.
-          On desktop (lg+): full-height gradient panel, restrained copy.
+          LEFT — THE HOUSE LEDGER (ink panel)
+          A solid espresso-copper ground with a faint paper tooth, the serif
+          wordmark, the headline, and a numbered ledger of what VELOS runs.
+          On mobile: compact brand strip only — the form stays reachable.
           ═══════════════════════════════════════════════════════════════════════ */}
-      <div className="relative flex flex-col justify-center overflow-hidden px-6 py-6 lg:w-[46%] lg:min-h-screen lg:px-16 lg:py-20 lg:justify-center xl:px-20">
-        {/* Copper gradient background — uses the platform's --primary token
-            layered over a deep navy base so it reads as "VELOS copper" in both
-            light and dark mode (the canvas behind the gradient is opaque). */}
-        <div
-          aria-hidden
-          className="absolute inset-0 bg-[oklch(0.16_0.03_258)]"
-        />
-        <div
-          aria-hidden
-          className="absolute inset-0 opacity-90"
-          style={{
-            background:
-              "radial-gradient(900px 500px at 15% 0%, oklch(0.46 0.13 55 / 0.55), transparent 60%)," +
-              "radial-gradient(700px 600px at 90% 100%, oklch(0.685 0.105 82 / 0.40), transparent 55%)," +
-              "linear-gradient(135deg, oklch(0.20 0.04 258) 0%, oklch(0.16 0.03 258) 100%)",
-          }}
-        />
-        {/* Subtle dotted texture overlay */}
-        <div
-          aria-hidden
-          className="absolute inset-0 opacity-[0.18]"
-          style={{
-            backgroundImage:
-              "radial-gradient(circle at 1px 1px, rgba(255,255,255,0.35) 1px, transparent 0)",
-            backgroundSize: "26px 26px",
-          }}
-        />
-        {/* Floating accent blobs for depth */}
-        <div
-          aria-hidden
-          className="absolute -top-24 -right-24 size-80 rounded-full bg-[oklch(0.55_0.12_55/0.25)] blur-3xl"
-        />
-        <div
-          aria-hidden
-          className="absolute -bottom-32 -left-16 size-96 rounded-full bg-[oklch(0.685_0.105_82/0.18)] blur-3xl"
-        />
+      <div className="relative flex flex-col justify-between overflow-hidden bg-[oklch(0.25_0.032_42)] text-white px-6 py-6 lg:w-[45%] lg:min-h-screen lg:px-14 lg:py-12 xl:px-16 paper-grain">
+        {/* Engraved globe — stationery watermark, not a blob */}
+        <GlobeMark className="pointer-events-none absolute -right-28 -bottom-28 hidden size-[26rem] text-[oklch(0.80_0.10_62)] opacity-[0.13] lg:block" />
 
-        {/* Content */}
-        <div className="relative z-10 mx-auto w-full max-w-lg">
-          {/* Logo — always visible, compact on mobile */}
-          <div className="lg:mb-14">
-            <div className="inline-flex items-center gap-3">
-              <div className="flex size-11 items-center justify-center rounded-lg bg-white/10 ring-1 ring-white/20 overflow-hidden shadow-lg shadow-black/20 lg:size-12">
-                <Image
-                  src="/logo.svg"
-                  alt="VELOS"
-                  width={44}
-                  height={44}
-                  priority
-                  className="w-full h-full object-cover"
-                />
-              </div>
-              <div>
-                <h1 className="text-xl font-semibold tracking-tight text-white lg:text-2xl">
-                  VELOS
-                </h1>
-                <p className="text-xs text-white/60 lg:text-sm">
-                  {t("login-brand-tagline")}
-                </p>
-              </div>
-            </div>
+        {/* Brand */}
+        <div className="relative z-10 flex items-center gap-3">
+          <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-white/[0.06] ring-1 ring-white/15">
+            <Image
+              src="/logo.svg"
+              alt="VELOS"
+              width={40}
+              height={40}
+              priority
+              className="w-full h-full object-cover"
+            />
           </div>
-
-          {/* Headline, tagline, highlights, footer — desktop only. */}
-          <div className="hidden lg:block">
-            <h2 className="mb-4 mt-10 text-3xl font-semibold leading-tight tracking-tight text-white lg:leading-[1.15]">
-              {t("login-headline")}
-              <br />
-              {t("login-headline-2")}
-            </h2>
-
-            <p className="mb-10 max-w-md text-base leading-relaxed text-white/60">
-              {t("login-tagline")}
-            </p>
-
-            <div className="space-y-0.5 border-t border-white/10">
-              {highlights.map((h, i) => {
-                const Icon = h.icon;
-                return (
-                  <div
-                    key={i}
-                    className="flex items-center gap-3 border-b border-white/10 py-3.5"
-                  >
-                    <Icon className="size-4 shrink-0 text-[oklch(0.685_0.105_82)]" />
-                    <span className="text-sm text-white/80">{h.text}</span>
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="mt-14 flex items-center gap-2 text-xs text-white/40">
-              <span>
-                © {new Date().getFullYear()} VELOS. {t("login-rights")}
-              </span>
-            </div>
+          <div className="min-w-0">
+            <p className="font-display text-lg leading-none font-medium">VELOS</p>
+            <p className="label-caps mt-1.5 text-white/45">{t("login-brand-tagline")}</p>
           </div>
+        </div>
+
+        {/* Headline + ledger — desktop only */}
+        <div className="relative z-10 hidden lg:block">
+          <h2 className="font-display max-w-md text-[2.35rem] leading-[1.12] tracking-[-0.01em] text-white xl:text-[2.6rem]">
+            {t("login-headline")}
+            <br />
+            <span className="text-[oklch(0.80_0.10_62)]">{t("login-headline-2")}</span>
+          </h2>
+
+          <p className="mt-4 max-w-md text-[15px] leading-relaxed text-white/55">
+            {t("login-tagline")}
+          </p>
+
+          <div className="mt-9 max-w-md border-t border-white/10">
+            {ledger.map((item, i) => (
+              <div
+                key={i}
+                className="flex items-baseline gap-4 border-b border-white/10 py-3"
+              >
+                <span className="font-mono text-[11px] tabular text-[oklch(0.80_0.10_62)]">
+                  {String(i + 1).padStart(2, "0")}
+                </span>
+                <span className="text-sm text-white/75">{item}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Colophon */}
+        <div className="relative z-10 hidden items-center gap-2 lg:flex">
+          <span className="label-caps text-white/30">
+            © {new Date().getFullYear()} VELOS · {t("login-rights")}
+          </span>
         </div>
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════════
-          RIGHT — LOGIN FORM
-          Mobile: shows logo + brand tagline at top so the brand panel above
-          isn't the only place the VELOS identity appears on a small screen.
+          RIGHT — THE SIGN-IN SHEET (paper)
+          The form sits directly on the paper — no glass card. Small-caps
+          labels, hairline fields, a short double rule as the stationery
+          mark above the heading.
           ═══════════════════════════════════════════════════════════════════════ */}
-      <div className="flex flex-1 items-center justify-center bg-background px-5 py-8 lg:min-h-screen lg:px-12 lg:py-12">
-        <div className="w-full max-w-[420px]">
-          {/* Mobile-only brand row (desktop has the gradient panel) */}
-          <div className="mb-6 flex items-center gap-3 lg:hidden">
-            <div className="flex size-10 items-center justify-center rounded-md overflow-hidden ring-1 ring-border">
+      <div className="flex flex-1 items-center justify-center bg-background px-5 py-10 lg:min-h-screen lg:px-12 lg:py-12">
+        <div className="mx-auto w-full max-w-[400px]">
+          {/* Mobile-only brand row (desktop has the ink panel) */}
+          <div className="mb-8 flex items-center gap-3 lg:hidden">
+            <div className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-md ring-1 ring-border">
               <Image
                 src="/logo.svg"
                 alt="VELOS"
-                width={40}
-                height={40}
+                width={36}
+                height={36}
                 priority
                 className="w-full h-full object-cover"
               />
             </div>
             <div>
-              <p className="text-sm font-semibold tracking-tight text-foreground">
+              <p className="font-display text-base font-medium leading-none text-foreground">
                 VELOS
               </p>
-              <p className="text-xs text-muted-foreground">
+              <p className="label-caps mt-1 text-muted-foreground">
                 {t("login-brand-tagline")}
               </p>
             </div>
           </div>
 
-          <Card className="border border-border/70 bg-card/80 backdrop-blur-sm shadow-sm">
-            <CardHeader className="mb-2 space-y-2 px-6 pt-6 text-left">
-              <CardTitle className="text-2xl font-semibold tracking-tight text-foreground">
-                {t("login-welcome")}
-              </CardTitle>
-              <CardDescription className="text-sm text-muted-foreground">
-                {t("login-signin-desc")}
-              </CardDescription>
-            </CardHeader>
+          {/* Sheet header — double rule + serif heading */}
+          <div className="mb-7">
+            <div className="rule-double w-9" aria-hidden />
+            <h1 className="font-display mt-6 text-[1.8rem] font-medium leading-tight tracking-[-0.01em] text-foreground">
+              {t("login-welcome")}
+            </h1>
+            <p className="mt-1.5 text-sm text-muted-foreground">
+              {t("login-signin-desc")}
+            </p>
+          </div>
 
-            <CardContent className="px-6 pb-6">
-              {/* Error alert — FIX-AUDIT3 #8: when a 429 / 423 lockout
-                  countdown is running, `displayError` carries the live
-                  "Try again in 2m 15s" message (re-computed every tick
-                  by the `lockCountdown` state). When the countdown
-                  reaches 0, the effect above clears `error` +
-                  `lockCountdown`, so this alert naturally disappears too. */}
-              {/* audit25 — explain WHY the user landed here when their
-                  session expired (idle / absolute TTL / revoked). Amber
-                  info alert, not destructive — nothing they did was wrong. */}
-              {sessionExpired && !displayError && (
-                <Alert className="mb-5 border-amber-500/40 bg-amber-500/10" role="status">
-                  <Clock className="h-4 w-4 text-amber-600" aria-hidden />
-                  <AlertDescription className="text-sm text-amber-700 dark:text-amber-400">
-                    {t("login-session-expired")}
-                  </AlertDescription>
-                </Alert>
-              )}
+          {/* Error alert — FIX-AUDIT3 #8: when a 429 / 423 lockout
+              countdown is running, `displayError` carries the live
+              "Try again in 2m 15s" message (re-computed every tick
+              by the `lockCountdown` state). When the countdown
+              reaches 0, the effect above clears `error` +
+              `lockCountdown`, so this alert naturally disappears too. */}
+          {/* audit25 — explain WHY the user landed here when their
+              session expired (idle / absolute TTL / revoked). Amber
+              info alert, not destructive — nothing they did was wrong. */}
+          {sessionExpired && !displayError && (
+            <Alert className="mb-5 border-warning/40 bg-warning/10" role="status">
+              <Clock className="h-4 w-4 text-warning" aria-hidden />
+              <AlertDescription className="text-sm text-warning-foreground">
+                {t("login-session-expired")}
+              </AlertDescription>
+            </Alert>
+          )}
 
-              {displayError && (
-                <Alert
-                  variant="destructive"
-                  className="mb-5"
-                  role="alert"
-                  aria-live="assertive"
+          {displayError && (
+            <Alert
+              variant="destructive"
+              className="mb-5"
+              role="alert"
+              aria-live="assertive"
+            >
+              <AlertDescription className="text-sm font-medium">
+                {displayError}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* FIX-AUDIT3 #8 — when locked out, surface a hint about
+              the existing "Forgot password?" link in the form row
+              below so the user has an actionable escape without
+              waiting for the countdown to expire. */}
+          {lockCountdown !== null && lockCountdown > 0 && (
+            <p className="mb-5 text-xs text-muted-foreground leading-relaxed">
+              {t("login-locked-forgot-help")}
+            </p>
+          )}
+
+          {/* Form */}
+          <form onSubmit={submit} className="space-y-5" noValidate>
+            {/* Username */}
+            <div className="space-y-2">
+              <Label
+                htmlFor="login-username"
+                className="label-caps text-foreground/60"
+              >
+                {t("login-username")}
+              </Label>
+              <Input
+                id="login-username"
+                type="text"
+                autoComplete="username"
+                value={username}
+                onChange={(e) => {
+                  setUsername(e.target.value);
+                  if (error) setError("");
+                }}
+                placeholder={t("login-username-placeholder")}
+                disabled={loading}
+                aria-required="true"
+                aria-label={t("login-username")}
+                className="h-11"
+              />
+            </div>
+
+            {/* Password */}
+            <div className="space-y-2">
+              <Label
+                htmlFor="login-password"
+                className="label-caps text-foreground/60"
+              >
+                {t("login-password")}
+              </Label>
+              <div className="relative">
+                <Input
+                  id="login-password"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (error) setError("");
+                  }}
+                  placeholder={t("login-password-placeholder")}
+                  disabled={loading}
+                  aria-required="true"
+                  aria-label={t("login-password")}
+                  className="h-11 pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/60 hover:text-foreground transition-colors"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  tabIndex={-1}
                 >
-                  <AlertDescription className="text-sm font-medium">
-                    {displayError}
-                  </AlertDescription>
-                </Alert>
-              )}
-
-              {/* FIX-AUDIT3 #8 — when locked out, surface a hint about
-                  the existing "Forgot password?" link in the form row
-                  below so the user has an actionable escape without
-                  waiting for the countdown to expire. */}
-              {lockCountdown !== null && lockCountdown > 0 && (
-                <p className="mb-5 text-xs text-muted-foreground leading-relaxed">
-                  {t("login-locked-forgot-help")}
-                </p>
-              )}
-
-              {/* Form */}
-              <form onSubmit={submit} className="space-y-5" noValidate>
-                {/* Username */}
-                <div className="space-y-2">
-                  <Label
-                    htmlFor="login-username"
-                    className="text-sm font-medium text-foreground/80"
-                  >
-                    {t("login-username")}
-                  </Label>
-                  <div className="relative group">
-                    <User className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/50 transition-colors duration-200 group-focus-within:text-primary" />
-                    <Input
-                      id="login-username"
-                      type="text"
-                      autoComplete="username"
-                      value={username}
-                      onChange={(e) => {
-                        setUsername(e.target.value);
-                        if (error) setError("");
-                      }}
-                      placeholder={t("login-username-placeholder")}
-                      disabled={loading}
-                      aria-required="true"
-                      aria-label={t("login-username")}
-                      className="h-11 pl-10 pr-4"
-                    />
-                  </div>
-                </div>
-
-                {/* Password */}
-                <div className="space-y-2">
-                  <Label
-                    htmlFor="login-password"
-                    className="text-sm font-medium text-foreground/80"
-                  >
-                    {t("login-password")}
-                  </Label>
-                  <div className="relative group">
-                    <Lock className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/50 transition-colors duration-200 group-focus-within:text-primary" />
-                    <Input
-                      id="login-password"
-                      type={showPassword ? "text" : "password"}
-                      autoComplete="current-password"
-                      value={password}
-                      onChange={(e) => {
-                        setPassword(e.target.value);
-                        if (error) setError("");
-                      }}
-                      placeholder={t("login-password-placeholder")}
-                      disabled={loading}
-                      aria-required="true"
-                      aria-label={t("login-password")}
-                      className="h-11 pl-10 pr-10"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-foreground transition-colors"
-                      aria-label={showPassword ? "Hide password" : "Show password"}
-                      tabIndex={-1}
-                    >
-                      {showPassword ? (
-                        <EyeOff className="size-4" />
-                      ) : (
-                        <Eye className="size-4" />
-                      )}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Remember me + Forgot password */}
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id="login-remember"
-                      checked={remember}
-                      onCheckedChange={(v) => setRemember(v === true)}
-                      disabled={loading}
-                    />
-                    <Label
-                      htmlFor="login-remember"
-                      className="text-sm font-normal text-muted-foreground cursor-pointer"
-                    >
-                      {t("login-remember")}
-                    </Label>
-                  </div>
-                  <Link
-                    href="/portal/forgot-password"
-                    className="text-xs text-muted-foreground hover:text-primary underline-offset-4 hover:underline transition-colors"
-                  >
-                    {t("login-forgot-password")}
-                  </Link>
-                </div>
-
-                {/* Submit */}
-                <Button
-                  type="submit"
-                  className="h-11 w-full text-sm font-medium"
-                  // FIX-AUDIT3 #8 — keep the button disabled while the
-                  // 429 / 423 lockout countdown is running so a
-                  // frustrated user can't keep re-submitting (which
-                  // would just re-receive 429 / 423 and reset the
-                  // countdown).
-                  disabled={loading || (lockCountdown !== null && lockCountdown > 0)}
-                  aria-label={t("login-signin-aria")}
-                >
-                  {loading ? (
-                    <span className="flex items-center gap-2">
-                      <Loader2 className="size-4 animate-spin" />
-                      {t("login-signing-in")}
-                    </span>
+                  {showPassword ? (
+                    <EyeOff className="size-4" />
                   ) : (
-                    <span className="flex items-center gap-2">
-                      {t("login-signin")}
-                      <ArrowRight className="size-4" />
-                    </span>
+                    <Eye className="size-4" />
                   )}
-                </Button>
-              </form>
-
-              {/* Sign-up CTA — switches the homepage to the register surface */}
-              {onSwitchToRegister && (
-                <div className="mt-6 flex items-center justify-center gap-1.5 text-sm text-muted-foreground">
-                  <span>{t("login-no-account")}</span>
-                  <button
-                    type="button"
-                    onClick={onSwitchToRegister}
-                    className="font-medium text-primary hover:text-primary/80 underline-offset-4 hover:underline transition-colors"
-                  >
-                    {t("login-switch-to-register")}
-                  </button>
-                </div>
-              )}
-
-              {/* Client Portal link — clients log in here, not the admin app */}
-              <div className="mt-3 flex items-center justify-center gap-1.5 text-sm text-muted-foreground border-t pt-4">
-                <Store className="size-4 text-muted-foreground/70" />
-                <span>{t("login-client-portal-q")}</span>
-                <a
-                  href="/portal"
-                  className="font-medium text-primary hover:text-primary/80 underline-offset-4 hover:underline transition-colors"
-                >
-                  {t("login-client-portal-link")} →
-                </a>
+                </button>
               </div>
+            </div>
 
-              {/* Bottom note */}
-              <p className="mt-6 flex items-center justify-center gap-1.5 text-center text-xs text-muted-foreground/60">
-                <ShieldCheck className="size-3.5" />
-                {t("login-secure-note")}
-              </p>
-            </CardContent>
-          </Card>
+            {/* Remember me + Forgot password */}
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="login-remember"
+                  checked={remember}
+                  onCheckedChange={(v) => setRemember(v === true)}
+                  disabled={loading}
+                />
+                <Label
+                  htmlFor="login-remember"
+                  className="text-sm font-normal text-muted-foreground cursor-pointer"
+                >
+                  {t("login-remember")}
+                </Label>
+              </div>
+              <Link
+                href="/portal/forgot-password"
+                className="text-xs text-muted-foreground hover:text-primary underline-offset-4 hover:underline transition-colors"
+              >
+                {t("login-forgot-password")}
+              </Link>
+            </div>
 
-          {/* Copyright — shown here on mobile only; the desktop branding
-              panel already has its own copyright line. */}
-          <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-xs text-muted-foreground/50 lg:hidden">
-            <Building2 className="size-3" />
+            {/* Submit */}
+            <Button
+              type="submit"
+              className="h-11 w-full text-sm font-medium"
+              // FIX-AUDIT3 #8 — keep the button disabled while the
+              // 429 / 423 lockout countdown is running so a
+              // frustrated user can't keep re-submitting (which
+              // would just re-receive 429 / 423 and reset the
+              // countdown).
+              disabled={loading || (lockCountdown !== null && lockCountdown > 0)}
+              aria-label={t("login-signin-aria")}
+            >
+              {loading ? (
+                <span className="flex items-center gap-2">
+                  <Loader2 className="size-4 animate-spin" />
+                  {t("login-signing-in")}
+                </span>
+              ) : (
+                <span className="flex items-center gap-2">
+                  {t("login-signin")}
+                  <ArrowRight className="size-4" />
+                </span>
+              )}
+            </Button>
+          </form>
+
+          {/* Sign-up CTA — switches the homepage to the register surface */}
+          {onSwitchToRegister && (
+            <div className="mt-6 flex items-center justify-center gap-1.5 text-sm text-muted-foreground">
+              <span>{t("login-no-account")}</span>
+              <button
+                type="button"
+                onClick={onSwitchToRegister}
+                className="font-medium text-primary hover:text-primary/80 underline-offset-4 hover:underline transition-colors"
+              >
+                {t("login-switch-to-register")}
+              </button>
+            </div>
+          )}
+
+          {/* Client Portal link — clients log in here, not the admin app */}
+          <div className="mt-6 border-t border-border pt-4">
+            <div className="flex items-center justify-center gap-1.5 text-sm text-muted-foreground">
+              <span>{t("login-client-portal-q")}</span>
+              <a
+                href="/portal"
+                className="font-medium text-primary hover:text-primary/80 underline-offset-4 hover:underline transition-colors"
+              >
+                {t("login-client-portal-link")} →
+              </a>
+            </div>
+          </div>
+
+          {/* Bottom note — quiet, honest */}
+          <p className="mt-7 text-center text-xs text-muted-foreground/70">
+            {t("login-secure-note")}
+          </p>
+
+          {/* Copyright — shown here on mobile only; the desktop ink
+              panel carries its own colophon. */}
+          <p className="mt-3 text-center text-xs text-muted-foreground/50 lg:hidden">
             © {new Date().getFullYear()} VELOS. {t("login-rights")}
           </p>
         </div>

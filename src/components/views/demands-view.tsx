@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/collapsible";
 import {
   Plus, Search, Inbox, Pencil, Trash2, Eye, X, Calendar, FileInput, ArrowRightLeft,
-  Sparkles, Loader2, Building2, MapPin, Hash, Mail, Phone, FileCheck, Import,
+  Sparkles, Loader2, Building2, MapPin, Hash, Mail, Phone, FileCheck, Import, Lightbulb,
   ChevronDown, ChevronRight, Globe, CreditCard, Banknote, Package, Truck, Tag,
   ArrowRight,
 } from "lucide-react";
@@ -494,7 +494,7 @@ function DemandDetail({
             )}
             {demand.is_new_product && (
               <div className="p-3 rounded-lg bg-muted/40 border border-border/60">
-                <p className="text-xs text-muted-foreground flex items-center gap-1"><Sparkles className="size-3" /> {t("crm-new-product-trade")}</p>
+                <p className="text-xs text-muted-foreground flex items-center gap-1"><Lightbulb className="size-3" /> {t("crm-new-product-trade")}</p>
                 <p className="text-sm font-medium">{t("crm-yes")}</p>
               </div>
             )}
@@ -530,7 +530,7 @@ function DemandDetail({
             )}
             {demand.auto_hints && (
               <div className="col-span-2 p-3 rounded-lg bg-muted/40 border border-border/60">
-                <p className="text-xs text-muted-foreground flex items-center gap-1"><Sparkles className="size-3" /> {t("crm-auto-hints")}</p>
+                <p className="text-xs text-muted-foreground flex items-center gap-1"><Lightbulb className="size-3" /> {t("crm-auto-hints")}</p>
                 <p className="text-sm font-medium whitespace-pre-wrap">{demand.auto_hints}</p>
               </div>
             )}

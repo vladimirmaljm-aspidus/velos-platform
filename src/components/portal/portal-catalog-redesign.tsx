@@ -37,7 +37,6 @@ import {
   Calendar,
   Boxes,
   ClipboardList,
-  Sparkles,
   PackageCheck,
   Inbox,
   Lock,
@@ -568,7 +567,7 @@ function ProductDetailDrawer({
         {/* ─── Overview ────────────────────────────────────────────────── */}
         <Section
           title={t("portal-catalog-section-overview")}
-          icon={Sparkles}
+          icon={FileText}
         >
           {product.description && (
             <p className="text-sm text-muted-foreground leading-relaxed mb-3">

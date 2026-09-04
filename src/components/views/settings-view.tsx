@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { useState, useEffect, useRef, type ComponentType } from "react";
+import { useState, useEffect, useRef, type ComponentType, type ReactNode } from "react";
 import {
   Card, CardContent, CardHeader, CardTitle, CardDescription,
 } from "@/components/ui/card";
@@ -22,7 +22,7 @@ import { PageHeader } from "@/components/common/page-header";
 import { MemorandumStudio } from "@/components/common/memorandum-studio";
 import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
 
-import { ShieldAlert, Building2, ShieldCheck, Mail, Upload, Loader2, UserCog, X, ImageIcon, Send, CheckCircle2, XCircle, Zap, AlertTriangle, Globe, Info, FileText, Palette, QrCode, Save, Bell, DollarSign, MessageSquare, Store, Clock, UserPlus } from "lucide-react";
+import { ShieldAlert, Building2, ShieldCheck, Mail, Upload, Loader2, UserCog, X, ImageIcon, Send, CheckCircle2, XCircle, Zap, AlertTriangle, Globe, Info, FileText, Palette, QrCode, Save, Bell, DollarSign, MessageSquare, Store, Clock, UserPlus, ArrowLeftRight, TrendingUp, CloudSun, Ship, Anchor, MapPin, ClipboardList } from "lucide-react";
 import { useAppStore, isAdmin } from "@/lib/store/app-store";
 import { useQuery } from "@tanstack/react-query";
 import { TwoFactorSetup } from "@/components/auth/two-factor-setup";
@@ -1237,7 +1237,7 @@ function IntegrationsTab() {
       <ApiIntegrationCard
         title="Exchange Rate API"
         description="Live currency conversion for offers, invoices, and trade calculations."
-        icon="💱"
+        icon={<ArrowLeftRight className="size-5" />}
         badge="1,500/month FREE"
         badgeColor="emerald"
         apiKey={value.exchangerate_api_key}
@@ -1258,7 +1258,7 @@ function IntegrationsTab() {
       <ApiIntegrationCard
         title="Alpha Vantage — Commodity Prices"
         description="Live prices for sugar, coffee, cocoa, corn, wheat, copper, oil, cotton, and more."
-        icon="📈"
+        icon={<TrendingUp className="size-5" />}
         badge="25/day FREE"
         badgeColor="amber"
         apiKey={value.alphavantage_api_key}
@@ -1278,7 +1278,7 @@ function IntegrationsTab() {
       <ApiIntegrationCard
         title="OpenWeatherMap — Port Weather"
         description="Current weather conditions at shipping ports for logistics planning."
-        icon="🌤️"
+        icon={<CloudSun className="size-5" />}
         badge="1,000/day FREE"
         badgeColor="sky"
         apiKey={value.openweather_api_key}
@@ -1299,7 +1299,7 @@ function IntegrationsTab() {
       <ApiIntegrationCard
         title="SeaRates — Container Tracking"
         description="Track shipping containers in real-time across 150+ shipping lines (MAERSK, MSC, CMA CGM, etc.)."
-        icon="🚢"
+        icon={<Ship className="size-5" />}
         badge="100/month FREE"
         badgeColor="blue"
         apiKey={value.searates_api_key}
@@ -1320,7 +1320,7 @@ function IntegrationsTab() {
       <ApiIntegrationCard
         title="UN Comtrade — Trade Statistics"
         description="Official UN international trade data: import/export values by country pair and HS code."
-        icon="🌐"
+        icon={<Globe className="size-5" />}
         badge="500/day FREE"
         badgeColor="violet"
         apiKey={value.uncomtrade_api_key}
@@ -1347,35 +1347,35 @@ function IntegrationsTab() {
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex items-start gap-3 p-3 rounded-lg bg-card border border-border/40">
-            <span className="text-xl">🌍</span>
+            <span className="text-xl"><Globe className="size-5" /></span>
             <div>
               <p className="text-sm font-medium">Countries & Cities Database</p>
               <p className="text-xs text-muted-foreground">125 countries with 15+ cities each, flags, currencies, calling codes. Our own embedded data — always works.</p>
             </div>
           </div>
           <div className="flex items-start gap-3 p-3 rounded-lg bg-card border border-border/40">
-            <span className="text-xl">⚓</span>
+            <span className="text-xl"><Anchor className="size-5" /></span>
             <div>
               <p className="text-sm font-medium">World Port Index</p>
               <p className="text-xs text-muted-foreground">120+ major ports with UN/LOCODE and coordinates. Auto-completes POL/POD fields.</p>
             </div>
           </div>
           <div className="flex items-start gap-3 p-3 rounded-lg bg-card border border-border/40">
-            <span className="text-xl">📍</span>
+            <span className="text-xl"><MapPin className="size-5" /></span>
             <div>
               <p className="text-sm font-medium">Address Autocomplete (Nominatim/OSM)</p>
               <p className="text-xs text-muted-foreground">Free address search via OpenStreetMap. No API key needed — just start typing an address.</p>
             </div>
           </div>
           <div className="flex items-start gap-3 p-3 rounded-lg bg-card border border-border/40">
-            <span className="text-xl">⚠️</span>
+            <span className="text-xl"><AlertTriangle className="size-5" /></span>
             <div>
               <p className="text-sm font-medium">OFAC Sanctions Check</p>
               <p className="text-xs text-muted-foreground">Search the US Treasury SDN list. Free public data. Check any partner name before doing business.</p>
             </div>
           </div>
           <div className="flex items-start gap-3 p-3 rounded-lg bg-card border border-border/40">
-            <span className="text-xl">📋</span>
+            <span className="text-xl"><ClipboardList className="size-5" /></span>
             <div>
               <p className="text-sm font-medium">Trade Advisor (FTA + Tariffs)</p>
               <p className="text-xs text-muted-foreground">Checks Free Trade Agreements, tariff rates, and required documents between any two countries. Built-in FTA database.</p>
@@ -1408,7 +1408,7 @@ function ApiIntegrationCard({
 }: {
   title: string;
   description: string;
-  icon: string;
+  icon: ReactNode;
   badge: string;
   badgeColor: "emerald" | "amber" | "sky" | "blue" | "violet";
   apiKey: string;
@@ -1423,7 +1423,7 @@ function ApiIntegrationCard({
 
   const [showSteps, setShowSteps] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<{ ok: boolean; text: string } | null>(null);
 
   async function runTest() {
     if (!testUrl || !apiKey) return;
@@ -1433,20 +1433,20 @@ function ApiIntegrationCard({
       const r = await fetch(testUrl);
       const data = await r.json();
       if (data.error) {
-        setTestResult(`❌ ${data.error}`);
+        setTestResult({ ok: false, text: data.error });
       } else if (data.rate) {
-        setTestResult(`✅ Success! Rate: ${data.rate} (source: ${data.source})`);
+        setTestResult({ ok: true, text: `Success! Rate: ${data.rate} (source: ${data.source})` });
       } else if (data.price) {
-        setTestResult(`✅ Success! Price: $${data.price} (change: ${data.changePct}%)`);
+        setTestResult({ ok: true, text: `Success! Price: $${data.price} (change: ${data.changePct}%)` });
       } else if (data.temperature !== undefined) {
-        setTestResult(`✅ Success! ${data.location}: ${data.temperature}°C, ${data.description}`);
+        setTestResult({ ok: true, text: `Success! ${data.location}: ${data.temperature}°C, ${data.description}` });
       } else if (data.items) {
-        setTestResult(`✅ Success! ${data.items.length || data.total} results`);
+        setTestResult({ ok: true, text: `Success! ${data.items.length || data.total} results` });
       } else {
-        setTestResult(`✅ Connected successfully`);
+        setTestResult({ ok: true, text: `Connected successfully` });
       }
     } catch (e: any) {
-      setTestResult(`❌ ${e.message}`);
+      setTestResult({ ok: false, text: e.message });
     } finally {
       setTesting(false);
     }
@@ -1518,8 +1518,8 @@ function ApiIntegrationCard({
         </div>
 
         {testResult && (
-          <div className={`p-2.5 rounded-lg text-xs ${testResult.startsWith("✅") ? "bg-emerald-500/10 text-emerald-700" : "bg-destructive/10 text-destructive"}`}>
-            {testResult}
+          <div className={`p-2.5 rounded-lg text-xs ${testResult.ok ? "bg-emerald-500/10 text-emerald-700" : "bg-destructive/10 text-destructive"}`}>
+            {testResult.text}
           </div>
         )}
 

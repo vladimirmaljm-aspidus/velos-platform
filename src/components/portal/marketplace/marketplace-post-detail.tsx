@@ -33,6 +33,7 @@ import {
   ArrowLeft,
   Loader2,
   MapPin,
+  Globe,
   Globe2,
   Calendar,
   Coins,
@@ -136,9 +137,10 @@ const TYPE_BADGE: Record<
   contract: { labelKey: "marketplace-contract", icon: FileText, cls: "border-transparent bg-violet-500/15 text-violet-700 dark:text-violet-400" },
 };
 
-function flagEmoji(code: string | null | undefined): string {
-  if (!code) return "🌐";
-  return getCountry(code)?.flag || "🌐";
+/** Country flag emoji from ISO code; falls back to a Globe lucide icon. */
+function flagNode(code: string | null | undefined) {
+  const flag = code ? getCountry(code)?.flag : undefined;
+  return flag ?? <Globe className="size-4" />;
 }
 
 export function MarketplacePostDetail({ postId }: { postId: string }) {
@@ -486,7 +488,7 @@ export function MarketplacePostDetail({ postId }: { postId: string }) {
                 label={t("marketplace-delivery")}
                 value={
                   country
-                    ? `${flagEmoji(post.delivery_country)} ${post.delivery_location ? post.delivery_location + ", " : ""}${country.name}`
+                    ? <>{flagNode(post.delivery_country)} {post.delivery_location ? post.delivery_location + ", " : ""}{country.name}</>
                     : (post.delivery_location || "—")
                 }
               />
@@ -563,7 +565,7 @@ export function MarketplacePostDetail({ postId }: { postId: string }) {
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
               <DetailRow icon={Truck} label={t("marketplace-incoterm")} value={incoterm ? `${incoterm.code} — ${incoterm.name}` : post.incoterm || "—"} />
-              <DetailRow icon={Globe2} label={t("marketplace-origin-country")} value={origin ? `${flagEmoji(post.origin_country)} ${origin.name}` : post.origin_country || "—"} />
+              <DetailRow icon={Globe2} label={t("marketplace-origin-country")} value={origin ? <>{flagNode(post.origin_country)} {origin.name}</> : post.origin_country || "—"} />
               <DetailRow icon={Layers} label={t("marketplace-packaging")} value={post.packaging || "—"} />
               <DetailRow icon={FileText} label={t("marketplace-payment-terms")} value={post.payment_terms || "—"} />
               {post.expires_at && (
@@ -632,7 +634,6 @@ export function MarketplacePostDetail({ postId }: { postId: string }) {
           <Card className="overflow-hidden border-border/60">
             <div className="relative">
               <div className="absolute inset-0 bg-mesh-portal opacity-50" />
-              <div className="absolute top-0 right-0 size-24 bg-emerald-500/10 blur-3xl rounded-full" />
               <CardContent className="relative p-5 space-y-4">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -651,7 +652,7 @@ export function MarketplacePostDetail({ postId }: { postId: string }) {
                     </p>
                     {country && (
                       <p className="text-xs text-muted-foreground mt-0.5 inline-flex items-center gap-1">
-                        <span>{flagEmoji(post.delivery_country)}</span>
+                        <span>{flagNode(post.delivery_country)}</span>
                         {country.name}
                       </p>
                     )}
@@ -1234,7 +1235,7 @@ function HeadlineStat({
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
-  value: string;
+  value: React.ReactNode;
   accent?: string;
 }) {
   return (
@@ -1255,7 +1256,7 @@ function DetailRow({
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
-  value: string;
+  value: React.ReactNode;
 }) {
   return (
     <div className="flex items-center justify-between gap-3">

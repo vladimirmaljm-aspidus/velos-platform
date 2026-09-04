@@ -282,8 +282,7 @@ export function Sidebar({ hideCollapseToggle = false, forceExpanded = false }: {
         {/* Logo — VELOS Veles symbol */}
         <div className={cn(
           "size-9 rounded-lg flex items-center justify-center shrink-0",
-          "shadow-soft overflow-hidden",
-          "transition-transform duration-300 hover:scale-105"
+          "shadow-soft overflow-hidden"
         )}>
           <BrandLogo />
         </div>
@@ -295,7 +294,7 @@ export function Sidebar({ hideCollapseToggle = false, forceExpanded = false }: {
             ? "opacity-0 w-0"
             : "opacity-100 w-auto"
         )}>
-          <p className="font-semibold text-[15px] tracking-tight text-sidebar-foreground truncate leading-tight">
+          <p className="font-display font-medium text-[15px] tracking-tight text-sidebar-foreground truncate leading-tight">
             VELOS
           </p>
           <p className="text-xs text-sidebar-foreground/55 truncate leading-tight mt-0.5">

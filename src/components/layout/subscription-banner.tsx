@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Sparkles, X } from "lucide-react";
+import { AlertTriangle, CreditCard, X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useAppStore } from "@/lib/store/app-store";
@@ -68,7 +68,7 @@ export function SubscriptionBanner() {
         ? "bg-amber-100 text-amber-900 border-b border-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800"
         : "bg-emerald-100 text-emerald-900 border-b border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-800";
 
-  const Icon = isExpired || sub.warning_level === "critical" ? AlertTriangle : Sparkles;
+  const Icon = isExpired || sub.warning_level === "critical" ? AlertTriangle : CreditCard;
 
   return (
     <div className={cn("px-4 py-2.5 flex items-center justify-between gap-3 text-sm flex-wrap", styles)}>

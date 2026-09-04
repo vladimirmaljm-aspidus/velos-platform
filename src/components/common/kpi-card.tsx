@@ -156,12 +156,11 @@ export function KpiCard({
           {/* ── Icon Container ─────────────────────────────────── */}
           <div
             className={cn(
-              "size-12 rounded-xl flex items-center justify-center shrink-0 smooth",
-              "group-hover:scale-105 group-hover:shadow-soft-md",
+              "size-10 rounded-lg flex items-center justify-center shrink-0",
               v.container,
             )}
           >
-            <Icon className={cn("size-6", resolvedIconClass)} />
+            <Icon className={cn("size-5", resolvedIconClass)} />
           </div>
         </div>
       </CardContent>

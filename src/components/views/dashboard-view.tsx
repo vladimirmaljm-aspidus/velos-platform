@@ -288,16 +288,14 @@ export function DashboardView() {
   return (
     <div className="space-y-6">
       {/* ---------- Hero ---------- */}
-      {/* AUDIT28-DESIGN — distinct brand identity for the hero band: copper
-          spine on the leading edge + soft corner wash. Previously visually
-          identical to the KPI cards below, so nothing anchored the page. */}
+      {/* 2026 stationery pass — the band reads like a ledger header: a
+          solid copper spine, no corner blob, serif greeting. */}
       <div className="relative overflow-hidden bg-card border border-border rounded-[var(--radius-lg)] px-5 py-5 md:px-7 md:py-6 shadow-soft smooth">
-        <div aria-hidden className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-primary via-primary/70 to-primary/30" />
-        <div aria-hidden className="pointer-events-none absolute -top-20 -right-10 size-64 rounded-full bg-primary/[0.06] blur-3xl" />
+        <div aria-hidden className="absolute inset-y-0 left-0 w-1 bg-primary" />
         <div className="relative flex flex-col md:flex-row md:items-end md:justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-xs text-muted-foreground mb-1.5 tabular">{todayLabel()}</p>
-            <h1 className="text-xl md:text-2xl font-semibold tracking-tight text-foreground flex items-center gap-2">
+            <p className="label-caps mb-2 tabular text-muted-foreground">{todayLabel()}</p>
+            <h1 className="font-display text-[1.35rem] md:text-2xl font-medium tracking-tight text-foreground flex items-center gap-2">
               {t(greetingKey())}, <span className="text-foreground">{userName}</span>
              <ModuleInfoTooltip title="Dashboard" description="Your tenant overview — KPIs, recent activity, quick actions, and charts." howToUse={["View KPIs (partners, deals, invoices, revenue)", "See recent activity feed", "Quick actions (add partner, create invoice, etc.)", "Charts show trends over time"]} /></h1>
             {tenantName ? (

@@ -294,7 +294,7 @@ export function TenantsView({ embedded = false }: { embedded?: boolean } = {}) {
                       </TableCell>
                       <TableCell className="hidden md:table-cell">
                         <div className="flex items-center gap-1.5 text-sm">
-                          <span className="text-base leading-none">{flagEmoji(tn.country) || "🏳️"}</span>
+                          <span className="text-base leading-none">{flagEmoji(tn.country) || <Globe className="size-4" />}</span>
                           <span>{countryLabel(tn.country)}</span>
                         </div>
                       </TableCell>

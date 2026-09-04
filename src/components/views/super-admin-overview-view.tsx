@@ -89,8 +89,8 @@ const STATUS_BADGE: Record<string, string> = {
 const PLAN_OPTIONS = ["trial", "starter", "business", "enterprise"] as const;
 const STATUS_OPTIONS = ["active", "suspended", "cancelled"] as const;
 
-function flagEmoji(countryCode: string | null | undefined): string {
-  if (!countryCode || countryCode.length !== 2) return "🏳️";
+function flagEmoji(countryCode: string | null | undefined): string | null {
+  if (!countryCode || countryCode.length !== 2) return null;
   const cc = countryCode.toUpperCase();
   const codePoints = [...cc].map((c) => 0x1f1e6 + (c.charCodeAt(0) - 65));
   return String.fromCodePoint(...codePoints);
@@ -745,7 +745,7 @@ export function SuperAdminOverviewView({ embedded = false }: { embedded?: boolea
                     </TableCell>
                     <TableCell className="hidden md:table-cell">
                       <div className="flex items-center gap-1.5 text-sm">
-                        <span className="text-base leading-none">{flagEmoji(ts.tenant.country)}</span>
+                        <span className="text-base leading-none">{flagEmoji(ts.tenant.country) ?? <Globe className="size-4" />}</span>
                         <span className="truncate max-w-[140px]">{countryLabel(ts.tenant.country)}</span>
                       </div>
                     </TableCell>
