@@ -1150,9 +1150,19 @@ export function buildPdfDocument({
       `We look forward to your response by ${loiValidUntilStr}.`
     : "";
   const loiCoaEntries: [string, string][] = loiDoc && loiDoc.coa_params && typeof loiDoc.coa_params === "object"
-    ? Object.entries(loiDoc.coa_params as Record<string, unknown>)
-        .filter(([, v]) => v != null && v !== "")
-        .map(([k, v]) => [k, String(v)] as [string, string])
+    ? // audit33: coa_params arrives in TWO shapes — the products' JSONB
+      // array [{name, value}, …] (auto-filled by the LOI route) and the
+      // legacy flat Record {param: value}. The old parser ran
+      // Object.entries() over the array and printed "[object Object]" rows
+      // in the COA table (production LOI-2026-000016). Handle both.
+      (Array.isArray(loiDoc.coa_params)
+        ? (loiDoc.coa_params as unknown[])
+            .filter((e): e is Record<string, unknown> => !!e && typeof e === "object" && !Array.isArray(e))
+            .map((e) => [String(e.name ?? e.label ?? e.key ?? ""), String(e.value ?? "")] as [string, string])
+            .filter(([k, v]) => k !== "" && v !== "")
+        : Object.entries(loiDoc.coa_params as Record<string, unknown>)
+            .filter(([, v]) => v != null && v !== "")
+            .map(([k, v]) => [k, String(v)] as [string, string]))
     : [];
   const loiSpecSource = loiDoc ? (loiDoc.specifications as any) : null;
   let loiSpecEntries: [string, string][] = [];
