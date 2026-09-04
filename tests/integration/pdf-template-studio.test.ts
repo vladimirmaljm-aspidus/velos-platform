@@ -180,12 +180,16 @@ function renderWithTemplate(tpl: DocumentTemplate | null) {
 }
 
 describe("audit22: Template Studio — Word-grade segments", () => {
-  it("renders header segments with uppercase transform + spacing + border (no crash, text present)", async () => {
+  it("audit33: header segments are IGNORED (memo frame locked); footer notes still render", async () => {
     const { pages } = await renderAndExtract(renderWithTemplate(makeTemplate()));
     const all = pages.join("\n");
-    // textTransform: uppercase applied by react-pdf
-    expect(all).toContain("ASPIDUS TRADING FZE LLC — GLOBAL TRADE DIVISION");
-    // footer italic segment substituted
+    // The header is memorandum-OWNED — template header segments (with their
+    // textTransform etc.) must NOT render; the memo header (company name)
+    // replaces them on every document.
+    expect(all).not.toContain("ASPIDUS TRADING FZE LLC — GLOBAL TRADE DIVISION");
+    // The company name from the memo header (tenant legal_name).
+    expect(all).toContain("Aspidus");
+    // Footer segments survive ONLY as small note lines under the QR.
     expect(all).toContain("Confidential — Aspidus Trading FZE");
   });
 

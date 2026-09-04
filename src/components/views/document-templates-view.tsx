@@ -35,7 +35,7 @@ import {
   Building2, Stamp, ShieldCheck, Upload, ImageIcon, X, Lock,
   Waves, Droplet, RotateCw, MapPin, Pen, Layers, ChevronDown,
   Loader2, ExternalLink, FileSearch, RefreshCw, Braces, Grid3x3,
-  PanelRightClose, PanelRightOpen, TriangleAlert,
+  PanelRightClose, PanelRightOpen, TriangleAlert, QrCode,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -44,9 +44,9 @@ import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
 
 import { EmptyState } from "@/components/common/empty-state";
 import { TemplateVisualEditor } from "@/components/common/template-visual-editor";
-import { TemplateSegmentStudio } from "@/components/common/template-segment-studio";
 import { TemplateStylePanel } from "@/components/common/template-style-panel";
 import { BankAccountSelector } from "@/components/common/bank-account-selector";
+import { MemorandumStudio } from "@/components/common/memorandum-studio";
 import {
   parseContentConfig,
   substitutePlaceholders,
@@ -58,7 +58,7 @@ import { parseStyleConfig } from "@/lib/utils/style-config";
 import { readTemplateLayout } from "@/lib/pdf/doc-template";
 import { fmtDate } from "@/lib/utils/format";
 import {
-  DocumentTemplate, TenantLetterhead, TenantSeal, Tenant,
+  DocumentTemplate, TenantLetterhead, TenantSeal, Tenant, MemorandumSettings,
 } from "@/lib/supabase/types";
 import { useAppStore, isAdmin, isSuperAdmin } from "@/lib/store/app-store";
 import { useApiUrl, useTenantKey } from "@/lib/hooks/use-api-url";
@@ -581,7 +581,10 @@ export function DocumentTemplatesView() {
   const user = useAppStore((s) => s.user);
   const admin = isAdmin(user);
   const superAdmin = isSuperAdmin(user);
-  const [activeTab, setActiveTab] = useState<string>("letterheads");
+  // audit33: the Memorandum studio is the first tab — the frame the whole
+  // document system hangs on. It is also embedded in Settings → Memorandum
+  // (single component, two mount points).
+  const [activeTab, setActiveTab] = useState<string>("memorandum-frame");
 
   // ── audit21 — CRITICAL tenant-context fix ─────────────────────────────
   // The template editor previously defaulted to `tenants[0]` (whatever
@@ -702,6 +705,9 @@ export function DocumentTemplatesView() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="w-fit">
+          <TabsTrigger value="memorandum-frame">
+            <Lock className="size-3.5 mr-1" /> {t("memo-tab")}
+          </TabsTrigger>
           <TabsTrigger value="letterheads">
             <Building2 className="size-3.5 mr-1" /> {t("doc-tab-memorandum")}
           </TabsTrigger>
@@ -713,6 +719,9 @@ export function DocumentTemplatesView() {
           </TabsTrigger>
         </TabsList>
 
+        <TabsContent value="memorandum-frame" className="mt-6">
+          <MemorandumStudio />
+        </TabsContent>
         <TabsContent value="letterheads" className="mt-6">
           <LetterheadsTab tenantQuery={tenantQuery} />
         </TabsContent>
@@ -720,7 +729,7 @@ export function DocumentTemplatesView() {
           <SealsTab tenantQuery={tenantQuery} />
         </TabsContent>
         <TabsContent value="templates" className="mt-6">
-          <TemplatesTab tenantQuery={tenantQuery} />
+          <TemplatesTab tenantQuery={tenantQuery} onOpenMemorandumStudio={() => setActiveTab("memorandum-frame")} />
         </TabsContent>
       </Tabs>
     </div>
@@ -1186,7 +1195,7 @@ function NewTemplateDropdown({
   );
 }
 
-function TemplatesTab({ tenantQuery }: { tenantQuery: string }) {
+function TemplatesTab({ tenantQuery, onOpenMemorandumStudio }: { tenantQuery: string; onOpenMemorandumStudio: () => void }) {
   const api = useApiUrl();
   const tenantKey = useTenantKey();
   const t = useT();
@@ -1252,6 +1261,19 @@ function TemplatesTab({ tenantQuery }: { tenantQuery: string }) {
     },
     enabled: queryEnabled,
   });
+
+  // audit33: the memorandum settings (the LOCKED frame) — fetched so the
+  // editor's Memorandum tab and the draft preview render the real frame.
+  const memoQ = useQuery({
+    queryKey: ["memorandum-settings", tenantKey, tenantQuery],
+    queryFn: async () => {
+      const r = await fetch(api(`/api/memorandum-settings${tenantQuery}`));
+      if (!r.ok) throw new Error("Failed to load memorandum settings");
+      return r.json() as Promise<MemorandumSettings | null>;
+    },
+    enabled: queryEnabled,
+  });
+  const memoSettings = memoQ.data ?? null;
 
   // Fetch the active tenant so we can read its bank_accounts array — needed by
   // the BankAccountSelector in the template editor.
@@ -1445,6 +1467,12 @@ function TemplatesTab({ tenantQuery }: { tenantQuery: string }) {
         tenant={tenant}
         letterheads={letterheads}
         seals={seals}
+        memoSettings={memoSettings}
+        onOpenMemorandumStudio={() => {
+          setShowForm(false);
+          setDraft(null);
+          onOpenMemorandumStudio();
+        }}
         onSaved={() => {
           setShowForm(false);
           setDraft(null);
@@ -2466,9 +2494,9 @@ function SealPreview({ form }: { form: SealFormState }) {
 // Section rail — `labelKey` resolves through t() at render time.
 const EDITOR_SECTIONS: { id: string; icon: any; labelKey: string }[] = [
   { id: "basics", icon: FileText, labelKey: "doc-section-basics" },
-  { id: "page", icon: LayoutTemplate, labelKey: "doc-section-page-layout" },
-  { id: "header", icon: AlignCenter, labelKey: "doc-section-header" },
-  { id: "footer", icon: AlignJustify, labelKey: "doc-section-footer" },
+  // audit33: the memorandum frame is LOCKED from document templates — one
+  // read-only section replaces the old page/header/footer editors.
+  { id: "memorandum", icon: Lock, labelKey: "doc-section-memorandum-frame" },
   { id: "body", icon: Type, labelKey: "doc-editor-nav-body" },
   { id: "styling", icon: Palette, labelKey: "doc-tab-styling" },
   { id: "layout", icon: Grid3x3, labelKey: "doc-editor-nav-layout" },
@@ -2480,11 +2508,19 @@ const EDITOR_SECTIONS: { id: string; icon: any; labelKey: string }[] = [
 // A4/Letter-proportioned approximation rendered straight from the
 // CURRENT form state — instant, no server round-trip. For the
 // pixel-true output use the "Real PDF" tab in the preview pane.
-function TemplateMiniPreview({ form }: { form: TemplateFormState }) {
+function TemplateMiniPreview({ form, memoSettings, tenant, letterhead }: {
+  form: TemplateFormState;
+  memoSettings: MemorandumSettings | null;
+  tenant: Tenant | null;
+  letterhead: TenantLetterhead | null;
+}) {
   const t = useT();
 
-  const pageW = form.page_size === "Letter" ? 216 : 210;
-  const pageH = form.page_size === "Letter" ? 279 : 297;
+  // audit33: page geometry comes from the memorandum (the locked frame),
+  // NOT the template's legacy page_* fields.
+  const memo = memoSettings;
+  const pageW = memo?.page_size === "Letter" ? 216 : 210;
+  const pageH = memo?.page_size === "Letter" ? 279 : 297;
   const width = 420; // px — the preview pane is ~380-520 wide
   const scale = width / pageW;
   // audit27: the page grows with the content — a fixed height clipped the
@@ -2492,9 +2528,8 @@ function TemplateMiniPreview({ form }: { form: TemplateFormState }) {
   // 1pt = 25.4/72 mm → px (never below ~3px so lines stay visible)
   const ptToPx = (pt: number) => Math.max(3, Math.round(pt * 0.3528 * scale));
 
-  const headerSegs = form.header_enabled
-    ? resolvePreviewSegments(form.header_content || DEFAULT_HEADER_CONTENT_JSON)
-    : [];
+  // audit33: footer segments survive only as small note lines in the memo
+  // footer's center zone (disclaimers); header segments are gone entirely.
   const footerSegs = form.footer_enabled
     ? resolvePreviewSegments(form.footer_content || DEFAULT_FOOTER_CONTENT_JSON)
     : [];
@@ -2690,7 +2725,7 @@ function TemplateMiniPreview({ form }: { form: TemplateFormState }) {
         style={{
           width,
           minHeight: Math.round(pageH * scale * 0.9),
-          padding: `${(form.page_margin_top ?? 20) * scale}px ${(form.page_margin_right ?? 18) * scale}px ${(form.page_margin_bottom ?? 20) * scale}px ${(form.page_margin_left ?? 18) * scale}px`,
+          padding: `${(memo?.margin_top_mm ?? 20) * scale}px ${(memo?.margin_right_mm ?? 15) * scale}px ${(memo?.margin_bottom_mm ?? 20) * scale}px ${(memo?.margin_left_mm ?? 15) * scale}px`,
           fontFamily: form.body_font_family || undefined,
           fontSize: ptToPx(form.body_font_size ?? 11),
         }}
@@ -2712,26 +2747,48 @@ function TemplateMiniPreview({ form }: { form: TemplateFormState }) {
             {wm.text}
           </span>
         )}
-        {/* Header segments (substituted, styled) */}
-        {headerSegs.length > 0 && (
-          <div className="mb-2 flex flex-col" style={{ minHeight: (form.header_height ?? 24) * scale }}>
-            {headerSegs.map((seg) => (
+        {/* audit33: HEADER — the LOCKED memorandum frame: company name
+            left + logo right (same base on every document). */}
+        {memo?.header_enabled !== false && (
+          <div
+            className="mb-3 flex items-center justify-between gap-3 border-b pb-2"
+            style={{
+              minHeight: (memo?.header_height_mm ?? 30) * scale,
+              borderBottomWidth: memo?.header_border_enabled !== false ? Math.max(1, (memo?.header_border_width ?? 2) * 0.6) : 0,
+              borderBottomColor: memo?.header_border_color || form.primary_color || "#0d9488",
+              backgroundColor: memo?.header_bg_color || "#ffffff",
+            }}
+          >
+            <div className={cn("min-w-0", (memo?.logo_side ?? "right") === "left" ? "order-2 text-right" : "")}>
               <div
-                key={seg.id}
+                className="truncate"
                 style={{
-                  fontSize: ptToPx(seg.fontSize),
-                  fontWeight: seg.bold ? 700 : 400,
-                  fontStyle: seg.italic ? "italic" : "normal",
-                  color: seg.color,
-                  textAlign: seg.alignment,
-                  lineHeight: 1.25,
-                  whiteSpace: "pre-wrap",
-                  overflowWrap: "anywhere",
+                  fontSize: ptToPx(memo?.header_left_font_size ?? 14),
+                  fontWeight: memo?.header_left_font_bold === false ? 400 : 700,
+                  color: memo?.header_left_font_color || form.primary_color || "#0d9488",
                 }}
               >
-                {seg.text || "\u00A0"}
+                {letterhead?.company_legal_name || letterhead?.company_name || tenant?.legal_name || tenant?.name || "Company"}
               </div>
-            ))}
+              {memo?.header_show_subtitle ? (
+                <div className="text-slate-500" style={{ fontSize: ptToPx(7.5) }}>
+                  {[letterhead?.company_city || tenant?.city, letterhead?.company_country || tenant?.country].filter(Boolean).join(", ")}
+                </div>
+              ) : null}
+            </div>
+            {memo?.logo_enabled !== false && (letterhead?.logo_url || tenant?.logo_url) ? (
+               
+              <img
+                src={(letterhead?.logo_url || tenant?.logo_url)!}
+                alt=""
+                className={cn("shrink-0", (memo?.logo_side ?? "right") === "left" ? "order-1" : "")}
+                style={{
+                  maxWidth: (memo?.logo_max_width_mm ?? 50) * scale,
+                  maxHeight: (memo?.logo_max_height_mm ?? 20) * scale,
+                  objectFit: memo?.logo_fit_mode === "cover" || memo?.logo_fit_mode === "fill" ? memo.logo_fit_mode : "contain",
+                }}
+              />
+            ) : null}
           </div>
         )}
 
@@ -2780,27 +2837,57 @@ function TemplateMiniPreview({ form }: { form: TemplateFormState }) {
           return null;
         })}
 
-        {/* Footer segments (substituted, styled) */}
-        {footerSegs.length > 0 && (
-          <div className="mt-auto border-t pt-1" style={{ borderColor: form.table_border_color || "#e2e8f0" }}>
-            {footerSegs.map((seg) => (
-              <div
-                key={seg.id}
-                className="truncate"
-                style={{
-                  fontSize: ptToPx(seg.fontSize),
-                  fontWeight: seg.bold ? 700 : 400,
-                  fontStyle: seg.italic ? "italic" : "normal",
-                  color: seg.color,
-                  textAlign: seg.alignment,
-                  lineHeight: 1.25,
-                }}
-              >
-                {seg.text || "\u00A0"}
+        {/* audit33: FOOTER — the LOCKED memorandum frame: company address
+            left + QR center + page number right. */}
+        {memo?.footer_enabled !== false && (() => {
+          const lPct = Math.max(15, Math.min(60, memo?.footer_left_width_pct ?? 30));
+          const cPct = Math.max(15, Math.min(60, memo?.footer_center_width_pct ?? 40));
+          const rPct = Math.max(15, Math.min(60, memo?.footer_right_width_pct ?? 30));
+          const sum = lPct + cPct + rPct;
+          const qrHere = (zone: string) => memo?.qr_enabled !== false && (memo?.qr_position || "center") === zone;
+          const addr: string[] = memo?.footer_address_source === "custom"
+            ? String(memo?.footer_address_custom || "").split("\n").map((l) => l.trim()).filter(Boolean).slice(0, 4)
+            : [
+              tenant?.address_line || letterhead?.company_address_line || "",
+              [tenant?.city || letterhead?.company_city, tenant?.country || letterhead?.company_country].filter(Boolean).join(", "),
+            ].filter(Boolean);
+          return (
+            <div
+              className="mt-auto flex items-start gap-2 border-t pt-1.5"
+              style={{
+                minHeight: (memo?.footer_height_mm ?? 25) * scale,
+                borderTopWidth: memo?.footer_border_enabled !== false ? 1 : 0,
+                borderTopColor: memo?.footer_border_color || "#cccccc",
+                backgroundColor: memo?.footer_bg_color || "#ffffff",
+              }}
+            >
+              <div style={{ width: `${(lPct / sum) * 100}%` }} className="flex min-w-0 flex-col">
+                {qrHere("left") ? <div className="mb-1 flex size-9 items-center justify-center rounded border border-dashed text-muted-foreground"><QrCode className="size-4" /></div> : null}
+                {memo?.footer_left_enabled !== false && addr.map((l, i) => (
+                  <div key={i} className="truncate" style={{ fontSize: ptToPx(memo?.footer_left_font_size ?? 8), color: memo?.footer_left_font_color || "#666", lineHeight: 1.3 }}>
+                    {l}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        )}
+              <div style={{ width: `${(cPct / sum) * 100}%` }} className="flex min-w-0 flex-col items-center">
+                {qrHere("center") ? <div className="flex size-9 items-center justify-center rounded border border-dashed text-muted-foreground"><QrCode className="size-4" /></div> : null}
+                {footerSegs.slice(0, 2).map((seg) => (
+                  <div key={seg.id} className="max-w-full truncate text-center" style={{ fontSize: ptToPx(memo?.footer_center_font_size ?? 7), color: memo?.footer_center_font_color || "#888", lineHeight: 1.3 }}>
+                    {seg.text || "\u00A0"}
+                  </div>
+                ))}
+              </div>
+              <div style={{ width: `${(rPct / sum) * 100}%` }} className="flex min-w-0 flex-col items-end">
+                {qrHere("right") ? <div className="mb-1 flex size-9 items-center justify-center rounded border border-dashed text-muted-foreground"><QrCode className="size-4" /></div> : null}
+                {memo?.page_number_enabled !== false ? (
+                  <div style={{ fontSize: ptToPx(memo?.footer_right_font_size ?? 8), color: memo?.footer_right_font_color || "#666" }}>
+                    Page 1 of 2
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          );
+        })()}
       </div>
       <p className="max-w-[400px] text-center text-xs text-muted-foreground">
         {t("doc-preview-note")}
@@ -2832,7 +2919,7 @@ function SectionIntro({
 // Shared by the desktop side pane and the mobile full-screen overlay.
 function PreviewPane({
   mode, onModeChange, onRegenerate, previewing, previewUrl, docNumber, stale,
-  form, badges, onCollapse,
+  form, badges, onCollapse, memoSettings, tenant, letterhead,
 }: {
   mode: "draft" | "pdf";
   onModeChange: (m: "draft" | "pdf") => void;
@@ -2844,6 +2931,9 @@ function PreviewPane({
   form: TemplateFormState;
   badges?: React.ReactNode;
   onCollapse?: () => void;
+  memoSettings?: MemorandumSettings | null;
+  tenant?: Tenant | null;
+  letterhead?: TenantLetterhead | null;
 }) {
   const t = useT();
   return (
@@ -2915,7 +3005,7 @@ function PreviewPane({
       {/* Body */}
       {mode === "draft" ? (
         <div className="custom-scroll flex min-h-0 flex-1 justify-center overflow-y-auto p-4">
-          <TemplateMiniPreview form={form} />
+          <TemplateMiniPreview form={form} memoSettings={memoSettings ?? null} tenant={tenant ?? null} letterhead={letterhead ?? null} />
         </div>
       ) : (
         <div className="relative min-h-0 flex-1 bg-muted/30">
@@ -2948,7 +3038,7 @@ function PreviewPane({
 }
 
 function TemplateEditorDialog({
-  open, onOpenChange, template, draft, tenantQuery, tenant, letterheads, seals, onSaved,
+  open, onOpenChange, template, draft, tenantQuery, tenant, letterheads, seals, memoSettings, onOpenMemorandumStudio, onSaved,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
@@ -2963,6 +3053,10 @@ function TemplateEditorDialog({
   tenant: Tenant | null;
   letterheads: TenantLetterhead[];
   seals: TenantSeal[];
+  /** audit33: the LOCKED memorandum frame (memo owns header/footer/page). */
+  memoSettings: MemorandumSettings | null;
+  /** Closes the dialog and opens the Memorandum studio tab. */
+  onOpenMemorandumStudio: () => void;
   onSaved: () => void;
 }) {
   const api = useApiUrl();
@@ -3111,6 +3205,9 @@ function TemplateEditorDialog({
 
   const linkedLetterhead = letterheads.find((l) => l.id === form.letterhead_id) || null;
   const linkedSeal = seals.find((s) => s.id === form.seal_id) || null;
+  // audit33: logo for the memo frame preview — the linked letterhead's logo
+  // wins over the tenant logo (same precedence as the PDF generator).
+  const linkedLogoUrl = linkedLetterhead?.logo_url || tenant?.logo_url || null;
   // audit22: real substitution data for the Segment Studio previews.
   const studioPreviewData = buildStudioPreviewData(tenant, linkedLetterhead);
 
@@ -3393,207 +3490,84 @@ function TemplateEditorDialog({
               </section>
               )}
 
-              {/* ── Page ── */}
-              {mountedSections.includes("page") && (
-              <section className={cn("space-y-4", section !== "page" && "hidden")} aria-labelledby="tpl-sec-page">
+              {/* ── Memorandum (locked frame) ── */}
+              {mountedSections.includes("memorandum") && (
+              <section className={cn("space-y-4", section !== "memorandum" && "hidden")} aria-labelledby="tpl-sec-memo">
                 <SectionIntro
-                  icon={LayoutTemplate}
-                  id="tpl-sec-page"
-                  title={t("doc-section-page-layout")}
-                  description={t("doc-editor-intro-page")}
+                  icon={Lock}
+                  id="tpl-sec-memo"
+                  title={t("doc-memo-locked-title")}
+                  description={t("doc-memo-locked-desc")}
                 />
-                <Card className="border-border/60">
-                  <CardContent className="space-y-3 p-4">
-                    <Field label={t("doc-page-size")}>
-                      <Select value={form.page_size} onValueChange={(v) => set("page_size", v as "A4" | "Letter")}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="A4">{t("doc-page-size-a4")}</SelectItem>
-                          <SelectItem value="Letter">{t("doc-page-size-letter")}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                    <Field label={t("doc-margins-mm")}>
-                      <div className="grid grid-cols-4 gap-2">
-                        <MarginInput label={t("doc-margin-top")} value={form.page_margin_top} onChange={(v) => set("page_margin_top", v)} />
-                        <MarginInput label={t("doc-margin-bottom")} value={form.page_margin_bottom} onChange={(v) => set("page_margin_bottom", v)} />
-                        <MarginInput label={t("doc-margin-left")} value={form.page_margin_left} onChange={(v) => set("page_margin_left", v)} />
-                        <MarginInput label={t("doc-margin-right")} value={form.page_margin_right} onChange={(v) => set("page_margin_right", v)} />
-                      </div>
-                    </Field>
-                  </CardContent>
-                </Card>
-              </section>
-              )}
-
-              {/* ── Header ── */}
-              {mountedSections.includes("header") && (
-              <section className={cn("space-y-4", section !== "header" && "hidden")} aria-labelledby="tpl-sec-header">
-                <SectionIntro
-                  icon={AlignCenter}
-                  id="tpl-sec-header"
-                  title={t("doc-section-header")}
-                  description={t("doc-editor-intro-header")}
-                />
-                <Card className="border-border/60">
-                  <CardContent className="space-y-3 p-4">
-                    <Field label={t("doc-enabled")}>
-                      <div className="flex items-center gap-2">
-                        <Switch checked={form.header_enabled} onCheckedChange={(v) => set("header_enabled", v)} aria-label={t("doc-enabled")} />
-                        <span className="text-sm text-muted-foreground">{t("doc-show-header-every-page")}</span>
-                      </div>
-                    </Field>
-                    {form.header_enabled && (
-                      <>
-                        <Field label={t("doc-height-mm")}>
-                          <NumberInput value={form.header_height} onChange={(v) => set("header_height", v)} min={5} max={80} />
-                        </Field>
-                        <div className="grid grid-cols-3 gap-2">
-                          <ToggleField label={t("doc-toggle-logo")} checked={form.header_show_logo} onChange={(v) => set("header_show_logo", v)} />
-                          <ToggleField label={t("doc-toggle-name")} checked={form.header_show_company_name} onChange={(v) => set("header_show_company_name", v)} />
-                          <ToggleField label={t("doc-toggle-contact")} checked={form.header_show_contact} onChange={(v) => set("header_show_contact", v)} />
-                        </div>
-                      </>
-                    )}
-                  </CardContent>
-                </Card>
-                {form.header_enabled && (
-                  <Card className="border-border/60">
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-sm">{t("doc-header-content")}</CardTitle>
-                      <CardDescription className="text-xs">{t("doc-header-content-hint")}</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      {/* audit22: Word-grade Segment Studio — full typography
-                          (fonts/sizes/B I U S), spacing, colours, backgrounds,
-                          borders; variables insert at the cursor. */}
-                      <TemplateSegmentStudio
-                        contentJson={form.header_content || DEFAULT_HEADER_CONTENT_JSON}
-                        onChange={(val) => set("header_content", val)}
-                        kind="header"
-                        variables={STUDIO_VARIABLES}
-                        previewData={studioPreviewData}
-                        bodyFontFamily={form.body_font_family}
-                      />
-                    </CardContent>
-                  </Card>
-                )}
-              </section>
-              )}
-
-              {/* ── Footer (+ QR) ── */}
-              {mountedSections.includes("footer") && (
-              <section className={cn("space-y-4", section !== "footer" && "hidden")} aria-labelledby="tpl-sec-footer">
-                <SectionIntro
-                  icon={AlignJustify}
-                  id="tpl-sec-footer"
-                  title={t("doc-section-footer")}
-                  description={t("doc-editor-intro-footer")}
-                />
-                <Card className="border-border/60">
-                  <CardContent className="space-y-3 p-4">
-                    <Field label={t("doc-enabled")}>
-                      <div className="flex items-center gap-2">
-                        <Switch checked={form.footer_enabled} onCheckedChange={(v) => set("footer_enabled", v)} aria-label={t("doc-enabled")} />
-                        <span className="text-sm text-muted-foreground">{t("doc-show-footer-every-page")}</span>
-                      </div>
-                    </Field>
-                    {form.footer_enabled && (
-                      <>
-                        <Field label={t("doc-height-mm")}>
-                          <NumberInput value={form.footer_height} onChange={(v) => set("footer_height", v)} min={5} max={60} />
-                        </Field>
-                        <div className="grid grid-cols-3 gap-2">
-                          <ToggleField label={t("doc-toggle-page-num")} checked={form.footer_show_page_number} onChange={(v) => set("footer_show_page_number", v)} />
-                          <ToggleField label={t("doc-toggle-bank")} checked={form.footer_show_bank_details} onChange={(v) => set("footer_show_bank_details", v)} />
-                          <ToggleField label={t("doc-toggle-tax-id")} checked={form.footer_show_tax_id} onChange={(v) => set("footer_show_tax_id", v)} />
-                        </div>
-                      </>
-                    )}
-                  </CardContent>
-                </Card>
-                {form.footer_enabled && (
-                  <Card className="border-border/60">
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-sm">{t("doc-footer-content")}</CardTitle>
-                      <CardDescription className="text-xs">{t("doc-footer-content-hint")}</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      {/* audit22: Word-grade Segment Studio (footer). The
-                          _qrConfig inside footer_content is preserved by
-                          the studio on every serialize. */}
-                      <TemplateSegmentStudio
-                        contentJson={form.footer_content || DEFAULT_FOOTER_CONTENT_JSON}
-                        onChange={(val) => set("footer_content", val)}
-                        kind="footer"
-                        variables={STUDIO_VARIABLES}
-                        previewData={studioPreviewData}
-                        bodyFontFamily={form.body_font_family}
-                      />
-                    </CardContent>
-                  </Card>
-                )}
-                {form.footer_enabled && (
-                  <Card className="border-border/60">
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-sm">{t("doc-qr-placement")}</CardTitle>
-                      <CardDescription className="text-xs">{t("doc-qr-placement-desc")}</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      {/* ── QR code placement ──
-                          Stored inside footer_content._qrConfig (NOT a real
-                          DB column) — see writeQrConfig / parseQrConfig. */}
-                      <Field label={t("doc-position")}>
-                        <Select
-                          value={form.qr_position ?? "footer-right"}
-                          onValueChange={(v) => set("qr_position", v)}
-                        >
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="footer-right">{t("doc-qr-footer-right")}</SelectItem>
-                            <SelectItem value="footer-left">{t("doc-qr-footer-left")}</SelectItem>
-                            <SelectItem value="footer-center">{t("doc-qr-footer-center")}</SelectItem>
-                            <SelectItem value="none">{t("doc-qr-none")}</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </Field>
-                      {form.qr_position !== "none" && (
-                        <>
-                          <div>
-                            <div className="flex items-center justify-between mb-1">
-                              <Label className="text-xs">{t("doc-qr-size-mm")}</Label>
-                              <span className="text-xs tabular text-muted-foreground">
-                                {form.qr_size_mm ?? 15} mm
-                              </span>
-                            </div>
-                            <Slider
-                              value={[form.qr_size_mm ?? 15]}
-                              min={8}
-                              max={40}
-                              step={1}
-                              onValueChange={(v) => set("qr_size_mm", v[0])}
-                            />
+                <Card className="border-border/60 bg-muted/20">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-sm">
+                      <Lock className="size-4 text-muted-foreground" />
+                      {t("doc-memo-locked-frame-preview")}
+                    </CardTitle>
+                    <CardDescription className="text-xs">{t("memo-studio-desc")}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {/* Compact frame preview — the memorandum as saved. */}
+                    <div className="rounded-lg border border-dashed border-border bg-white p-4">
+                      <div className="flex items-center justify-between gap-4 border-b pb-2" style={{ borderColor: (memoSettings?.header_border_color || memoSettings?.primary_color || "#0d9488"), borderBottomWidth: (memoSettings?.header_border_width ?? 2) }}>
+                        <div className="min-w-0">
+                          <div
+                            className="truncate font-bold"
+                            style={{
+                              color: memoSettings?.header_left_font_color || memoSettings?.primary_color || "#0d9488",
+                              fontSize: (memoSettings?.header_left_font_size ?? 14) * 0.9,
+                            }}
+                          >
+                            {tenant?.legal_name || tenant?.name || "Company"}
                           </div>
-                          <div>
-                            <div className="flex items-center justify-between mb-1">
-                              <Label className="text-xs">{t("doc-qr-opacity")}</Label>
-                              <span className="text-xs tabular text-muted-foreground">
-                                {Math.round((form.qr_opacity ?? 1) * 100)}%
-                              </span>
+                          {memoSettings?.header_show_subtitle && (tenant?.city || tenant?.country) ? (
+                            <div className="text-xs text-muted-foreground">
+                              {[tenant?.city, tenant?.country].filter(Boolean).join(", ")}
                             </div>
-                            <Slider
-                              value={[Math.round((form.qr_opacity ?? 1) * 100)]}
-                              min={20}
-                              max={100}
-                              step={5}
-                              onValueChange={(v) => set("qr_opacity", v[0] / 100)}
-                            />
+                          ) : null}
+                        </div>
+                        {linkedLogoUrl ? (
+                           
+                          <img src={linkedLogoUrl} alt="" className="shrink-0" style={{ maxWidth: 96, maxHeight: 36, objectFit: "contain" }} />
+                        ) : (
+                          <div className="flex h-9 w-24 items-center justify-center rounded border border-dashed text-[10px] text-muted-foreground">
+                            {t("memo-logo")}
                           </div>
-                        </>
-                      )}
-                    </CardContent>
-                  </Card>
-                )}
+                        )}
+                      </div>
+                      <div className="py-6 text-center text-xs text-muted-foreground">
+                        {t("memo-preview-body-note")}
+                      </div>
+                      <div className="flex items-start justify-between gap-3 border-t pt-2" style={{ borderColor: memoSettings?.footer_border_color || "#cccccc" }}>
+                        <div className="min-w-0 flex-1 text-[10px] leading-snug" style={{ color: memoSettings?.footer_left_font_color || "#666" }}>
+                          {(tenant?.address_line || tenant?.city || tenant?.country) ? (
+                            <>
+                              <div className="truncate">{tenant?.address_line}</div>
+                              <div className="truncate">{[tenant?.city, tenant?.country].filter(Boolean).join(", ")}</div>
+                            </>
+                          ) : (
+                            <span className="opacity-60">{t("memo-footer-left")}</span>
+                          )}
+                        </div>
+                        <div className="flex size-8 shrink-0 items-center justify-center rounded border border-dashed text-muted-foreground">
+                          {memoSettings?.qr_enabled !== false && (memoSettings?.qr_position || "center") !== "none" ? (
+                            <QrCode className="size-5" />
+                          ) : (
+                            <span className="text-[8px]">QR off</span>
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1 text-right text-[10px]" style={{ color: memoSettings?.footer_right_font_color || "#666" }}>
+                          {memoSettings?.page_number_enabled !== false ? "Page 1 of 2" : "—"}
+                        </div>
+                      </div>
+                    </div>
+                    <Button variant="outline" className="w-full" onClick={onOpenMemorandumStudio}>
+                      <Building2 className="size-4" />
+                      <span className="ml-1.5">{t("doc-memo-locked-open")}</span>
+                    </Button>
+                  </CardContent>
+                </Card>
               </section>
               )}
 
@@ -3799,6 +3773,9 @@ function TemplateEditorDialog({
               </button>
             ) : (
               <PreviewPane
+                memoSettings={memoSettings}
+                tenant={tenant}
+                letterhead={linkedLetterhead}
                 mode={previewMode}
                 onModeChange={handleModeSwitch}
                 onRegenerate={handlePreview}
@@ -3831,6 +3808,9 @@ function TemplateEditorDialog({
               </div>
               <div className="flex min-h-0 flex-1 flex-col">
                 <PreviewPane
+                  memoSettings={memoSettings}
+                  tenant={tenant}
+                  letterhead={linkedLetterhead}
                   mode={previewMode}
                   onModeChange={handleModeSwitch}
                   onRegenerate={handlePreview}

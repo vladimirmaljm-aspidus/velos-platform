@@ -175,18 +175,17 @@ describe("audit13 — production LOI regression (memorandum + footer)", () => {
     expect(all).toContain("ASPIDUS DMCC");
   });
 
-  it("footer + party boxes contain NO duplicated city/country", async () => {
-    const { all } = await renderAndExtract(renderLoi());
-    // The exact duplication the user saw:
+  it("footer + party boxes keep the address clean (audit33: footer carries it on every page)", async () => {
+    const { all, pages } = await renderAndExtract(renderLoi());
+    // The exact duplication bug the user saw never returns:
     expect(all).not.toContain("Dubai, UAE, Dubai");
-    expect(all).not.toContain("Dubai, United");
-    // audit14: the footer no longer carries the tenant address at all — it
-    // duplicated the FROM/TO party boxes on every page of a multi-page
-    // document ("same information 6 times"). The deduped address now
-    // renders EXACTLY ONCE, in the party box on page 1:
+    // audit33 canonical design: the memorandum footer shows the company
+    // address on EVERY page (address LEFT zone). The narrow footer zone
+    // wraps it across lines — normalise whitespace before matching.
     const footerAddr = "GoldCrest Executive Tower, 1002-A, JLT Cluster C, Dubai, UAE";
-    const occurrences = all.split(footerAddr).length - 1;
-    expect(occurrences).toBe(1);
+    for (const p of pages) {
+      expect(p.replace(/\s+/g, " ")).toContain(footerAddr);
+    }
     // Partner box: city "Dubai" is inside "Dubai Silicon Oasis" → not
     // appended; country appended once:
     expect(all).toContain("IFZA Business Park, Building A2, Dubai Silicon Oasis");

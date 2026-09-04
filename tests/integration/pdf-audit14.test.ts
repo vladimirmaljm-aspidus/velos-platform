@@ -231,12 +231,15 @@ describe("audit14 — footer pinned to the bottom on EVERY page (geometry)", () 
         expect(item.y).toBeLessThan(FOOTER_BAND);
         expect(item.y).toBeGreaterThan(0);
       }
-      // 3. NOTHING else is in the footer band — body content never overlaps
-      //    the pinned footer (the page reserves bottom padding for it).
-      const others = its.filter(
-        (i) => !pgItems.includes(i) && i.y < 45,
-      );
-      expect(others.map((o) => o.str)).toEqual([]);
+      // 3. Only FRAME content lives in the band (audit33: canonical footer =
+      //    address LEFT + QR CENTER + page number RIGHT + note lines) —
+      //    body content (line items etc.) never overlaps the pinned footer.
+      const bandText = its.filter((i) => i.y < 45).map((i) => i.str).join("\n");
+      expect(bandText).not.toContain("Sesame");
+      expect(bandText).not.toContain("OFF-");
+      // The frame: address (memo footer-left) + page number, every page.
+      expect(bandText).toContain("Page");
+      expect(bandText).toContain("GoldCrest");
     }
   });
 
@@ -269,9 +272,10 @@ describe("audit14 — footer content: no information duplicated across the docum
         expect(joined).toContain("www.aspidus.co");
         expect(joined).toContain("OFF-2026-000009");
       } else {
-        // pages 2..8 carry NEITHER — the old footer repeated all of them
-        // on every page ("same information 6 times on one document"):
-        expect(joined).not.toContain("GoldCrest");
+        // audit33 canonical: pages 2..8 carry the tenant ADDRESS (memo
+        // footer-left zone — the LOI look) but NEITHER the contact info
+        // nor the doc number (those stay page-1-only, no duplication):
+        expect(joined).toContain("GoldCrest");
         expect(joined).not.toContain("www.aspidus.co");
         expect(joined).not.toContain("desk@aspidus.co");
         expect(joined).not.toContain("OFF-2026-000009");
@@ -279,15 +283,20 @@ describe("audit14 — footer content: no information duplicated across the docum
     }
   });
 
-  it("the footer band carries ONLY the page number (no address, no identifiers)", async () => {
+  it("audit33: the footer band carries the canonical frame — address + page number, no identifiers", async () => {
     const pdf = await renderPdf(renderTrade(offer, "offer"));
     for (let p = 1; p <= pdf.numPages; p++) {
       const { items: its } = await pageItems(pdf, p);
       const bandStrs = its.filter((i) => i.y < 45).map((i) => i.str);
-      const nonPage = bandStrs.filter(
-        (s) => !/^Page \d+ of \d+$/.test(s) && !/^\d+ of \d+$/.test(s) && s !== "Page ",
-      );
-      expect(nonPage).toEqual([]);
+      const band = bandStrs.join("\n");
+      // Canonical LOI look: company address LEFT + page number RIGHT.
+      expect(band).toMatch(/Page \d+ of \d+/);
+      expect(band).toContain("GoldCrest Executive Tower");
+      // NO identifiers that duplicate the title meta / party contact info:
+      expect(band).not.toContain("OFF-");
+      expect(band).not.toContain("www.aspidus.co");
+      expect(band).not.toContain("desk@aspidus.co");
+      expect(band).not.toContain("+971");
     }
   });
 });

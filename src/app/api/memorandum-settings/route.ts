@@ -104,6 +104,8 @@ export async function PUT(req: NextRequest) {
   // / QR geometry columns below are integer (body_line_height is real);
   // coerce numeric strings, 400 on junk so the raw PG text can never leak.
   {
+    // audit33: extended for the Memorandum Engine v2 columns (page setup,
+    // margins, footer-left fonts, footer border, QR opacity).
     const bad = assertNumeric(body, [
       "header_height_mm", "header_left_font_size",
       "logo_max_width_mm", "logo_max_height_mm",
@@ -113,8 +115,54 @@ export async function PUT(req: NextRequest) {
       "footer_center_font_size", "footer_right_font_size",
       "footer_left_width_pct", "footer_center_width_pct", "footer_right_width_pct",
       "body_font_size", "body_line_height",
+      "margin_top_mm", "margin_bottom_mm", "margin_left_mm", "margin_right_mm",
+      "footer_left_font_size",
     ]);
     if (bad) return bad;
+  }
+
+  // ── audit33: enum-ish TEXT columns get value validation (a bad value
+  // would otherwise trip the DB CHECK constraints added in migration 090
+  // and leak a raw 23514 error as a 500). Whitelist, 400 on junk.
+  {
+    const enums: [string, string[]][] = [
+      ["page_size", ["A4", "Letter"]],
+      ["logo_side", ["left", "right"]],
+      ["qr_position", ["left", "center", "right", "none"]],
+      ["footer_address_source", ["tenant", "custom"]],
+    ];
+    for (const [col, allowed] of enums) {
+      const v = body[col];
+      if (v !== undefined && v !== null && (typeof v !== "string" || !allowed.includes(v))) {
+        return NextResponse.json(
+          { error: `Invalid ${col}. Allowed: ${allowed.join(", ")}.` },
+          { status: 400 },
+        );
+      }
+    }
+    // Numeric-ish REAL columns (opacity, border width) — coerce strings,
+    // range-check, 400 on junk.
+    const reals: [string, number, number][] = [
+      ["qr_opacity", 0, 1],
+      ["header_border_width", 0, 6],
+    ];
+    for (const [col, min, max] of reals) {
+      const v = body[col];
+      if (v === undefined || v === null) continue;
+      const n = typeof v === "number" ? v : Number(v);
+      if (!Number.isFinite(n) || n < min || n > max) {
+        return NextResponse.json(
+          { error: `Invalid ${col}. Must be a number between ${min} and ${max}.` },
+          { status: 400 },
+        );
+      }
+      body[col] = n;
+    }
+    // footer_address_custom is free multi-line text — cap the length so a
+    // pasted novel can't blow the footer render.
+    if (typeof body.footer_address_custom === "string" && body.footer_address_custom.length > 2000) {
+      body.footer_address_custom = body.footer_address_custom.slice(0, 2000);
+    }
   }
 
   // Strip fields that shouldn't be updated directly

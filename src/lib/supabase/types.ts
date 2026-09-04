@@ -2238,4 +2238,40 @@ export interface MemorandumSettings {
   body_line_height: number;
   body_text_color: string;
   primary_color: string;
+
+  // ── audit33: Memorandum Engine v2 — the memo owns the FRAME ──────────
+  // Page setup (template page_* fields are legacy now — one consistent
+  // page frame per tenant).
+  page_size?: string; // 'A4' | 'Letter'
+  margin_top_mm?: number;
+  margin_bottom_mm?: number;
+  margin_left_mm?: number;
+  margin_right_mm?: number;
+
+  // Header (canonical: company name LEFT + logo RIGHT)
+  header_border_enabled?: boolean;
+  header_border_color?: string | null; // NULL → primary_color
+  header_border_width?: number;
+  header_show_subtitle?: boolean; // city/country line under the name
+  logo_side?: string; // 'right' | 'left'
+
+  // Footer LEFT zone — company address block
+  footer_left_enabled?: boolean;
+  footer_left_font_family?: string;
+  footer_left_font_size?: number;
+  footer_left_font_color?: string;
+  footer_address_source?: string; // 'tenant' | 'custom'
+  footer_address_custom?: string;
+  footer_show_contact?: boolean;
+
+  // Footer QR (canonical: center)
+  qr_position?: string; // 'left' | 'center' | 'right' | 'none'
+  qr_opacity?: number;
+
+  // Footer band border
+  footer_border_enabled?: boolean;
+  footer_border_color?: string;
+
+  // Footer RIGHT zone — page number
+  page_number_enabled?: boolean;
 }

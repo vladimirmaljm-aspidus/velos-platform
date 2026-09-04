@@ -274,8 +274,13 @@ describe("audit20: DocumentTemplate wiring — offer", () => {
     expect(height).toBeGreaterThan(0);
   });
 
-  it("honours page_size Letter (612×792pt)", async () => {
-    const { pdf } = await renderPdf(renderWithTemplate(makeTemplate({ page_size: "Letter" })));
+  it("honours page_size Letter (612×792pt) — audit33: the MEMORANDUM owns the page frame", async () => {
+    // audit33: page size comes from memorandum_settings, not the template
+    // (the template's page_* fields are legacy — the frame is locked).
+    const { pdf } = await renderPdf(renderWithTemplate(
+      makeTemplate({ page_size: "A4" }),
+      { memorandumSettings: { page_size: "Letter" } as any },
+    ));
     const { width, height } = await pageItems(pdf, 1);
     expect(Math.round(width)).toBe(612);
     expect(Math.round(height)).toBe(792);
@@ -301,12 +306,14 @@ describe("audit20: DocumentTemplate wiring — offer", () => {
     expect(off.pdf.numPages).toBe(on.pdf.numPages);
   });
 
-  it("header_show_company_name=false + no segments renders an empty header band", async () => {
-    const { pdf } = await renderPdf(renderWithTemplate(makeTemplate({
-      header_content: "",
-      header_show_company_name: false,
-      header_show_contact: false,
-    })));
+  it("audit33: header_enabled=false (memorandum) renders an empty header band", async () => {
+    // The header is memorandum-OWNED — header_show_company_name (a dead
+    // template field) no longer controls anything; the memo's
+    // header_enabled switch is the single gate.
+    const { pdf } = await renderPdf(renderWithTemplate(
+      makeTemplate({ header_content: "", header_show_company_name: true }),
+      { memorandumSettings: { header_enabled: false } as any },
+    ));
     const { items } = await pageItems(pdf, 1);
     const headerBand = items.filter((i) => i.y > 780); // top 26mm ≈ 74pt of A4 (842pt)
     expect(headerBand.length).toBe(0);
@@ -315,19 +322,28 @@ describe("audit20: DocumentTemplate wiring — offer", () => {
     expect(all).toContain("OFFER");
   });
 
-  it("template-less render (memo fallback) keeps the classic layout", async () => {
+  it("template-less render (memo fallback) keeps the canonical frame", async () => {
     const { pdf } = await renderPdf(renderWithTemplate(null));
     const p1 = await pageItems(pdf, 1);
     expect(p1.items.some((i) => i.str.includes("ASPIDUS DMCC"))).toBe(true);
     expect(p1.items.some((i) => i.str.includes("OFFER"))).toBe(true);
     expect(p1.items.some((i) => /Page 1 of/.test(i.str))).toBe(true);
-    // No template → bank list unfiltered — the Bank Details section lives
-    // at the END of the document, so extract every page.
-    const last = await pageItems(pdf, pdf.numPages);
-    const lastText = last.items.map((i) => i.str).join("\n");
-    expect(lastText).toContain("Emirates NBD");
-    expect(lastText).toContain("ADIB");
-    expect(lastText).not.toContain("Mashreq-only-exclusivity"); // sanity
+    // audit33: with no memo row, built-in frame defaults still put the
+    // tenant address in the footer LEFT zone of EVERY page.
+    const everyPage: string[] = [];
+    for (let i = 1; i <= pdf.numPages; i++) {
+      everyPage.push((await pageItems(pdf, i)).items.map((x) => x.str).join("\n"));
+    }
+    const all = everyPage.join("\n");
+    // No template → bank list unfiltered (all three tenant accounts).
+    expect(all).toContain("Emirates NBD");
+    expect(all).toContain("Mashreq Bank");
+    expect(all).toContain("ADIB");
+    expect(all).not.toContain("Mashreq-only-exclusivity"); // sanity
+    // Footer address (canonical: address LEFT on every page).
+    for (const page of everyPage) {
+      expect(page).toContain("GoldCrest Executive Tower");
+    }
   });
 
   it("skips the body notice when a footer segment carries the same legal text", async () => {

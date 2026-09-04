@@ -22,6 +22,11 @@ export interface GeneratePdfOptions {
    *  how the (possibly unsaved) form would look on a real document. The
    *  override never writes verifications (createVerification is forced off). */
   templateOverride?: DocumentTemplate | null;
+  /** audit33: render with THESE memorandum settings instead of the stored
+   *  row — used by the Memorandum Studio's live "Real PDF preview" so the
+   *  admin previews the unsaved letterhead exactly as it would print. Like
+   *  the template override it never writes anything. */
+  memorandumOverride?: MemorandumSettings | null;
   /** PERF (D2 fix): rows the CALLING ROUTE already fetched for its own
    *  tenant/ownership checks and filename build. When supplied (and the
    *  ids match), generatePdf skips re-fetching them — previously every
@@ -283,13 +288,19 @@ export async function generatePdf(opts: GeneratePdfOptions): Promise<GeneratePdf
     if (pre && pre.id === opts.tenantId) return pre;
     return store.getTenant(opts.tenantId);
   })();
-  const memoFetch: Promise<MemorandumSettings | null> = getMemorandumSettings(opts.tenantId).catch(
-    (memoErr: unknown) => {
+  const memoFetch: Promise<MemorandumSettings | null> = (async () => {
+    // audit33: Memorandum Studio preview — the unsaved settings override
+    // the stored row (the override object is trusted: it passed the same
+    // enum/numeric validation surface as the save route).
+    if (opts.memorandumOverride) return opts.memorandumOverride;
+    try {
+      return await getMemorandumSettings(opts.tenantId);
+    } catch (memoErr: unknown) {
       // Don't fail the whole PDF — fall back to built-in defaults.
       console.warn("[PDF] MemorandumSettings fetch failed — continuing with defaults:", memoErr);
       return null;
-    },
-  );
+    }
+  })();
   // ── DocumentTemplate (audit20 / 20-a) ────────────────────────────────
   // The template the user edits in the Document Templates view — page size,
   // margins, header/footer segments, colours, table styling, letterhead +
