@@ -27,6 +27,11 @@ export interface GeneratePdfOptions {
    *  admin previews the unsaved letterhead exactly as it would print. Like
    *  the template override it never writes anything. */
   memorandumOverride?: MemorandumSettings | null;
+  /** audit33: generate a LOCAL verification code for the render (never
+   *  persisted) so the Memorandum Studio preview shows the QR exactly as
+   *  a real download would — the admin is styling the QR zone, seeing it
+   *  matters more than the code being live. */
+  previewQrCode?: boolean;
   /** PERF (D2 fix): rows the CALLING ROUTE already fetched for its own
    *  tenant/ownership checks and filename build. When supplied (and the
    *  ids match), generatePdf skips re-fetching them — previously every
@@ -385,6 +390,11 @@ export async function generatePdf(opts: GeneratePdfOptions): Promise<GeneratePdf
     if (existingVerification && existingVerification.status === "active") {
       verificationCode = existingVerification.verification_code;
       verificationId = existingVerification.id;
+    }
+    // audit33: Memorandum Studio preview — mint a LOCAL code (never stored)
+    // so the QR renders while styling the frame.
+    if (!verificationCode && opts.previewQrCode) {
+      verificationCode = generateVerificationCode(opts.docType, doc.number);
     }
   }
 

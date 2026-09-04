@@ -257,6 +257,7 @@ export async function POST(req: NextRequest) {
       docId,
       tenantId,
       createVerification: false, // previews NEVER issue verifications
+      previewQrCode: true, // audit33: render the QR in the studio preview
       memorandumOverride,
       prefetched,
     });
