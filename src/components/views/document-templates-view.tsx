@@ -709,7 +709,7 @@ export function DocumentTemplatesView() {
             <Lock className="size-3.5 mr-1" /> {t("memo-tab")}
           </TabsTrigger>
           <TabsTrigger value="letterheads">
-            <Building2 className="size-3.5 mr-1" /> {t("doc-tab-memorandum")}
+            <Building2 className="size-3.5 mr-1" /> {t("doc-tab-letterheads")}
           </TabsTrigger>
           <TabsTrigger value="seals">
             <Stamp className="size-3.5 mr-1" /> {t("doc-tab-zigled")}
