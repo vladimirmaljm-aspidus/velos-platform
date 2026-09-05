@@ -831,6 +831,8 @@ export const MISC: Record<Locale, Record<string, string>> = {
     // ── App shell ───────────────────────────────────────────────────────
     "misc-navigation-sr": "Navigation",
     "misc-open-menu-aria": "Open menu",
+    // P1-1 (audit 4-d a11y) — skip-to-content link label (AppShell).
+    "skipToContent": "Skip to main content",
 
     // ── Impersonate banner ──────────────────────────────────────────────
     "misc-impersonating-as": "IMPERSONATING as",
@@ -1977,6 +1979,8 @@ export const MISC: Record<Locale, Record<string, string>> = {
     // ── App shell ───────────────────────────────────────────────────────
     "misc-navigation-sr": "Navigacija",
     "misc-open-menu-aria": "Otvori meni",
+    // P1-1 (audit 4-d a11y) — skip-to-content link label (AppShell).
+    "skipToContent": "Pređi na glavni sadržaj",
 
     // ── Impersonate banner ──────────────────────────────────────────────
     "misc-impersonating-as": "OPONAŠANJE kao",
@@ -3115,6 +3119,8 @@ export const MISC: Record<Locale, Record<string, string>> = {
     // ── App shell ───────────────────────────────────────────────────────
     "misc-navigation-sr": "Navigasyon",
     "misc-open-menu-aria": "Menüyü aç",
+    // P1-1 (audit 4-d a11y) — skip-to-content link label (AppShell).
+    "skipToContent": "Ana içeriğe geç",
 
     // ── Impersonate banner ──────────────────────────────────────────────
     "misc-impersonating-as": "TAKLİT EDİLİYOR",
@@ -4253,6 +4259,8 @@ export const MISC: Record<Locale, Record<string, string>> = {
     // ── App shell ───────────────────────────────────────────────────────
     "misc-navigation-sr": "Navigation",
     "misc-open-menu-aria": "Menü öffnen",
+    // P1-1 (audit 4-d a11y) — skip-to-content link label (AppShell).
+    "skipToContent": "Zum Hauptinhalt springen",
 
     // ── Impersonate banner ──────────────────────────────────────────────
     "misc-impersonating-as": "IMITATION als",
@@ -5391,6 +5399,8 @@ export const MISC: Record<Locale, Record<string, string>> = {
     // ── App shell ───────────────────────────────────────────────────────
     "misc-navigation-sr": "Навигация",
     "misc-open-menu-aria": "Открыть меню",
+    // P1-1 (audit 4-d a11y) — skip-to-content link label (AppShell).
+    "skipToContent": "Перейти к основному содержимому",
 
     // ── Impersonate banner ──────────────────────────────────────────────
     "misc-impersonating-as": "ИМИТАЦИЯ",
