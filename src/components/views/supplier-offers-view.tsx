@@ -36,6 +36,7 @@ import {
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
 import { EmptyState } from "@/components/common/empty-state";
+import { QueryError } from "@/components/common/query-error";
 import { ProductPicker } from "@/components/common/product-picker";
 import { PartnerPicker } from "@/components/common/partner-picker";
 import { fmtMoney, fmtDate } from "@/lib/utils/format";
@@ -108,7 +109,7 @@ export function SupplierOffersView() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["supplier-offers", tenantKey, debouncedSearch, productFilter, supplierFilter, statusFilter],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -243,7 +244,11 @@ export function SupplierOffersView() {
 
       <Card className="border-border/60 shadow-soft rounded-xl">
         <CardContent className="p-0">
-          {isLoading ? (
+          {isError ? (
+            <div className="p-4">
+              <QueryError onRetry={() => refetch()} />
+            </div>
+          ) : isLoading ? (
             <div className="p-4 space-y-2">
               {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
             </div>

@@ -40,6 +40,7 @@ import { PageHeader } from "@/components/common/page-header";
 import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
 
 import { EmptyState } from "@/components/common/empty-state";
+import { QueryError } from "@/components/common/query-error";
 import { fmtMoney, fmtDate } from "@/lib/utils/format";
 import { CURRENCIES as REF_CURRENCIES } from "@/lib/data/reference";
 
@@ -245,6 +246,7 @@ export function CommissionsView() {
             partnerMap={partnerMap}
             locale={locale}
             isLoading={agentsQ.isLoading}
+            isError={agentsQ.isError}
             onRefresh={() => qc.invalidateQueries({ queryKey: ["commission-agents", tenantKey] })}
           />
         </TabsContent>
@@ -258,6 +260,7 @@ export function CommissionsView() {
             partnerMap={partnerMap}
             locale={locale}
             isLoading={dealsQ.isLoading}
+            isError={dealsQ.isError}
             onRefresh={() => {
               qc.invalidateQueries({ queryKey: ["deal-commissions", tenantKey] });
               qc.invalidateQueries({ queryKey: ["commission-summaries", tenantKey] });
@@ -273,6 +276,7 @@ export function CommissionsView() {
             partnerMap={partnerMap}
             locale={locale}
             isLoading={payoutsQ.isLoading}
+            isError={payoutsQ.isError}
             onRefresh={() => {
               qc.invalidateQueries({ queryKey: ["commission-payouts", tenantKey] });
               qc.invalidateQueries({ queryKey: ["commission-summaries", tenantKey] });
@@ -290,13 +294,14 @@ export function CommissionsView() {
    ═════════════════════════════════════════════════════════════════════════ */
 
 function AgentsTab({
-  agents, partners, partnerMap, locale, isLoading, onRefresh,
+  agents, partners, partnerMap, locale, isLoading, isError, onRefresh,
 }: {
   agents: CommissionAgent[];
   partners: { id: string; name: string }[];
   partnerMap: Map<string, string>;
   locale?: string;
   isLoading: boolean;
+  isError: boolean;
   onRefresh: () => void;
 }) {
   const api = useApiUrl();
@@ -339,7 +344,11 @@ function AgentsTab({
 
       <Card className="border-border/60 shadow-soft rounded-xl">
         <CardContent className="p-0">
-          {isLoading ? (
+          {isError ? (
+            <div className="p-4">
+              <QueryError onRetry={onRefresh} />
+            </div>
+          ) : isLoading ? (
             <div className="p-4 space-y-2">
               {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
             </div>
@@ -665,7 +674,7 @@ function AgentFormDialog({
    ═════════════════════════════════════════════════════════════════════════ */
 
 function DealCommissionsTab({
-  commissions, agents, partners, deals, partnerMap, locale, isLoading, onRefresh,
+  commissions, agents, partners, deals, partnerMap, locale, isLoading, isError, onRefresh,
 }: {
   commissions: DealCommission[];
   agents: CommissionAgent[];
@@ -674,6 +683,7 @@ function DealCommissionsTab({
   partnerMap: Map<string, string>;
   locale?: string;
   isLoading: boolean;
+  isError: boolean;
   onRefresh: () => void;
 }) {
   const api = useApiUrl();
@@ -738,7 +748,11 @@ function DealCommissionsTab({
 
       <Card className="border-border/60 shadow-soft rounded-xl">
         <CardContent className="p-0">
-          {isLoading ? (
+          {isError ? (
+            <div className="p-4">
+              <QueryError onRetry={onRefresh} />
+            </div>
+          ) : isLoading ? (
             <div className="p-4 space-y-2">
               {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
             </div>
@@ -1231,7 +1245,7 @@ async function markPaidCommission(id: string, onRefresh: () => void, api: (path:
    ═════════════════════════════════════════════════════════════════════════ */
 
 function PayoutsTab({
-  payouts, agents, dealCommissions, partnerMap, locale, isLoading, onRefresh,
+  payouts, agents, dealCommissions, partnerMap, locale, isLoading, isError, onRefresh,
 }: {
   payouts: CommissionPayout[];
   agents: CommissionAgent[];
@@ -1239,6 +1253,7 @@ function PayoutsTab({
   partnerMap: Map<string, string>;
   locale?: string;
   isLoading: boolean;
+  isError: boolean;
   onRefresh: () => void;
 }) {
   const t = useT();
@@ -1257,7 +1272,11 @@ function PayoutsTab({
 
       <Card className="border-border/60 shadow-soft rounded-xl">
         <CardContent className="p-0">
-          {isLoading ? (
+          {isError ? (
+            <div className="p-4">
+              <QueryError onRetry={onRefresh} />
+            </div>
+          ) : isLoading ? (
             <div className="p-4 space-y-2">
               {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
             </div>

@@ -27,6 +27,7 @@ import { Plus, Pencil, Trash2, ListChecks, CheckCircle2, Link2 } from "lucide-re
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
 import { EmptyState } from "@/components/common/empty-state";
+import { QueryError } from "@/components/common/query-error";
 import { fmtDate, fmtRelative, fmtNumber, fmtMoney } from "@/lib/utils/format";
 import { UserTask } from "@/lib/supabase/types";
 import { useApiUrl, useTenantKey } from "@/lib/hooks/use-api-url";
@@ -73,7 +74,7 @@ export function TasksView() {
 
   const queryKey = useMemo(() => ["tasks", tenantKey, mine] as const, [mine, tenantKey]);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey,
     queryFn: async () => {
       const url = mine ? api("/api/tasks?mine=true") : api("/api/tasks");
@@ -145,7 +146,9 @@ export function TasksView() {
         }
       />
 
-      {isLoading ? (
+      {isError ? (
+        <QueryError onRetry={() => refetch()} />
+      ) : isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {Array.from({ length: 4 }).map((_, i) => (
             <Card key={i} className="border-border/60 shadow-soft rounded-xl">

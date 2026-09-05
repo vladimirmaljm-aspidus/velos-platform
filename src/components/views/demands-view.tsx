@@ -42,6 +42,7 @@ import { PageHeader } from "@/components/common/page-header";
 import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
 
 import { EmptyState } from "@/components/common/empty-state";
+import { QueryError } from "@/components/common/query-error";
 import { fmtMoney, fmtDate, fmtDateTime } from "@/lib/utils/format";
 import { Demand, DemandItem, DemandStatus, Partner, Product, PortalRfq } from "@/lib/supabase/types";
 import { CURRENCIES, PAYMENT_TERMS_LOCAL } from "@/lib/data/reference";
@@ -122,7 +123,7 @@ export function DemandsView() {
 // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setPage(0); }, [pageSize]);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["demands", tenantKey, debouncedSearch, statusFilter, page, pageSize],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -256,7 +257,11 @@ export function DemandsView() {
 
       <Card className="border-border/60 shadow-soft rounded-xl">
         <CardContent className="p-0">
-          {isLoading ? (
+          {isError ? (
+            <div className="p-4">
+              <QueryError onRetry={() => refetch()} />
+            </div>
+          ) : isLoading ? (
             <div className="p-4 space-y-2">
               {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
             </div>

@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { KpiCard } from "@/components/common/kpi-card";
+import { QueryError } from "@/components/common/query-error";
 import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
 
 import {
@@ -248,11 +249,11 @@ export function DashboardView() {
   }, [dashQ.data]);
 
   if (isLoading) return <DashboardSkeleton />;
-  if (dashQ.error || !data) {
+  if (dashQ.isError || !data) {
     return (
       <Card className="card-premium">
-        <CardContent className="py-12 text-center text-muted-foreground">
-          {t("misc-dashboard-load-failed")}
+        <CardContent className="p-4">
+          <QueryError onRetry={() => dashQ.refetch()} />
         </CardContent>
       </Card>
     );
@@ -656,13 +657,11 @@ export function DashboardView() {
           </ChartCard>
         </div>
 
-        {/* Soft error banner — the dashboard stays usable when the charts
+        {/* Soft error card — the dashboard stays usable when the charts
             endpoint fails (KPIs, funnel, activity, action items all still
-            render). The banner surfaces the failure so ops can triage. */}
-        {chartsQ.error && !charts && (
-          <div className="rounded-lg border border-warning/40 bg-warning/10 px-4 py-2.5 text-sm text-warning-foreground">
-            {t("misc-dashboard-load-failed")}
-          </div>
+            render). The card surfaces the failure + retry so ops can triage. */}
+        {chartsQ.isError && !charts && (
+          <QueryError onRetry={() => chartsQ.refetch()} />
         )}
       </div>
 

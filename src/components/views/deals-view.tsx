@@ -49,6 +49,7 @@ import { PageHeader } from "@/components/common/page-header";
 import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
 
 import { EmptyState } from "@/components/common/empty-state";
+import { QueryError } from "@/components/common/query-error";
 import { fmtMoney, fmtDate, fmtRelative } from "@/lib/utils/format";
 import { Deal, DealStage, Partner, Offer, CommissionAgent } from "@/lib/supabase/types";
 import { useAppStore } from "@/lib/store/app-store";
@@ -206,7 +207,7 @@ export function DealsView() {
 // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setPage(1); }, [PAGE_SIZE]);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["deals", tenantKey, debouncedSearch, stageFilter, partnerId],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -352,7 +353,9 @@ export function DealsView() {
         </CardContent>
       </Card>
 
-      {isLoading ? (
+      {isError ? (
+        <QueryError onRetry={() => refetch()} />
+      ) : isLoading ? (
         <Card className="border-border/60 shadow-soft rounded-xl">
           <CardContent className="p-4 space-y-2">
             {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
