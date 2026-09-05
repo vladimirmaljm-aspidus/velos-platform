@@ -13,6 +13,10 @@ import { sendEmail } from "@/lib/email/service";
 import { notifySuperAdminsOfSignupRequest } from "@/lib/notif/helper";
 import { escapeHtml } from "@/lib/security/escape-html";
 import { EMAIL_RE } from "@/lib/validation/email";
+import {
+  TERMS_OF_SERVICE,
+  PRIVACY_POLICY,
+} from "@/components/legal/legal-meta";
 
 export const runtime = "nodejs";
 
@@ -141,6 +145,23 @@ export async function POST(req: NextRequest) {
     const phone = String(body.phone ?? "").trim();
     const password = String(body.password ?? "");
     const country = String(body.country ?? "").trim().toUpperCase();
+    const acceptedTos = body.accepted_tos === true;
+
+    // ── LEGAL: affirmative acceptance is MANDATORY ─────────────────────────
+    // The register form presents the consent checkbox with links to the live
+    // documents (/legal/terms, /legal/privacy). We never trust the client's
+    // claim of WHICH version was accepted — the server pins the versions
+    // currently published (legal-meta.ts) into the audit record below. A
+    // request without an affirmative acceptance cannot create an account.
+    if (!acceptedTos) {
+      return NextResponse.json(
+        {
+          error:
+            "You must accept the Terms of Service and Privacy Policy to create an account.",
+        },
+        { status: 400 },
+      );
+    }
 
     if (!companyName) {
       return NextResponse.json(
@@ -447,6 +468,42 @@ export async function POST(req: NextRequest) {
       });
     } catch (e) {
       console.error("[register] appendAudit (tenant.register) failed:", e);
+    }
+
+    // ── LEGAL: record the affirmative acceptance of the Terms and Privacy
+    // Policy (ToS §2.3, Privacy §8). This entry is the enforceable evidence
+    // of WHICH document versions the customer agreed to: the server pins the
+    // versions currently published via legal-meta.ts (never a client-supplied
+    // value), together with the timestamp, account identity, IP and user
+    // agent. Non-fatal by design — the acceptance flag itself was already
+    // enforced above; an audit-write outage must not block a valid signup
+    // (same convention as the tenant.register entry above).
+    try {
+      await store.appendAudit({
+        user_id: user.id,
+        username: user.username,
+        tenant_id: tenant.id,
+        action: "legal.consent",
+        entity_type: "legal",
+        entity_id: null,
+        details: {
+          source: "register",
+          terms_ref: TERMS_OF_SERVICE.ref,
+          terms_version: TERMS_OF_SERVICE.version,
+          terms_effective: TERMS_OF_SERVICE.effectiveDate,
+          privacy_ref: PRIVACY_POLICY.ref,
+          privacy_version: PRIVACY_POLICY.version,
+          privacy_effective: PRIVACY_POLICY.effectiveDate,
+          accepted_at: new Date().toISOString(),
+          email,
+          company_name: companyName,
+          country,
+        },
+        ip,
+        user_agent: req.headers.get("user-agent") || null,
+      });
+    } catch (e) {
+      console.error("[register] appendAudit (legal.consent) failed:", e);
     }
 
     // ── FEAT-1 (Trial approval): notify every super_admin that a new

@@ -30,6 +30,44 @@ interface RegisterViewProps {
 }
 
 
+/**
+ * Renders the consent label from a template containing {terms} and
+ * {privacy} placeholders, substituting each with a real link to the
+ * corresponding legal document (opened in a new tab so the half-completed
+ * registration form is preserved). The placeholder split keeps the sentence
+ * structure valid in every locale (word order differs between languages).
+ */
+function ConsentLabel({ template, termsLabel, privacyLabel }: {
+  template: string;
+  termsLabel: string;
+  privacyLabel: string;
+}) {
+  const linkCls =
+    "font-medium text-primary underline underline-offset-2 hover:text-primary/80 transition-colors";
+  const parts = template.split(/(\{terms\}|\{privacy\})/g);
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (part === "{terms}") {
+          return (
+            <Link key={i} href="/legal/terms" target="_blank" rel="noopener" className={linkCls}>
+              {termsLabel}
+            </Link>
+          );
+        }
+        if (part === "{privacy}") {
+          return (
+            <Link key={i} href="/legal/privacy" target="_blank" rel="noopener" className={linkCls}>
+              {privacyLabel}
+            </Link>
+          );
+        }
+        return part ? <span key={i}>{part}</span> : null;
+      })}
+    </>
+  );
+}
+
 export function RegisterView({ onSwitchToLogin }: RegisterViewProps) {
   const setUser = useAppStore((s) => s.setUser);
   const t = useT();
@@ -42,6 +80,7 @@ export function RegisterView({ onSwitchToLogin }: RegisterViewProps) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [country, setCountry] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [acceptedTos, setAcceptedTos] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
@@ -77,6 +116,15 @@ export function RegisterView({ onSwitchToLogin }: RegisterViewProps) {
       setError(t("register-error-password-mismatch"));
       return;
     }
+    // LEGAL: the account cannot be created without an affirmative acceptance
+    // of the Terms of Service and Privacy Policy. The server repeats this
+    // check (/api/auth/register) and records the accepted document versions
+    // in the audit trail — the checkbox is what makes the acceptance
+    // contractually meaningful, not just decorative text.
+    if (!acceptedTos) {
+      setError(t("register-consent-error"));
+      return;
+    }
 
     setLoading(true);
     try {
@@ -90,6 +138,7 @@ export function RegisterView({ onSwitchToLogin }: RegisterViewProps) {
           phone: phone.trim() || undefined,
           password,
           country,
+          accepted_tos: acceptedTos,
         }),
       });
       const data = await res.json();
@@ -432,6 +481,40 @@ export function RegisterView({ onSwitchToLogin }: RegisterViewProps) {
               </div>
             </div>
 
+            {/* Legal consent — required, links to the live documents.
+                Replaces the former passive “by creating an account you agree”
+                note: the acceptance is now explicit, versioned and recorded. */}
+            <div
+              className={
+                "flex items-start gap-3 rounded-md border px-3.5 py-3 transition-colors " +
+                (acceptedTos ? "border-primary/40 bg-primary/[0.04]" : "border-border")
+              }
+            >
+              <input
+                id="reg-consent"
+                type="checkbox"
+                required
+                checked={acceptedTos}
+                onChange={(e) => {
+                  setAcceptedTos(e.target.checked);
+                  if (error) setError("");
+                }}
+                disabled={loading}
+                aria-required="true"
+                className="mt-0.5 size-4 shrink-0 cursor-pointer accent-primary"
+              />
+              <label
+                htmlFor="reg-consent"
+                className="cursor-pointer text-[13px] leading-relaxed text-foreground/75"
+              >
+                <ConsentLabel
+                  template={t("register-consent-label")}
+                  termsLabel={t("legal-terms-title")}
+                  privacyLabel={t("legal-privacy-title")}
+                />
+              </label>
+            </div>
+
             {/* Submit */}
             <Button
               type="submit"
@@ -474,6 +557,8 @@ export function RegisterView({ onSwitchToLogin }: RegisterViewProps) {
             )}
           </div>
 
+          {/* Trial terms — the factual specifics behind the consent
+              (no card; approval flow; what happens at expiry). */}
           <p className="mt-5 text-center text-xs leading-relaxed text-muted-foreground/70">
             {t("register-trial-note")}
           </p>
