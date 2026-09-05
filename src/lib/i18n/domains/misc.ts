@@ -1029,6 +1029,9 @@ export const MISC: Record<Locale, Record<string, string>> = {
     "register-trial-note": "The 14-day trial starts when your request is approved · No credit card · Your data stays yours.",
     "register-consent-label": "I have read and agree to the VELOS {terms} and {privacy}.",
     "register-consent-error": "Please accept the Terms of Service and Privacy Policy to create an account.",
+    "register-pending-title": "Your request has been submitted",
+    "register-pending-desc": "A platform administrator will review your request. Once it is approved, your 14-day trial starts and a confirmation is sent to {email}.",
+    "register-pending-signin": "Back to sign in",
 
     // ── Legal documents (/legal/terms, /legal/privacy) ────────────────
     "legal-terms-title": "Terms of Service",
@@ -2209,6 +2212,9 @@ export const MISC: Record<Locale, Record<string, string>> = {
     "register-trial-note": "Probni period od 14 dana počinje odobrenjem zahteva · Kreditna kartica nije potrebna · Podaci ostaju tvoji.",
     "register-consent-label": "Pročitao/la sam i prihvatam VELOS {terms} i {privacy}.",
     "register-consent-error": "Prihvati Uslove korišćenja i Politiku privatnosti da bi napravio/la nalog.",
+    "register-pending-title": "Zahtev je poslat na odobrenje",
+    "register-pending-desc": "Administrator platforme će pregledati zahtev. Po odobrenju počinje tvoj 14-dnevni probni period, a potvrda se šalje na {email}.",
+    "register-pending-signin": "Nazad na prijavu",
 
     // ── Legal documents (/legal/terms, /legal/privacy) ────────────────
     "legal-terms-title": "Uslovi korišćenja",
@@ -3387,6 +3393,9 @@ export const MISC: Record<Locale, Record<string, string>> = {
     "register-trial-note": "14 günlük deneme, talebiniz onaylandığında başlar · Kredi kartı gerekmez · Verileriniz size aittir.",
     "register-consent-label": "VELOS {terms} ve {privacy} belgelerini okudum ve kabul ediyorum.",
     "register-consent-error": "Hesap oluşturmak için Hizmet Şartları ve Gizlilik Politikası'nı kabul etmelisiniz.",
+    "register-pending-title": "Talebiniz onaya gönderildi",
+    "register-pending-desc": "Platform yöneticisi talebinizi inceleyecek. Onaylandığında 14 günlük denemeniz başlar ve {email} adresine bir onay gönderilir.",
+    "register-pending-signin": "Girişe dön",
 
     // ── Legal documents (/legal/terms, /legal/privacy) ────────────────
     "legal-terms-title": "Hizmet Şartları",
@@ -4565,6 +4574,9 @@ export const MISC: Record<Locale, Record<string, string>> = {
     "register-trial-note": "Die 14-tägige Testphase beginnt mit der Freigabe Ihrer Anfrage · Keine Kreditkarte · Ihre Daten bleiben Ihre.",
     "register-consent-label": "Ich habe die VELOS {terms} und die {privacy} gelesen und stimme ihnen zu.",
     "register-consent-error": "Bitte akzeptieren Sie die Nutzungsbedingungen und die Datenschutzrichtlinie, um ein Konto zu erstellen.",
+    "register-pending-title": "Ihre Anfrage wurde zur Freigabe eingereicht",
+    "register-pending-desc": "Ein Plattformadministrator prüft Ihre Anfrage. Nach der Freigabe beginnt Ihre 14-tägige Testphase, und eine Bestätigung wird an {email} gesendet.",
+    "register-pending-signin": "Zurück zur Anmeldung",
 
     // ── Legal documents (/legal/terms, /legal/privacy) ────────────────
     "legal-terms-title": "Nutzungsbedingungen",
@@ -5743,6 +5755,9 @@ export const MISC: Record<Locale, Record<string, string>> = {
     "register-trial-note": "14-дневный пробный период начинается после одобрения заявки · Без карты · Данные остаются вашими.",
     "register-consent-label": "Я прочитал(а) и принимаю {terms} и {privacy} VELOS.",
     "register-consent-error": "Подтвердите согласие с условиями обслуживания и политикой конфиденциальности, чтобы создать аккаунт.",
+    "register-pending-title": "Заявка отправлена на одобрение",
+    "register-pending-desc": "Администратор платформы рассмотрит заявку. После одобрения начнётся ваш 14-дневный пробный период, а подтверждение будет отправлено на {email}.",
+    "register-pending-signin": "Назад ко входу",
 
     // ── Legal documents (/legal/terms, /legal/privacy) ────────────────
     "legal-terms-title": "Условия обслуживания",

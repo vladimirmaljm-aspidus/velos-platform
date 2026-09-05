@@ -19,6 +19,7 @@ import {
   EyeOff,
   CheckCircle2,
   ArrowRight,
+  Hourglass,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store/app-store";
 import { useI18nStore, useT } from "@/lib/i18n/store";
@@ -81,6 +82,7 @@ export function RegisterView({ onSwitchToLogin }: RegisterViewProps) {
   const [country, setCountry] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [acceptedTos, setAcceptedTos] = useState(false);
+  const [pendingApproval, setPendingApproval] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
@@ -146,8 +148,18 @@ export function RegisterView({ onSwitchToLogin }: RegisterViewProps) {
         setError(data.error || t("login-error-generic"));
         return;
       }
-      // Server created the tenant + admin user + session cookie. Drop into
-      // the app shell the same way the login route does — no full reload.
+      // FEAT-1 contract: self-registration returns { status: "pending_approval" }
+      // — the workspace is created but INACTIVE until a super_admin approves
+      // it (the 14-day trial clock starts on approval). There is no session
+      // yet, so we must NOT pretend the app is about to mount: render the
+      // pending-approval card instead of the auto-login interstitial.
+      if (data.status === "pending_approval") {
+        setPendingApproval(true);
+        setSuccess(true);
+        return;
+      }
+      // Legacy/auto-login path (data.user present): drop into the app shell
+      // the same way the login route does — no full reload.
       setSuccess(true);
       if (data.user) {
         setUser(data.user);
@@ -168,9 +180,53 @@ export function RegisterView({ onSwitchToLogin }: RegisterViewProps) {
     t("register-lead-3"),
   ];
 
-  // ── Success state — show a brief confirmation card before the AppShell
-  //    mounts (the AppShell swap happens via setUser above; this card is the
-  //    interstitial frame so the user sees "workspace created" feedback).
+  // ── Pending-approval state (FEAT-1): the request was accepted and a
+  //    workspace was created, but it stays inactive until a super_admin
+  //    approves it. Honest UI: no fake "workspace is ready" claim, no
+  //    infinite spinner — the user is told exactly what happens next.
+  if (success && pendingApproval) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-5 py-12">
+        <Card className="w-full max-w-md border border-border shadow-soft">
+          <CardContent className="px-6 py-8 text-center">
+            <div className="mx-auto mb-5 flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <Hourglass className="size-6" />
+            </div>
+            <h2 className="font-display text-xl font-medium tracking-tight">
+              {t("register-pending-title")}
+            </h2>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+              {t("register-pending-desc").replace("{email}", email)}
+            </p>
+            <div className="mt-6 border-t border-border pt-4 text-xs leading-relaxed text-muted-foreground/80">
+              {t("register-trial-note")}
+            </div>
+            {onSwitchToLogin ? (
+              <button
+                type="button"
+                onClick={onSwitchToLogin}
+                className="mt-6 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-primary text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                {t("register-pending-signin")}
+              </button>
+            ) : (
+              <Link
+                href="/"
+                className="mt-6 flex h-11 w-full items-center justify-center gap-2 rounded-md bg-primary text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                {t("register-pending-signin")}
+              </Link>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // ── Success state (auto-login path) — brief confirmation card before the
+  //    AppShell mounts (the AppShell swap happens via setUser above; this
+  //    card is the interstitial frame so the user sees "workspace created"
+  //    feedback).
   if (success) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-5 py-12">
