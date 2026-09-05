@@ -21,6 +21,7 @@ import { PageHeader } from "@/components/common/page-header";
 import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
 
 import { EmptyState } from "@/components/common/empty-state";
+import { QueryError } from "@/components/common/query-error";
 import { fmtDateTime } from "@/lib/utils/format";
 import { AuditLog } from "@/lib/supabase/types";
 import { useApiUrl, useTenantKey } from "@/lib/hooks/use-api-url";
@@ -95,7 +96,7 @@ export function AuditView() {
   const [dateTo, setDateTo] = React.useState("");
   const [page, setPage] = React.useState(0);
 
-  const { data, isLoading, isFetching, refetch } = useQuery({
+  const { data, isLoading, isError, isFetching, refetch } = useQuery({
     queryKey: ["audit", tenantKey, debouncedSearch, action, user, entityType, dateFrom, dateTo, page],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -233,7 +234,11 @@ export function AuditView() {
 
       <Card className="border-border/60 shadow-soft rounded-xl">
         <CardContent className="p-0">
-          {isLoading ? (
+          {isError ? (
+            <div className="p-4">
+              <QueryError onRetry={() => refetch()} />
+            </div>
+          ) : isLoading ? (
             <div className="p-4 space-y-2">
               {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
             </div>

@@ -36,6 +36,7 @@ import { PageHeader } from "@/components/common/page-header";
 import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
 
 import { EmptyState } from "@/components/common/empty-state";
+import { QueryError } from "@/components/common/query-error";
 import { fmtDate, fmtDateTime } from "@/lib/utils/format";
 import {
   DocumentRegisterEntry, DocumentRevision, DocumentType, Partner,
@@ -195,7 +196,7 @@ export function DocumentRegisterView() {
   const [rejectTarget, setRejectTarget] = useState<DocumentRegisterEntry | null>(null);
   const [rejectReason, setRejectReason] = useState("");
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["document-register", tenantKey, debouncedSearch, typeFilter, statusFilter],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -365,7 +366,11 @@ export function DocumentRegisterView() {
 
       <Card className="border-border/60 shadow-soft">
         <CardContent className="p-0">
-          {isLoading ? (
+          {isError ? (
+            <div className="p-4">
+              <QueryError onRetry={() => refetch()} />
+            </div>
+          ) : isLoading ? (
             <div className="p-4 space-y-2">
               {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
             </div>

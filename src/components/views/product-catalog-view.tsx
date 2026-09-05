@@ -42,6 +42,7 @@ import { PageHeader } from "@/components/common/page-header";
 import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
 
 import { EmptyState } from "@/components/common/empty-state";
+import { QueryError } from "@/components/common/query-error";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { fmtMoney, fmtDate } from "@/lib/utils/format";
 import { ProductCatalogEntry, SupplierOffer, Partner } from "@/lib/supabase/types";
@@ -140,7 +141,7 @@ export function ProductCatalogView() {
   const handleSearchChange = useCallback((v: string) => { setSearch(v); setPage(1); }, []);
   const handleCategoryChange = useCallback((v: string) => { setCategory(v); setPage(1); }, []);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["product-catalog", tenantKey, search, category, page],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -259,7 +260,11 @@ export function ProductCatalogView() {
 
       <Card className="border-border/60 shadow-soft rounded-xl">
         <CardContent className="p-0">
-          {isLoading ? (
+          {isError ? (
+            <div className="p-4">
+              <QueryError onRetry={() => refetch()} />
+            </div>
+          ) : isLoading ? (
             <div className="p-4 space-y-2">
               {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
             </div>

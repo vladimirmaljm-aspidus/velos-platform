@@ -448,6 +448,9 @@ export const UI: Record<Locale, Record<string, string>> = {
     info: "Info",
     no_data: "No data available",
     "no_results": "No results found",
+    // QueryError (audit35-3) — honest failed-load states in list views.
+    "load_error": "Couldn't load this data",
+    "retry": "Retry",
     "show_more": "Show more",
     "show_less": "Show less",
     "confirm_delete": "Are you sure you want to delete this?",
@@ -720,6 +723,9 @@ export const UI: Record<Locale, Record<string, string>> = {
     info: "Informacija",
     no_data: "Nema dostupnih podataka",
     "no_results": "Nema pronađenih rezultata",
+    // QueryError (audit35-3) — honest failed-load states in list views.
+    "load_error": "Nije moguće učitati podatke",
+    "retry": "Pokušaj ponovo",
     "show_more": "Prikaži više",
     "show_less": "Prikaži manje",
     "confirm_delete": "Da li ste sigurni da želite da obrišete ovo?",
@@ -992,6 +998,9 @@ export const UI: Record<Locale, Record<string, string>> = {
     info: "Bilgi",
     no_data: "Mevcut veri yok",
     "no_results": "Sonuç bulunamadı",
+    // QueryError (audit35-3) — honest failed-load states in list views.
+    "load_error": "Veriler yüklenemedi",
+    "retry": "Tekrar dene",
     "show_more": "Daha fazla göster",
     "show_less": "Daha az göster",
     "confirm_delete": "Bunu silmek istediğinizden emin misiniz?",
@@ -1264,6 +1273,9 @@ export const UI: Record<Locale, Record<string, string>> = {
     info: "Info",
     no_data: "Keine Daten verfügbar",
     "no_results": "Keine Ergebnisse gefunden",
+    // QueryError (audit35-3) — honest failed-load states in list views.
+    "load_error": "Daten konnten nicht geladen werden",
+    "retry": "Erneut versuchen",
     "show_more": "Mehr anzeigen",
     "show_less": "Weniger anzeigen",
     "confirm_delete": "Sind Sie sicher, dass Sie dies löschen möchten?",
@@ -1536,6 +1548,9 @@ export const UI: Record<Locale, Record<string, string>> = {
     info: "Информация",
     no_data: "Нет данных",
     "no_results": "Результаты не найдены",
+    // QueryError (audit35-3) — honest failed-load states in list views.
+    "load_error": "Не удалось загрузить данные",
+    "retry": "Повторить",
     "show_more": "Показать больше",
     "show_less": "Показать меньше",
     "confirm_delete": "Вы уверены, что хотите удалить это?",

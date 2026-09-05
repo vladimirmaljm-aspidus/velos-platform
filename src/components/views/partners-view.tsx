@@ -49,6 +49,7 @@ import { TableScroll } from "@/components/common/table-scroll";
 import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
 
 import { EmptyState } from "@/components/common/empty-state";
+import { QueryError } from "@/components/common/query-error";
 import { fmtMoney, fmtDate, fmtRelative, fmtNumber } from "@/lib/utils/format";
 import { Partner, PartnerType, PartnerEntityType, PortalAccess, PortalTier } from "@/lib/supabase/types";
 import { getTierMeta, ORDERED_TIERS } from "@/lib/portal/tiers";
@@ -255,7 +256,7 @@ export function PartnersView() {
   const handleStatusFilterChange = useCallback((v: string) => { setStatusFilter(v); setPage(1); }, []);
   const handleTypeFilterChange = useCallback((v: string) => { setTypeFilter(v); setPage(1); }, []);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["partners", tenantKey, search, statusFilter, typeFilter, page, PAGE_SIZE],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -537,7 +538,11 @@ export function PartnersView() {
 
       <Card className="border-border/60 shadow-soft rounded-xl">
         <CardContent className="p-0">
-          {isLoading ? (
+          {isError ? (
+            <div className="p-4">
+              <QueryError onRetry={() => refetch()} />
+            </div>
+          ) : isLoading ? (
             <div className="p-4 space-y-2">
               {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
             </div>

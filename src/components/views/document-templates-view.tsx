@@ -43,6 +43,7 @@ import { PageHeader } from "@/components/common/page-header";
 import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
 
 import { EmptyState } from "@/components/common/empty-state";
+import { QueryError } from "@/components/common/query-error";
 import { TemplateVisualEditor } from "@/components/common/template-visual-editor";
 import { TemplateStylePanel } from "@/components/common/template-style-panel";
 import { BankAccountSelector } from "@/components/common/bank-account-selector";
@@ -756,7 +757,7 @@ function LetterheadsTab({ tenantQuery }: { tenantQuery: string }) {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [duplicating, setDuplicating] = useState<TenantLetterhead | null>(null);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["letterheads", tenantKey, tenantQuery],
     queryFn: async () => {
       const r = await fetch(api(`/api/letterheads${tenantQuery}`));
@@ -815,7 +816,9 @@ function LetterheadsTab({ tenantQuery }: { tenantQuery: string }) {
         </Button>
       </div>
 
-      {isLoading ? (
+      {isError ? (
+        <QueryError onRetry={() => refetch()} />
+      ) : isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-44 w-full rounded-xl" />
@@ -951,7 +954,7 @@ function SealsTab({ tenantQuery }: { tenantQuery: string }) {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [duplicating, setDuplicating] = useState<TenantSeal | null>(null);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["seals", tenantKey, tenantQuery],
     queryFn: async () => {
       const r = await fetch(api(`/api/seals${tenantQuery}`));
@@ -1010,7 +1013,9 @@ function SealsTab({ tenantQuery }: { tenantQuery: string }) {
         </Button>
       </div>
 
-      {isLoading ? (
+      {isError ? (
+        <QueryError onRetry={() => refetch()} />
+      ) : isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className="h-44 w-full rounded-xl" />
@@ -1232,7 +1237,7 @@ function TemplatesTab({ tenantQuery, onOpenMemorandumStudio }: { tenantQuery: st
     setShowForm(true);
   }
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["document-templates", tenantKey, tenantQuery],
     queryFn: async () => {
       const r = await fetch(api(`/api/document-templates${tenantQuery}`));
@@ -1363,7 +1368,9 @@ function TemplatesTab({ tenantQuery, onOpenMemorandumStudio }: { tenantQuery: st
         <NewTemplateDropdown onBlank={handleNewBlank} onStarter={handleNewFromStarter} />
       </div>
 
-      {isLoading ? (
+      {isError ? (
+        <QueryError onRetry={() => refetch()} />
+      ) : isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-44 w-full rounded-xl" />

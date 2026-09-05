@@ -38,6 +38,7 @@ import { PageHeader } from "@/components/common/page-header";
 import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
 
 import { EmptyState } from "@/components/common/empty-state";
+import { QueryError } from "@/components/common/query-error";
 import { PermissionTree } from "@/components/common/permission-tree";
 import { fmtRelative } from "@/lib/utils/format";
 import { useAppStore, isAdmin, isSuperAdmin, SafeUser } from "@/lib/store/app-store";
@@ -128,7 +129,7 @@ export function UsersView() {
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [page, setPage] = useState(1);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["users", tenantKey],
     queryFn: async () => {
       const r = await fetch(api("/api/users"));
@@ -234,7 +235,11 @@ export function UsersView() {
 
       <Card className="border-border/60 shadow-soft rounded-xl">
         <CardContent className="p-0">
-          {isLoading ? (
+          {isError ? (
+            <div className="p-4">
+              <QueryError onRetry={() => refetch()} />
+            </div>
+          ) : isLoading ? (
             <div className="p-4 space-y-2">
               {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
             </div>

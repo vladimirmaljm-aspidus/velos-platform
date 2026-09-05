@@ -50,6 +50,7 @@ import {
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
 import { EmptyState } from "@/components/common/empty-state";
+import { QueryError } from "@/components/common/query-error";
 import { fmtMoney, fmtDate, fmtNumber } from "@/lib/utils/format";
 import type { LetterOfIntent, LoiStatus, Partner, Product, Tenant } from "@/lib/supabase/types";
 import { CURRENCIES } from "@/lib/data/reference";
@@ -251,7 +252,7 @@ export function LoisView() {
   const tenant = tenantQuery.data ?? null;
 
   // ─── List query ────────────────────────────────────────────────────────
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["lois", tenantKey, debouncedSearch, statusFilter, partnerFilter],
     queryFn: async () => {
       const params: Record<string, string | undefined> = {};
@@ -541,7 +542,11 @@ export function LoisView() {
       {/* Table */}
       <Card className="border-border/60 shadow-soft">
         <CardContent className="p-0">
-          {isLoading ? (
+          {isError ? (
+            <div className="p-4">
+              <QueryError onRetry={() => refetch()} />
+            </div>
+          ) : isLoading ? (
             <div className="p-4 space-y-2">
               {Array.from({ length: 6 }).map((_, i) => (
                 <Skeleton key={i} className="h-12 w-full" />

@@ -15,6 +15,7 @@ import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, A
 import { Ship, Truck, Plane, Train, Package, RefreshCw, Search, Trash2, ShieldAlert, MapPin, ClipboardList, FileText, ArrowRightCircle, History, CheckCircle2, MessageSquare, XCircle, Play, Send, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
+import { QueryError } from "@/components/common/query-error";
 import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
 
 import { useApiUrl, useTenantKey } from "@/lib/hooks/use-api-url";
@@ -248,8 +249,15 @@ export function LogisticsRequestsView() {
                 </TableRow>
               </TableHeader>
               <TableBody>
+                {listQ.isError && (
+                  <TableRow>
+                    <TableCell colSpan={7} className="py-4">
+                      <QueryError onRetry={() => listQ.refetch()} />
+                    </TableCell>
+                  </TableRow>
+                )}
                 {listQ.isLoading && <TableRow><TableCell colSpan={7} className="text-center py-6 text-muted-foreground">{t(locale, "log-loading")}</TableCell></TableRow>}
-                {!listQ.isLoading && items.length === 0 && <TableRow><TableCell colSpan={7} className="text-center py-6 text-muted-foreground">{t(locale, "log-no-requests-yet")}</TableCell></TableRow>}
+                {!listQ.isLoading && !listQ.isError && items.length === 0 && <TableRow><TableCell colSpan={7} className="text-center py-6 text-muted-foreground">{t(locale, "log-no-requests-yet")}</TableCell></TableRow>}
                 {items.map((r) => {
                   const meta = MODE_META[r.mode];
                   const modeLabel = meta ? t(locale, meta.labelKey) : r.mode;

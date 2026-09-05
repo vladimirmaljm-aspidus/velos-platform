@@ -43,6 +43,7 @@ import { TableScroll } from "@/components/common/table-scroll";
 import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
 
 import { EmptyState } from "@/components/common/empty-state";
+import { QueryError } from "@/components/common/query-error";
 import { KpiCard } from "@/components/common/kpi-card";
 import { fmtMoney, fmtDate, fmtDateTime, fmtNumber } from "@/lib/utils/format";
 import { Invoice, InvoiceStatus, OfferLineItem, Offer, Partner, Product } from "@/lib/supabase/types";
@@ -176,7 +177,7 @@ export function InvoicesView() {
 // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setPage(0); }, [PAGE_SIZE, debouncedSearch, statusFilter, partnerFilter]);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["invoices", tenantKey, debouncedSearch, statusFilter, partnerFilter, page, PAGE_SIZE],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -525,7 +526,11 @@ export function InvoicesView() {
 
       <Card className="border-border/60 shadow-soft">
         <CardContent className="p-0">
-          {isLoading ? (
+          {isError ? (
+            <div className="p-4">
+              <QueryError onRetry={() => refetch()} />
+            </div>
+          ) : isLoading ? (
             <div className="p-4 space-y-2">
               {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
             </div>
