@@ -3,113 +3,131 @@
 import { create } from "zustand";
 import React from "react";
 
-export type ViewKey =
+/**
+ * Every SPA view key (admin CRM + portal), as a single const array so the
+ * `ViewKey` type below and the runtime list can never drift apart — the
+ * URL router (audit 4-d P1-1, `isViewKey` / `applyViewFromUrl`) validates
+ * `/app/<view>` path segments against exactly this list.
+ */
+const VIEW_KEYS = [
   // Core CRM
-  | "dashboard"
-  | "partners"
-  | "partner-360"
-  | "products"
-  | "deals"
-  | "commissions"
-  | "offers"
-  | "demands"
-  | "documents"
-  | "tasks"
-  | "audit"
-  | "error-audit"
+  "dashboard",
+  "partners",
+  "partner-360",
+  "products",
+  "deals",
+  "commissions",
+  "offers",
+  "demands",
+  "documents",
+  "tasks",
+  "audit",
+  "error-audit",
   // Trade
-  | "product-catalog"
-  | "supplier-offers"
-  | "trade-calculator"
+  "product-catalog",
+  "supplier-offers",
+  "trade-calculator",
   // Finance
-  | "invoices"
-  | "proformas"
-  | "lois"
-  | "document-register"
+  "invoices",
+  "proformas",
+  "lois",
+  "document-register",
   // Inventory
-  | "inventory"
+  "inventory",
   // Admin
-  | "users"
-  | "settings"
-  | "security"
-  | "vault"
-  | "api-keys"
-  | "webhooks"
-  | "mail-queue"
+  "users",
+  "settings",
+  "security",
+  "vault",
+  "api-keys",
+  "webhooks",
+  "mail-queue",
   // Platform (super-admin only)
-  | "tenants"
-  | "platform-dashboard"
-  | "platform-audit"
-  | "platform-users"
-  | "platform-health"
-  | "super-admin-overview"
-  | "super-admin-settings"
-  | "feature-flags"
-  | "document-templates"
-  | "document-verification"
-  | "kyc-review"
-  | "portal-rfqs"
+  "tenants",
+  "platform-dashboard",
+  "platform-audit",
+  "platform-users",
+  "platform-health",
+  "super-admin-overview",
+  "super-admin-settings",
+  "feature-flags",
+  "document-templates",
+  "document-verification",
+  "kyc-review",
+  "portal-rfqs",
   // ERP / Accounting
-  | "erp"
+  "erp",
   // New features
-  | "custom-dashboard"
-  | "email-templates"
-  | "api-integrations"
-  | "calendar"
-  | "quick-notes"
-  | "workspace"
-  | "plans"
-  | "portal-uploads"
-  | "logistics-requests"
-  | "trade-globe"
-  | "plan-upgrade-queue"
-  | "portal-locations"
+  "custom-dashboard",
+  "email-templates",
+  "api-integrations",
+  "calendar",
+  "quick-notes",
+  "workspace",
+  "plans",
+  "portal-uploads",
+  "logistics-requests",
+  "trade-globe",
+  "plan-upgrade-queue",
+  "portal-locations",
   // Verification logs (super-admin only — fraud prevention)
-  | "verification-logs"
+  "verification-logs",
   // Performance dashboard (super-admin only — task D-8 APM)
-  | "performance"
+  "performance",
   // Portal (client-facing, separate mode)
-  | "portal-dashboard"
-  | "portal-offers"
-  | "portal-invoices"
-  | "portal-documents"
-  | "portal-catalog"
-  | "portal-profile"
-  | "portal-kyc"
-  | "portal-rfq"
-  | "portal-messages"
-  | "portal-proformas"
+  "portal-dashboard",
+  "portal-offers",
+  "portal-invoices",
+  "portal-documents",
+  "portal-catalog",
+  "portal-profile",
+  "portal-kyc",
+  "portal-rfq",
+  "portal-messages",
+  "portal-proformas",
   // BUILD-LOI-PORTAL — Letters of Intent addressed to this partner (the
   // partner is the SELLER / recipient; the tenant is the buyer).
-  | "portal-lois"
-  | "portal-logistics"
-  | "portal-notifications"
+  "portal-lois",
+  "portal-logistics",
+  "portal-notifications",
   // Marketplace (Phase 1 — Berza roba)
-  | "portal-marketplace"
+  "portal-marketplace",
   // Marketplace (Phase 2 — negotiation rooms)
-  | "portal-marketplace-post-detail"
-  | "portal-marketplace-negotiations"
-  | "portal-marketplace-negotiation-room"
+  "portal-marketplace-post-detail",
+  "portal-marketplace-negotiations",
+  "portal-marketplace-negotiation-room",
   // Marketplace (Phase 3 — company profiles)
-  | "portal-marketplace-company"
+  "portal-marketplace-company",
   // Marketplace (Phase 9 — market intelligence dashboard)
-  | "portal-marketplace-intelligence"
+  "portal-marketplace-intelligence",
   // Marketplace (Phase 10 — community: groups, Q&A, events, blog)
-  | "portal-marketplace-community"
+  "portal-marketplace-community",
   // Marketplace (UI-2 — super-admin cross-tenant management panel:
   //   posts, verification, reviews, categories, blacklist, stats)
-  | "marketplace-admin"
+  "marketplace-admin",
   // FEAT-1 (Trial approval) — super-admin queue of pending_approval
   // tenants awaiting review. Visible in the sidebar's "platform"
   // section (superAdminOnly: true). The view itself re-checks
   // isSuperAdmin before rendering.
-  | "signup-requests"
+  "signup-requests",
   // NOTIF-UX — full-page notifications surface (Administration section).
   // Linked from the sidebar ("Notifications" with a Bell icon) and from
   // the topbar bell's "View all notifications" footer. Paginated list of
   // all notifications with type filter, read/unread filter, search, and
   // per-item mark-read / delete actions. See src/components/views/notifications-view.tsx.
-  | "notifications";
+  "notifications",
+] as const;
+
+export type ViewKey = (typeof VIEW_KEYS)[number];
+
+/**
+ * Type guard over the ViewKey union. Used by the /app/<view> URL router
+ * (`applyViewFromUrl`) to validate path segments before applying them to
+ * the store — unknown keys fall back to "dashboard".
+ */
+export function isViewKey(v: string): v is ViewKey {
+  return (VIEW_KEYS as readonly string[]).includes(v);
+}
 
 export interface SafeUser {
   id: string;
@@ -136,6 +154,16 @@ interface AppState {
 
   view: ViewKey;
   setView: (v: ViewKey) => void;
+
+  /**
+   * P1-1 (audit 4-d): read the view (+ drill-down `?id=`) from the current
+   * `/app/<view>` URL into the store WITHOUT pushing a history entry.
+   * Called on AppShell mount (initial boot / deep links) and on popstate
+   * (back/forward), where the history entry already exists. Unknown view
+   * keys fall back to "dashboard" and the URL is canonicalised with
+   * `history.replaceState`.
+   */
+  applyViewFromUrl: () => void;
 
   selectedId: string | null;
   setSelectedId: (id: string | null) => void;
@@ -196,7 +224,7 @@ function loadActiveTenant(): { id: string | null; name: string | null } {
   }
 }
 
-export const useAppStore = create<AppState>((set) => ({
+export const useAppStore = create<AppState>((set, get) => ({
   user: null,
   setUser: (u) => set({ user: u }),
 
@@ -240,6 +268,18 @@ export const useAppStore = create<AppState>((set) => ({
     set({ view: v });
     if (typeof window !== "undefined") {
       try { sessionStorage.setItem("velos_view", v); } catch { /* ignore */ }
+      // P1-1 (audit 4-d): make every admin view addressable. On top of the
+      // sessionStorage fallback above, push a real history entry
+      // (`/app/<view>`, `?id=` when a drill-down id is currently selected)
+      // so browser back/forward and shared deep links work. Admin mode
+      // only — the portal has its own real /portal/* routes and must not
+      // grow /app URLs.
+      if (get().appMode === "crm" && !v.startsWith("portal-")) {
+        try {
+          const id = get().selectedId;
+          history.pushState(null, "", `/app/${v}${id ? `?id=${encodeURIComponent(id)}` : ""}`);
+        } catch { /* ignore */ }
+      }
     }
   },
 
@@ -251,6 +291,36 @@ export const useAppStore = create<AppState>((set) => ({
         if (id) sessionStorage.setItem("velos_selected_id", id);
         else sessionStorage.removeItem("velos_selected_id");
       } catch { /* ignore */ }
+    }
+  },
+
+  // P1-1 (audit 4-d): URL → store sync for the /app/* routes. Store-only
+  // writes — no history push (the caller's history entry already exists).
+  // See the doc comment on the interface for full semantics.
+  applyViewFromUrl: () => {
+    if (typeof window === "undefined") return;
+    const { pathname, search } = window.location;
+    if (!pathname.startsWith("/app/")) return;
+    const raw = pathname.slice("/app/".length).split("/")[0];
+    const key: ViewKey = isViewKey(raw) ? raw : "dashboard";
+    const id = new URLSearchParams(search).get("id");
+    // Guard redundant writes — popstate fires on every history traversal
+    // and boot can race with the other hydration effects.
+    if (get().view !== key || get().selectedId !== id) {
+      set({ view: key, selectedId: id });
+      // Keep the sessionStorage view fallback (bare-"/" boots) in sync.
+      // NOTE: "velos_selected_id" is deliberately NOT touched here — the
+      // URL ?id param is authoritative when present, and when absent the
+      // useHydrateViewState fallback may still restore an id for views
+      // reached without one (global-search jumps call setView BEFORE
+      // setSelectedId, so their push carries no ?id yet).
+      try { sessionStorage.setItem("velos_view", key); } catch { /* ignore */ }
+    }
+    // Canonicalise: unknown keys (or stray sub-segments) replaceState onto
+    // the resolved view's canonical path so the address bar always shows
+    // a shareable deep link. Query params are preserved as-is.
+    if (pathname !== `/app/${key}`) {
+      try { history.replaceState(null, "", `/app/${key}${search}`); } catch { /* ignore */ }
     }
   },
 
@@ -314,6 +384,8 @@ export function useHydrateActiveTenant() {
  * Hydrate the current view + selected entity id from sessionStorage on mount.
  * Without this a page refresh drops the user back to the Dashboard and blanks
  * out any drill-down view (Partner 360, deal detail, etc.).
+ * P1-1 (audit 4-d): on /app/* boots the URL wins — the view is NOT hydrated
+ * from sessionStorage there (see the effect body for the id-semantics).
  */
 export function useHydrateViewState() {
   const setView = useAppStore((s) => s.setView);
@@ -322,11 +394,27 @@ export function useHydrateViewState() {
   React.useEffect(() => {
     if (typeof window === "undefined") return;
     try {
-      const v = sessionStorage.getItem("velos_view");
-      const sid = sessionStorage.getItem("velos_selected_id");
+      // P1-1 (audit 4-d — URL routing): when the app booted from a real
+      // /app/<view> URL, the URL is the source of truth — AppShell's
+      // applyViewFromUrl() has already applied it, and re-hydrating the
+      // sessionStorage view here would clobber a fresh deep link with a
+      // stale tab-local view. The view fallback below therefore only runs
+      // on a bare "/" boot. The selected id, however, still hydrates when
+      // the URL carries no ?id — that keeps drill-downs reached without
+      // an id in the URL (global-search jumps call setView BEFORE
+      // setSelectedId) refresh-stable exactly as before.
+      const onAppPath = window.location.pathname.startsWith("/app/");
+      const urlHasId = new URLSearchParams(window.location.search).has("id");
+      if (!onAppPath) {
+        const v = sessionStorage.getItem("velos_view");
+        if (v && isViewKey(v)) setView(v);
+      }
+      if (!urlHasId) {
+        const sid = sessionStorage.getItem("velos_selected_id");
+        if (sid) setSelectedId(sid);
+      }
+      // Negotiation-room ids are portal-only (no /app URL counterpart).
       const nid = sessionStorage.getItem("velos_selected_negotiation_id");
-      if (v) setView(v as ViewKey);
-      if (sid) setSelectedId(sid);
       if (nid) setSelectedNegotiationId(nid);
     } catch { /* ignore */ }
   }, [setView, setSelectedId, setSelectedNegotiationId]);

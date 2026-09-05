@@ -7,7 +7,7 @@ import { GlobalSearch } from "./global-search";
 import { ImpersonateBanner } from "./impersonate-banner";
 import { SubscriptionBanner } from "./subscription-banner";
 import { KeyboardShortcuts } from "./keyboard-shortcuts";
-import { useAppStore, useHydrateViewState } from "@/lib/store/app-store";
+import { useAppStore, useHydrateViewState, isViewKey } from "@/lib/store/app-store";
 import { cn } from "@/lib/utils";
 import { BrandLogo } from "@/components/common/brand-logo";
 import { ViewSkeleton } from "@/components/common/view-skeleton";
@@ -186,6 +186,48 @@ function MobileSidebar({ open, onOpenChange }: { open: boolean; onOpenChange: (v
 /* -------------------------------------------------------------------------- */
 
 export function AppShell() {
+  /* ── URL routing boot (audit 4-d P1-1) ───────────────────────────────
+   * The admin SPA is addressable at /app/<view> (detail views carry
+   * ?id=<selectedId>). This effect MUST be declared above
+   * useHydrateViewState() so it runs first on mount — the URL is the
+   * source of truth when present; the sessionStorage fallback only
+   * applies on a bare "/" boot.
+   *
+   * Mount: if we booted on a non-/app path (typically "/" right after
+   * login), canonicalise the URL in place (replaceState — no extra
+   * history entry, preferring the last stored view so a re-login after
+   * a session-expiry bounce lands back on the user's last view) so the
+   * whole admin session history lives under /app/* and the browser back
+   * button never leaves the app. Then adopt the URL's view via
+   * applyViewFromUrl().
+   * Popstate: re-apply the URL so back/forward switch views — no push,
+   * the history entry already exists. */
+  const applyViewFromUrl = useAppStore((s) => s.applyViewFromUrl);
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!window.location.pathname.startsWith("/app/")) {
+      // Canonicalise using the view the sessionStorage fallback would
+      // restore (last view of the previous session on this tab), so a
+      // re-login after a session-expiry bounce still lands the user back
+      // on their last view — now with a URL to match. Portal keys are
+      // skipped (this is the admin shell; portal restores via /portal/*).
+      let v = useAppStore.getState().view;
+      try {
+        const stored = sessionStorage.getItem("velos_view");
+        if (stored && isViewKey(stored) && !stored.startsWith("portal-")) v = stored;
+      } catch { /* ignore */ }
+      try {
+        history.replaceState(null, "", `/app/${v}`);
+      } catch { /* ignore */ }
+    }
+    // Adopt the URL's view — after the canonicalisation above this also
+    // applies the restored view to the store WITHOUT pushing history.
+    applyViewFromUrl();
+    const onPopState = () => applyViewFromUrl();
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [applyViewFromUrl]);
+
   useHydrateViewState();
   const view = useAppStore((s) => s.view);
   const setView = useAppStore((s) => s.setView);
@@ -239,6 +281,16 @@ export function AppShell() {
 
   return (
     <div className="min-h-screen flex bg-background">
+      {/* a11y (audit 4-d P1-1): skip-to-content link — FIRST focusable
+          element so keyboard users can jump past the sidebar + topbar
+          straight to the view content. Visually hidden until focused. */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:m-2 focus:p-2 focus:bg-background focus:text-foreground focus:border focus:rounded"
+      >
+        {t("skipToContent")}
+      </a>
+
       {/* ── Desktop sidebar ── */}
       <div className="hidden lg:flex">
         <Sidebar />
@@ -271,7 +323,7 @@ export function AppShell() {
         </header>
 
         {/* ── Main content ── */}
-        <main className="flex-1 overflow-x-hidden">
+        <main id="main-content" tabIndex={-1} className="flex-1 overflow-x-hidden">
           <div
             key={transitionKey}
             className={cn(
