@@ -29,7 +29,7 @@ import { useAppStore } from "@/lib/store/app-store";
 import {
   DashboardInsights, DashboardCharts,
   DealStage, Deal, SupplierOffer,
-  PortalRfq, TradeCalculation, AuditLog,
+  PortalRfq, TradeCalculation,
 } from "@/lib/supabase/types";
 import {
   fmtMoney, fmtNumber, fmtRelative,
@@ -125,6 +125,74 @@ function actionTone(action: string | null | undefined): string {
 }
 
 // ============================================================
+// Recent activity feed (task 35-6)
+// ============================================================
+// Light DTO returned by GET /api/dashboard/activity — a summary projection
+// of the audit log (4 fields only: no ip, no details/metadata, no
+// before/after values, no tenant ids). The full Audit module remains the
+// source of truth; this feed just answers "what happened recently".
+interface ActivityFeedItem {
+  id: string;
+  action: string;
+  user_name: string | null;
+  created_at: string;
+}
+
+interface ActivityFeedResponse {
+  items: ActivityFeedItem[];
+}
+
+// Localized labels for the most common audit actions. The platform writes
+// audit actions as "<entity>.<verb>" (dot notation); a census of the
+// audit() call sites shows BOTH present-tense ("partner.create" — most
+// routes) and past-tense ("partner.created" — the revision-tracked
+// partners/offers/invoices routes) spellings, so both are mapped. Anything
+// unmapped falls back to the raw action string in mono font.
+const ACTION_LABEL_KEYS: Record<string, string> = {
+  "partner.create": "misc-act-partner-create",
+  "partner.created": "misc-act-partner-create",
+  "partner.update": "misc-act-partner-update",
+  "partner.updated": "misc-act-partner-update",
+  "partner.delete": "misc-act-partner-delete",
+  "offer.create": "misc-act-offer-create",
+  "offer.created": "misc-act-offer-create",
+  "offer.update": "misc-act-offer-update",
+  "offer.updated": "misc-act-offer-update",
+  "offer.delete": "misc-act-offer-delete",
+  "invoice.create": "misc-act-invoice-create",
+  "invoice.created": "misc-act-invoice-create",
+  "invoice.update": "misc-act-invoice-update",
+  "invoice.updated": "misc-act-invoice-update",
+  "invoice.delete": "misc-act-invoice-delete",
+  "proforma.create": "misc-act-proforma-create",
+  "proforma.created": "misc-act-proforma-create",
+  "loi.create": "misc-act-loi-create",
+  "loi.created": "misc-act-loi-create",
+  "loi.send": "misc-act-loi-send",
+  "demand.create": "misc-act-demand-create",
+  "demand.created": "misc-act-demand-create",
+  "deal.create": "misc-act-deal-create",
+  "deal.created": "misc-act-deal-create",
+  "deal.update": "misc-act-deal-update",
+  "deal.updated": "misc-act-deal-update",
+  "product.create": "misc-act-product-create",
+  "product.created": "misc-act-product-create",
+  "product.update": "misc-act-product-update",
+  "product.updated": "misc-act-product-update",
+  "document.upload": "misc-act-document-upload",
+  "document.uploaded": "misc-act-document-upload",
+  "user.create": "misc-act-user-create",
+  "user.created": "misc-act-user-create",
+  "user.update": "misc-act-user-update",
+  "user.updated": "misc-act-user-update",
+  "user.login": "misc-act-login",
+  login: "misc-act-login",
+  "auth.logout": "misc-act-logout",
+  "login.failed": "misc-act-login-failed",
+  "login.blocked": "misc-act-login-blocked",
+};
+
+// ============================================================
 // Main view
 // ============================================================
 export function DashboardView() {
@@ -199,6 +267,23 @@ export function DashboardView() {
     staleTime: 60_000,
   });
 
+  // ── Recent activity feed (task 35-6) ────────────────────────────────────
+  // Dedicated light endpoint (GET /api/dashboard/activity) instead of the
+  // insights payload's recent_activity slice: localized action labels, 10
+  // visible rows, and NO ip / details / entity ids on the wire. Query key
+  // includes the tenant so caches stay isolated per tenant (and per
+  // super-admin tenant-context switch) — same convention as the other
+  // dashboard queries. 60s staleTime mirrors the charts query.
+  const activityQ = useQuery<ActivityFeedResponse>({
+    queryKey: ["dashboard-activity", tenantKey],
+    queryFn: async () => {
+      const r = await fetch(api("/api/dashboard/activity"));
+      if (!r.ok) throw new Error("Failed to load recent activity");
+      return r.json();
+    },
+    staleTime: 60_000,
+  });
+
   const isLoading = dashQ.isLoading;
   const data = dashQ.data;
   const charts = chartsQ.data;
@@ -218,6 +303,12 @@ export function DashboardView() {
 
   const activeSupplierOffers = offersSupplierQ.data?.items?.length || 0;
   const pendingRfqs = rfqsQ.data?.items?.length || 0;
+
+  // Recent activity rows — the endpoint returns up to 20, the feed shows 10.
+  const activityItems = useMemo(
+    () => (activityQ.data?.items || []).slice(0, 10),
+    [activityQ.data],
+  );
 
   // Revenue & margin trend (last 14 days from revenue_last_30d)
   const revenueMarginTrend = useMemo(() => {
@@ -268,8 +359,11 @@ export function DashboardView() {
 
   // ---------- action items ----------
   const overdueInvoices = k.invoices_outstanding || 0;
-  const pendingKyc = (data.recent_activity || []).filter(
-    (a) => a.action?.includes("kyc"),
+  // 35-6: derived from the dedicated activity feed now (same semantics as
+  // the previous recent_activity-based count — recent kyc-related audit
+  // entries — but over a 20-row window instead of 6).
+  const pendingKyc = (activityQ.data?.items || []).filter(
+    (a) => a.action.includes("kyc"),
   ).length;
 
   const userName = user?.full_name || user?.username || t("misc-there-fallback");
@@ -665,9 +759,14 @@ export function DashboardView() {
         )}
       </div>
 
-      {/* ---------- Two columns: Activity + Action items ---------- */}
+      {/* ---------- Two columns: Recent activity feed + Action items ---------- */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Recent Activity */}
+        {/* Recent Activity — task 35-6: fed by the dedicated light endpoint
+            GET /api/dashboard/activity (4-field audit projection) instead of
+            the insights payload's recent_activity slice. Localized action
+            labels with graceful mono-font fallback, muted user name,
+            relative time — and deliberately NO ip / entity ids (the Audit
+            module remains the source of truth for those). */}
         <Card className="card-premium">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between gap-2">
@@ -681,47 +780,59 @@ export function DashboardView() {
             </div>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="max-h-96 overflow-y-auto custom-scroll px-4 pb-4 space-y-1">
-              {(data.recent_activity || []).length === 0 && (
+            <div className="max-h-72 overflow-y-auto custom-scroll px-4 pb-4 space-y-1">
+              {activityQ.isLoading && !activityQ.data ? (
+                // 3 skeleton rows — same row shape as the live feed.
+                Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-3 p-2">
+                    <div className="min-w-0 flex-1 space-y-1.5">
+                      <Skeleton className="h-4 w-44" />
+                      <Skeleton className="h-3 w-24" />
+                    </div>
+                    <Skeleton className="h-3 w-12 shrink-0" />
+                  </div>
+                ))
+              ) : activityQ.error ? (
+                // Single muted line — the dashboard stays usable, the rest
+                // of the card grid (KPIs, charts, action items) still renders.
+                <p className="text-sm text-muted-foreground py-8 text-center">
+                  {t("misc-act-load-error")}
+                </p>
+              ) : activityItems.length === 0 ? (
                 <p className="text-sm text-muted-foreground py-8 text-center">
                   {t("misc-no-recent-activity")}
                 </p>
-              )}
-              {(data.recent_activity || []).map((a: AuditLog) => {
-                const name = a.username || t("misc-system-user");
-                const init = name.slice(0, 2).toUpperCase();
-                return (
-                  <div
-                    key={a.id}
-                    className="flex items-start gap-3 p-2 rounded-lg hover:bg-muted/40 smooth-fast cursor-default"
-                  >
-                    <div className="size-8 rounded-full bg-muted text-muted-foreground flex items-center justify-center text-xs font-semibold shrink-0">
-                      {init}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm leading-snug">
-                        <span className="font-medium text-foreground">{name}</span>{" "}
-                        <span className={actionTone(a.action)}>{a.action}</span>
-                        {a.entity_type && (
-                          <span className="text-muted-foreground">
-                            {" · "}<span className="font-mono text-xs">{a.entity_type}</span>
-                          </span>
-                        )}
-                      </p>
-                      <p className="text-xs text-muted-foreground/70 mt-0.5 tabular flex items-center gap-1.5 flex-wrap">
+              ) : (
+                activityItems.map((a) => {
+                  const labelKey = ACTION_LABEL_KEYS[a.action];
+                  const who = a.user_name || t("misc-system-user");
+                  return (
+                    <div
+                      key={a.id}
+                      className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/40 smooth-fast cursor-default"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm leading-snug truncate">
+                          {labelKey ? (
+                            <span className={`font-medium ${actionTone(a.action)}`}>
+                              {t(labelKey)}
+                            </span>
+                          ) : (
+                            <span className="font-mono text-xs text-muted-foreground">
+                              {a.action}
+                            </span>
+                          )}{" "}
+                          <span className="text-muted-foreground">· {who}</span>
+                        </p>
+                      </div>
+                      <p className="text-xs text-muted-foreground/70 mt-0.5 tabular shrink-0 flex items-center gap-1.5">
                         <Clock className="size-3" />
                         {fmtRelative(a.created_at)}
-                        {a.ip && (
-                          <>
-                            <span className="opacity-50">·</span>
-                            <span className="font-mono">{a.ip}</span>
-                          </>
-                        )}
                       </p>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              )}
             </div>
           </CardContent>
         </Card>
