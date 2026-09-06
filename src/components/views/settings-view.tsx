@@ -958,8 +958,9 @@ function CommsTab() {
               <h4 className="text-sm font-semibold text-amber-900 dark:text-amber-200">Email Disabled</h4>
             </div>
             <p className="text-xs text-muted-foreground">
-              Emails will be queued in the Mail Queue but not sent. Choose
-              Resend or SMTP above to enable sending.
+              Emails will NOT be sent — every send fails immediately with a
+              clear error (nothing is queued, nothing is re-sent later).
+              Choose Resend, Postmark or SMTP above to enable sending.
             </p>
           </div>
         )}

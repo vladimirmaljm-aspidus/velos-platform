@@ -53,7 +53,9 @@ const SecurityView = dynamic(() => import("@/components/views/security-view").th
 const VaultView = dynamic(() => import("@/components/views/vault-view").then((m) => m.VaultView), { ssr: false, loading: () => <ViewSkeleton /> });
 const ApiKeysView = dynamic(() => import("@/components/views/api-keys-view").then((m) => m.ApiKeysView), { ssr: false, loading: () => <ViewSkeleton /> });
 const WebhooksView = dynamic(() => import("@/components/views/webhooks-view").then((m) => m.WebhooksView), { ssr: false, loading: () => <ViewSkeleton /> });
-const MailQueueView = dynamic(() => import("@/components/views/mail-queue-view").then((m) => m.MailQueueView), { ssr: false, loading: () => <ViewSkeleton /> });
+// TASK 41 — append-only outbound email audit (replaces the removed Mail
+// Queue view; no queue, no retry — the exact text of every attempt).
+const EmailLogView = dynamic(() => import("@/components/views/email-log-view").then((m) => m.EmailLogView), { ssr: false, loading: () => <ViewSkeleton /> });
 const ProductCatalogView = dynamic(() => import("@/components/views/product-catalog-view").then((m) => m.ProductCatalogView), { ssr: false, loading: () => <ViewSkeleton /> });
 const SupplierOffersView = dynamic(() => import("@/components/views/supplier-offers-view").then((m) => m.SupplierOffersView), { ssr: false, loading: () => <ViewSkeleton /> });
 const TradeCalculatorView = dynamic(() => import("@/components/views/trade-calculator-view").then((m) => m.TradeCalculatorView), { ssr: false, loading: () => <ViewSkeleton /> });
@@ -124,7 +126,11 @@ function ViewContent({ view }: { view: string }) {
     case "vault":                return <VaultView />;
     case "api-keys":             return <ApiKeysView />;
     case "webhooks":             return <WebhooksView />;
-    case "mail-queue":           return <MailQueueView />;
+    // TASK 41 — email-log replaces the removed mail-queue surface. The old
+    // key keeps resolving (deep links / historical notification action URLs)
+    // so nobody lands on a blank view.
+    case "email-log":
+    case "mail-queue":           return <EmailLogView />;
     case "product-catalog":      return <ProductCatalogView />;
     case "supplier-offers":      return <SupplierOffersView />;
     case "trade-calculator":     return <TradeCalculatorView />;

@@ -35,6 +35,34 @@ vi.mock("@/lib/notif/helper", () => ({
   notify: vi.fn(),
 }));
 
+// TASK 41 — email_log audit table mock (chainable builder; inserts are
+// captured for assertions, the dedup lookup resolves to null = open).
+const { mockGetSupabase, mockInsertCalls } = vi.hoisted(() => {
+  const insertCalls: any[] = [];
+  const chain: any = {
+    eq: vi.fn(() => chain),
+    select: vi.fn(() => chain),
+    maybeSingle: vi.fn(async () => ({ data: null, error: null })),
+    in: vi.fn(() => chain),
+    gte: vi.fn(() => chain),
+    order: vi.fn(() => chain),
+    limit: vi.fn(() => chain),
+    insert: vi.fn((row: any) => {
+      insertCalls.push(row);
+      return Promise.resolve({ error: null });
+    }),
+  };
+  return {
+    mockGetSupabase: vi.fn(() => ({ from: vi.fn(() => chain) })),
+    mockInsertCalls: insertCalls,
+  };
+});
+
+vi.mock("@/lib/supabase/client", () => ({
+  getSupabase: mockGetSupabase,
+  isSupabaseConfigured: vi.fn(() => true),
+}));
+
 function installStore(commsByTenant: Record<string, unknown>) {
   mockGetStore.mockResolvedValue({
     getSetting: (key: string, tenantId?: string | null) => {
@@ -59,6 +87,7 @@ beforeEach(() => {
   vi.resetModules();
   process.env.FIELD_ENCRYPTION_KEY = "test-encryption-key-for-comms-decrypt";
   mockGetSetting.mockReset();
+  mockInsertCalls.length = 0;
 });
 
 describe("getEmailConfig — encrypted comms secrets are decrypted at use (audit14 EMAIL-FIX)", () => {
@@ -187,7 +216,7 @@ describe("sendEmail — the decrypted secret actually reaches the provider call"
     }
   });
 
-  it("queues (dev mode) when no provider is configured — no provider call", async () => {
+  it("TASK 41 — no provider: honest failure, one audit row, no queue", async () => {
     installStore({ platform: null, t1: null });
     const res = await sendEmail({
       to: "dest@example.com",
@@ -195,7 +224,16 @@ describe("sendEmail — the decrypted secret actually reaches the provider call"
       html: "<p>hi</p>",
       tenantId: "t1",
     });
-    expect(res.success).toBe(true);
+    // The queue path (success:true + queued:true) is REMOVED — a send with
+    // no provider configured is an honest failure the admin can act on.
+    expect(res.success).toBe(false);
     expect(res.provider).toBe("none");
+    expect(res.failureKind).toBe("no_provider");
+    expect(res.error).toContain("No email provider is configured");
+    // Exactly one audit row: status failed, provider none, exact body kept.
+    expect(mockInsertCalls).toHaveLength(1);
+    expect(mockInsertCalls[0].status).toBe("failed");
+    expect(mockInsertCalls[0].to_email).toBe("dest@example.com");
+    expect(mockInsertCalls[0].body_html).toBe("<p>hi</p>");
   });
 });

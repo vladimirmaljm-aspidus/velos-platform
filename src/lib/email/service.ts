@@ -43,14 +43,26 @@ interface SendEmailResult {
   messageId?: string;
   provider?: EmailProvider;
   /**
-   * AUDIT16 — true when the email was NOT actually delivered: no provider
-   * is configured and the message was parked in mail_queue instead.
-   * Callers that flip business state on "sent" (invoice/proforma/offer
-   * status→sent, sent_at stamp) MUST check this flag — previously the
-   * dev-queue path returned success:true and documents were marked "sent"
-   * even though nothing was ever emailed to the client.
+   * TASK 41 — NO QUEUE, NO AUTO-RETRY. When success is false this says WHY:
+   *   • "no_provider" — no email provider configured; nothing was sent.
+   *   • "failed"      — the provider DEFINITIVELY rejected the message
+   *                      (auth error, 4xx/5xx, bad address). Safe to re-send
+   *                      manually from the document send action.
+   *   • "unknown"     — the provider did not confirm in time (timeout /
+   *                      aborted request). The message MAY have been
+   *                      delivered; re-sending is blocked by the dedup
+   *                      guard for 10 minutes to protect the recipient.
    */
-  queued?: boolean;
+  failureKind?: "no_provider" | "failed" | "unknown";
+  /**
+   * TASK 41 — true when the send was REFUSED by the duplicate guard: an
+   * identical email (same recipient + subject) was recently sent or its
+   * delivery could not be confirmed. Nothing was attempted, nothing was
+   * sent. The error field carries the human explanation.
+   */
+  duplicate?: boolean;
+  /** id of the email_log audit row for this attempt (best-effort). */
+  logId?: string | null;
 }
 
 interface SendEmailOptions {
@@ -61,16 +73,16 @@ interface SendEmailOptions {
   tenantId?: string;
   attachments?: EmailAttachment[];
   /**
-   * AUDIT16 — mail-queue metadata. When a send fails (or is queued with
-   * no provider configured), these are persisted on the mail_queue row so
-   * the Retry endpoint can (a) UPDATE the same row instead of inserting a
-   * duplicate failed row, and (b) REGENERATE the document PDF attachment
-   * (the original Buffer is never persisted). Set by the document send
-   * routes (invoice / proforma / offer / LOI).
+   * TASK 41 — business-document reference persisted on the email_log audit
+   * row (offer / invoice / proforma / loi), so the Email Log view can link
+   * an attempt back to the document that produced it. The mail_queue retry
+   * flow that used these for PDF regeneration is REMOVED.
    */
-  queueEntryId?: string;
   entityType?: string;
   entityId?: string;
+  /** Best-effort actor context stamped on the audit row. */
+  userId?: string;
+  ip?: string;
   /**
    * Optional per-message Reply-To address. Overrides the comms blob's
    * `reply_to` field when set — used by the breach-notification
@@ -406,13 +418,117 @@ export async function getEmailConfig(tenantId?: string): Promise<EmailConfig | n
 }
 
 /**
- * Send an email using the configured provider.
- * Falls back to queueing in mail_queue if no provider is set up.
+ * TASK 41 — classify a provider error.
+ *
+ * A timeout (AbortSignal.timeout on Resend/Postmark, nodemailer socket /
+ * connection timeout on SMTP) does NOT prove the message was rejected: the
+ * provider may have already accepted and queued it for delivery. These
+ * outcomes are "unknown" — the email MAY have gone out. Everything else
+ * (HTTP 4xx/5xx with a body, SMTP auth failure, 5xx response) is a
+ * definitive "failed".
+ *
+ * This distinction is the heart of the duplicate fix: the old code showed
+ * an error for a timed-out send (which actually delivered), the admin
+ * clicked send/retry again, and the recipient got the same email multiple
+ * times. "unknown" now blocks re-sends for the dedup window.
+ */
+function classifySendError(e: unknown): "failed" | "unknown" {
+  const err = e as { name?: string; message?: string; code?: string } | null;
+  if (!err) return "failed";
+  const name = String(err.name || "");
+  const message = String(err.message || "");
+  const code = String(err.code || "");
+  // fetch abort (AbortSignal.timeout) -> TimeoutError / AbortError
+  if (name === "TimeoutError" || name === "AbortError") return "unknown";
+  // nodemailer / net-level timeouts and socket drops mid-conversation
+  const timeoutTokens = [
+    "timed out",
+    "timeout",
+    "etimedout",
+    "esocket",
+    "econnreset",
+    "sockettimeout",
+    "greeting never received",
+  ];
+  const haystack = `${message} ${code}`.toLowerCase();
+  if (timeoutTokens.some((tok) => haystack.includes(tok))) return "unknown";
+  return "failed";
+}
+
+/** Human message for a send that the provider did not confirm in time. */
+function unknownOutcomeMessage(e: unknown): string {
+  const err = e as { message?: string } | null;
+  const detail = err?.message ? ` (${err.message})` : "";
+  return (
+    `Delivery unconfirmed: the email provider did not respond in time${detail}. ` +
+    `The message may have been delivered. To avoid sending the recipient a duplicate, ` +
+    `re-sending is blocked for a few minutes — check the Email Log for the final status.`
+  );
+}
+
+/**
+ * Send an email using the configured provider. TASK 41 CONTRACT — the
+ * professional, duplicate-proof semantics:
+ *
+ *   • ONE attempt. No queue, no worker, no auto-retry, ever. If the send
+ *     fails, the caller (and only the caller) decides whether to try again
+ *     — from the document's send action, never automatically.
+ *   • DUPLICATE GUARD — before attempting, the email_log is consulted: a
+ *     recent 'sent' OR 'unknown' row with the same (tenant, to, subject)
+ *     refuses the send (result.duplicate = true, success = false, nothing
+ *     sent, nothing logged).
+ *   • HONEST STATUS — a timed-out provider call reports failureKind
+ *     "unknown" (may have been delivered) instead of a plain "failed", so
+ *     callers and admins stop re-sending emails that actually went out.
+ *   • FULL AUDIT — every real attempt (success, failure, unknown, and
+ *     no-provider misconfiguration) appends an email_log row with the exact
+ *     HTML/text handed to the provider (best-effort; email sending never
+ *     depends on the audit table being present).
  */
 export async function sendEmail(opts: SendEmailOptions): Promise<SendEmailResult> {
   const config = await getEmailConfig(opts.tenantId);
 
-  // No provider configured — queue for later
+  // -- Duplicate guard ----------------------------------------------------
+  // The owner's production complaint: send -> error -> minutes later the same
+  // email lands in the recipient's inbox multiple times. Root causes were
+  // (a) the mail_queue retry surface and (b) timeout-but-delivered sends
+  // being re-attempted. Both are gone; this guard is the last line of
+  // defense against a double-clicked button or a quick manual re-send.
+  const { findRecentEmailSend, logEmailAttempt, duplicateBlockedMessage, EMAIL_DEDUP_WINDOW_MS } =
+    await import("@/lib/email/email-log");
+  const recent = await findRecentEmailSend({
+    tenantId: opts.tenantId ?? null,
+    to: opts.to,
+    subject: opts.subject,
+  });
+  if (recent) {
+    return {
+      success: false,
+      duplicate: true,
+      provider: config?.provider,
+      error: duplicateBlockedMessage(EMAIL_DEDUP_WINDOW_MS),
+    };
+  }
+
+  const logBase = {
+    tenantId: opts.tenantId ?? null,
+    to: opts.to,
+    fromEmail: config?.fromEmail ?? null,
+    subject: opts.subject,
+    bodyHtml: opts.html,
+    bodyText: opts.text ?? null,
+    ...(opts.entityType ? { entityType: opts.entityType } : {}),
+    ...(opts.entityId ? { entityId: opts.entityId } : {}),
+    ...(opts.userId ? { createdBy: opts.userId } : {}),
+    ...(opts.ip ? { ip: opts.ip } : {}),
+  };
+
+  // -- No provider configured — honest failure, no queue ------------------
+  // The old code parked these in mail_queue and returned success:true +
+  // queued:true — the "document marked sent but nothing emailed" bug AND
+  // a pile of queue rows that later re-sent as duplicates. Now: nothing is
+  // sent, the admin is told exactly that, and one audit row records the
+  // attempt (status "failed") with the exact body that would have gone out.
   if (
     !config ||
     config.provider === "none" ||
@@ -420,41 +536,20 @@ export async function sendEmail(opts: SendEmailOptions): Promise<SendEmailResult
     (config.provider === "resend" && !config.resend) ||
     (config.provider === "postmark" && !config.postmark)
   ) {
-    console.log(`[email:dev] To: ${opts.to} | Subject: ${opts.subject}`);
-    const store = await getStore();
-    // P1 mail_queue orphan fix (task C-5 Fix 3): previously this insert
-    // omitted `tenant_id`, producing orphaned mail_queue rows that no
-    // tenant-scoped listMailQueue query could ever surface — they
-    // accumulated forever in the table with status='queued' and no
-    // visible owner. The `notifications` table has a NOT NULL constraint
-    // on tenant_id, so the in-app notification path (below in the catch
-    // block) already required a tenant_id and was silently skipped when
-    // it was missing — but the mail_queue insert itself was not gated,
-    // which is exactly how the orphans accumulated.
-    //
-    // Resolution: always set tenant_id. If the caller genuinely has no
-    // tenant context (e.g. a system-level cron job that emails a global
-    // admin address), fall back to the literal sentinel "SYSTEM" so the
-    // row is still visible in a super-admin "all mail queue" listing
-    // (filtered as `tenant_id = 'SYSTEM'`) rather than being a NULL
-    // orphan that no query surfaces.
-    await store.upsertMailQueueEntry({
-      // AUDIT16 — when a queued/failed row is being re-sent, update it in
-      // place (id set → UPDATE path in smartUpsert) instead of inserting
-      // yet another row. entity_type/entity_id let the Retry endpoint
-      // regenerate the PDF attachment (see migration 077).
-      ...(opts.queueEntryId ? { id: opts.queueEntryId } : {}),
-      to_email: opts.to,
-      subject: opts.subject,
-      body: opts.html,
-      status: "queued",
-      ...(opts.entityType ? { entity_type: opts.entityType } : {}),
-      ...(opts.entityId ? { entity_id: opts.entityId } : {}),
-      tenant_id: opts.tenantId || "SYSTEM",
-    } as any);
-    return { success: true, messageId: "dev-queued", provider: "none", queued: true };
+    console.warn(`[email] no provider configured — NOT sending to ${opts.to} (${opts.subject})`);
+    const error =
+      "No email provider is configured for this tenant (Settings → Communications). " +
+      "The email was NOT sent. Configure a provider, then send again.";
+    const logId = await logEmailAttempt({
+      ...logBase,
+      status: "failed",
+      provider: "none",
+      error,
+    });
+    return { success: false, failureKind: "no_provider", provider: "none", error, logId };
   }
 
+  // -- One real send attempt ----------------------------------------------
   try {
     let result: { success: boolean; messageId?: string; error?: string };
 
@@ -469,54 +564,33 @@ export async function sendEmail(opts: SendEmailOptions): Promise<SendEmailResult
     }
 
     if (!result.success) throw new Error(result.error || "Unknown error");
-    return { success: true, messageId: result.messageId, provider: config.provider };
-  } catch (e: any) {
-    console.error("[email:error]", e.message);
-    // Queue for manual retry (Re-Audit-2 N9: previously the queue entry was
-    // terminal — no worker ever picked it up, no notification fired, no
-    // retry endpoint existed). We now keep the queue entry AND emit an
-    // in-app notification so the admin can see the failure and hit the
-    // Retry button in the Mail Queue view. NO auto-retry (per audit rule).
-    const store = await getStore();
-    let queueEntryId: string | undefined;
-    try {
-      const entry = await store.upsertMailQueueEntry({
-        // AUDIT16 — pass through the caller's queueEntryId (retry flow) so
-        // the failed retry UPDATES the original row (attempts/error) —
-        // previously every failed retry ALSO inserted a brand-new failed
-        // row, duplicating the queue (audit finding: "duplicate rows on
-        // every failed retry").
-        ...(opts.queueEntryId ? { id: opts.queueEntryId } : {}),
-        to_email: opts.to,
-        subject: opts.subject,
-        body: opts.html,
-        status: "failed",
-        // AUDIT17 / P2-2: only stamp attempts on a FRESH row. When this
-        // failure updates an existing retry row (queueEntryId set) the
-        // attempts counter is owned by the retry route, which increments
-        // it — a hard 1 here reset the counter on every failed retry.
-        ...(opts.queueEntryId ? {} : { attempts: 1 }),
-        error: e.message,
-        ...(opts.entityType ? { entity_type: opts.entityType } : {}),
-        ...(opts.entityId ? { entity_id: opts.entityId } : {}),
-        // P1 mail_queue orphan fix (task C-5 Fix 3): same sentinel
-        // pattern as the no-provider branch above — a NULL tenant_id
-        // here would create an invisible orphan row. The notification
-        // broadcast below only fires when `opts.tenantId` is set (the
-        // notifications table has a NOT NULL constraint on tenant_id),
-        // but the mail_queue row should NOT silently depend on that
-        // same gate.
-        tenant_id: opts.tenantId || "SYSTEM",
-      } as any);
-      queueEntryId = (entry as any)?.id ?? opts.queueEntryId;
-    } catch (queueErr) {
-      console.error("[email] failed to persist mail_queue entry:", queueErr);
-    }
 
-    // Broadcast an in-app notification to all tenant admins (user_id = null)
-    // so the failure is visible in the notification dropdown — they can then
-    // click through to the Mail Queue and hit Retry. The `notifications` table
-    // has `tenant_id NOT NULL`, so we only fire when we have a tenantId.
+    // Provider confirmed delivery — audit the exact payload and succeed.
+    const logId = await logEmailAttempt({
+      ...logBase,
+      status: "sent",
+      provider: config.provider,
+      ...(result.messageId ? { messageId: result.messageId } : {}),
+    });
+    return { success: true, messageId: result.messageId, provider: config.provider, logId };
+  } catch (e: any) {
+    console.error("[email:error]", e?.message ?? e);
+
+    const kind = classifySendError(e);
+    const error = kind === "unknown" ? unknownOutcomeMessage(e) : e?.message || "Unknown error";
+
+    // Audit the exact payload of the failed attempt (best-effort).
+    const logId = await logEmailAttempt({
+      ...logBase,
+      status: kind, // "failed" | "unknown"
+      provider: config.provider,
+      error,
+    });
+
+    // In-app notification so fire-and-forget sends (password changes, 2FA,
+    // portal messages) are not silently lost on failure. NO retry language,
+    // NO mail-queue link — the Email Log is the record; re-sending is a
+    // deliberate action from the document that produced the email.
     if (opts.tenantId) {
       try {
         const { notify } = await import("@/lib/notif/helper");
@@ -524,23 +598,26 @@ export async function sendEmail(opts: SendEmailOptions): Promise<SendEmailResult
           tenantId: opts.tenantId,
           userId: null, // broadcast to all admins
           type: "email_failed",
-          title: `Email failed: ${opts.subject}`.slice(0, 200),
+          title: `Email not sent: ${opts.subject}`.slice(0, 200),
           message:
             `Recipient: ${opts.to}\n` +
             `Subject: ${opts.subject}\n` +
-            `Error: ${e.message}\n\n` +
-            `Open the Mail Queue to retry sending.`,
-          entityType: "mail_queue",
-          entityId: queueEntryId,
-          actionUrl: "/mail-queue",
-          actionLabel: "Open Mail Queue",
+            `Outcome: ${kind === "unknown" ? "delivery unconfirmed" : "failed"}\n` +
+            `Error: ${error}\n\n` +
+            `The full record is in the Email Log.`,
+          entityType: "email_log",
+          entityId: logId ?? undefined,
+          actionUrl: "/app?view=email-log",
+          actionLabel: "Open Email Log",
+          dedupKey: `email_failed:${opts.to}:${opts.subject}`,
+          dedupWindowMs: 10 * 60 * 1000,
         });
       } catch (notifErr) {
         console.error("[email] notification creation failed:", notifErr);
       }
     }
 
-    return { success: false, error: e.message, provider: config.provider };
+    return { success: false, failureKind: kind, error, provider: config.provider, logId };
   }
 }
 

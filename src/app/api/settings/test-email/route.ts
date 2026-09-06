@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import nodemailer from "nodemailer";
 import { requireAdmin, audit, sanitizeError, getIp } from "@/lib/api/helpers";
+import { logEmailAttempt } from "@/lib/email/email-log";
 import { getStore, getStoreSync } from "@/lib/data/store";
 import type { EmailProvider } from "@/lib/email/service";
 import { checkRateLimit } from "@/lib/security/rate-limiter";
@@ -51,6 +52,49 @@ export const runtime = "nodejs";
  *     "reply_to"?: "..."
  *   }
  */
+
+/**
+ * TASK 41 — audit every test send in email_log (same record as business
+ * emails: exact subject/HTML, provider, outcome). Fire-and-forget: the
+ * log table is optional and must never influence the test result.
+ */
+async function logTestSend(opts: {
+  tenantId: string | null;
+  to: string;
+  subject: string;
+  html: string;
+  provider: string;
+  status: "sent" | "failed" | "unknown";
+  messageId?: string;
+  error?: string;
+  userId?: string;
+  ip?: string;
+}): Promise<void> {
+  await logEmailAttempt({
+    tenantId: opts.tenantId,
+    to: opts.to,
+    subject: opts.subject,
+    bodyHtml: opts.html,
+    status: opts.status,
+    provider: opts.provider,
+    ...(opts.messageId ? { messageId: opts.messageId } : {}),
+    ...(opts.error ? { error: opts.error } : {}),
+    ...(opts.userId ? { createdBy: opts.userId } : {}),
+    ...(opts.ip ? { ip: opts.ip } : {}),
+  });
+}
+
+/** Timeout-style failures may have delivered — mirror sendEmail's honesty. */
+function testFailureKind(e: unknown): "failed" | "unknown" {
+  const err = e as { name?: string; message?: string } | null;
+  if (!err) return "failed";
+  const n = String(err.name || "");
+  const m = String(err.message || "").toLowerCase();
+  if (n === "TimeoutError" || n === "AbortError") return "unknown";
+  if (m.includes("timeout") || m.includes("timed out") || m.includes("econnreset") || m.includes("esocket")) return "unknown";
+  return "failed";
+}
+
 export async function POST(req: NextRequest) {
   // 9b-N7: per-IP rate limit — test-email is also a spam vector.
   const _rl = await checkRateLimit(`email:ip:${getIp(req)}`, 10, 10 * 60_000);
@@ -133,19 +177,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    try {
-      const res = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        signal: AbortSignal.timeout(15_000),
-        body: JSON.stringify({
-          from: `${fromName} <${resendFromEmail}>`,
-          to: [body.to],
-          subject: `[VELOS] Email test — ${new Date().toISOString()}`,
-          html: `
+    // TASK 41 — hoisted above the try so the catch can log the exact
+    // subject/body of the attempt that timed out or failed.
+    const testSubject = `[VELOS] Email test — ${new Date().toISOString()}`;
+    const testHtml = `
             <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:560px;margin:0 auto;padding:32px 20px;">
               <div style="background:#0f766e;color:white;padding:24px 28px;border-radius:12px 12px 0 0;">
                 <h1 style="margin:0;font-size:18px;font-weight:600;">Email Configuration Test</h1>
@@ -168,7 +203,20 @@ export async function POST(req: NextRequest) {
                 </p>
               </div>
             </div>
-          `,
+          `;
+    try {
+      const res = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        signal: AbortSignal.timeout(15_000),
+        body: JSON.stringify({
+          from: `${fromName} <${resendFromEmail}>`,
+          to: [body.to],
+          subject: testSubject,
+          html: testHtml,
           ...(body.reply_to || saved.reply_to ? { reply_to: body.reply_to || saved.reply_to } : {}),
         }),
       });
@@ -177,6 +225,7 @@ export async function POST(req: NextRequest) {
         const errText = await res.text();
         let errMsg = `Resend API error ${res.status}`;
         let category = "resend_error";
+        void logTestSend({ tenantId: auth.tenantId ?? null, to: body.to, subject: testSubject, html: testHtml, provider: "resend", status: "failed", error: errText.slice(0, 500), userId: auth.user?.id, ip: getIp(req) });
         try {
           const errJson = JSON.parse(errText);
           errMsg = errJson.message || errJson.error || errMsg;
@@ -197,6 +246,7 @@ export async function POST(req: NextRequest) {
       }
 
       const data = await res.json();
+      await logTestSend({ tenantId: auth.tenantId ?? null, to: body.to, subject: testSubject, html: testHtml, provider: "resend", status: "sent", messageId: data.id, userId: auth.user?.id, ip: getIp(req) });
       try {
         await audit(auth.store, auth.user, req, "settings.test_email", "setting", undefined, { provider: body.provider, to: body.to });
       } catch (e) { console.error("[audit]", e); }
@@ -207,6 +257,8 @@ export async function POST(req: NextRequest) {
         testedAt: new Date().toISOString(),
       });
     } catch (e: any) {
+      const kind = testFailureKind(e);
+      await logTestSend({ tenantId: auth.tenantId ?? null, to: body.to, subject: testSubject, html: testHtml, provider: "resend", status: kind, error: sanitizeError(e), userId: auth.user?.id, ip: getIp(req) });
       return NextResponse.json(
         { ok: false, error: sanitizeError(e), category: "network" },
         { status: 200 }
@@ -219,6 +271,33 @@ export async function POST(req: NextRequest) {
     const serverToken = body.postmark_server_token || saved.postmark_server_token;
     const postmarkFromEmail = body.postmark_from_email || saved.postmark_from_email || fromEmail;
     const messageStream = body.postmark_message_stream || saved.postmark_message_stream || "outbound";
+    // TASK 41 — exact-text audit: the same subject/html the provider gets.
+    const testSubject = `[VELOS] Email test — ${new Date().toISOString()}`;
+    const testHtml = `
+            <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:560px;margin:0 auto;padding:32px 20px;">
+              <div style="background:#0f766e;color:white;padding:24px 28px;border-radius:12px 12px 0 0;">
+                <h1 style="margin:0;font-size:18px;font-weight:600;">Email Configuration Test</h1>
+                <p style="margin:6px 0 0;opacity:0.9;font-size:13px;">VELOS CRM · Postmark · ${new Date().toISOString()}</p>
+              </div>
+              <div style="background:white;padding:28px;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 12px 12px;">
+                <p style="color:#333;font-size:14px;line-height:1.6;">Hi,</p>
+                <p style="color:#555;font-size:14px;line-height:1.6;">
+                  This is a test email sent from your VELOS CRM settings panel via <strong>Postmark</strong>.
+                  If you are reading this, your Postmark integration is working correctly.
+                </p>
+                <table style="width:100%;font-size:13px;color:#555;margin:16px 0;border-collapse:collapse;">
+                  <tr><td style="padding:6px 0;color:#888;width:140px;">Provider</td><td style="padding:6px 0;">Postmark (HTTP API)</td></tr>
+                  <tr><td style="padding:6px 0;color:#888;">From</td><td style="padding:6px 0;font-family:monospace;">${escapeHtml(fromName)} &lt;${escapeHtml(postmarkFromEmail)}&gt;</td></tr>
+                  <tr><td style="padding:6px 0;color:#888;">Message stream</td><td style="padding:6px 0;font-family:monospace;">${escapeHtml(messageStream)}</td></tr>
+                  <tr><td style="padding:6px 0;color:#888;">Sent at</td><td style="padding:6px 0;">${escapeHtml(new Date().toLocaleString())}</td></tr>
+                </table>
+                <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0;" />
+                <p style="color:#888;font-size:12px;line-height:1.5;">
+                  This is an automated test message. Please do not reply.
+                </p>
+              </div>
+            </div>
+          `;
 
     if (!serverToken) {
       return NextResponse.json(
@@ -243,32 +322,8 @@ export async function POST(req: NextRequest) {
         body: JSON.stringify({
           From: `${fromName} <${postmarkFromEmail}>`,
           To: body.to,
-          Subject: `[VELOS] Email test — ${new Date().toISOString()}`,
-          HtmlBody: `
-            <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:560px;margin:0 auto;padding:32px 20px;">
-              <div style="background:#0f766e;color:white;padding:24px 28px;border-radius:12px 12px 0 0;">
-                <h1 style="margin:0;font-size:18px;font-weight:600;">Email Configuration Test</h1>
-                <p style="margin:6px 0 0;opacity:0.9;font-size:13px;">VELOS CRM · Postmark · ${new Date().toISOString()}</p>
-              </div>
-              <div style="background:white;padding:28px;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 12px 12px;">
-                <p style="color:#333;font-size:14px;line-height:1.6;">Hi,</p>
-                <p style="color:#555;font-size:14px;line-height:1.6;">
-                  This is a test email sent from your VELOS CRM settings panel via <strong>Postmark</strong>.
-                  If you are reading this, your Postmark integration is working correctly.
-                </p>
-                <table style="width:100%;font-size:13px;color:#555;margin:16px 0;border-collapse:collapse;">
-                  <tr><td style="padding:6px 0;color:#888;width:140px;">Provider</td><td style="padding:6px 0;">Postmark (HTTP API)</td></tr>
-                  <tr><td style="padding:6px 0;color:#888;">From</td><td style="padding:6px 0;font-family:monospace;">${escapeHtml(fromName)} &lt;${escapeHtml(postmarkFromEmail)}&gt;</td></tr>
-                  <tr><td style="padding:6px 0;color:#888;">Message stream</td><td style="padding:6px 0;font-family:monospace;">${escapeHtml(messageStream)}</td></tr>
-                  <tr><td style="padding:6px 0;color:#888;">Sent at</td><td style="padding:6px 0;">${escapeHtml(new Date().toLocaleString())}</td></tr>
-                </table>
-                <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0;" />
-                <p style="color:#888;font-size:12px;line-height:1.5;">
-                  This is an automated test message. Please do not reply.
-                </p>
-              </div>
-            </div>
-          `,
+          Subject: testSubject,
+          HtmlBody: testHtml,
           MessageStream: messageStream,
           ...(body.reply_to || saved.reply_to ? { ReplyTo: body.reply_to || saved.reply_to } : {}),
         }),
@@ -278,6 +333,7 @@ export async function POST(req: NextRequest) {
         const errText = await res.text();
         let errMsg = `Postmark API error ${res.status}`;
         let category = "postmark_error";
+        void logTestSend({ tenantId: auth.tenantId ?? null, to: body.to, subject: testSubject, html: testHtml, provider: "postmark", status: "failed", error: errText.slice(0, 500), userId: auth.user?.id, ip: getIp(req) });
         try {
           const errJson = JSON.parse(errText);
           errMsg = errJson.Message || errJson.message || errMsg;
@@ -298,6 +354,7 @@ export async function POST(req: NextRequest) {
       }
 
       const data = await res.json();
+      await logTestSend({ tenantId: auth.tenantId ?? null, to: body.to, subject: testSubject, html: testHtml, provider: "postmark", status: "sent", messageId: data.MessageID, userId: auth.user?.id, ip: getIp(req) });
       try {
         await audit(auth.store, auth.user, req, "settings.test_email", "setting", undefined, { provider: body.provider, to: body.to });
       } catch (e) { console.error("[audit]", e); }
@@ -308,6 +365,8 @@ export async function POST(req: NextRequest) {
         testedAt: new Date().toISOString(),
       });
     } catch (e: any) {
+      const kind = testFailureKind(e);
+      await logTestSend({ tenantId: auth.tenantId ?? null, to: body.to, subject: testSubject, html: testHtml, provider: "postmark", status: kind, error: sanitizeError(e), userId: auth.user?.id, ip: getIp(req) });
       return NextResponse.json(
         { ok: false, error: sanitizeError(e), category: "network" },
         { status: 200 }
@@ -351,25 +410,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    try {
-      const transporter = nodemailer.createTransport({
-        host: smtp.host,
-        port: smtp.port,
-        secure: smtp.port === 465,
-        auth: { user: smtp.user, pass: smtp.password },
-        connectionTimeout: 10_000,
-        greetingTimeout: 10_000,
-        socketTimeout: 15_000,
-      });
-
-      await transporter.verify();
-
-      const info = await transporter.sendMail({
-        from: `"${smtp.fromName}" <${smtp.fromEmail}>`,
-        to: body.to,
-        subject: `[VELOS] SMTP test — ${new Date().toISOString()}`,
-        text: `This is a test email from VELOS CRM.\n\nSMTP server: ${smtp.host}:${smtp.port}\nUser: ${smtp.user}\nSent at: ${new Date().toISOString()}\n\nIf you received this message, your SMTP configuration is working correctly.`,
-        html: `
+    // TASK 41 — exact-text audit: the same subject/html the provider gets.
+    const testSubject = `[VELOS] SMTP test — ${new Date().toISOString()}`;
+    const testHtml = `
           <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:560px;margin:0 auto;padding:32px 20px;">
             <div style="background:#0f766e;color:white;padding:24px 28px;border-radius:12px 12px 0 0;">
               <h1 style="margin:0;font-size:18px;font-weight:600;">SMTP Configuration Test</h1>
@@ -393,9 +436,29 @@ export async function POST(req: NextRequest) {
               </p>
             </div>
           </div>
-        `,
+        `;
+    try {
+      const transporter = nodemailer.createTransport({
+        host: smtp.host,
+        port: smtp.port,
+        secure: smtp.port === 465,
+        auth: { user: smtp.user, pass: smtp.password },
+        connectionTimeout: 10_000,
+        greetingTimeout: 10_000,
+        socketTimeout: 15_000,
       });
 
+      await transporter.verify();
+
+      const info = await transporter.sendMail({
+        from: `"${smtp.fromName}" <${smtp.fromEmail}>`,
+        to: body.to,
+        subject: testSubject,
+        text: `This is a test email from VELOS CRM.\n\nSMTP server: ${smtp.host}:${smtp.port}\nUser: ${smtp.user}\nSent at: ${new Date().toISOString()}\n\nIf you received this message, your SMTP configuration is working correctly.`,
+        html: testHtml,
+      });
+
+      await logTestSend({ tenantId: auth.tenantId ?? null, to: body.to, subject: testSubject, html: testHtml, provider: "smtp", status: "sent", messageId: info.messageId, userId: auth.user?.id, ip: getIp(req) });
       try {
         await audit(auth.store, auth.user, req, "settings.test_email", "setting", undefined, { provider: body.provider, to: body.to });
       } catch (e) { console.error("[audit]", e); }
@@ -417,6 +480,8 @@ export async function POST(req: NextRequest) {
       } else if (msg.includes("self-signed") || msg.includes("certificate") || msg.includes("tls")) {
         category = "tls";
       }
+      const kind = testFailureKind(e);
+      await logTestSend({ tenantId: auth.tenantId ?? null, to: body.to, subject: `[VELOS] SMTP test — ${new Date().toISOString()}`, html: testHtml, provider: "smtp", status: kind, error: sanitizeError(e), userId: auth.user?.id, ip: getIp(req) });
       return NextResponse.json(
         { ok: false, error: sanitizeError(e), category },
         { status: 200 }

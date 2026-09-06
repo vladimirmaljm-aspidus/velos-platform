@@ -136,17 +136,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           tier: access.tier || "business",
           setupToken,
         });
-        // AUDIT17 / P1-2 — gate the flag + response on ACTUAL delivery.
-        // sendEmail returns { success:true, queued:true } when no provider
-        // is configured (email parked, client got nothing) and plain
-        // { success:false } on provider failure — neither may flip
-        // welcome_email_sent or report email_sent.
+        // TASK 41 — success means the provider CONFIRMED delivery. A
+        // failed/unconfirmed send keeps welcome_email_sent false (the
+        // email was not delivered; nothing is queued and nothing will be
+        // retried automatically — the exact attempt is in the Email Log).
         const sendResult = await sendEmail({ to: new_email, subject: `Portal email changed — ${subject}`, html, tenantId: access.tenant_id });
-        if (sendResult.success && !sendResult.queued) {
+        if (sendResult.success) {
           email_sent = new_email;
           await auth.store.upsertPortalAccess({ id, welcome_email_sent: true } as any);
-        } else if (sendResult.queued) {
-          console.warn("[change-email] invite to new email parked in mail queue (no provider configured) — welcome_email_sent stays false.");
+        } else {
+          console.warn("[change-email] invite to new email NOT sent:", sendResult.failureKind, sendResult.error);
         }
       } catch (e) { console.warn("[change-email.email]", e); }
     }

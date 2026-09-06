@@ -177,9 +177,11 @@ export async function POST(
       subject: `Letter of Intent — ${loi.number} — ${loi.subject}`,
       html,
       tenantId: loi.tenant_id,
-      // AUDIT16 — entity reference so the mail-queue Retry endpoint can
-      // regenerate the LOI PDF attachment (migration 077).
+      // TASK 41 — the email_log audit row references the LOI and the admin
+      // who sent it (the mail_queue retry flow is removed).
       entityType: "loi",
+      userId: auth.user.id,
+      ip: getIp(req),
       entityId: id,
       // audit20 / 20-d2 — the generated LOI PDF (attachment structure
       // mirrors the invoices send route: filename / content /
@@ -187,12 +189,10 @@ export async function POST(
       attachments: loiAttachment ? [loiAttachment] : undefined,
     });
 
-    // AUDIT16 — only flip the LOI to "sent" (and stamp sent_at) when the
-    // email was actually DELIVERED. Previously this ran unconditionally —
-    // a failed send (or a queued-with-no-provider send) still marked the
-    // LOI as sent and stamped sent_at, which then BLOCKED re-sending for
-    // 60s via the idempotency guard while the client never got anything.
-    const delivered = result.success && !result.queued;
+    // TASK 41 — only flip the LOI to "sent" (and stamp sent_at) when the
+    // provider CONFIRMED delivery. The queue path that faked delivery is
+    // removed; a failed/unconfirmed send keeps the LOI draft.
+    const delivered = !!result.success;
     if (delivered) {
       const nowIso = new Date().toISOString();
       await store.upsertLoi({
@@ -267,15 +267,17 @@ export async function POST(
     });
 
     if (!delivered) {
-      if (result.queued) {
-        return NextResponse.json(
-          { error: "No email provider is configured for this tenant (Settings → Communications). The LOI email is queued — configure a provider, then retry from the Mail Queue. The LOI status stays draft." },
-          { status: 409 },
-        );
-      }
+      // TASK 41 — honest outcomes, never a queue: duplicate → 429,
+      // no_provider → 409, failed/unknown → 502 with the real reason.
+      // "Queued for retry" was a lie — nothing ever retried it.
+      const status = result.duplicate ? 429 : result.failureKind === "no_provider" ? 409 : 502;
       return NextResponse.json(
-        { error: "Email failed to send. Queued for retry.", details: result.error },
-        { status: 500 },
+        {
+          error: result.error || "The email was not sent.",
+          ...(result.duplicate ? { duplicate: true } : {}),
+          ...(result.failureKind ? { failureKind: result.failureKind } : {}),
+        },
+        { status },
       );
     }
     return NextResponse.json({ ok: true, sent: true });

@@ -531,11 +531,16 @@ describe("email-templates POST action:test-send — sends, never writes (audit20
     expect(mockSendEmail).not.toHaveBeenCalled();
   });
 
-  it("reports queued sends as 409 instead of faking success (audit16 parity)", async () => {
+  it("TASK 41 — reports no-provider sends as 409 instead of faking success", async () => {
     const store = makeTemplateStore(wrapperRow);
     mockRequireAuth.mockResolvedValue(makeAuth(store));
     mockGetStore.mockResolvedValue(store);
-    mockSendEmail.mockResolvedValueOnce({ success: true, queued: true });
+    mockSendEmail.mockResolvedValueOnce({
+      success: false,
+      failureKind: "no_provider",
+      provider: "none",
+      error: "No email provider is configured for this tenant (Settings → Communications). The email was NOT sent. Configure a provider, then send again.",
+    });
 
     const req = new NextRequest("http://localhost/api/email-templates", {
       method: "POST",
@@ -609,14 +614,21 @@ describe("LOI send — delivery-gated status flip (audit16 EMAIL-STATE)", () => 
   });
 
   it("does NOT mark the LOI sent when the send fails (previously flipped status + stamped sent_at)", async () => {
-    mockSendEmail.mockResolvedValueOnce({ success: false, error: "postmark 500" });
+    mockSendEmail.mockResolvedValueOnce({ success: false, failureKind: "failed", error: "postmark 500" });
     const res = await loiSendPost(loiReq(), { params: Promise.resolve({ id: "loi-1" }) });
-    expect(res.status).toBe(500);
+    // TASK 41 — failed sends surface as 502 with the real reason (the
+    // "Queued for retry" 500 is gone — nothing ever retried it).
+    expect(res.status).toBe(502);
     expect(mockUpsertLoi).not.toHaveBeenCalled();
   });
 
-  it("does NOT mark the LOI sent when the email was merely queued (no provider)", async () => {
-    mockSendEmail.mockResolvedValueOnce({ success: true, queued: true, provider: "none" });
+  it("TASK 41 — does NOT mark the LOI sent when no provider is configured (409, honest failure)", async () => {
+    mockSendEmail.mockResolvedValueOnce({
+      success: false,
+      failureKind: "no_provider",
+      provider: "none",
+      error: "No email provider is configured for this tenant (Settings → Communications). The email was NOT sent.",
+    });
     const res = await loiSendPost(loiReq(), { params: Promise.resolve({ id: "loi-1" }) });
     expect(res.status).toBe(409);
     expect(mockUpsertLoi).not.toHaveBeenCalled();

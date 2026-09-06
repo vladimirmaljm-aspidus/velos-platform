@@ -146,7 +146,10 @@ const SECTIONS: NavSection[] = [
   {
     i18nKey: "communication",
     items: [
-      { key: "mail-queue", i18nKey: "mail-queue", i18nSection: "communication", icon: Mail, permission: "mail-queue.read", featureFlag: "module_mail_queue" },
+      // TASK 41 — Email Log (append-only audit of every outbound email with
+      // the exact text sent). Reuses the mail-queue.read permission +
+      // module_mail_queue flag so existing role grants keep working.
+      { key: "email-log", i18nKey: "email-log", i18nSection: "communication", icon: Mail, permission: "mail-queue.read", featureFlag: "module_mail_queue" },
       { key: "email-templates", i18nKey: "email-templates", i18nSection: "communication", icon: Mail, permission: "email-templates.read", featureFlag: "module_mail_queue" },
       { key: "webhooks", i18nKey: "webhooks", i18nSection: "communication", icon: Webhook, permission: "webhooks.read", featureFlag: "module_webhooks" },
       { key: "api-integrations", i18nKey: "api-integrations", i18nSection: "communication", icon: Plug, permission: "integrations.read" },

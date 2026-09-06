@@ -42,6 +42,9 @@ const VIEW_KEYS = [
   "api-keys",
   "webhooks",
   "mail-queue",
+  // TASK 41 — append-only outbound email audit (replaces the Mail Queue
+  // surface; the "mail-queue" key stays valid for old deep links).
+  "email-log",
   // Platform (super-admin only)
   "tenants",
   "platform-dashboard",

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, resolveTenantId, audit } from "@/lib/api/helpers";
+import { requireAuth, resolveTenantId, audit, getIp } from "@/lib/api/helpers";
 import { sendEmail, documentEmail } from "@/lib/email/service";
 import { generatePdf } from "@/lib/pdf/generator";
 import { notify } from "@/lib/notif/helper";
@@ -152,7 +152,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // If `email` is provided in the body, generate a PDF and email it to the
     // recipient. If `email` is missing, we skip the email step and only mark
     // the offer as sent + push a portal notification.
-    let emailResult: { success: boolean; skipped?: boolean; error?: string; queued?: boolean } = { success: true, skipped: true };
+    let emailResult: { success: boolean; skipped?: boolean; error?: string; failureKind?: string; duplicate?: boolean } = { success: true, skipped: true };
     if (toEmail) {
       const result = await generatePdf({ docType: "offer", docId: id, tenantId });
       const pdfBuffer = Buffer.from(result.buffer);
@@ -172,10 +172,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         subject,
         html,
         tenantId,
-        // AUDIT16 — entity reference for PDF regeneration on retry +
-        // queued flag so we don't mark the offer sent when the email was
-        // only parked in the queue (no provider configured).
+        // TASK 41 — the email_log audit row references the document and the
+        // admin who sent it (the mail_queue retry flow is removed).
         entityType: "offer",
+        userId: auth.user.id,
+        ip: getIp(req),
         entityId: id,
         attachments: [{
           filename: `offer-${offer.number || id}.pdf`,
@@ -186,8 +187,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     // Promote status draft→sent and stamp sent_at (only on first successful send).
-    // AUDIT16 — queued ≠ delivered (see invoice send route for rationale).
-    const delivered = emailResult.success && !emailResult.queued;
+    // TASK 41 — only a provider-CONFIRMED delivery counts.
+    const delivered = !!emailResult.success;
     if (delivered) {
       try {
         // Validate the status transition (Re-Audit-2 N4) — only allow
@@ -235,20 +236,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     await audit(auth.store, auth.user, req, "offer.send_email", "offer", id, { to: toEmail || "(portal only)" });
 
-    // AUDIT17 / P2-3 — a queued email (no provider configured) is NOT a
-    // delivery: return 409 with an actionable message (same semantics as
-    // the LOI send route) instead of a bare 200 { queued: true } that the
-    // views toasted as "The offer sent".
-    if (emailResult.queued) {
+    // TASK 41 — honest send outcomes (duplicate → 429, no_provider → 409,
+    // failed/unknown → 502). Nothing is ever parked in a queue: the exact
+    // body and error of every attempt are in the Email Log.
+    if (!emailResult.success) {
+      const status = emailResult.duplicate ? 429 : emailResult.failureKind === "no_provider" ? 409 : 502;
       return NextResponse.json(
         {
-          error:
-            "No email provider is configured for this tenant (Settings → Communications). " +
-            "The offer email is queued in the Mail Queue — configure a provider, then retry. " +
-            "The offer status stays draft.",
-          queued: true,
+          error: emailResult.error || "The email was not sent.",
+          ...(emailResult.duplicate ? { duplicate: true } : {}),
+          ...(emailResult.failureKind ? { failureKind: emailResult.failureKind } : {}),
         },
-        { status: 409 },
+        { status },
       );
     }
     return NextResponse.json(emailResult);

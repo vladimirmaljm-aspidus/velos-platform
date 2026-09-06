@@ -178,6 +178,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     subject,
     html,
     tenantId: access.tenant_id,
+    userId: auth.user.id,
+    ip: getIp(req),
   });
 
   // AUDIT15 / EMAIL-STATE — on a successful send, mark the welcome email
@@ -191,13 +193,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // this is the one path that didn't. Best-effort: a failure here must
   // not fail the (already-sent) invite response.
   //
-  // AUDIT17 / P1-1 — "success" alone is NOT delivered: the no-provider
-  // path returns { success: true, queued: true } (email parked in
-  // mail_queue, client got NOTHING). Gating on success alone made the
-  // admin UI show "Invite sent" while the mail sat in the queue — the
-  // exact "unsent mails with correct settings" confusion. Only a
-  // non-queued success counts as delivered.
-  const delivered = result.success && !result.queued;
+  // TASK 41 — success now means the provider CONFIRMED delivery (the
+  // no-provider path returns success:false / failureKind:"no_provider").
+  const delivered = !!result.success;
   if (delivered) {
     try {
       await auth.store.upsertPortalAccess({
@@ -213,7 +211,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     email: portalEmail,
     sent: result.success,
     delivered,
-    queued: !!result.queued,
+    failure_kind: result.failureKind ?? null,
+    duplicate: !!result.duplicate,
     token_issued: !!setupToken,
   });
   // Notify — only when the invite actually reached the client's mailbox.
@@ -221,22 +220,45 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     await notifyPortalInviteSent(access.tenant_id, partner?.name || "Client", portalEmail || "", id);
   }
 
-  if (result.queued) {
-    // AUDIT17: distinguish "parked in the queue" from "failed" — the
-    // admin should configure a provider and hit Retry in the Mail Queue.
+  if (result.duplicate) {
+    // TASK 41 — refused by the duplicate guard: an identical invite email
+    // went out (or is unconfirmed) within the dedup window. The setup
+    // token IS still issued, so the response stays usable — but the admin
+    // is told the email itself was not re-sent.
+    return NextResponse.json(
+      {
+        ok: false,
+        duplicate: true,
+        error: result.error,
+        message:
+          "The invite email was NOT re-sent: an identical email was recently sent to this address " +
+          "or its delivery is unconfirmed. The setup link was still generated.",
+      },
+      { status: 429 },
+    );
+  }
+  if (result.failureKind === "no_provider") {
+    // TASK 41 — no queue: nothing was sent, and nothing will be sent
+    // automatically. The admin must configure a provider and re-invite.
     return NextResponse.json(
       {
         ok: true,
-        queued: true,
+        delivered: false,
+        failureKind: "no_provider",
+        error: result.error,
         message:
           "No email provider is configured for this tenant (Settings → Communications). " +
-          "The invite is queued in the Mail Queue — configure a provider, then retry.",
+          "The invite email was NOT sent — configure a provider, then send the invite again. " +
+          "The setup link itself was generated.",
       },
       { status: 409 },
     );
   }
   if (!result.success) {
-    return NextResponse.json({ error: "Email failed to send. Queued for retry.", details: result.error }, { status: 500 });
+    // TASK 41 — honest failure (or unconfirmed delivery): the old message
+    // "Queued for retry." was a lie — nothing ever retried it. The exact
+    // body + error of this attempt are in the Email Log.
+    return NextResponse.json({ error: "The invite email was not sent.", details: result.error }, { status: 502 });
   }
   return NextResponse.json({ ok: true, sent: true });
   } catch (error: any) {

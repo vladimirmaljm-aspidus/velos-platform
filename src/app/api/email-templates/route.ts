@@ -378,18 +378,25 @@ export async function POST(req: NextRequest) {
       try {
         await audit(auth.store, auth.user, req, "email_template.test_send", "document_template", tpl.id, { to });
       } catch (e) { console.error("[audit]", e); }
-      if (result.queued) {
-        // AUDIT16 — queued means NOT delivered (no provider configured).
-        // Report honestly instead of toasting a fake "Test sent".
+      // TASK 41 — honest outcomes, no queue. A refused duplicate or a
+      // failed/unconfirmed send reports exactly what happened; the attempt
+      // (with the exact body) is in the Email Log.
+      if (result.duplicate) {
         return NextResponse.json(
-          { error: "No email provider is configured for this tenant (Settings → Communications). The test email is queued — configure a provider, then retry from the Mail Queue." },
+          { error: result.error, duplicate: true },
+          { status: 429 },
+        );
+      }
+      if (result.failureKind === "no_provider") {
+        return NextResponse.json(
+          { error: "No email provider is configured for this tenant (Settings → Communications). The test email was NOT sent — configure a provider, then test again." },
           { status: 409 },
         );
       }
       if (!result.success) {
         return NextResponse.json(
           { error: "Test email failed to send.", details: result.error },
-          { status: 500 },
+          { status: 502 },
         );
       }
       return NextResponse.json({ ok: true, sent: true });

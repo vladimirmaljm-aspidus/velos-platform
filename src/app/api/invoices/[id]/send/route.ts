@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, resolveTenantId, audit } from "@/lib/api/helpers";
+import { requireAuth, resolveTenantId, audit, getIp } from "@/lib/api/helpers";
 import { sendEmail, documentEmail } from "@/lib/email/service";
 import { generatePdf } from "@/lib/pdf/generator";
 import { notify } from "@/lib/notif/helper";
@@ -155,7 +155,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // If `email` is provided in the body, generate a PDF and email it to the
     // recipient. If `email` is missing, we skip the email step and only mark
     // the invoice as sent + push a portal notification.
-    let emailResult: { success: boolean; skipped?: boolean; error?: string; queued?: boolean } = { success: true, skipped: true };
+    // TASK 41 — no queue: a failed email is an honest failure (the invoice
+    // stays draft and the error is surfaced); a duplicate-guard refusal or
+    // an unconfirmed (timeout) send is reported with its own status so the
+    // admin never re-sends blindly.
+    let emailResult: { success: boolean; skipped?: boolean; error?: string; failureKind?: string; duplicate?: boolean } = { success: true, skipped: true };
     if (toEmail) {
       const result = await generatePdf({ docType: "invoice", docId: id, tenantId });
       const pdfBuffer = Buffer.from(result.buffer);
@@ -175,11 +179,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         subject,
         html,
         tenantId,
-        // AUDIT16 — persist the entity reference on the mail_queue row so
-        // the Retry endpoint can regenerate the PDF attachment, and the
-        // queued flag tells us below whether it was actually delivered.
+        // TASK 41 — the email_log audit row references the invoice and the
+        // admin who sent it (the mail_queue retry flow is removed).
         entityType: "invoice",
         entityId: id,
+        userId: auth.user.id,
+        ip: getIp(req),
         attachments: [{
           filename: `invoice-${invoice.number || id}.pdf`,
           content: pdfBuffer,
@@ -189,12 +194,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     // Promote status draft→sent and stamp sent_at (only on first successful send).
-    // AUDIT16 — a queued email (no provider configured) is NOT a delivery:
-    // don't flip the invoice to "sent" / stamp sent_at / notify the portal
-    // that the invoice went out. Previously the dev-queue path returned
-    // success:true and the invoice was marked sent even though the client
-    // never received anything.
-    const delivered = emailResult.success && !emailResult.queued;
+    // TASK 41 — only a provider-CONFIRMED delivery counts (the queue path that
+    // previously faked delivery is gone; unconfirmed/failed sends keep the
+    // invoice draft and the admin sees the exact reason).
+    const delivered = !!emailResult.success;
     if (delivered) {
       try {
         // Validate the status transition (Re-Audit-2 N4) — only allow
@@ -247,20 +250,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     await audit(auth.store, auth.user, req, "invoice.send_email", "invoice", id, { to: toEmail || "(portal only)" });
 
-    // AUDIT17 / P2-3 — a queued email (no provider configured) is NOT a
-    // delivery: return 409 with an actionable message (same semantics as
-    // the LOI send route) instead of a bare 200 { queued: true } that the
-    // views toasted as "The invoice sent".
-    if (emailResult.queued) {
+    // TASK 41 — honest send outcomes. Nothing is ever parked in a queue:
+    //   • duplicate  → refused by the guard (429): an identical email was
+    //     recently sent or its delivery is unconfirmed.
+    //   • no_provider→ 409: nothing was sent at all.
+    //   • failed / unknown → 502: the provider rejected it or did not
+    //     confirm in time; the invoice stays draft. The exact body and
+    //     error are in the Email Log.
+    if (!emailResult.success) {
+      const status = emailResult.duplicate ? 429 : emailResult.failureKind === "no_provider" ? 409 : 502;
       return NextResponse.json(
         {
-          error:
-            "No email provider is configured for this tenant (Settings → Communications). " +
-            "The invoice email is queued in the Mail Queue — configure a provider, then retry. " +
-            "The invoice status stays draft.",
-          queued: true,
+          error: emailResult.error || "The email was not sent.",
+          ...(emailResult.duplicate ? { duplicate: true } : {}),
+          ...(emailResult.failureKind ? { failureKind: emailResult.failureKind } : {}),
         },
-        { status: 409 },
+        { status },
       );
     }
     return NextResponse.json(emailResult);

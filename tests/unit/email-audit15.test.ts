@@ -432,8 +432,10 @@ describe("invite route — welcome_email_sent flag (audit15 EMAIL-STATE)", () =>
 
     const req = new NextRequest("http://localhost/api/portal-access/pa-1/invite", { method: "POST" });
     const res = await invitePost(req, { params: Promise.resolve({ id: "pa-1" }) });
-    // Failed send → 500 surfaced to the admin (queued for retry).
-    expect(res.status).toBe(500);
+    // TASK 41 — failed send → 502 surfaced to the admin with the real
+    // reason (the old "Queued for retry." message was a lie — nothing ever
+    // retried it).
+    expect(res.status).toBe(502);
     const flagCall = upsertPortalAccess.mock.calls.find((c: any[]) => c[0].welcome_email_sent === true);
     expect(flagCall).toBeUndefined();
   });

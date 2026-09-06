@@ -179,11 +179,8 @@ export async function onKycApproved(ctx: KycAutomationContext) {
       tier: access.tier,
       setupToken,
     });
-    // AUDIT17 / P1-3 — gate welcome_email_sent on ACTUAL delivery.
-    // sendEmail resolves { success:true, queued:true } when no provider is
-    // configured (mail parked, client got nothing) and { success:false }
-    // on provider failure — neither may flip the flag (the invite route
-    // and change-email route already apply the same gate).
+    // TASK 41 — success means the provider CONFIRMED delivery (the queue
+    // path that returned success:true without delivering is gone).
     let welcomeDelivered = false;
     try {
       const sendResult = await sendEmail({
@@ -192,7 +189,7 @@ export async function onKycApproved(ctx: KycAutomationContext) {
         html: wHtml,
         tenantId: submission.tenant_id,
       });
-      welcomeDelivered = !!(sendResult.success && !sendResult.queued);
+      welcomeDelivered = !!sendResult.success;
     } catch (e) {
       console.error("[kyc.welcome]", e);
     }
