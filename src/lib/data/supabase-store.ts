@@ -685,6 +685,18 @@ export class SupabaseStore implements Store {
     return this.smartUpsert<Partner>("partners", p, p.tenant_id ?? undefined);
   }
   async deletePartner(id: string): Promise<void> {
+    // Task 40: portal_events + portal_uploads have NO FK to partners —
+    // delete their rows explicitly BEFORE the partners row, otherwise a
+    // partner hard-delete leaves 5+ orphan event rows per portal partner
+    // (dangling partner_id pointing at nothing). Best-effort per table so
+    // a missing table in a given env never blocks the partner delete.
+    for (const table of ["portal_events", "portal_uploads"]) {
+      try {
+        await this.sb().from(table).delete().eq("partner_id", id);
+      } catch {
+        // Table missing in this env — skip (superset list).
+      }
+    }
     const { error } = await this.sb().from("partners").delete().eq("id", id);
     if (error) throw error;
   }
