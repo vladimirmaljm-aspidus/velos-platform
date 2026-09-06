@@ -143,7 +143,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const formData = await req.formData();
+    // Task 40 first catch from the new Error Audit pipeline: a JSON-bodied
+    // request made `req.formData()` THROW, the catch turned it into a 500
+    // with a raw TypeError message, and it surfaced in error_logs as a
+    // server error (fingerprint "Content-Type was not one of…"). It is a
+    // client mistake, not a server fault — answer 400 with guidance.
+    let formData: FormData;
+    try {
+      formData = await req.formData();
+    } catch {
+      return NextResponse.json(
+        {
+          error:
+            "Invalid request format. Send the CSV as multipart/form-data with a 'file' field.",
+        },
+        { status: 400 },
+      );
+    }
     const file = formData.get("file");
     if (!file || !(file instanceof File)) {
       return NextResponse.json({ error: "No file provided." }, { status: 400 });
