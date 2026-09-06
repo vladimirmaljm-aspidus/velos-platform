@@ -2,14 +2,17 @@
  * IP geolocation utility.
  *
  * Resolves an IP address to a country (and a few other geographic fields)
- * using the free `ipapi.co` API. Results are cached in-memory for one hour.
+ * using the free `ipapi.co` API, with `ipwho.is` as an automatic fallback
+ * when ipapi.co is unavailable or rate-limited (its free tier is aggressively
+ * throttled, which left "Location" empty in the admin views in production).
+ * Results are cached in-memory for one hour.
  *
  * Failures are non-fatal: every call returns a `GeoData` object whose fields
- * are `null` on error, so login / audit flows never break when the lookup
- * service is unavailable or rate-limited.
+ * are `null` on error, so login / audit flows never break when BOTH lookup
+ * services are unavailable.
  *
- * Free tier: ~1000 requests/day per source IP — fine for back-office logins
- * because we cache every unique IP for an hour.
+ * Free tiers: ipapi.co ~1000 req/day, ipwho.is ~10k req/day (no key) — fine
+ * for back-office logins because we cache every unique IP for an hour.
  */
 
 export interface GeoData {
@@ -55,8 +58,9 @@ function isLoopbackOrPrivate(ip: string): boolean {
 /**
  * Look up geographic data for a single IP address.
  *
- * Uses ipapi.co (free, no API key required, ~1000 requests/day).
- * Falls back to `null` country if the API is unavailable.
+ * Primary: ipapi.co (free, no API key). Fallback: ipwho.is (free HTTPS,
+ * no key) — used when ipapi.co fails, is rate-limited or returns an error
+ * payload. Returns the EMPTY_GEO shape only when BOTH providers fail.
  */
 export async function lookupIp(ip: string): Promise<GeoData> {
   if (!ip || ip === "unknown" || isLoopbackOrPrivate(ip)) {
@@ -69,9 +73,9 @@ export async function lookupIp(ip: string): Promise<GeoData> {
     return cached.data;
   }
 
+  // 5 second timeout per provider — geo lookup must never block a login.
+  // AbortSignal.timeout is supported on Node 17.3+ (the project requires Node 18+).
   try {
-    // 5 second timeout — geo lookup must never block a login.
-    // AbortSignal.timeout is supported on Node 17.3+ (the project requires Node 18+).
     const res = await fetch(`https://ipapi.co/${ip}/json/`, {
       signal: AbortSignal.timeout(5000),
       headers: { Accept: "application/json" },
@@ -88,7 +92,8 @@ export async function lookupIp(ip: string): Promise<GeoData> {
       reason?: string;
     };
 
-    // ipapi.co returns 200 with { error: true, reason: "..." } for reserved IPs.
+    // ipapi.co returns 200 with { error: true, reason: "..." } for reserved
+    // IPs AND for rate limiting (reason: "RateLimited").
     if (data && data.error) {
       throw new Error(data.reason || "ipapi.co error");
     }
@@ -101,12 +106,58 @@ export async function lookupIp(ip: string): Promise<GeoData> {
       longitude: typeof data.longitude === "number" ? data.longitude : null,
     };
 
+    // A response with no country AND no coordinates is effectively useless —
+    // fall through to the backup provider instead of caching nothing.
+    if (geo.country == null && geo.latitude == null) {
+      throw new Error("ipapi.co returned no usable fields");
+    }
+
+    cache.set(ip, { data: geo, expiresAt: now + CACHE_TTL });
+    return geo;
+  } catch {
+    // Primary provider failed — try the fallback BEFORE caching anything.
+  }
+
+  try {
+    // ipwho.is: free HTTPS JSON API, no key, generous limits.
+    // Shape: { success, ip, country, country_code, region, city, latitude, longitude, ... }
+    const res = await fetch(`https://ipwho.is/${encodeURIComponent(ip)}`, {
+      signal: AbortSignal.timeout(5000),
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = (await res.json()) as {
+      success?: boolean;
+      message?: string;
+      country?: string;
+      city?: string;
+      region?: string;
+      latitude?: number;
+      longitude?: number;
+    };
+    if (!data || data.success === false) {
+      throw new Error(data?.message || "ipwho.is error");
+    }
+
+    const geo: GeoData = {
+      country: data.country || null,
+      city: data.city || null,
+      region: data.region || null,
+      latitude: typeof data.latitude === "number" ? data.latitude : null,
+      longitude: typeof data.longitude === "number" ? data.longitude : null,
+    };
+
     cache.set(ip, { data: geo, expiresAt: now + CACHE_TTL });
     return geo;
   } catch (e) {
-    // Silently fail — don't block login if geo lookup fails.
-    // Cache the negative result briefly so we don't hammer the API on retries.
-    console.warn("[geo-ip] lookup failed for", ip, ":", e instanceof Error ? e.message : e);
+    // Both providers failed — silently degrade (never block login) and cache
+    // the negative result briefly so we don't hammer the APIs on retries.
+    console.warn(
+      "[geo-ip] both providers failed for",
+      ip,
+      ":",
+      e instanceof Error ? e.message : e,
+    );
     cache.set(ip, { data: { ...EMPTY_GEO }, expiresAt: now + NEGATIVE_CACHE_TTL });
     return { ...EMPTY_GEO };
   }
