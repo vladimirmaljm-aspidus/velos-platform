@@ -492,3 +492,141 @@ export function withErrorCapture<T extends AnyRouteHandler>(handler: T, routeNam
     }
   }) as T;
 }
+
+// ─── Global server-side capture (Task 40) ───────────────────────────────────
+//
+// THE GAP this closes: 366 API route files all follow the pattern
+//   } catch (error) { console.error("[route X]", error); return 500 }
+// — the error goes to stdout (Vercel function logs, which the platform
+// owner cannot browse from the app) and NOTHING lands in error_logs. The
+// in-house Error Audit view therefore only ever saw client-side crashes
+// (2 rows in production at the time of writing) while every server 500 —
+// including the tenant-delete failures the owner reported — went dark.
+//
+// Fix: install a console.error tee ONCE per server process (from
+// instrumentation.ts). Every console.error call that carries an Error
+// instance (or a PostgREST-style {message, code} object) is recorded into
+// error_logs with source 'server', fire-and-forget. The original
+// console.error still runs (Vercel logs stay identical).
+//
+// Loop prevention (capture must never make things worse):
+//   • install-once guard (double registration is a no-op)
+//   • self-log exemption — console.error calls whose first arg starts
+//     with "[error-audit]" are this module's own failure logging and are
+//     never re-captured (belt and braces: recordError's catch logs a
+//     STRING, which findErrorArg ignores anyway, so no recursion is
+//     possible even without this check)
+//   • rate cap — max 30 recordings per minute per process; beyond that
+//     the tee drops silently (an error storm must not become a DB write
+//     storm)
+//   • IMPORTANT: no blocking busy-flag — route handlers run concurrently
+//     and two parallel 500s must BOTH be recorded; a busy flag would
+//     silently drop the second one.
+
+/** Install-once guard. */
+let teeInstalled = false;
+/** Rate cap window state. */
+let teeWindowStart = 0;
+let teeCount = 0;
+const TEE_MAX_PER_MINUTE = 30;
+/** Prefix of this module's own console logging — never re-captured. */
+const SELF_LOG_PREFIX = "[error-audit]";
+
+/** Extract the first Error-like arg from a console.error(...args) call. */
+function findErrorArg(args: unknown[]): { message: string; stack: string | null } | null {
+  for (const a of args) {
+    if (a instanceof Error) {
+      return { message: a.message, stack: a.stack ?? null };
+    }
+    // PostgREST errors are plain objects: { message, code, details, hint }.
+    if (
+      typeof a === "object" && a !== null && "message" in a &&
+      typeof (a as { message: unknown }).message === "string" &&
+      ("code" in a || "details" in a || "hint" in a || "error" in a)
+    ) {
+      return { message: String((a as { message: unknown }).message), stack: null };
+    }
+  }
+  return null;
+}
+
+/**
+ * Install the console.error tee + process-level observers. Call exactly
+ * once from instrumentation.ts (Node runtime). Idempotent; never throws.
+ */
+export function installServerConsoleCapture(): void {
+  if (teeInstalled) return;
+  if (typeof console === "undefined" || typeof console.error !== "function") return;
+  teeInstalled = true;
+
+  const originalError = console.error.bind(console);
+
+  console.error = (...args: unknown[]) => {
+    // Always preserve the original behaviour (stdout → Vercel logs).
+    originalError(...args);
+
+    const routeTag = typeof args[0] === "string" ? args[0].slice(0, 120) : null;
+    // Our own module's failure logging — never re-capture (loop guard).
+    if (routeTag && routeTag.startsWith(SELF_LOG_PREFIX)) return;
+
+    const errArg = findErrorArg(args);
+    if (!errArg) return; // plain diagnostics (strings/objects) — not errors
+
+    // Rate cap — one-minute sliding window.
+    const now = Date.now();
+    if (now - teeWindowStart > 60_000) {
+      teeWindowStart = now;
+      teeCount = 0;
+    }
+    if (++teeCount > TEE_MAX_PER_MINUTE) return;
+
+    // Fire-and-forget record (concurrent errors each get their own
+    // recording — no busy flag; see the design note above).
+    void recordError({
+      source: "server",
+      level: "error",
+      message: errArg.message,
+      stack: errArg.stack,
+      url: routeTag,
+      context: { capturedBy: "console-tee", routeTag },
+    }).catch(() => {
+      // recordError never throws; belt and braces.
+    });
+  };
+
+  // ── Process-level safety net (observer-only) ──────────────────────────
+  // unhandledRejection / uncaughtException are recorded, NEVER swallowed
+  // and NEVER re-thrown from here. Next.js's production server registers
+  // its own handlers for both (logging + graceful degradation), and this
+  // app runs on Vercel — re-throwing from a listener would bypass Next's
+  // handling and could crash a process Next would have kept alive. Our
+  // listeners are registered AFTER Next's, so they are additive observers:
+  // the tee records the error into error_logs and returns.
+  try {
+    process.on("unhandledRejection", (reason: unknown) => {
+      const message =
+        reason instanceof Error ? reason.message : String(reason ?? "unhandled rejection");
+      const stack = reason instanceof Error ? reason.stack ?? null : null;
+      void recordError({
+        source: "server",
+        level: "error",
+        message,
+        stack,
+        url: null,
+        context: { capturedBy: "process.unhandledRejection" },
+      }).catch(() => {});
+    });
+    process.on("uncaughtException", (err: Error) => {
+      void recordError({
+        source: "server",
+        level: "error",
+        message: err.message,
+        stack: err.stack ?? null,
+        url: null,
+        context: { capturedBy: "process.uncaughtException" },
+      }).catch(() => {});
+    });
+  } catch {
+    // Some runtimes forbid listener registration — ignore.
+  }
+}

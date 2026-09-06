@@ -211,6 +211,108 @@ export function reportError(err: unknown, context?: Record<string, unknown>): vo
   report(extractErrorParts(err), "error", context);
 }
 
+// ── Task 40: window.fetch wrapper — 5xx API responses become reports ────────
+//
+// THE GAP this closes: every view in this codebase follows the pattern
+//   const r = await fetch(api("/api/x")); if (!r.ok) { toast(...) }
+// — the failed request is shown to the user and then FORGOTTEN. The
+// reporter above only sees uncaught JS errors, so handled fetch failures
+// (the majority of real production incidents, e.g. the tenant-delete 500s
+// of 2026-09-06) never reached /api/client-errors.
+//
+// Wrapping window.fetch ONCE covers all 378 fetch call-sites without
+// touching any of them:
+//   • only same-origin /api/... URLs are inspected
+//   • only status >= 500 counts (4xx are user errors, not app bugs)
+//   • /api/client-errors itself is EXEMPT (a failing report POST must
+//     never become another report — the loop this file exists to prevent)
+//   • the ORIGINAL Response object is returned untouched — the body is
+//     read from a clone (≤ 2 KB), so application code never notices
+//   • dedupe + per-load cap + never-throw come from report() itself
+//   • the reporter's own send() calls go through this wrapper too, but
+//     its endpoint is exempt and its failures are swallowed in send()
+let fetchPatched = false;
+
+function patchFetchForApi5xx(): void {
+  try {
+    if (fetchPatched) return;
+    if (typeof window === "undefined" || typeof window.fetch !== "function") return;
+    fetchPatched = true;
+    const originalFetch = window.fetch.bind(window);
+
+    window.fetch = async function patchedFetch(
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ): Promise<Response> {
+      const response = await originalFetch(input, init);
+
+      try {
+        // Cheap gate first: only 5xx proceed to the (heavier) URL check.
+        if (response.status < 500) return response;
+
+        // Resolve the request path (input may be a string, URL, Request).
+        let path = "";
+        try {
+          if (typeof input === "string") path = input;
+          else if (input instanceof URL) path = input.pathname;
+          else if (input && typeof (input as Request).url === "string") {
+            path = new URL((input as Request).url).pathname;
+          }
+        } catch {
+          return response;
+        }
+        // Same-origin /api/ paths only — and never our own endpoint.
+        if (!path.startsWith("/api/") || path === ENDPOINT) return response;
+
+        const method =
+          (init?.method || (input instanceof Request ? input.method : "GET") || "GET")
+            .toString()
+            .toUpperCase();
+
+        // Best-effort real error message from the (cloned) body — routes
+        // return { error: "..." }. Cap the read at 2 KB so a giant error
+        // payload can't stall the page.
+        let serverMessage: string | null = null;
+        try {
+          const clone = response.clone();
+          const text = (await clone.text()).slice(0, 2048);
+          try {
+            const parsed = JSON.parse(text) as { error?: unknown };
+            if (parsed && typeof parsed.error === "string" && parsed.error) {
+              serverMessage = parsed.error;
+            }
+          } catch {
+            // Non-JSON body — leave null.
+          }
+        } catch {
+          // Body unreadable (stream already consumed elsewhere) — leave null.
+        }
+
+        report(
+          {
+            message: serverMessage || `${response.status} ${method} ${path}`,
+            stack: null,
+            extra: {},
+          },
+          "error",
+          {
+            type: "api_5xx",
+            status: response.status,
+            method,
+            path,
+          },
+        );
+      } catch {
+        // The wrapper must never break the application's fetch.
+      }
+
+      return response;
+    };
+  } catch {
+    // Never throw during patching.
+  }
+}
+
 /**
  * Mounted once via <ErrorReporter /> in providers.tsx. Attaches the global
  * listeners and the unload beacon switch. Renders nothing.
@@ -250,6 +352,9 @@ export function ErrorReporter(): null {
     window.addEventListener("error", onWindowError, true);
     window.addEventListener("unhandledrejection", onUnhandledRejection);
     window.addEventListener("pagehide", onPageHide);
+
+    // Task 40 — the 5xx API-response capture (see patchFetchForApi5xx).
+    patchFetchForApi5xx();
 
     return () => {
       try {

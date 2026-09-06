@@ -142,7 +142,19 @@ export function TenantsView({ embedded = false }: { embedded?: boolean } = {}) {
       });
       if (!r.ok) {
         const e = await r.json().catch(() => ({}));
-        throw new Error(e.error || "Delete failed");
+        // Task 40: the 409 diagnosis payload — `failed_tables` lists the
+        // tables whose delete was rejected (FK / trigger), so the toast
+        // tells the operator what actually blocked the delete instead of
+        // a bare "Delete failed".
+        const failed = Array.isArray((e as Record<string, unknown>).failed_tables)
+          ? ((e as Record<string, unknown>).failed_tables as { table: string }[])
+              .map((f) => f.table)
+              .join(", ")
+          : "";
+        const msg = String((e as Record<string, unknown>).error || "Delete failed");
+        throw new Error(
+          failed ? `${msg} (blocked by: ${failed})` : msg,
+        );
       }
     },
     onSuccess: () => {

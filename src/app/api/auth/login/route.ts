@@ -220,6 +220,11 @@ export async function POST(req: NextRequest) {
       await store.appendAudit({
         user_id: null,
         username,
+        // 093-fix: carry the (possibly known) tenant context so audit rows
+        // never end up NULL-tenant for tenant users — the NULL-tenant rows
+        // are what blocked tenant hard-deletes (FK SET NULL vs the
+        // append-only trigger). See migration 093 + deleteTenantCascade.
+        tenant_id: user?.tenant_id ?? null,
         action: "login.failed",
         entity_type: "auth",
         entity_id: null,
@@ -268,6 +273,8 @@ export async function POST(req: NextRequest) {
           await store.appendAudit({
             user_id: user.id,
             username: user.username,
+            // 093-fix: tenant context on every login-family audit row.
+            tenant_id: user.tenant_id ?? null,
             action: "login.rate_limited",
             entity_type: "auth",
             entity_id: user.id,
@@ -314,6 +321,8 @@ export async function POST(req: NextRequest) {
           await store.appendAudit({
             user_id: user.id,
             username: user.username,
+            // 093-fix: tenant context on every login-family audit row.
+            tenant_id: user.tenant_id ?? null,
             action: "login.rate_limited",
             entity_type: "auth",
             entity_id: user.id,
@@ -371,6 +380,8 @@ export async function POST(req: NextRequest) {
       await store.appendAudit({
         user_id: user.id,
         username: user.username,
+        // 093-fix: tenant context on every login-family audit row.
+        tenant_id: user.tenant_id ?? null,
         action: "login.failed",
         entity_type: "auth",
         entity_id: user.id,
@@ -450,6 +461,8 @@ export async function POST(req: NextRequest) {
       await store.appendAudit({
         user_id: user.id,
         username: user.username,
+        // 093-fix: tenant context on every login-family audit row.
+        tenant_id: user.tenant_id ?? null,
         action: "login.failed",
         entity_type: "auth",
         entity_id: user.id,
@@ -502,6 +515,8 @@ export async function POST(req: NextRequest) {
         await store.appendAudit({
           user_id: user.id,
           username: user.username,
+          // 093-fix: tenant context on every login-family audit row.
+          tenant_id: user.tenant_id ?? null,
           action: "login.blocked",
           entity_type: "auth",
           entity_id: user.id,
@@ -541,6 +556,8 @@ export async function POST(req: NextRequest) {
         await store.appendAudit({
           user_id: user.id,
           username: user.username,
+          // 093-fix: tenant context on every login-family audit row.
+          tenant_id: user.tenant_id ?? null,
           action: "login.blocked",
           entity_type: "auth",
           entity_id: user.id,
@@ -597,6 +614,8 @@ export async function POST(req: NextRequest) {
         await store.appendAudit({
           user_id: user.id,
           username: user.username,
+          // 093-fix: tenant context on every login-family audit row.
+          tenant_id: user.tenant_id ?? null,
           action: "login.blocked",
           entity_type: "auth",
           entity_id: user.id,
@@ -631,6 +650,8 @@ export async function POST(req: NextRequest) {
         await store.appendAudit({
           user_id: user.id,
           username: user.username,
+          // 093-fix: tenant context on every login-family audit row.
+          tenant_id: user.tenant_id ?? null,
           action: "login.blocked",
           entity_type: "auth",
           entity_id: user.id,
@@ -699,6 +720,8 @@ export async function POST(req: NextRequest) {
       await store.appendAudit({
         user_id: user.id,
         username: user.username,
+        // 093-fix: tenant context on every login-family audit row.
+        tenant_id: user.tenant_id ?? null,
         action: "auth.2fa.temp_token_issued",
         entity_type: "auth",
         entity_id: user.id,
@@ -715,6 +738,11 @@ export async function POST(req: NextRequest) {
     await store.appendAudit({
       user_id: user.id,
       username: user.username,
+      // 093-fix: tenant context on every login-family audit row. THIS is
+      // the row that historically landed with tenant_id = NULL for every
+      // tenant user login (68 such orphan-context rows in production),
+      // which is what made tenant hard-deletes fail with 500.
+      tenant_id: user.tenant_id ?? null,
       action: "login",
       entity_type: "auth",
       entity_id: user.id,

@@ -52,6 +52,88 @@ import { clampPagination } from "@/lib/api/validate";
 
 type SupaRow = Record<string, unknown>;
 
+// ── Tenant hard-delete support (migration 093 / Task 40) ───────────────────
+//
+// The FULL list of tenant-scoped tables in dependency order, verified
+// against the live production schema (information_schema + pg_constraint,
+// 2026-09-07). Used by BOTH countTenantDependencies (the honest snapshot
+// shown in the delete-confirm audit entry) and deleteTenantCascade (the
+// actual purge). Includes:
+//   • every table with a tenant_id column and NO FK to tenants (lois,
+//     marketplace_*, portal_events, error_logs, doc_number_allocations,
+//     document_verification_logs, password_resets, tenant_role_overrides,
+//     webhook_deliveries) — these would be ORPHANED without this list;
+//   • login_history + security_incidents (FK ON DELETE SET NULL — the rows
+//     would survive with a NULL tenant; we delete them properly instead);
+//   • the trigger-protected audit_logs (handled by the 093 RPC, listed so
+//     the dependency COUNT stays honest);
+//   • the classic FK-CASCADE children (users, partners, offers, …) — the DB
+//     would cascade them anyway, but deleting explicitly keeps the
+//     operation deterministic and the audit-trail snapshot 1:1 with the
+//     purge.
+const TENANT_SCOPED_TABLES: readonly string[] = [
+  // sessions / auth surface (children of users first)
+  "sessions", "login_history", "known_ips", "trusted_devices",
+  "password_resets",
+  // communications
+  "mail_queue", "notifications", "team_chat_messages", "portal_messages",
+  // weak entities
+  "entity_notes", "user_tasks", "user_preferences", "quick_notes",
+  "time_entries", "reminders", "expense_entries", "meeting_notes",
+  "project_tasks", "recurring_expenses",
+  // trade core
+  "inventory_movements", "erp_journal_lines", "erp_journal_entries",
+  "erp_accounts", "erp_cost_centers", "fiscal_periods",
+  "erp_bank_accounts", "erp_bank_transactions", "erp_settings",
+  "deal_commissions", "commission_payouts", "commission_agents",
+  // documents
+  "document_revisions", "document_register", "shared_documents",
+  "document_templates", "document_sequences", "document_verifications",
+  "document_verification_logs", "doc_number_allocations",
+  "tenant_letterheads", "tenant_seals",
+  // portal surface
+  "portal_rfqs", "portal_access", "portal_uploads", "portal_events",
+  "file_manager", "kyc_submissions",
+  // marketplace (NO FK — would orphan)
+  "marketplace_posts", "marketplace_responses",
+  "marketplace_shipments", "marketplace_trade_documents",
+  "marketplace_company_profiles", "marketplace_financial_instruments",
+  // integrations + platform
+  "api_keys", "webhook_deliveries", "webhooks", "tenant_role_overrides",
+  "feature_flags", "vault_secrets", "error_logs", "security_incidents",
+  "plan_upgrade_requests", "memorandum_settings",
+  "partner_connections", "logistics_requests", "logistics_events",
+  // product catalog + trade docs
+  "product_catalog", "supplier_offers", "trade_calculations",
+  "offers", "invoices", "proformas", "lois",
+  "demands", "deals", "products",
+  // strong entities LAST
+  "partners", "settings", "users",
+  // audit_logs: counted (honest deps) but deleted ONLY via the 093 RPC —
+  // the append-only trigger blocks a plain PostgREST delete.
+  "audit_logs",
+] as const;
+
+/**
+ * Structured error thrown by deleteTenantCascade when the final tenants
+ * row delete is rejected by the DB (FK violation / trigger). Carries the
+ * per-table failure list so the API route can surface an actionable
+ * diagnosis to the super-admin instead of a generic 500.
+ */
+export class TenantDeleteError extends Error {
+  /** Tables whose app-level delete failed BEFORE the tenants delete. */
+  failedTables: { table: string; message: string }[] = [];
+  /** Which audit-purge RPC ran: 'v2' | 'v1' | 'none'. */
+  auditPurge: string = "none";
+  /** Postgres constraint details / hint when present. */
+  pgDetails: string | null = null;
+  pgHint: string | null = null;
+  constructor(message: string) {
+    super(message);
+    this.name = "TenantDeleteError";
+  }
+}
+
 function paginate<T>(items: T[], params?: ListParams): ListResult<T> {
   const limit = params?.limit ?? 50;
   const offset = params?.offset ?? 0;
@@ -2023,46 +2105,47 @@ export class SupabaseStore implements Store {
   }
 
   // ── Safe tenant deletion (P0 / task C-1) ────────────────────────────────
-  // The live DB has very few FK constraints with ON DELETE CASCADE (per
-  // migration 021 comment) — most tenant_id / partner_id / user_id columns
-  // are plain text with no FK at all. A naive `DELETE FROM tenants WHERE
-  // id=?` therefore orphans every dependent row (offers, invoices, users,
-  // audit_logs, …) which then dangles forever, shows up in cross-tenant
-  // queries if any RLS policy is mis-scoped, and makes "is this tenant
-  // really gone?" impossible to answer from the DB alone.
+  // The live DB has a MIX of FK semantics (checked against production
+  // pg_constraint 2026-09-07): most tenant_id FKs are ON DELETE CASCADE,
+  // three are ON DELETE SET NULL (audit_logs, login_history,
+  // security_incidents), and FOURTEEN tenant-scoped tables have NO FK at
+  // all (lois, portal_events, marketplace_*, error_logs,
+  // doc_number_allocations, document_verification_logs, password_resets,
+  // tenant_role_overrides, webhook_deliveries…). A naive
+  // `DELETE FROM tenants WHERE id=?` therefore:
+  //   • orphans the NO-FK rows forever, and
+  //   • FAILS outright when audit rows still reference the tenant's users:
+  //     the users CASCADE fires audit_logs_user_id_fkey (ON DELETE SET
+  //     NULL) → an UPDATE on audit_logs → the append-only trigger raises
+  //     → the whole DELETE FROM tenants statement is rolled back.
+  //     This is exactly the 500 the platform owner hit on 2026-09-06
+  //     18:49–18:50 while trying to remove five ZZZ Audit* test tenants.
   //
-  // `countTenantDependencies` introspects every tenant-scoped table and
-  // returns a per-table row count plus a `total`. The DELETE route uses it
-  // to refuse a hard-delete unless the caller passes `confirm=true` (or
-  // asks for a soft-delete instead) — see
-  // `src/app/api/tenants/[id]/route.ts`.
+  // `countTenantDependencies` introspects every tenant-scoped table below
+  // and returns a per-table row count plus a `total` — the honest snapshot
+  // (the old list missed lois / marketplace / portal_events / error_logs /
+  // login_history, reporting total=0 for tenants that had data).
   //
-  // `deleteTenantCascade` walks the same set of tables in dependency order
-  // (children before parents, weak entities before strong entities, append-
-  // only / trigger-protected tables skipped — those need dedicated RPCs
-  // like `anonymize_user_audit_logs` from migration 030) and then deletes
-  // the tenant row last. Each child delete is wrapped in try/catch so a
-  // missing or renamed table in a given env does not abort the whole
-  // cascade (the table list is a superset of what any single env has).
+  // `deleteTenantCascade` walks the same set in dependency order and then
+  // deletes the tenant row last. The audit purge runs FIRST via the
+  // `force_delete_tenant_audit_logs_v2` RPC (migration 093): it deletes
+  // audit rows WHERE tenant_id = X **OR user_id IN the tenant's users** —
+  // the user-owned rows are the ones whose FK ON DELETE SET NULL would
+  // otherwise collide with the append-only trigger. A failure of the v2
+  // RPC falls back to v1 (tenant_id-only purge) so an old deploy against
+  // a new DB (or vice versa) degrades instead of exploding.
   //
-  // This is a defence-in-depth app-layer cascade. The real fix is a
-  // migration that adds FK constraints with proper ON DELETE CASCADE /
-  // RESTRICT / SET NULL semantics — tracked as follow-up. Until that
-  // migration lands, this method is the only thing preventing orphan rows.
+  // Each child delete is wrapped in try/catch so a missing table in a
+  // given env does not abort the cascade — but failures are now COLLECTED
+  // (not silently swallowed): if the final tenants delete still fails, a
+  // TenantDeleteError is thrown carrying the per-table failure list so the
+  // API route can tell the super-admin EXACTLY what blocked the delete
+  // instead of a generic 500.
   async countTenantDependencies(
     tenantId: string,
   ): Promise<Record<string, number> & { total: number }> {
-    const tables = [
-      "users", "partners", "products", "offers", "invoices", "proformas",
-      "supplier_offers", "trade_calculations", "deals", "demands",
-      "settings", "document_templates", "tenant_letterheads",
-      "tenant_seals", "portal_access", "api_keys", "webhooks",
-      "mail_queue", "notifications", "entity_notes", "user_tasks",
-      "inventory_movements", "erp_journal_entries", "commission_agents",
-      "deal_commissions", "commission_payouts", "sessions", "audit_logs",
-    ];
     const counts: Record<string, number> = {};
-    for (const table of tables) {
+    for (const table of TENANT_SCOPED_TABLES) {
       try {
         const { count } = await this.sb()
           .from(table)
@@ -2081,44 +2164,74 @@ export class SupabaseStore implements Store {
   }
 
   async deleteTenantCascade(tenantId: string): Promise<void> {
-    // First: force-delete the tenant's audit_logs via a SECURITY DEFINER
-    // RPC that temporarily disables the audit_logs_append_only trigger.
-    // Without this, the trigger blocks the DELETE and the cascade fails.
-    // Also handle document_verification_logs (may have a similar trigger).
+    // ── 1) Audit purge FIRST (migration 093). ───────────────────────────
+    // v2: rows by tenant_id PLUS rows owned by the tenant's users (any
+    // tenant context). v1 fallback: rows by tenant_id only. Both disable
+    // the append-only trigger inside a SECURITY DEFINER function.
+    let auditPurge = "none";
     try {
-      await this.sb().rpc("force_delete_tenant_audit_logs", { t_uuid: tenantId });
-    } catch {
-      // RPC may not exist in all environments — the per-table try/catch
-      // below will handle audit_logs (it'll fail silently there too).
-    }
-
-    // Order matters: children before parents. audit_logs is intentionally
-    // ABSENT from this list — it's handled by the RPC above. Other
-    // append-only tables (document_verification_logs) are also skipped;
-    // their rows survive the cascade but become orphaned (acceptable for
-    // a hard-delete — the tenant is gone).
-    const order = [
-      "sessions", "mail_queue", "notifications",
-      "entity_notes", "user_tasks", "inventory_movements",
-      "erp_journal_lines", "erp_journal_entries", "deal_commissions",
-      "commission_payouts", "commission_agents", "document_revisions",
-      "document_register", "shared_documents", "portal_rfqs",
-      "portal_access", "api_keys", "webhook_deliveries", "webhooks",
-      "kyc_submissions", "user_preferences", "offers", "invoices",
-      "proformas", "supplier_offers", "trade_calculations", "demands",
-      "deals", "products", "partners", "tenant_letterheads",
-      "tenant_seals", "document_templates", "settings", "users",
-    ];
-    for (const table of order) {
+      const { error } = await this.sb().rpc(
+        "force_delete_tenant_audit_logs_v2",
+        { t_uuid: tenantId },
+      );
+      if (!error) auditPurge = "v2";
+    } catch { /* fall through to v1 */ }
+    if (auditPurge !== "v2") {
       try {
-        await this.sb().from(table).delete().eq("tenant_id", tenantId);
+        await this.sb().rpc("force_delete_tenant_audit_logs", { t_uuid: tenantId });
+        auditPurge = "v1";
       } catch {
-        // Table may not exist in this env — skip and continue. The
-        // tenant row delete below is the only hard requirement.
+        // Neither RPC available (pre-093 DB). The per-table try/catch and
+        // the final tenants-delete error path will surface whatever this
+        // leaves behind — the admin sees "audit_logs" in failed_tables.
       }
     }
+
+    // ── 2) Walk every tenant-scoped table in dependency order. ─────────
+    // Children before parents; weak entities before strong entities.
+    // audit_logs is handled by the RPC above (append-only trigger).
+    const failedTables: { table: string; message: string }[] = [];
+    const noteFailure = (table: string, e: unknown) => {
+      const msg =
+        e instanceof Error ? e.message : String((e as { message?: string })?.message ?? e);
+      failedTables.push({ table, message: String(msg).slice(0, 300) });
+    };
+    for (const table of TENANT_SCOPED_TABLES) {
+      if (table === "audit_logs") continue; // RPC-only (trigger-protected)
+      try {
+        // NOTE: the supabase-js builder RESOLVES with { data, error } for
+        // PostgREST failures — it does NOT throw. A thrown error here
+        // means a transport/SDK failure. Both shapes must be collected.
+        const res = (await this.sb().from(table).delete().eq("tenant_id", tenantId)) as
+          | { error?: unknown }
+          | null
+          | undefined;
+        const resError = res?.error;
+        if (resError) noteFailure(table, resError);
+      } catch (e: unknown) {
+        // Table missing in this env (superset list) — OR a real transport
+        // error. Record it: if the tenants delete below succeeds, the row
+        // is gone anyway (CASCADE); if it fails, this list is the
+        // diagnosis we hand the admin.
+        noteFailure(table, e);
+      }
+    }
+
+    // ── 3) The tenant row itself. ───────────────────────────────────────
     const { error } = await this.sb().from("tenants").delete().eq("id", tenantId);
-    if (error) throw error;
+    if (error) {
+      // FK violation / trigger block. Build an actionable message: the
+      // Postgres error plus which app-level table deletes already failed.
+      const detail = (error as { message?: string; details?: string; hint?: string });
+      const err = new TenantDeleteError(
+        `Tenant row could not be deleted: ${detail.message || "unknown database error"}`,
+      );
+      err.failedTables = failedTables;
+      err.auditPurge = auditPurge;
+      err.pgDetails = detail.details || null;
+      err.pgHint = detail.hint || null;
+      throw err;
+    }
   }
 
   // ── Safe user deletion (P0 / task C-1) ─────────────────────────────────

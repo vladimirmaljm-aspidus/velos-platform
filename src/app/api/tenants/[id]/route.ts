@@ -328,15 +328,41 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     // Hard-delete: walk every tenant-scoped table in dependency order and
     // DELETE the rows, then DELETE the tenant row last. The dependency
     // snapshot is captured in the audit entry so the audit trail records
-    // what was destroyed (the rows themselves go away). Note: append-only
-    // audit_logs rows that belong to this tenant are NOT cascade-deleted
-    // here (the trigger from migration 010 blocks DELETE); for tenant PII
-    // in audit_logs, run `anonymize_user_audit_logs` per user first.
+    // what was destroyed (the rows themselves go away). The 093 RPC purge
+    // removes audit rows for the tenant AND its users (append-only trigger
+    // handled server-side) — see supabase-store deleteTenantCascade.
     await audit(auth.store, auth.user, req, "tenant.delete", "tenant", id, {
       name: existing.name,
       dependencies: deps,
     });
-    await auth.store.deleteTenantCascade(id);
+    try {
+      await auth.store.deleteTenantCascade(id);
+    } catch (cascadeErr: unknown) {
+      // Task 40: the cascade refused. Return an ACTIONABLE diagnosis to
+      // the super-admin (this route is super-admin-only) instead of the
+      // generic sanitized 500 that hid the real reason on 2026-09-06 —
+      // the owner then had to delete every user by hand before the
+      // tenant delete went through. TenantDeleteError carries the
+      // per-table failure list + the Postgres constraint message.
+      const tde = cascadeErr as {
+        name?: string;
+        message?: string;
+        failedTables?: { table: string; message: string }[];
+        auditPurge?: string;
+        pgDetails?: string | null;
+        pgHint?: string | null;
+      };
+      const structured = tde.name === "TenantDeleteError";
+      return NextResponse.json({
+        error: structured
+          ? `Hard delete failed: ${sanitizeError(tde.message)}`
+          : sanitizeError(cascadeErr),
+        failed_tables: tde.failedTables || [],
+        audit_purge: tde.auditPurge || null,
+        pg_details: tde.pgDetails || null,
+        pg_hint: tde.pgHint || null,
+      }, { status: 409 });
+    }
     return NextResponse.json({ ok: true, mode: "hard", deleted: deps });
   } catch (error: any) {
     console.error("[tenants DELETE id]", error);
