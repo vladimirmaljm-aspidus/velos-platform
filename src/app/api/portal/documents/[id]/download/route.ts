@@ -5,6 +5,7 @@ import { requireGpsVerified } from "@/lib/portal/require-gps";
 import { getStore } from "@/lib/data/store";
 import { getSupabase } from "@/lib/supabase/client";
 import { audit, sanitizeError } from "@/lib/api/helpers";
+import { trackPortalEvent } from "@/lib/portal/partner-events";
 
 export const runtime = "nodejs";
 
@@ -66,6 +67,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   } catch (e) {
     console.error("[portal document download audit]", e);
   }
+
+  // 37 — per-partner activity event (timeline "downloaded file X" entry).
+  void trackPortalEvent(access, req, {
+    type: "document_downloaded",
+    entity_type: "shared_document",
+    entity_id: id,
+    label: (doc as any).filename || id,
+    details: { inline },
+  });
 
   return NextResponse.redirect(data.signedUrl, 302);
   } catch (error: any) {

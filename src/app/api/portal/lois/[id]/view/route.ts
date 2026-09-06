@@ -4,6 +4,7 @@ import { requireKycApproved } from "@/lib/portal/kyc-gate";
 import { requireGpsVerified } from "@/lib/portal/require-gps";
 import { getStore } from "@/lib/data/store";
 import { markDocumentViewed } from "@/lib/portal/mark-viewed";
+import { trackPortalEvent } from "@/lib/portal/partner-events";
 
 export const runtime = "nodejs";
 
@@ -55,6 +56,16 @@ export async function POST(
     }
 
     await markDocumentViewed("lois", id, access.tenant_id, access.portal_email);
+
+    // 37 — per-partner activity event (every view, timestamped + IP;
+    // the lois.viewed_at column only records the first one).
+    void trackPortalEvent(access, _req, {
+      type: "loi_viewed",
+      entity_type: "loi",
+      entity_id: id,
+      label: loi.number || id,
+      details: { product: loi.product_name ?? null, buyer: loi.buyer_name ?? null },
+    });
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     console.error("[portal.loi.view]", e);

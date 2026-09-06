@@ -4,6 +4,7 @@ import { requireKycApproved } from "@/lib/portal/kyc-gate";
 import { requireGpsVerified } from "@/lib/portal/require-gps";
 import { getStore } from "@/lib/data/store";
 import { markDocumentViewed } from "@/lib/portal/mark-viewed";
+import { trackPortalEvent } from "@/lib/portal/partner-events";
 
 export const runtime = "nodejs";
 
@@ -45,6 +46,14 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     }
 
     await markDocumentViewed("proformas", id, access.tenant_id, access.portal_email);
+
+    // 37 — per-partner activity event (every view, timestamped + IP).
+    void trackPortalEvent(access, _req, {
+      type: "proforma_viewed",
+      entity_type: "proforma",
+      entity_id: id,
+      label: proforma.number || id,
+    });
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     console.error("[portal.proforma.view]", e);

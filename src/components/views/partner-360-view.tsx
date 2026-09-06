@@ -30,6 +30,8 @@ import {
   CheckCircle2, Clock, XCircle, AlertTriangle, Send, Ban, Plus,
   Download, Eye, FileSignature, Calculator, Inbox, UserX,
   Calendar, Tag, FileBadge, Trash2, KeyRound, Loader2,
+  Activity as ActivityIcon, Navigation, MonitorSmartphone, Search,
+  ShoppingBag, TrendingUp, History, Radar,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -41,7 +43,7 @@ import {
 import { getCountry } from "@/lib/data/reference";
 import {
   Partner, Deal, DealStage, Offer, Invoice, SharedDocument,
-  KycSubmission, PortalRfq, PortalAccess,
+  KycSubmission, PortalRfq, PortalAccess, LetterOfIntent, Proforma,
 } from "@/lib/supabase/types";
 import { useApiUrl, useTenantKey } from "@/lib/hooks/use-api-url";
 import { cn } from "@/lib/utils";
@@ -161,6 +163,155 @@ function portalStatusClass(status: string): string {
   }
 }
 
+// ---------- 37: partner activity (GET /api/partners/[id]/activity) ----------
+interface ActivityGpsFix {
+  latitude: number;
+  longitude: number;
+  accuracy: number | null;
+  at: string;
+  source: string | null;
+}
+
+interface ActivityLoginEntry {
+  at: string;
+  status: "success" | "failed" | "rate_limited";
+  reason: string | null;
+  ip: string | null;
+  country: string | null;
+  city: string | null;
+  gps: ActivityGpsFix | null;
+  device: string | null;
+  user_agent: string | null;
+}
+
+interface ActivityTimelineEvent {
+  at: string;
+  type: string;
+  label: string | null;
+  entity_type: string | null;
+  entity_id: string | null;
+  ip: string | null;
+  details: Record<string, unknown> | null;
+}
+
+interface PartnerActivityData {
+  partner_id: string;
+  summary: {
+    portal_access: { id: string; status: string; tier: string; created_at: string | null } | null;
+    logins: number;
+    failed_logins: number;
+    last_login_at: string | null;
+    last_ip: string | null;
+    last_country: string | null;
+    last_city: string | null;
+    last_gps: ActivityGpsFix | null;
+    doc_views: number;
+    doc_viewed_count: number;
+    downloads: number;
+    rfqs: number;
+    marketplace_actions: number;
+    purchases: number;
+    events_total: number;
+    events_tracked: boolean;
+    first_seen: string | null;
+    last_activity_at: string | null;
+  };
+  logins: ActivityLoginEntry[];
+  interests: {
+    top_products: { name: string; count: number }[];
+    top_categories: { name: string; count: number }[];
+    recent_searches: { term: string; at: string }[];
+  };
+  marketplace: {
+    posts_total: number;
+    bids_total: number;
+    negotiations_total: number;
+    follows_total: number;
+    purchases: {
+      id: string;
+      kind: string;
+      product: string | null;
+      quantity: number | null;
+      unit: string | null;
+      price: number | null;
+      currency: string | null;
+      at: string;
+    }[];
+    posts: {
+      id: string;
+      post_type: string;
+      product_name: string;
+      status: string;
+      quantity: number;
+      unit: string;
+      target_price: number | null;
+      currency: string;
+      created_at: string;
+      views_count: number;
+      responses_count: number;
+    }[];
+    bids: {
+      id: string;
+      post_id: string;
+      post_product: string | null;
+      unit_price: number | null;
+      currency: string | null;
+      quantity: number | null;
+      is_counter: boolean | null;
+      status: string;
+      created_at: string;
+    }[];
+    negotiations: {
+      id: string;
+      post_id: string;
+      status: string;
+      role: string;
+      last_message_at: string | null;
+      created_at: string;
+    }[];
+    follows: { id: string; followed_name: string | null; created_at: string }[];
+  };
+  documents: {
+    table: string;
+    id: string;
+    number: string;
+    status: string | null;
+    viewed_at: string | null;
+    view_count: number;
+  }[];
+  timeline: ActivityTimelineEvent[];
+}
+
+// Timeline event type → icon + i18n key base. Unknown types fall back to
+// a neutral dot + the raw type string (mono) so new backend types still
+// render sensibly without a frontend redeploy.
+const TIMELINE_TYPE_META: Record<string, { icon: LucideIcon; key: string; tone: string }> = {
+  login: { icon: CheckCircle2, key: "crm-act-login", tone: "text-emerald-600 dark:text-emerald-400" },
+  login_failed: { icon: XCircle, key: "crm-act-login-failed", tone: "text-destructive" },
+  location: { icon: MapPin, key: "crm-act-location", tone: "text-primary" },
+  offer_viewed: { icon: Eye, key: "crm-act-offer-viewed", tone: "text-primary" },
+  loi_viewed: { icon: Eye, key: "crm-act-loi-viewed", tone: "text-primary" },
+  invoice_viewed: { icon: Eye, key: "crm-act-invoice-viewed", tone: "text-primary" },
+  proforma_viewed: { icon: Eye, key: "crm-act-proforma-viewed", tone: "text-primary" },
+  offer_downloaded: { icon: Download, key: "crm-act-offer-downloaded", tone: "text-teal-600 dark:text-teal-400" },
+  loi_downloaded: { icon: Download, key: "crm-act-loi-downloaded", tone: "text-teal-600 dark:text-teal-400" },
+  invoice_downloaded: { icon: Download, key: "crm-act-invoice-downloaded", tone: "text-teal-600 dark:text-teal-400" },
+  proforma_downloaded: { icon: Download, key: "crm-act-proforma-downloaded", tone: "text-teal-600 dark:text-teal-400" },
+  document_downloaded: { icon: Download, key: "crm-act-document-downloaded", tone: "text-teal-600 dark:text-teal-400" },
+  catalog_product_viewed: { icon: Search, key: "crm-act-catalog-viewed", tone: "text-amber-600 dark:text-amber-400" },
+  catalog_search: { icon: Search, key: "crm-act-catalog-search", tone: "text-amber-600 dark:text-amber-400" },
+  marketplace_viewed: { icon: ShoppingBag, key: "crm-act-marketplace-viewed", tone: "text-amber-600 dark:text-amber-400" },
+  marketplace_search: { icon: Search, key: "crm-act-marketplace-search", tone: "text-amber-600 dark:text-amber-400" },
+  marketplace_bid: { icon: TrendingUp, key: "crm-act-marketplace-bid", tone: "text-primary" },
+  marketplace_follow: { icon: Star, key: "crm-act-marketplace-follow", tone: "text-primary" },
+  rfq_created: { icon: Inbox, key: "crm-act-rfq-created", tone: "text-primary" },
+};
+
+/** Build an OSM deep link for a GPS fix (opens in a new tab). */
+function gpsMapUrl(lat: number, lng: number): string {
+  return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=13/${lat}/${lng}`;
+}
+
 // ---------- helpers ----------
 function riskColor(score: number): string {
   if (score < 30) return "text-emerald-600";
@@ -270,6 +421,37 @@ function Partner360Content({
     },
   });
 
+  // 37 — LOIs issued to this partner (the "who was issued what" registry:
+  // the 360 view previously had NO LOI section at all).
+  const loisQ = useQuery<{ items: LetterOfIntent[] }>({
+    queryKey: ["lois", tenantKey, "partner360", partnerId],
+    queryFn: async () => {
+      const r = await fetch(api(`/api/lois?partner_id=${partnerId}&limit=500`));
+      if (!r.ok) throw new Error("Failed to load LOIs");
+      return r.json();
+    },
+  });
+
+  // 37 — proformas issued to this partner.
+  const proformasQ = useQuery<{ items: Proforma[] }>({
+    queryKey: ["proformas", tenantKey, "partner360", partnerId],
+    queryFn: async () => {
+      const r = await fetch(api(`/api/proformas?partner_id=${partnerId}&limit=500`));
+      if (!r.ok) throw new Error("Failed to load proformas");
+      return r.json();
+    },
+  });
+
+  // 37 — partner activity (logins + GPS, interests, marketplace, timeline).
+  const activityQ = useQuery<PartnerActivityData>({
+    queryKey: ["partner-activity", tenantKey, partnerId],
+    queryFn: async () => {
+      const r = await fetch(api(`/api/partners/${partnerId}/activity`));
+      if (!r.ok) throw new Error("Failed to load activity");
+      return r.json();
+    },
+  });
+
   const documentsQ = useQuery<{ items: SharedDocument[] }>({
     queryKey: ["documents", tenantKey, "partner360", partnerId],
     queryFn: async () => {
@@ -312,6 +494,8 @@ function Partner360Content({
   const offers = offersQ.data?.items || [];
   const invoices = invoicesQ.data?.items || [];
   const documents = documentsQ.data?.items || [];
+  const lois = loisQ.data?.items || [];
+  const proformas = proformasQ.data?.items || [];
 
   const kycSubmission = useMemo(() => {
     const items = kycQ.data?.items || [];
@@ -399,13 +583,18 @@ function Partner360Content({
             {t("crm-offers-invoices")} <Badge variant="secondary" className="ml-1.5 tabular">{offers.length + invoices.length}</Badge>
           </TabsTrigger>
           <TabsTrigger value="documents">
-            {t("crm-documents")} <Badge variant="secondary" className="ml-1.5 tabular">{documents.length}</Badge>
+            {t("crm-documents")} <Badge variant="secondary" className="ml-1.5 tabular">{documents.length + lois.length + proformas.length}</Badge>
           </TabsTrigger>
           <TabsTrigger value="kyc">
             {t("crm-kyc-compliance")}
           </TabsTrigger>
           <TabsTrigger value="portal">
             {t("crm-portal-activity")}
+          </TabsTrigger>
+          {/* 37 — partner intelligence: logins + GPS, interests, marketplace,
+              full activity timeline. */}
+          <TabsTrigger value="activity">
+            {t("crm-activity-tab")} {activityQ.data && <Badge variant="secondary" className="ml-1.5 tabular">{activityQ.data.summary.logins}</Badge>}
           </TabsTrigger>
         </TabsList>
 
@@ -765,11 +954,16 @@ function Partner360Content({
           </Card>
         </TabsContent>
 
-        {/* ---------- Documents tab ---------- */}
+        {/* ---------- Documents tab (37: full issuance registry incl. LOI) ---------- */}
         <TabsContent value="documents" className="mt-4">
           <DocumentsTab
             partnerId={partnerId}
             documents={documents}
+            lois={lois}
+            offers={offers}
+            proformas={proformas}
+            invoices={invoices}
+            activityDocs={activityQ.data?.documents || null}
             canAdmin={canAdmin}
             onUploaded={() => {
               qc.invalidateQueries({ queryKey: ["documents", tenantKey, "partner360", partnerId] });
@@ -795,6 +989,16 @@ function Partner360Content({
             portalAccess={portalAccess}
             rfqs={rfqs}
             canAdmin={canAdmin}
+          />
+        </TabsContent>
+
+        {/* ---------- 37: Activity & intelligence tab ---------- */}
+        <TabsContent value="activity" className="mt-4">
+          <ActivityTab
+            partnerName={partner.name}
+            data={activityQ.data || null}
+            loading={activityQ.isLoading}
+            error={activityQ.error ? String((activityQ.error as Error).message) : null}
           />
         </TabsContent>
       </Tabs>
@@ -1008,13 +1212,73 @@ function DefRow({
 }
 
 // ============================================================
-// Documents tab
+// Documents tab — 37: full issuance registry ("who was issued what")
 // ============================================================
+// The old tab only listed SharedDocument uploads. The new registry answers
+// the audit gap directly: EVERY document type the platform issues to this
+// partner — LOIs (previously absent from the 360 view entirely), offers,
+// proformas, invoices and shared files — in one filterable table with
+// status + "did they open it" (viewed_at / view_count from the portal
+// tracking columns) + a PDF download per row.
+type IssuedDocKind = "loi" | "offer" | "proforma" | "invoice" | "file";
+
+interface IssuedDocRow {
+  key: string;
+  kind: IssuedDocKind;
+  id: string;
+  number: string;
+  subject: string;
+  status: string | null;
+  issuedAt: string | null;
+  viewedAt: string | null;
+  viewCount: number;
+  pdfUrl: string | null;
+  fileUrl: string | null;
+}
+
+const ISSUED_KIND_META: Record<IssuedDocKind, { icon: LucideIcon; labelKey: string }> = {
+  loi: { icon: FileBadge, labelKey: "crm-doc-kind-loi" },
+  offer: { icon: FileSignature, labelKey: "crm-doc-kind-offer" },
+  proforma: { icon: Calculator, labelKey: "crm-doc-kind-proforma" },
+  invoice: { icon: Receipt, labelKey: "crm-doc-kind-invoice" },
+  file: { icon: FileText, labelKey: "crm-doc-kind-file" },
+};
+
+const LOI_STATUS_STYLES: Record<string, string> = {
+  draft: "bg-secondary text-secondary-foreground",
+  sent: "border-transparent bg-[var(--chart-1)] text-white",
+  accepted: "border-transparent bg-emerald-600 text-white",
+  rejected: "border-transparent bg-rose-600 text-white",
+  expired: "border-transparent bg-amber-500 text-white",
+  cancelled: "border-transparent bg-muted text-muted-foreground",
+};
+
+function loiStatusClass(status: string): string {
+  return LOI_STATUS_STYLES[status] || "border-transparent bg-muted text-muted-foreground";
+}
+
+const LOI_STATUS_LABEL_KEYS: Record<string, string> = {
+  draft: "loi-status-draft",
+  sent: "loi-status-sent",
+  accepted: "loi-status-accepted",
+  rejected: "loi-status-rejected",
+  expired: "loi-status-expired",
+  cancelled: "loi-status-cancelled",
+};
+
 function DocumentsTab({
-  partnerId, documents, canAdmin, onUploaded,
+  partnerId, documents, lois, offers, proformas, invoices, activityDocs, canAdmin, onUploaded,
 }: {
   partnerId: string;
   documents: SharedDocument[];
+  lois: LetterOfIntent[];
+  offers: Offer[];
+  proformas: Proforma[];
+  invoices: Invoice[];
+  /** view-tracking overlay from /api/partners/[id]/activity — keyed by
+   *  "<table>:<id>" (offers/lois/invoices/proformas). Null when the
+   *  activity query has not resolved yet; rows then simply show "—". */
+  activityDocs: { table: string; id: string; number: string; status: string | null; viewed_at: string | null; view_count: number }[] | null;
   canAdmin: boolean;
   onUploaded: () => void;
 }) {
@@ -1022,23 +1286,87 @@ function DocumentsTab({
   const api = useApiUrl();
   const tenantKey = useTenantKey();
 
+  const [filter, setFilter] = useState<"all" | IssuedDocKind>("all");
   const [uploadOpen, setUploadOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
   const qc = useQueryClient();
 
-  const CATEGORY_LABEL_KEYS: Record<string, string> = {
-    contract: "crm-contract",
-    invoice: "crm-invoices",
-    spec: "crm-spec",
-    other: "crm-other",
-  };
+  const viewInfo = useMemo(() => {
+    const m = new Map<string, { viewed_at: string | null; view_count: number }>();
+    for (const d of activityDocs || []) {
+      m.set(`${d.table}:${d.id}`, { viewed_at: d.viewed_at, view_count: d.view_count });
+    }
+    return m;
+  }, [activityDocs]);
 
-  const CATEGORY_ICON: Record<string, LucideIcon> = {
-    contract: FileSignature,
-    invoice: Receipt,
-    spec: FileCheck2,
-    other: FileText,
-  };
+  // Build the unified registry rows (newest first within each source; the
+  // final sort is by issued date DESC across all kinds).
+  const rows = useMemo<IssuedDocRow[]>(() => {
+    const out: IssuedDocRow[] = [];
+    const stamp = (row: Omit<IssuedDocRow, "viewedAt" | "viewCount">, table: string, fallbackViewed?: unknown, fallbackCount?: unknown) => {
+      const info = viewInfo.get(`${table}:${row.id}`);
+      const viewedAt = info?.viewed_at ?? (typeof fallbackViewed === "string" ? (fallbackViewed as string) : null);
+      const viewCount = info?.view_count ?? (typeof fallbackCount === "number" ? (fallbackCount as number) : 0);
+      out.push({ ...row, viewedAt, viewCount });
+    };
+    for (const l of lois) {
+      stamp({
+        key: `loi:${l.id}`, kind: "loi", id: l.id, number: l.number,
+        subject: l.product_name || l.subject || "",
+        status: l.status || null,
+        issuedAt: l.sent_at || l.created_at || null,
+        pdfUrl: `/api/lois/${l.id}/pdf`, fileUrl: null,
+      }, "lois", (l as any).viewed_at, (l as any).view_count);
+    }
+    for (const o of offers) {
+      stamp({
+        key: `offer:${o.id}`, kind: "offer", id: o.id, number: o.number,
+        subject: o.subject || "",
+        status: o.status || null,
+        issuedAt: o.sent_at || o.created_at || null,
+        pdfUrl: `/api/offers/${o.id}/pdf`, fileUrl: null,
+      }, "offers", (o as any).viewed_at, (o as any).view_count);
+    }
+    for (const p of proformas) {
+      stamp({
+        key: `proforma:${p.id}`, kind: "proforma", id: p.id, number: p.number,
+        subject: p.subject || "",
+        status: p.status || null,
+        issuedAt: (p as any).sent_at || p.created_at || null,
+        pdfUrl: `/api/proformas/${p.id}/pdf`, fileUrl: null,
+      }, "proformas", (p as any).viewed_at, (p as any).view_count);
+    }
+    for (const i of invoices) {
+      stamp({
+        key: `invoice:${i.id}`, kind: "invoice", id: i.id, number: i.number,
+        subject: i.subject || "",
+        status: i.status || null,
+        issuedAt: (i as any).sent_at || i.created_at || null,
+        pdfUrl: `/api/invoices/${i.id}/pdf`, fileUrl: null,
+      }, "invoices", (i as any).viewed_at, (i as any).view_count);
+    }
+    for (const d of documents) {
+      out.push({
+        key: `file:${d.id}`, kind: "file", id: d.id, number: d.filename,
+        subject: d.category || "",
+        status: d.visible_to_partner ? "visible" : "hidden",
+        issuedAt: d.created_at || null,
+        viewedAt: null, viewCount: 0,
+        pdfUrl: null,
+        fileUrl: d.storage_path ? `/api/documents/${d.id}` : null,
+      });
+    }
+    out.sort((a, b) => (b.issuedAt || "").localeCompare(a.issuedAt || ""));
+    return out;
+  }, [lois, offers, proformas, invoices, documents, viewInfo]);
+
+  const filtered = useMemo(
+    () => (filter === "all" ? rows : rows.filter((r) => r.kind === filter)),
+    [rows, filter],
+  );
+
+  const kindCount = (k: IssuedDocKind) => rows.filter((r) => r.kind === k).length;
 
   const deleteMut = useMutation({
     mutationFn: async (id: string) => {
@@ -1053,75 +1381,199 @@ function DocumentsTab({
     onError: () => toast.error(t("crm-delete-failed")),
   });
 
+  const statusBadge = (row: IssuedDocRow) => {
+    if (row.kind === "file") {
+      return (
+        <Badge variant={row.status === "visible" ? "default" : "secondary"} className="text-xs">
+          {row.status === "visible" ? t("crm-visible") : t("crm-hidden")}
+        </Badge>
+      );
+    }
+    if (!row.status) return null;
+    const label =
+      row.kind === "loi"
+        ? t(LOI_STATUS_LABEL_KEYS[row.status] || "") || row.status
+        : row.kind === "invoice"
+          ? t(INVOICE_STATUS_LABEL_KEYS[row.status] || "") || row.status
+          : t(OFFER_STATUS_LABEL_KEYS[row.status] || "") || row.status;
+    const cls =
+      row.kind === "loi"
+        ? loiStatusClass(row.status)
+        : row.kind === "invoice"
+          ? invoiceStatusClass(row.status)
+          : offerStatusClass(row.status);
+    return <Badge variant="secondary" className={`text-xs capitalize ${cls}`}>{label}</Badge>;
+  };
+
   return (
-    <Card className="card-premium">
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="text-base">{t("crm-documents")}</CardTitle>
-            <CardDescription>{documents.length} document(s) shared with this partner</CardDescription>
+    <div className="space-y-4">
+      {/* ── Issued documents registry ─────────────────────────────────── */}
+      <Card className="card-premium">
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <FileCheck2 className="size-4 text-primary" /> {t("crm-issued-documents")}
+              </CardTitle>
+              <CardDescription>
+                {t("crm-issued-documents-desc")} · {rows.length}
+              </CardDescription>
+            </div>
+            {canAdmin && (
+              <Button size="sm" variant="outline" onClick={() => setUploadOpen(true)}>
+                <Plus className="size-4 mr-1" /> {t("crm-upload")}
+              </Button>
+            )}
           </div>
-          {canAdmin && (
-            <Button size="sm" onClick={() => setUploadOpen(true)}>
-              <Plus className="size-4 mr-1" /> {t("crm-upload")}
-            </Button>
+          {/* Kind filter chips */}
+          <div className="flex flex-wrap items-center gap-1.5 pt-2">
+            {([
+              ["all", `${t("crm-doc-filter-all")} · ${rows.length}`],
+              ["loi", `${t("crm-doc-kind-loi")} · ${kindCount("loi")}`],
+              ["offer", `${t("crm-doc-kind-offer")} · ${kindCount("offer")}`],
+              ["proforma", `${t("crm-doc-kind-proforma")} · ${kindCount("proforma")}`],
+              ["invoice", `${t("crm-doc-kind-invoice")} · ${kindCount("invoice")}`],
+              ["file", `${t("crm-doc-kind-file")} · ${kindCount("file")}`],
+            ] as const).map(([k, label]) => (
+              <button
+                key={k}
+                onClick={() => setFilter(k as typeof filter)}
+                className={cn(
+                  "px-2.5 py-1 rounded-full text-xs border smooth-fast",
+                  filter === k
+                    ? "border-primary bg-primary/10 text-primary font-medium"
+                    : "border-border text-muted-foreground hover:bg-accent/40",
+                )}
+                aria-pressed={filter === k}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          {filtered.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-8 text-center">{t("crm-no-documents")}</p>
+          ) : (
+            <div className="max-h-[28rem] overflow-y-auto custom-scroll">
+              <Table>
+                <TableHeader className="sticky top-0 bg-card z-10">
+                  <TableRow>
+                    <TableHead>{t("crm-doc-type-label")}</TableHead>
+                    <TableHead>{t("common-label-number")}</TableHead>
+                    <TableHead className="hidden md:table-cell">{t("crm-subject-label")}</TableHead>
+                    <TableHead>{t("common-label-status")}</TableHead>
+                    <TableHead className="hidden sm:table-cell">{t("crm-issued-label")}</TableHead>
+                    <TableHead>{t("crm-viewed-label")}</TableHead>
+                    <TableHead className="w-16" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filtered.map((row) => {
+                    const meta = ISSUED_KIND_META[row.kind];
+                    const Icon = meta.icon;
+                    return (
+                      <TableRow key={row.key}>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <div className="size-7 rounded-md bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                              <Icon className="size-3.5" />
+                            </div>
+                            <span className="text-xs text-muted-foreground hidden sm:inline">
+                              {t(meta.labelKey)}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-mono text-xs tabular max-w-[140px] truncate" title={row.number}>
+                          {row.number}
+                        </TableCell>
+                        <TableCell className="hidden md:table-cell max-w-[200px] truncate" title={row.subject}>
+                          {row.subject || "—"}
+                        </TableCell>
+                        <TableCell>{statusBadge(row) || <span className="text-xs text-muted-foreground">—</span>}</TableCell>
+                        <TableCell className="hidden sm:table-cell tabular text-xs text-muted-foreground">
+                          {row.issuedAt ? fmtDate(row.issuedAt) : "—"}
+                        </TableCell>
+                        <TableCell>
+                          {row.viewCount > 0 ? (
+                            <span className="inline-flex items-center gap-1.5" title={row.viewedAt ? fmtDateTime(row.viewedAt) : undefined}>
+                              <Eye className="size-3.5 text-primary" />
+                              <span className="text-xs tabular">{row.viewCount}×</span>
+                              <span className="text-xs text-muted-foreground hidden lg:inline">
+                                {row.viewedAt ? fmtRelative(row.viewedAt) : ""}
+                              </span>
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">{t("crm-never-viewed")}</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            {row.pdfUrl && (
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="size-7"
+                                disabled={downloadingKey === row.key}
+                                onClick={async () => {
+                                  try {
+                                    setDownloadingKey(row.key);
+                                    await downloadPdf(
+                                      api(row.pdfUrl as string),
+                                      `${row.kind}_${row.number || row.id}.pdf`,
+                                    );
+                                    toast.success(t("crm-pdf-downloaded"));
+                                  } catch (e: any) {
+                                    toast.error(e?.message || t("crm-failed-download-pdf"));
+                                  } finally {
+                                    setDownloadingKey(null);
+                                  }
+                                }}
+                                title={t("crm-download-pdf")}
+                                aria-label={t("crm-download-pdf")}
+                              >
+                                {downloadingKey === row.key ? (
+                                  <Loader2 className="size-3.5 animate-spin" />
+                                ) : (
+                                  <Download className="size-3.5" />
+                                )}
+                              </Button>
+                            )}
+                            {row.fileUrl && (
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="size-7"
+                                onClick={() => window.open(row.fileUrl as string, "_blank")}
+                                title={t("view")}
+                                aria-label={t("view")}
+                              >
+                                <Eye className="size-3.5" />
+                              </Button>
+                            )}
+                            {canAdmin && row.kind === "file" && (
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="size-7 text-destructive"
+                                onClick={() => setDeleteId(row.id)}
+                                title={t("delete")}
+                                aria-label={t("delete")}
+                              >
+                                <Trash2 className="size-3.5" />
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
           )}
-        </div>
-      </CardHeader>
-      <CardContent>
-        {documents.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-8 text-center">{t("crm-no-documents")}</p>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {documents.map((d) => {
-              const Icon = CATEGORY_ICON[d.category] || FileText;
-              return (
-                <div
-                  key={d.id}
-                  className="group p-4 rounded-xl border border-border/60 hover:shadow-soft-md smooth-fast relative"
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="size-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                      <Icon className="size-5" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium truncate" title={d.filename}>{d.filename}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {t(CATEGORY_LABEL_KEYS[d.category]) || d.category} · {fmtBytes(d.size)}
-                      </p>
-                      <p className="text-xs text-muted-foreground tabular mt-0.5">
-                        {fmtRelative(d.created_at)}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1 mt-3 pt-3 border-t border-border/40">
-                    <Badge variant={d.visible_to_partner ? "default" : "secondary"} className="text-xs">
-                      {d.visible_to_partner ? t("crm-visible") : t("crm-hidden")}
-                    </Badge>
-                    <div className="ml-auto flex items-center gap-1">
-                      <Button size="icon" variant="ghost" className="size-7" onClick={() => { if (d.storage_path) { window.open(`/api/documents/${d.id}`, "_blank"); } else { toast.info(t("crm-no-documents")); } }} title={t("view")} aria-label={t("view")}>
-                        <Eye className="size-3.5" />
-                      </Button>
-                      {canAdmin && (
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="size-7 text-destructive"
-                          onClick={() => setDeleteId(d.id)}
-                          title={t("delete")}
-                          aria-label={t("delete")}
-                        >
-                          <Trash2 className="size-3.5" />
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </CardContent>
+        </CardContent>
+      </Card>
 
       {uploadOpen && (
         <UploadDialog
@@ -1143,7 +1595,7 @@ function DocumentsTab({
           loading={deleteMut.isPending}
         />
       )}
-    </Card>
+    </div>
   );
 }
 
@@ -1861,6 +2313,420 @@ function PortalTab({
                   ))}
                 </TableBody>
               </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================
+// 37: Activity & intelligence tab
+// ============================================================
+// Everything the portal side knows about this partner's behaviour, in one
+// place: login history with GPS coordinates (the "when + from where"
+// answer), an interests summary (what they look at / search for), their
+// marketplace footprint (posts / bids / negotiations / follows / closed
+// purchases) and a merged chronological timeline of every signal.
+function ActivityTab({
+  partnerName, data, loading, error,
+}: {
+  partnerName: string;
+  data: PartnerActivityData | null;
+  loading: boolean;
+  error: string | null;
+}) {
+  const t = useT();
+
+  if (loading) {
+    return (
+      <Card className="card-premium">
+        <CardContent className="py-12 flex flex-col items-center gap-3">
+          <Loader2 className="size-6 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">{t("crm-activity-loading")}</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card className="card-premium">
+        <CardContent className="py-10 flex flex-col items-center text-center">
+          <AlertTriangle className="size-6 text-destructive mb-2" />
+          <p className="text-sm font-medium">{t("crm-activity-error")}</p>
+          <p className="text-xs text-muted-foreground mt-1">{error}</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!data) return null;
+
+  const { summary, logins, interests, marketplace, timeline } = data;
+
+  return (
+    <div className="space-y-4">
+      {/* ── Engagement KPI row ────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+        <MiniKpi label={t("crm-act-kpi-logins")} value={fmtNumber(summary.logins)} icon={CheckCircle2} />
+        <MiniKpi label={t("crm-act-kpi-failed")} value={fmtNumber(summary.failed_logins)} icon={XCircle} />
+        <MiniKpi label={t("crm-act-kpi-last-login")} value={summary.last_login_at ? fmtRelative(summary.last_login_at) : "—"} icon={Clock} />
+        <MiniKpi label={t("crm-act-kpi-views")} value={fmtNumber(summary.doc_views)} icon={Eye} />
+        <MiniKpi label={t("crm-act-kpi-downloads")} value={fmtNumber(summary.downloads)} icon={Download} />
+        <MiniKpi label={t("crm-act-kpi-marketplace")} value={fmtNumber(summary.marketplace_actions)} icon={ShoppingBag} />
+      </div>
+
+      {/* Optional-table notice: shows once, only when migration 091 has not
+          been applied yet — login history + doc views still work (they read
+          audit_logs / tracking columns), fine-grained events start flowing
+          after the SQL is applied. */}
+      {!summary.events_tracked && (
+        <div className="rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/30 px-4 py-2.5 text-xs text-amber-800 dark:text-amber-200 flex items-start gap-2">
+          <Radar className="size-4 shrink-0 mt-0.5" />
+          <span>{t("crm-act-events-pending")}</span>
+        </div>
+      )}
+
+      {/* ── Last known position ───────────────────────────────────────── */}
+      {(summary.last_gps || summary.last_ip || summary.last_city || summary.last_country) && (
+        <Card className="card-premium">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Navigation className="size-4 text-primary" /> {t("crm-act-last-position")}
+            </CardTitle>
+            <CardDescription>{t("crm-act-last-position-desc")}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <DefRow label={t("crm-act-when")} value={summary.last_login_at ? fmtDateTime(summary.last_login_at) : null} icon={Clock} />
+              <DefRow label="IP" value={summary.last_ip} mono />
+              <DefRow label={t("crm-act-place")} value={[summary.last_city, summary.last_country].filter(Boolean).join(", ") || null} icon={MapPin} />
+              {summary.last_gps && (
+                <div className="flex items-start gap-3 py-1">
+                  <MapPin className="size-3.5 text-muted-foreground mt-0.5 shrink-0" />
+                  <div className="min-w-0 flex-1 flex items-baseline justify-between gap-2">
+                    <p className="text-xs text-muted-foreground shrink-0">GPS</p>
+                    <a
+                      href={gpsMapUrl(summary.last_gps.latitude, summary.last_gps.longitude)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm text-right font-mono tabular text-primary hover:underline truncate"
+                      title={t("crm-act-open-map")}
+                    >
+                      {summary.last_gps.latitude.toFixed(4)}, {summary.last_gps.longitude.toFixed(4)}
+                    </a>
+                  </div>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Login history (when + from where + device) ─────────────────── */}
+      <Card className="card-premium">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <History className="size-4 text-primary" /> {t("crm-act-login-history")}
+            <Badge variant="secondary" className="tabular">{logins.length}</Badge>
+          </CardTitle>
+          <CardDescription>{t("crm-act-login-history-desc")}</CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          {logins.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-8 text-center">{t("crm-act-no-logins")}</p>
+          ) : (
+            <div className="max-h-80 overflow-y-auto custom-scroll">
+              <Table>
+                <TableHeader className="sticky top-0 bg-card z-10">
+                  <TableRow>
+                    <TableHead>{t("crm-act-when")}</TableHead>
+                    <TableHead>{t("common-label-status")}</TableHead>
+                    <TableHead>IP</TableHead>
+                    <TableHead className="hidden md:table-cell">{t("crm-act-place")}</TableHead>
+                    <TableHead className="hidden lg:table-cell">GPS</TableHead>
+                    <TableHead className="hidden sm:table-cell">{t("crm-act-device")}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {logins.map((l, idx) => (
+                    <TableRow key={`${l.at}-${idx}`}>
+                      <TableCell className="tabular text-xs" title={fmtDateTime(l.at)}>
+                        {fmtDateTime(l.at)}
+                      </TableCell>
+                      <TableCell>
+                        {l.status === "success" ? (
+                          <Badge className="border-transparent bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">
+                            <CheckCircle2 className="size-3 mr-1" /> {t("crm-act-login-ok")}
+                          </Badge>
+                        ) : (
+                          <Badge className="border-transparent bg-destructive/15 text-destructive" title={l.reason || undefined}>
+                            <XCircle className="size-3 mr-1" /> {l.status === "rate_limited" ? t("crm-act-login-throttled") : t("crm-act-login-failed")}
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs tabular">{l.ip || "—"}</TableCell>
+                      <TableCell className="hidden md:table-cell text-xs">
+                        {[l.city, l.country].filter(Boolean).join(", ") || "—"}
+                      </TableCell>
+                      <TableCell className="hidden lg:table-cell">
+                        {l.gps ? (
+                          <a
+                            href={gpsMapUrl(l.gps.latitude, l.gps.longitude)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs font-mono tabular text-primary hover:underline inline-flex items-center gap-1"
+                            title={`${l.gps.latitude}, ${l.gps.longitude}${l.gps.accuracy != null ? ` (±${Math.round(l.gps.accuracy)}m)` : ""} · ${fmtDateTime(l.gps.at)}`}
+                          >
+                            <MapPin className="size-3" />
+                            {l.gps.latitude.toFixed(2)}, {l.gps.longitude.toFixed(2)}
+                          </a>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="hidden sm:table-cell text-xs text-muted-foreground">
+                        <span className="inline-flex items-center gap-1.5" title={l.user_agent || undefined}>
+                          <MonitorSmartphone className="size-3.5" />
+                          {l.device || "—"}
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ── Interests (what they look at / search for) ─────────────────── */}
+      <Card className="card-premium">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Radar className="size-4 text-primary" /> {t("crm-act-interests")}
+          </CardTitle>
+          <CardDescription>{t("crm-act-interests-desc")}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {interests.top_products.length === 0 &&
+           interests.top_categories.length === 0 &&
+           interests.recent_searches.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">{t("crm-act-no-interests")}</p>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+              {interests.top_products.length > 0 && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-2">{t("crm-act-top-products")}</p>
+                  <div className="space-y-1.5">
+                    {interests.top_products.map((p) => (
+                      <div key={p.name} className="flex items-center gap-2">
+                        <div className="min-w-0 flex-1 flex items-center gap-2">
+                          <span className="text-sm truncate" title={p.name}>{p.name}</span>
+                        </div>
+                        <Badge variant="secondary" className="tabular text-xs shrink-0">{p.count}×</Badge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {interests.top_categories.length > 0 && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-2">{t("crm-act-top-categories")}</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {interests.top_categories.map((c) => (
+                      <Badge key={c.name} variant="outline" className="text-xs">
+                        {c.name.replace(/^buy:/, `${t("crm-act-buy-prefix")} `)} · {c.count}×
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {interests.recent_searches.length > 0 && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-2">{t("crm-act-recent-searches")}</p>
+                  <div className="space-y-1.5">
+                    {interests.recent_searches.map((s, i) => (
+                      <div key={`${s.term}-${i}`} className="flex items-center gap-2 text-sm">
+                        <Search className="size-3.5 text-muted-foreground shrink-0" />
+                        <span className="truncate" title={s.term}>{s.term}</span>
+                        <span className="ml-auto text-xs text-muted-foreground tabular shrink-0">{fmtRelative(s.at)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ── Marketplace footprint ──────────────────────────────────────── */}
+      <Card className="card-premium">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <ShoppingBag className="size-4 text-primary" /> {t("crm-act-marketplace")}
+            {marketplace.purchases.length > 0 && (
+              <Badge className="border-transparent bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">
+                {marketplace.purchases.length} {t("crm-act-purchases")}
+              </Badge>
+            )}
+          </CardTitle>
+          <CardDescription>
+            {t("crm-act-marketplace-desc").replace("${name}", partnerName)}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <MiniKpi label={t("crm-act-mk-posts")} value={fmtNumber(marketplace.posts_total)} icon={FileText} />
+            <MiniKpi label={t("crm-act-mk-bids")} value={fmtNumber(marketplace.bids_total)} icon={TrendingUp} />
+            <MiniKpi label={t("crm-act-mk-negotiations")} value={fmtNumber(marketplace.negotiations_total)} icon={Handshake} />
+            <MiniKpi label={t("crm-act-mk-follows")} value={fmtNumber(marketplace.follows_total)} icon={Star} />
+          </div>
+
+          {/* Purchases ("did they actually BUY") */}
+          {marketplace.purchases.length > 0 && (
+            <div>
+              <p className="text-xs text-muted-foreground mb-2">{t("crm-act-purchases")}</p>
+              <div className="space-y-1.5">
+                {marketplace.purchases.map((p) => (
+                  <div key={`${p.kind}-${p.id}`} className="flex items-center gap-2 rounded-lg border border-border/60 px-3 py-2">
+                    <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <span className="text-sm truncate">
+                      {p.product || t(`crm-act-purchase-${p.kind}`)}
+                      {p.quantity != null ? ` · ${fmtNumber(p.quantity)}${p.unit ? ` ${p.unit}` : ""}` : ""}
+                    </span>
+                    {p.price != null && (
+                      <span className="text-sm tabular font-medium">{fmtMoney(p.price, p.currency || "USD")}</span>
+                    )}
+                    <span className="ml-auto text-xs text-muted-foreground tabular shrink-0">{fmtRelative(p.at)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Recent listings */}
+          {marketplace.posts.length > 0 && (
+            <div>
+              <p className="text-xs text-muted-foreground mb-2">{t("crm-act-mk-recent-posts")}</p>
+              <div className="max-h-56 overflow-y-auto custom-scroll">
+                <Table>
+                  <TableHeader className="sticky top-0 bg-card z-10">
+                    <TableRow>
+                      <TableHead>{t("crm-product")}</TableHead>
+                      <TableHead>{t("crm-doc-type-label")}</TableHead>
+                      <TableHead className="text-right">{t("crm-qty")}</TableHead>
+                      <TableHead className="text-right">{t("crm-target")}</TableHead>
+                      <TableHead>{t("common-label-status")}</TableHead>
+                      <TableHead className="hidden sm:table-cell">{t("crm-created-label")}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {marketplace.posts.map((p) => (
+                      <TableRow key={p.id}>
+                        <TableCell className="font-medium truncate max-w-[180px]">{p.product_name}</TableCell>
+                        <TableCell><Badge variant="outline" className="text-xs capitalize">{p.post_type}</Badge></TableCell>
+                        <TableCell className="text-right tabular">{fmtNumber(p.quantity)} {p.unit}</TableCell>
+                        <TableCell className="text-right tabular">{p.target_price != null ? fmtMoney(p.target_price, p.currency) : "—"}</TableCell>
+                        <TableCell><Badge variant="secondary" className="text-xs capitalize">{p.status}</Badge></TableCell>
+                        <TableCell className="hidden sm:table-cell tabular text-xs text-muted-foreground">{fmtRelative(p.created_at)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
+
+          {/* Bids on others' listings */}
+          {marketplace.bids.length > 0 && (
+            <div>
+              <p className="text-xs text-muted-foreground mb-2">{t("crm-act-mk-recent-bids")}</p>
+              <div className="space-y-1.5">
+                {marketplace.bids.slice(0, 8).map((b) => (
+                  <div key={b.id} className="flex items-center gap-2 text-sm">
+                    <TrendingUp className="size-3.5 text-primary shrink-0" />
+                    <span className="truncate" title={b.post_product || b.post_id}>{b.post_product || "—"}</span>
+                    {b.unit_price != null && (
+                      <span className="tabular">{fmtMoney(b.unit_price, b.currency || "USD")}</span>
+                    )}
+                    <Badge variant={b.status === "accepted" ? "default" : "secondary"} className="text-xs capitalize ml-auto shrink-0">
+                      {b.status}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground tabular shrink-0">{fmtRelative(b.created_at)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Follows */}
+          {marketplace.follows.length > 0 && (
+            <div>
+              <p className="text-xs text-muted-foreground mb-2">{t("crm-act-mk-follows")}</p>
+              <div className="flex flex-wrap gap-1.5">
+                {marketplace.follows.map((f) => (
+                  <Badge key={f.id} variant="outline" className="text-xs gap-1" title={fmtRelative(f.created_at)}>
+                    <Star className="size-3" /> {f.followed_name || f.id}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {marketplace.posts.length === 0 && marketplace.bids.length === 0 && marketplace.negotiations.length === 0 && marketplace.follows.length === 0 && (
+            <p className="text-sm text-muted-foreground py-4 text-center">{t("crm-act-mk-empty")}</p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ── Full activity timeline ─────────────────────────────────────── */}
+      <Card className="card-premium">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <ActivityIcon className="size-4 text-primary" /> {t("crm-act-timeline")}
+            <Badge variant="secondary" className="tabular">{timeline.length}</Badge>
+          </CardTitle>
+          <CardDescription>{t("crm-act-timeline-desc")}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {timeline.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-8 text-center">{t("crm-act-timeline-empty")}</p>
+          ) : (
+            <div className="max-h-96 overflow-y-auto custom-scroll pr-1">
+              <ol className="relative border-l border-border/60 ml-2 space-y-4">
+                {timeline.map((ev, idx) => {
+                  const meta = TIMELINE_TYPE_META[ev.type];
+                  const Icon = meta?.icon || History;
+                  const label = meta ? t(meta.key) : ev.type;
+                  const extra: string[] = [];
+                  if (ev.label) extra.push(ev.label);
+                  if (ev.ip && ev.ip !== "unknown") extra.push(ev.ip);
+                  return (
+                    <li key={`${ev.at}-${idx}-${ev.type}`} className="ml-4">
+                      <span className={`absolute -left-[9px] mt-1 flex size-[18px] items-center justify-center rounded-full bg-card border border-border/60 ${meta?.tone || "text-muted-foreground"}`}>
+                        <Icon className="size-2.5" />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium flex items-baseline gap-2 flex-wrap">
+                          {label}
+                          {extra.length > 0 && (
+                            <span className="text-xs text-muted-foreground font-normal truncate">
+                              {extra.join(" · ")}
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-xs text-muted-foreground tabular mt-0.5" title={fmtDateTime(ev.at)}>
+                          {fmtDateTime(ev.at)} · {fmtRelative(ev.at)}
+                        </p>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
             </div>
           )}
         </CardContent>

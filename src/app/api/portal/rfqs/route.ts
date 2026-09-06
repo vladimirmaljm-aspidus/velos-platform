@@ -6,6 +6,7 @@ import { notifyRfqReceived } from "@/lib/notif/helper";
 import { notifyPortalActivity } from "@/lib/realtime/notify";
 import { audit, sanitizeError } from "@/lib/api/helpers";
 import { nextDocNumber } from "@/lib/api/doc-number";
+import { trackPortalEvent } from "@/lib/portal/partner-events";
 
 export const runtime = "nodejs";
 
@@ -152,6 +153,23 @@ export async function POST(req: NextRequest) {
       partnerName: partner?.name || null,
       productName: body.product_name || null,
       quantity: body.quantity,
+    });
+
+    // 37 — per-partner activity event (RFQ = direct purchase-intent signal
+    // for the interests card: the product they asked us to source).
+    void trackPortalEvent(access, req, {
+      type: "rfq_created",
+      entity_type: "portal_rfq",
+      entity_id: created.id,
+      label: body.number || created.id,
+      details: {
+        product: body.product_name ?? null,
+        quantity: typeof body.quantity === "number" ? body.quantity : null,
+        unit: body.unit ?? null,
+        category: body.category ?? null,
+        target_price: typeof body.target_price === "number" ? body.target_price : null,
+        currency: body.currency ?? null,
+      },
     });
 
     return NextResponse.json(created);

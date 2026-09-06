@@ -12,6 +12,7 @@ import { sanitizeFields } from "@/lib/security/sanitize-input";
 import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { withApm } from "@/lib/monitoring/apm";
+import { trackPortalEvent } from "@/lib/portal/partner-events";
 
 export const runtime = "nodejs";
 
@@ -28,6 +29,21 @@ async function _get(req: NextRequest, ctx: { params: Promise<{ id: string }> }) 
     if (!post) {
       return NextResponse.json({ error: "Not found." }, { status: 404 });
     }
+    // 37 — per-partner activity event: which marketplace listings this
+    // client actually opened (the global views_count column can't answer
+    // "who looked at what"). Fire-and-forget, no-op pre-migration-091.
+    void trackPortalEvent(access, req, {
+      type: "marketplace_viewed",
+      entity_type: "marketplace_post",
+      entity_id: id,
+      label: (post as any).product_name || (post as any).title || id,
+      details: {
+        post_type: (post as any).post_type ?? null,
+        category: (post as any).category ?? null,
+        price: (post as any).price ?? null,
+        currency: (post as any).currency ?? null,
+      },
+    });
     return NextResponse.json({ post });
   } catch (e: any) {
     console.error("[marketplace.get]", e);

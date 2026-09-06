@@ -5,6 +5,7 @@ import { getSupabase } from "@/lib/supabase/client";
 import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { withApm } from "@/lib/monitoring/apm";
+import { trackPortalEvent } from "@/lib/portal/partner-events";
 
 export const runtime = "nodejs";
 
@@ -38,7 +39,7 @@ async function _post(req: NextRequest) {
   const sb = getSupabase();
   const { data: partnerRow, error: pErr } = await sb
     .from("partners")
-    .select("id, tenant_id")
+    .select("id, tenant_id, name")
     .eq("id", body.followed_partner_id)
     .maybeSingle();
   if (pErr) {
@@ -65,6 +66,13 @@ async function _post(req: NextRequest) {
     } catch (e) {
       console.error("[marketplace.follow.create] audit failed:", e);
     }
+    // 37 — follow = interest signal. Fire-and-forget event.
+    void trackPortalEvent(access, req, {
+      type: "marketplace_follow",
+      entity_type: "partner",
+      entity_id: body.followed_partner_id,
+      label: (partnerRow as any)?.name || body.followed_partner_id,
+    });
     return NextResponse.json({ ok: true, follow });
   } catch (e: any) {
     console.error("[marketplace.follow.create]", e);

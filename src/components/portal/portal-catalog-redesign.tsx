@@ -182,6 +182,26 @@ export function PortalCatalogRedesign() {
 
   const allItems = catalogQ.data?.items || [];
 
+  // 37 — partner-interest signal: fire-and-forget POST to /api/portal/track
+  // whenever the client opens a PRODUCT DETAIL drawer. This is the only
+  // place the "what are they actually looking at in the catalog" signal
+  // exists (the list is fetched once and filtered client-side, so the
+  // server-side list endpoint sees nothing). Silent failure by design —
+  // tracking must never break the drawer.
+  const openDetail = useCallback((p: ProductCatalogEntry) => {
+    setDetailId(p.id);
+    void fetch("/api/portal/track", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "catalog_product_viewed",
+        entity_id: p.id,
+        label: p.name,
+        details: { category: p.category || null, hs_code: p.hs_code || null },
+      }),
+    }).catch(() => {});
+  }, []);
+
   const categories = useMemo(() => {
     const set = new Set<string>();
     allItems.forEach((p) => p.category && set.add(p.category));
@@ -310,7 +330,7 @@ export function PortalCatalogRedesign() {
               key={p.id}
               product={p}
               canSubmitRfq={canSubmitRfq}
-              onViewSpecs={() => setDetailId(p.id)}
+              onViewSpecs={() => openDetail(p)}
               onRequestQuote={() => openRfq(p)}
             />
           ))}

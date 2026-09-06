@@ -12,6 +12,7 @@ import { getStore } from "@/lib/data/store";
 import { notify } from "@/lib/notif/helper";
 import { triggerWebhooks } from "@/lib/webhooks/deliver";
 import { withApm } from "@/lib/monitoring/apm";
+import { trackPortalEvent } from "@/lib/portal/partner-events";
 import { checkRateLimit } from "@/lib/security/rate-limiter";
 
 export const runtime = "nodejs";
@@ -201,6 +202,21 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
     } catch (e) {
       console.error("[marketplace.response.create] notify failed:", e);
     }
+
+    // 37 — per-partner activity event: a bid/offer on a marketplace listing
+    // is one of the strongest purchase-intent signals. Fire-and-forget.
+    void trackPortalEvent(access, req, {
+      type: "marketplace_bid",
+      entity_type: "marketplace_post",
+      entity_id: id,
+      label: `Bid on ${(created as any)?.post_title || id}`,
+      details: {
+        unit_price: (created as any)?.unit_price ?? null,
+        currency: (created as any)?.currency ?? null,
+        quantity: (created as any)?.quantity ?? null,
+        is_counter: (created as any)?.is_counter ?? null,
+      },
+    });
 
     return NextResponse.json(created);
   } catch (e: any) {

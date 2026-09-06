@@ -293,6 +293,18 @@ export function makePortalPdfRoute(cfg: PortalPdfRouteConfig) {
       const { markDocumentViewed } = await import("@/lib/portal/mark-viewed");
       markDocumentViewed(cfg.viewedTable, id, access.tenant_id, access.portal_email).catch(() => {});
 
+      // 37 — per-partner activity event: every PDF download, timestamped +
+      // IP (the "what did they actually take with them" signal). Fire-and-forget,
+      // silent no-op before migration 091 is applied.
+      const { trackPortalEvent } = await import("@/lib/portal/partner-events");
+      void trackPortalEvent(access, req, {
+        type: `${cfg.docType}_downloaded`,
+        entity_type: cfg.docType,
+        entity_id: id,
+        label: doc.number || id,
+        details: { size: result.buffer.length, mode: req.nextUrl.searchParams.get("mode") || "inline" },
+      });
+
       const filename = `${cfg.label}-${safeFilename(doc.number, id)}.pdf`;
       const mode = req.nextUrl.searchParams.get("mode") === "attachment" ? "attachment" : "inline";
       return pdfResponse(result, mode, filename);

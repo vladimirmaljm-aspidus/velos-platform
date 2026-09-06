@@ -8,6 +8,7 @@ import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
 import { triggerWebhooks } from "@/lib/webhooks/deliver";
 import { withApm } from "@/lib/monitoring/apm";
+import { trackPortalEvent } from "@/lib/portal/partner-events";
 
 export const runtime = "nodejs";
 
@@ -37,6 +38,21 @@ async function _get(req: NextRequest) {
   };
   try {
     const result = await listMarketplacePosts(access.tenant_id, filters);
+    // 37 — search-term interest signal: only when the client actually typed
+    // something (plain list loads would spam the stream). Fire-and-forget.
+    if (filters.search && filters.search.trim().length >= 2) {
+      void trackPortalEvent(access, req, {
+        type: "marketplace_search",
+        entity_type: "marketplace",
+        label: filters.search.trim().slice(0, 120),
+        details: {
+          post_type: filters.post_type ?? null,
+          category: filters.category ?? null,
+          country: filters.country ?? null,
+          results: typeof result?.total === "number" ? result.total : null,
+        },
+      });
+    }
     return NextResponse.json(result);
   } catch (e: any) {
     console.error("[marketplace.list]", e);
