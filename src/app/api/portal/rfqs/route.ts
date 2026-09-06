@@ -7,6 +7,7 @@ import { notifyPortalActivity } from "@/lib/realtime/notify";
 import { audit, sanitizeError } from "@/lib/api/helpers";
 import { nextDocNumber } from "@/lib/api/doc-number";
 import { trackPortalEvent } from "@/lib/portal/partner-events";
+import { linkRfqAttachments, attachmentsForRfqs, attachToRfqs, MAX_RFQ_ATTACHMENTS } from "@/lib/portal/rfq-attachments";
 
 export const runtime = "nodejs";
 
@@ -25,7 +26,17 @@ export async function GET() {
   if (_kycBlock) return _kycBlock;
   const store = await getStore();
   const rfqs = await store.listPortalRfqsByPartner(access.partner_id);
-  return NextResponse.json({ items: rfqs });
+  // 092 — enrich each RFQ with its attachment metadata (spec documents the
+  // client uploaded with the request). No-op when the column/migration is
+  // absent or the partner has none — the list just renders without chips.
+  const withAttachments = attachToRfqs(
+    rfqs,
+    await attachmentsForRfqs(
+      access.tenant_id,
+      rfqs.map((r: any) => r.id),
+    ),
+  );
+  return NextResponse.json({ items: withAttachments });
 }
 
 // Portal: create RFQ
@@ -95,6 +106,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Notes are too long (max 5000 characters)." }, { status: 400 });
   }
 
+  // 092 — attachment ids: files the client uploaded via /api/portal/upload
+  // (category "rfq") BEFORE submitting. Validated + linked AFTER the RFQ row
+  // is created below (see linkRfqAttachments). Cap + shape-check here so a
+  // garbage payload can never reach the storage layer.
+  let attachmentIds: string[] = [];
+  if (body.attachment_ids != null) {
+    if (!Array.isArray(body.attachment_ids)) {
+      return NextResponse.json({ error: "attachment_ids must be an array." }, { status: 400 });
+    }
+    attachmentIds = body.attachment_ids.filter(
+      (x: unknown): x is string => typeof x === "string" && x.length > 0,
+    );
+    if (attachmentIds.length > MAX_RFQ_ATTACHMENTS) {
+      return NextResponse.json(
+        { error: `Too many attachments (max ${MAX_RFQ_ATTACHMENTS}).` },
+        { status: 400 },
+      );
+    }
+  }
+  delete body.attachment_ids;
+
   // Auto-generate RFQ number — atomic via Postgres SEQUENCE (C-2).
   // Falls back to the legacy `listRfqsByPartner(year).length + 1` if the
   // `get_next_doc_number('rfq')` RPC isn't available (e.g. before the
@@ -123,6 +155,13 @@ export async function POST(req: NextRequest) {
   try {
     const created = await store.upsertPortalRfq(body);
 
+    // 092 — link the pre-uploaded spec documents to the new RFQ.
+    // Ownership is validated INSIDE linkRfqAttachments (tenant + partner +
+    // not-deleted), so a client can never link someone else's file.
+    const linkedCount = attachmentIds.length
+      ? await linkRfqAttachments(access.tenant_id, access.partner_id, created.id, attachmentIds)
+      : 0;
+
     // Audit the RFQ creation
     try {
       await audit(
@@ -132,7 +171,7 @@ export async function POST(req: NextRequest) {
         "portal.rfq_created",
         "portal_rfq",
         (created as any)?.id,
-        { product_name: body.product_name, quantity: body.quantity, number: body.number },
+        { product_name: body.product_name, quantity: body.quantity, number: body.number, attachments: linkedCount },
       );
     } catch (e) { console.error("[audit]", e); }
 

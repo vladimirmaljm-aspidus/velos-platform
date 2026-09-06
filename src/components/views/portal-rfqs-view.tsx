@@ -29,6 +29,7 @@ import {
   ArrowRightLeft, FilePlus2, Save, Loader2, MapPin, Ship, CalendarDays,
   Tag, Hash, DollarSign, Boxes, Building2, StickyNote, FileCheck2,
   Users as UsersIcon, Zap, RefreshCw, Factory, ShieldCheck, Globe2, Wallet, Repeat, User,
+  Paperclip, Download,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
@@ -37,6 +38,13 @@ import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
 import { EmptyState } from "@/components/common/empty-state";
 import { KpiCard } from "@/components/common/kpi-card";
 import { fmtMoney, fmtDate, fmtRelative, fmtDateTime, fmtNumber } from "@/lib/utils/format";
+
+function fmtUploadBytes(n: number): string {
+  if (!n || n <= 0) return "";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
 import {
   PortalRfq, PortalRfqStatus, Partner,
 } from "@/lib/supabase/types";
@@ -479,6 +487,36 @@ function RfqDetailSheet({
                     <div>
                       <p className="text-xs font-medium text-muted-foreground mb-1">{t("portal-rfqs-label-specifications")}</p>
                       <p className="text-sm whitespace-pre-wrap">{rfq.specifications}</p>
+                    </div>
+                  </>
+                )}
+
+                {/* 092 — spec documents uploaded with the request (admin download) */}
+                {rfq.attachments && rfq.attachments.length > 0 && (
+                  <>
+                    <Separator />
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1.5">
+                        <Paperclip className="size-3.5" />
+                        {t("portal-rfqs-label-attachments")} · {rfq.attachments.length}
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {rfq.attachments.map((a) => (
+                          <a
+                            key={a.id}
+                            href={api(`/api/portal-uploads/${a.id}/download`)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={a.filename}
+                            className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-card px-2 py-1 text-xs hover:border-primary/50 hover:bg-primary/5 transition-colors"
+                          >
+                            <FileText className="size-3.5 text-primary/70 shrink-0" />
+                            <span className="max-w-45 truncate">{a.filename}</span>
+                            <span className="text-muted-foreground tabular">{fmtUploadBytes(a.size_bytes)}</span>
+                            <Download className="size-3 text-muted-foreground shrink-0" />
+                          </a>
+                        ))}
+                      </div>
                     </div>
                   </>
                 )}

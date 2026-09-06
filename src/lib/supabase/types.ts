@@ -1587,6 +1587,11 @@ export interface PortalRfq {
   linked_demand_id: string | null;
   admin_notes: string | null;
 
+  // Attachments (spec documents uploaded with the RFQ; migration 092 —
+  // `portal_uploads.rfq_id`. Enriched by the API layer on list endpoints,
+  // absent on direct inserts).
+  attachments?: import("../portal/rfq-attachments").RfqAttachmentMeta[];
+
   // Meta
   created_at: string;
   updated_at: string;

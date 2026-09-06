@@ -57,6 +57,14 @@ import {
   CURRENCIES,
 } from "@/lib/data/reference";
 import type { PortalRfq, PortalRfqStatus } from "@/lib/supabase/types";
+import { RfqAttachmentPicker, uploadRfqAttachments } from "./rfq-attachment-picker";
+
+function fmtBytes(n: number): string {
+  if (!n || n <= 0) return "";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 // ============================================================
 // Constants
@@ -156,6 +164,10 @@ export function PortalRfq() {
   const t = useT();
   const qc = useQueryClient();
   const [form, setForm] = useState<RfqFormState>(EMPTY_FORM);
+  // 092 — spec documents (uploaded on submit, linked to the created RFQ).
+  const [files, setFiles] = useState<File[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ index: number; done: boolean } | null>(null);
 
   const rfqsQ = useQuery<{ items: PortalRfq[] }>({
     queryKey: ["portal-rfqs"],
@@ -185,6 +197,7 @@ export function PortalRfq() {
       );
       qc.invalidateQueries({ queryKey: ["portal-rfqs"] });
       setForm(EMPTY_FORM);
+      setFiles([]);
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -193,7 +206,7 @@ export function PortalRfq() {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.product_name.trim()) {
       toast.error(t("portal-rfq-toast-product-name"));
@@ -222,31 +235,48 @@ export function PortalRfq() {
         return;
       }
     }
-    createMut.mutate({
-      product_name: form.product_name.trim(),
-      product_description: form.product_description.trim() || null,
-      category: form.category || null,
-      quantity: Number(form.quantity),
-      unit: form.unit,
-      target_price: form.target_price ? Number(form.target_price) : null,
-      currency: form.currency,
-      delivery_country: form.delivery_country || null,
-      delivery_port: form.delivery_port.trim() || null,
-      delivery_date: form.delivery_date || null,
-      incoterm: form.incoterm || null,
-      specifications: form.specifications.trim() || null,
-      notes: form.notes.trim() || null,
-      buyer_type: form.is_third_party ? "third_party" : "self",
-      ...(form.is_third_party ? {
-        third_party_company_name: form.third_party_company_name.trim() || null,
-        third_party_country: form.third_party_country || null,
-        third_party_address: form.third_party_address.trim() || null,
-        third_party_contact_name: form.third_party_contact_name.trim() || null,
-        third_party_contact_email: form.third_party_contact_email.trim() || null,
-        third_party_contact_phone: form.third_party_contact_phone.trim() || null,
-        third_party_tax_id: form.third_party_tax_id.trim() || null,
-      } : {}),
-    });
+
+    // 092 — upload spec documents FIRST (per-file progress), then create
+    // the RFQ with attachment_ids; the server validates ownership + links.
+    setUploading(true);
+    try {
+      const attachmentIds = await uploadRfqAttachments(
+        files,
+        form.product_name.trim(),
+        setUploadProgress,
+      );
+      createMut.mutate({
+        product_name: form.product_name.trim(),
+        product_description: form.product_description.trim() || null,
+        category: form.category || null,
+        quantity: Number(form.quantity),
+        unit: form.unit,
+        target_price: form.target_price ? Number(form.target_price) : null,
+        currency: form.currency,
+        delivery_country: form.delivery_country || null,
+        delivery_port: form.delivery_port.trim() || null,
+        delivery_date: form.delivery_date || null,
+        incoterm: form.incoterm || null,
+        specifications: form.specifications.trim() || null,
+        notes: form.notes.trim() || null,
+        buyer_type: form.is_third_party ? "third_party" : "self",
+        ...(form.is_third_party ? {
+          third_party_company_name: form.third_party_company_name.trim() || null,
+          third_party_country: form.third_party_country || null,
+          third_party_address: form.third_party_address.trim() || null,
+          third_party_contact_name: form.third_party_contact_name.trim() || null,
+          third_party_contact_email: form.third_party_contact_email.trim() || null,
+          third_party_contact_phone: form.third_party_contact_phone.trim() || null,
+          third_party_tax_id: form.third_party_tax_id.trim() || null,
+        } : {}),
+        ...(attachmentIds.length > 0 ? { attachment_ids: attachmentIds } : {}),
+      });
+    } catch (e: any) {
+      toast.error(e.message || t("portal-rfq-toast-submit-failed"));
+    } finally {
+      setUploading(false);
+      setUploadProgress(null);
+    }
   }
 
   const items = rfqsQ.data?.items || [];
@@ -449,6 +479,21 @@ export function PortalRfq() {
                   </div>
                 </FormSection>
 
+                <FormSection
+                  icon={StickyNote}
+                  title={t("portal-rfq-section-attachments")}
+                  description={t("portal-rfq-attach-why")}
+                >
+                  <RfqAttachmentPicker
+                    files={files}
+                    onFiles={setFiles}
+                    disabled={uploading || createMut.isPending}
+                    progress={uploadProgress}
+                  />
+                </FormSection>
+
+                <Separator />
+
                 {/* Third-party delivery option */}
                 <FormSection title={t("portal-rfq-section-destination")} description={t("portal-rfq-section-destination-desc")} icon={Globe2}>
                   <div className="space-y-3">
@@ -514,15 +559,19 @@ export function PortalRfq() {
                 </p>
                 <Button
                   type="submit"
-                  disabled={createMut.isPending}
+                  disabled={createMut.isPending || uploading}
                   className="gap-1.5 ml-auto"
                 >
-                  {createMut.isPending ? (
+                  {createMut.isPending || uploading ? (
                     <Loader2 className="size-4 animate-spin" />
                   ) : (
                     <Send className="size-4" />
                   )}
-                  {t("portal-rfq-submit")}
+                  {uploading && uploadProgress
+                    ? `${uploadProgress.index + 1}/${files.length}…`
+                    : createMut.isPending
+                      ? t("portal-rfq-submitting")
+                      : t("portal-rfq-submit")}
                 </Button>
               </div>
             </form>
@@ -683,6 +732,29 @@ function RfqCard({ rfq }: { rfq: PortalRfq }) {
               <p className="text-xs text-foreground leading-relaxed">
                 {rfq.specifications}
               </p>
+            </div>
+          )}
+
+          {/* 092 — attached spec documents (downloadable by the uploader) */}
+          {rfq.attachments && rfq.attachments.length > 0 && (
+            <div>
+              <p className="text-xs uppercase tracking-wider text-muted-foreground/70 font-medium mb-1">
+                {t("portal-rfq-detail-attachments")} · {rfq.attachments.length}
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {rfq.attachments.map((a) => (
+                  <a
+                    key={a.id}
+                    href={`/api/portal/attachments/${a.id}`}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-card px-2 py-1 text-xs hover:border-primary/50 hover:bg-primary/5 transition-colors"
+                    title={a.filename}
+                  >
+                    <FileText className="size-3.5 text-primary/70 shrink-0" />
+                    <span className="max-w-45 truncate">{a.filename}</span>
+                    <span className="text-muted-foreground tabular">{fmtBytes(a.size_bytes)}</span>
+                  </a>
+                ))}
+              </div>
             </div>
           )}
 

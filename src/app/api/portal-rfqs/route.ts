@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, resolveTenantId, audit, sanitizeError } from "@/lib/api/helpers";
+import { attachmentsForRfqs, attachToRfqs } from "@/lib/portal/rfq-attachments";
 
 export const runtime = "nodejs";
 
@@ -29,7 +30,14 @@ export async function GET(req: NextRequest) {
     const status = url.searchParams.get("status") || undefined;
     const partner_id = url.searchParams.get("partner_id") || undefined;
     const result = await auth.store.listPortalRfqs(tenantId, { search, filters: { status, partner_id } });
-    return NextResponse.json(result);
+    // 092 — enrich with attachment metadata (spec documents uploaded with
+    // the RFQ). No-op pre-migration / when there are none; admin detail
+    // sheet renders the chips from this field.
+    const items = attachToRfqs(
+      result.items,
+      await attachmentsForRfqs(tenantId, result.items.map((r: any) => r.id)),
+    );
+    return NextResponse.json({ ...result, items });
   } catch (error: any) {
     return NextResponse.json({ error: sanitizeError(error)}, { status: 500 });
   }

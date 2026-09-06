@@ -8,10 +8,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Loader2, Send, Building2, User, MapPin, DollarSign, Truck, Info } from "lucide-react";
+import { Loader2, Send, Building2, User, MapPin, DollarSign, Truck, Info, Paperclip } from "lucide-react";
 import { toast } from "sonner";
 import { useT } from "@/lib/i18n/store";
 import type { ProductCatalogEntry } from "@/lib/supabase/types";
+import {
+  RfqAttachmentPicker,
+  uploadRfqAttachments,
+} from "./rfq-attachment-picker";
 
 /**
  * Full RFQ intake form used by the portal. Prompts for every field the sales
@@ -79,6 +83,11 @@ export function RfqFormDialog({
   });
 
   const [submitting, setSubmitting] = React.useState(false);
+  // 092 — spec documents: selected locally, uploaded sequentially on submit,
+  // then linked to the created RFQ via attachment_ids. Upload-on-submit
+  // (not on-select) avoids orphaned files when the user cancels the dialog.
+  const [files, setFiles] = React.useState<File[]>([]);
+  const [uploadProgress, setUploadProgress] = React.useState<{ index: number; done: boolean } | null>(null);
 
   React.useEffect(() => {
     if (open && product) {
@@ -92,7 +101,11 @@ export function RfqFormDialog({
         specifications: typeof product.specifications === "string" ? product.specifications : "",
       }));
     }
-    if (!open) setSubmitting(false);
+    if (!open) {
+      setSubmitting(false);
+      setFiles([]);
+      setUploadProgress(null);
+    }
   }, [open, product]);
 
   function set<K extends keyof typeof form>(k: K, v: (typeof form)[K]) {
@@ -110,6 +123,12 @@ export function RfqFormDialog({
 
     setSubmitting(true);
     try {
+      // 1) Upload each attachment (category "rfq") sequentially — small
+      // per-file progress state keeps the user informed on slow links.
+      const uploadIds = await uploadRfqAttachments(files, form.product_name, setUploadProgress);
+
+      // 2) Create the RFQ with the attachment ids — the server validates
+      // ownership (tenant+partner) and links them to the new row.
       const payload = {
         product_id: product?.id || null,
         product_name: form.product_name,
@@ -146,6 +165,7 @@ export function RfqFormDialog({
         third_party_website: isThirdParty ? form.third_party_website || null : null,
         notes: form.notes || null,
         source: product ? "catalog" : "form",
+        attachment_ids: uploadIds.length > 0 ? uploadIds : undefined,
       };
       const r = await fetch("/api/portal/rfqs", {
         method: "POST",
@@ -163,6 +183,7 @@ export function RfqFormDialog({
       toast.error(e.message || t("portal-rfq-dialog-toast-submit-failed"));
     } finally {
       setSubmitting(false);
+      setUploadProgress(null);
     }
   }
 
@@ -297,6 +318,17 @@ export function RfqFormDialog({
             )}
           </section>
 
+          {/* ATTACHMENTS — spec documents uploaded with the request */}
+          <section>
+            <SectionTitle icon={Paperclip} label={t("portal-rfq-section-attachments")} />
+            <RfqAttachmentPicker
+              files={files}
+              onFiles={setFiles}
+              disabled={submitting}
+              progress={uploadProgress}
+            />
+          </section>
+
           {/* NOTES */}
           <section>
             <SectionTitle icon={Info} label={t("portal-rfq-dialog-anything-else")} />
@@ -305,10 +337,13 @@ export function RfqFormDialog({
         </div>
 
         <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
+          <span className="mr-auto text-xs text-muted-foreground self-center hidden sm:block">
+            {files.length > 0 && t("portal-rfq-attach-count").replace("{n}", String(files.length))}
+          </span>
           <Button variant="outline" onClick={onClose} disabled={submitting}>{t("portal-action-cancel")}</Button>
           <Button onClick={submit} disabled={submitting}>
             {submitting ? <Loader2 className="size-4 mr-2 animate-spin" /> : <Send className="size-4 mr-2" />}
-            {t("portal-rfq-dialog-submit")}
+            {submitting && uploadProgress ? `${uploadProgress.index + 1}/${files.length}…` : t("portal-rfq-dialog-submit")}
           </Button>
         </DialogFooter>
       </DialogContent>
