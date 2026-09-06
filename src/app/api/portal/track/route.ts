@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
 
   void trackPortalEvent(access, req, {
     type: body.type as PortalEventType,
-    entity_type: body.type === "catalog_product_viewed" ? "product" : "catalog",
+    entity_type: body.type.startsWith("marketplace") ? "marketplace" : "product",
     entity_id: entityId,
     label: sanitizeEventLabel(body.label),
     details: sanitizeEventDetails(body.details),

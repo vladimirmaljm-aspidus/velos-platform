@@ -74,6 +74,7 @@ export const CLIENT_TRACKABLE_TYPES: readonly string[] = [
   "catalog_product_viewed",
   "catalog_search",
   "marketplace_viewed",
+  "marketplace_search",
 ] as const;
 
 const LABEL_MAX = 200;
