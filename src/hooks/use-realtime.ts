@@ -57,7 +57,7 @@
  *     • Dev default: `http://localhost:3001` (the mini-service running locally).
  *     • Prod: the same-origin URL with `?XTransformPort=3001` so Caddy
  *       routes the upgrade to the service (see Caddyfile). Example:
- *       `https://aspidus.onrender.com/?XTransformPort=3001`.
+ *       `https://velos-platform.vercel.app/?XTransformPort=3001`.
  *
  * Auth (audit H3):
  *   Before connecting we POST /api/realtime/ticket (session-cookie

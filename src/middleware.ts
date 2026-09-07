@@ -195,8 +195,8 @@ let lastCleanup = Date.now();
  * without bound under sustained traffic from many distinct IPs (DDoS,
  * scraper botnet, cloud egress) — the 5-minute cleanup interval only
  * runs on a request boundary, so between cleanups the Map keeps every
- * distinct `path:ip` key it has seen. A single render.com instance has
- * ~512MB RAM; at ~80 bytes per Map entry, 10k entries is ~800KB —
+ * distinct `path:ip` key it has seen. A single Vercel serverless instance
+ * has ~1GB RAM; at ~80 bytes per Map entry, 10k entries is ~800KB —
  * negligible — but 1M entries is ~80MB which starts to matter. The cap
  * below is deliberately generous (10k) so it never trips in normal
  * traffic, but kicks in BEFORE memory becomes a concern.

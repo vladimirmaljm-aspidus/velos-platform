@@ -314,7 +314,7 @@ export function SystemHealth() {
       <Card className="border-border/60 shadow-soft rounded-xl">
         <SettingsCardHeader
           title={t("pf-sa-mon-sentry-title")}
-          description={`${t("pf-sa-mon-sentry-desc")} Render service status is available in the Render dashboard — link below.`}
+          description={`${t("pf-sa-mon-sentry-desc")} Deployment status is available in the Vercel dashboard — link below.`}
           dirty={false}
           saving={false}
         />
@@ -330,9 +330,9 @@ export function SystemHealth() {
             </Badge>
           </div>
           <div className="flex items-center gap-2">
-            <a href="https://dashboard.render.com" target="_blank" rel="noreferrer">
+            <a href="https://vercel.com/bankingvlad-1546s-projects/velos-platform" target="_blank" rel="noreferrer">
               <Button size="sm" variant="outline">
-                Open Render Dashboard
+                Open Vercel Dashboard
               </Button>
             </a>
             <a href="https://sentry.io" target="_blank" rel="noreferrer">

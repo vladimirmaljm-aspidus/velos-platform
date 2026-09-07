@@ -146,7 +146,7 @@ interface EmailConfig {
  *   1. The platform super-admin publishes a comma-separated list of
  *      allowed from-domains in the platform-level setting
  *      `email_allowed_from_domains` (tenant_id = NULL). Example:
- *      "aspidus.onrender.com,mycompany.com".
+ *      "velos-platform.vercel.app,mycompany.com".
  *   2. At send time, `getEmailConfig` parses the from-email's domain
  *      and checks it against the allowlist. If the domain is NOT on
  *      the list, the from-email is replaced with `noreply@<first-allowed>`
@@ -158,12 +158,12 @@ interface EmailConfig {
  *      silent rewrite.
  *
  * Default allowlist when no platform setting is configured:
- *   ["aspidus.onrender.com", "resend.dev"]
+ *   ["velos-platform.vercel.app", "resend.dev"]
  * — the platform's deployment domain + the Resend sandbox domain
  * (only `onboarding@resend.dev` is meaningful on resend.dev, but
  * allowing the domain is harmless).
  */
-const DEFAULT_ALLOWED_FROM_DOMAINS = ["aspidus.onrender.com", "resend.dev"];
+const DEFAULT_ALLOWED_FROM_DOMAINS = ["velos-platform.vercel.app", "resend.dev"];
 
 /**
  * Load the platform-level allowed from-domains list. Returns the
@@ -226,16 +226,16 @@ export function validateFromEmailWithList(fromEmail: string, allowed: string[]):
   // Reject obviously malformed emails entirely — the safe fallback
   // is still a valid email so downstream SMTP/HTTP APIs don't blow up.
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return `noreply@${allowed[0] || "aspidus.onrender.com"}`;
+    return `noreply@${allowed[0] || "velos-platform.vercel.app"}`;
   }
   const domain = email.split("@")[1] || "";
   if (allowed.includes(domain)) return email;
   // Rewrite to the safe default. We deliberately do NOT preserve the
   // local-part — a tenant setting `from_email=ceo@victim.com` must NOT
-  // get `ceo@aspidus.onrender.com` back (which would still read as
+  // get `ceo@velos-platform.vercel.app` back (which would still read as
   // "ceo" and could mislead the recipient). The neutral `noreply` local-
   // part makes it obvious this is an automated system address.
-  return `noreply@${allowed[0] || "aspidus.onrender.com"}`;
+  return `noreply@${allowed[0] || "velos-platform.vercel.app"}`;
 }
 
 /**
@@ -248,7 +248,7 @@ export function validateFromEmailWithList(fromEmail: string, allowed: string[]):
 export async function validateFromEmailStrict(fromEmail: string): Promise<{ valid: boolean; value: string; fallback: string }> {
   const allowed = await loadAllowedFromDomains();
   const email = String(fromEmail || "").trim().toLowerCase();
-  const fallback = `noreply@${allowed[0] || "aspidus.onrender.com"}`;
+  const fallback = `noreply@${allowed[0] || "velos-platform.vercel.app"}`;
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return { valid: false, value: fromEmail, fallback };
   }
@@ -263,8 +263,8 @@ export async function validateFromEmailStrict(fromEmail: string): Promise<{ vali
  *
  * AUDIT17 / P0 — ROOT CAUSE of "emails constantly fail despite correct
  * per-tenant SMTP settings". The previous logic validated EVERY from-email
- * against the platform allowlist (default: aspidus.onrender.com, resend.dev)
- * and silently rewrote failures to `noreply@aspidus.onrender.com` while the
+ * against the platform allowlist (default: velos-platform.vercel.app, resend.dev)
+ * and silently rewrote failures to `noreply@velos-platform.vercel.app` while the
  * SMTP transport still authenticated as the tenant's own `smtp_user`:
  *   - strict relays (Office365 550 5.7.60, Zoho, Postfix with
  *     reject_sender_login_mismatch) refuse From ≠ authenticated user —
@@ -305,7 +305,7 @@ export async function getEmailConfig(tenantId?: string): Promise<EmailConfig | n
 
   const provider: EmailProvider = comms.email_provider || (comms.smtp_host ? "smtp" : "none");
   const fromName = comms.from_name || "VELOS CRM";
-  const rawFromEmail = comms.from_email || process.env.NOREPLY_EMAIL || "noreply@aspidus.onrender.com";
+  const rawFromEmail = comms.from_email || process.env.NOREPLY_EMAIL || "noreply@velos-platform.vercel.app";
   let fromEmail: string;
   if (isPlatformConfig) {
     // Platform-level fallback config — enforce the allowlist: this blob
@@ -324,7 +324,7 @@ export async function getEmailConfig(tenantId?: string): Promise<EmailConfig | n
     // Resend/Postmark require a DNS-verified domain in the tenant's own
     // account). Only malformed addresses fall back to the safe default.
     const allowed = await loadAllowedFromDomains();
-    const safeDefault = `noreply@${allowed[0] || "aspidus.onrender.com"}`;
+    const safeDefault = `noreply@${allowed[0] || "velos-platform.vercel.app"}`;
     const candidate = String(rawFromEmail || "").trim();
     fromEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(candidate) ? candidate : safeDefault;
     if (fromEmail !== candidate) {

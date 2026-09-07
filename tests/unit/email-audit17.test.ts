@@ -5,8 +5,8 @@ import { encryptField } from "@/lib/crypto/field-encryption";
 //
 // Root cause fixed (the owner's standing complaint "emails constantly fail
 // despite correct per-tenant SMTP settings"): the platform from-domain
-// allowlist (default aspidus.onrender.com/resend.dev) REWROTE every
-// tenant-configured from address to noreply@aspidus.onrender.com while SMTP
+// allowlist (default velos-platform.vercel.app/resend.dev) REWROTE every
+// tenant-configured from address to noreply@velos-platform.vercel.app while SMTP
 // still authenticated as the tenant's own user — strict relays (Office365
 // 550 5.7.60, Zoho, Postfix reject_sender_login_mismatch) then refused
 // every send, and Resend/Postmark rejected the unverified platform domain
@@ -100,7 +100,7 @@ describe("AUDIT17 P0 — from-email trust model (getEmailConfig)", () => {
 
     const cfg = await getEmailConfig("tenant-1"); // no tenant comms → platform
     expect(cfg).not.toBeNull();
-    expect(cfg!.fromEmail).toBe("noreply@aspidus.onrender.com"); // rewritten
+    expect(cfg!.fromEmail).toBe("noreply@velos-platform.vercel.app"); // rewritten
   });
 
   it("malformed tenant from_email falls back to the safe default", async () => {
@@ -114,7 +114,7 @@ describe("AUDIT17 P0 — from-email trust model (getEmailConfig)", () => {
     mockGetStore.mockResolvedValue(store);
 
     const cfg = await getEmailConfig("tenant-1");
-    expect(cfg!.fromEmail).toBe("noreply@aspidus.onrender.com");
+    expect(cfg!.fromEmail).toBe("noreply@velos-platform.vercel.app");
   });
 });
 

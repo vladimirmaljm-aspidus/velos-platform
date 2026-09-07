@@ -11,7 +11,7 @@
  *
  * Env:
  *   ASPIDUS_API_KEY  (default: the provided key)
- *   ASPIDUS_API_URL  (default: https://aspidus.onrender.com)
+ *   ASPIDUS_API_URL  (default: https://velos-platform.vercel.app)
  */
 import { agricultureProducts } from "./cat-agriculture";
 import { coffeeProducts } from "./cat-coffee";
@@ -44,7 +44,7 @@ const ALL_PRODUCTS: SeedProduct[] = [
   ...constructionProducts,
 ];
 
-const API_BASE = process.env.ASPIDUS_API_URL || "https://aspidus.onrender.com";
+const API_BASE = process.env.ASPIDUS_API_URL || "https://velos-platform.vercel.app";
 // Audit 2d-F1 fix: removed the hardcoded API key default
 // `asp_f1386a...REDACTED` (full key redacted — see git history rev 939791c).
 // committed to public git history (rev 939791c, 2026-08-30) and must be
