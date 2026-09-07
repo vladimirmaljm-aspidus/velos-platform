@@ -32,6 +32,7 @@ import { toast } from "sonner";
 import { useAppStore } from "@/lib/store/app-store";
 import { cn } from "@/lib/utils";
 import { useT, useI18nStore } from "@/lib/i18n/store";
+import { LOCALE_LABELS, LOCALE_FLAGS, type Locale } from "@/lib/i18n/dictionaries";
 import { useIsHydrated } from "@/hooks/use-is-hydrated";
 import { GlobeMark } from "@/components/common/globe-mark";
 
@@ -1018,23 +1019,24 @@ function PortalLoginLanguageSelector() {
   // effect fired between hydration chunks.
   const hydrated = useIsHydrated();
   if (!hydrated) return null;
-  const codes: Record<string, string> = { en: "EN", sr: "SR", tr: "TR", de: "DE", ru: "RU" };
-  const labels: Record<string, string> = { en: "English", sr: "Srpski", tr: "Türkçe", de: "Deutsch", ru: "Русский" };
+  const locales = Object.keys(LOCALE_LABELS) as Locale[];
   return (
-    <div className="flex items-center justify-center gap-1 mt-4">
-      {(Object.keys(labels)).map((loc) => (
+    <div className="flex flex-wrap items-center justify-center gap-1 mt-4 max-w-md mx-auto px-3">
+      {locales.map((loc) => (
         <button
           key={loc}
-          onClick={() => setLocale(loc as any)}
+          onClick={() => setLocale(loc)}
           className={cn(
             "px-2 py-1 rounded-md text-xs transition-colors",
             locale === loc
               ? "bg-primary/10 text-primary font-medium"
               : "text-muted-foreground hover:text-foreground hover:bg-muted"
           )}
-          title={labels[loc]}
+          title={LOCALE_LABELS[loc]}
+          aria-label={LOCALE_LABELS[loc]}
         >
-          <span className="label-caps">{codes[loc]}</span>
+          <span className="label-caps">{loc.toUpperCase()}</span>
+          <span className="ml-1" aria-hidden="true">{LOCALE_FLAGS[loc]}</span>
         </button>
       ))}
     </div>

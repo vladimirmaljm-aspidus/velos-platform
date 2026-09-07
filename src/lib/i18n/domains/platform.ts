@@ -1,4 +1,12 @@
 import type { Locale } from "@/lib/i18n/dictionaries";
+import { PLATFORM as FR_PLATFORM } from "../lang/fr";
+import { PLATFORM as IT_PLATFORM } from "../lang/it";
+import { PLATFORM as AR_PLATFORM } from "../lang/ar";
+import { PLATFORM as PT_PLATFORM } from "../lang/pt";
+import { PLATFORM as ZH_PLATFORM } from "../lang/zh";
+import { PLATFORM as JA_PLATFORM } from "../lang/ja";
+import { PLATFORM as EL_PLATFORM } from "../lang/el";
+import { PLATFORM as ES_PLATFORM } from "../lang/es";
 
 // ─── Platform domain (super-admin, cross-tenant) ──────────────────────────
 // Covers: tenants-view, platform-audit-view, platform-dashboard-view,
@@ -2470,7 +2478,7 @@ export const PLATFORM: Record<Locale, Record<string, string>> = {
     "pf-apm-chart-response-time": "Zaman içinde yanıt süresi",
     "pf-apm-no-alerts": "Aktif uyarı yok — tüm metrikler eşikler içinde.",
     "pf-apm-alerts-title": "Aktif uyarılar",
-    "pf-apm-kpi-heap-hint": "{total}MB'nin {used}MB'i ayrildi",
+    "pf-apm-kpi-heap-hint": "{total}MB'nin {used}MB'i ayrıldı",
     "pf-apm-kpi-heap": "Kullanılan yığın",
     "pf-apm-kpi-memory-hint": "Resident set size — toplam işlem belleği",
     "pf-apm-kpi-memory": "Bellek (RSS)",
@@ -4175,4 +4183,15 @@ export const PLATFORM: Record<Locale, Record<string, string>> = {
     "pf-create-user-title": "Создать пользователя платформы",
     "pf-create-user": "Создать пользователя",
   },
+
+
+  // ── Split-file locale packs (see ../lang/*.ts) ──
+  fr: FR_PLATFORM,
+  it: IT_PLATFORM,
+  ar: AR_PLATFORM,
+  pt: PT_PLATFORM,
+  zh: ZH_PLATFORM,
+  ja: JA_PLATFORM,
+  el: EL_PLATFORM,
+  es: ES_PLATFORM,
 };

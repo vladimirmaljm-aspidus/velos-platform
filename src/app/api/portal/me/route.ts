@@ -136,7 +136,7 @@ export async function PUT(req: NextRequest) {
 
     // Only allow locale update for now (whitelist fields).
     const update: Record<string, unknown> = {};
-    if (body.locale && ["en", "sr", "tr", "de", "ru"].includes(body.locale)) {
+    if (body.locale && ["en", "sr", "tr", "de", "ru", "fr", "it", "ar", "pt", "zh", "ja", "el", "es"].includes(body.locale)) {
       update.locale = body.locale;
     }
 

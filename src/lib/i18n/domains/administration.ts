@@ -1,4 +1,12 @@
 import type { Locale } from "@/lib/i18n/dictionaries";
+import { ADMINISTRATION as FR_ADMINISTRATION } from "../lang/fr";
+import { ADMINISTRATION as IT_ADMINISTRATION } from "../lang/it";
+import { ADMINISTRATION as AR_ADMINISTRATION } from "../lang/ar";
+import { ADMINISTRATION as PT_ADMINISTRATION } from "../lang/pt";
+import { ADMINISTRATION as ZH_ADMINISTRATION } from "../lang/zh";
+import { ADMINISTRATION as JA_ADMINISTRATION } from "../lang/ja";
+import { ADMINISTRATION as EL_ADMINISTRATION } from "../lang/el";
+import { ADMINISTRATION as ES_ADMINISTRATION } from "../lang/es";
 
 // Administration module domain dictionary — users, settings, API keys, audit
 // log, security center, feature flags, webhooks. All keys are prefixed with
@@ -842,7 +850,7 @@ export const ADMINISTRATION: Record<Locale, Record<string, string>> = {
     "admin-col-first-seen": "Prvi put viđeno",
     "admin-col-last-seen": "Poslednji put viđeno",
     "admin-col-trusted": "Poverljiv",
-    "admin-col-user-agent": "User agent",
+    "admin-col-user-agent": "Korisnički agent",
     "admin-col-reason": "Razlog",
 
     "admin-audit-events": "događaja",
@@ -1164,7 +1172,7 @@ export const ADMINISTRATION: Record<Locale, Record<string, string>> = {
 
     // ─── Mail queue view ──────────────────────────────────────────────
     "admin-mail-admin-only-desc": "Monitor mail queue je dostupan samo administratorima.",
-    "admin-mail-title": "Mail Queue",
+    "admin-mail-title": "Red čekanja pošte",
     "admin-mail-desc": "Pratite isporuku odlazne pošte.",
     "admin-mail-compose": "Sastavi",
     "admin-mail-queued": "Na čekanju",
@@ -1367,7 +1375,7 @@ export const ADMINISTRATION: Record<Locale, Record<string, string>> = {
     "admin-kyc-field-reg-number": "Registracioni broj",
     "admin-kyc-field-tax-id": "PIB",
     "admin-kyc-field-vat-number": "PDV broj",
-    "admin-kyc-field-website": "Website",
+    "admin-kyc-field-website": "Veb-sajt",
     "admin-kyc-field-address": "Adresa",
     "admin-kyc-field-contact-person": "Kontakt osoba",
     "admin-kyc-field-contact-email": "Kontakt email",
@@ -1540,7 +1548,7 @@ export const ADMINISTRATION: Record<Locale, Record<string, string>> = {
     "admin-perm-count": "{n} dozvol(a) izabrano",
     "admin-mail-col-tenant": "Stanar",
     "admin-mail-cross-tenant-note": "Prikaz svih stanara — nije izabran kontekst stanara.",
-    "admin-vault-reveal-timer": "Auto-hides in {s}s",
+    "admin-vault-reveal-timer": "Automatski se sakriva za {s}s",
     "admin-vault-reveal-loading": "Dešifrovanje…",
     "admin-vault-reveal-failed": "Neuspelo otkrivanje tajne.",
     "admin-vault-reveal": "Otkrij vrednost",
@@ -1855,7 +1863,7 @@ export const ADMINISTRATION: Record<Locale, Record<string, string>> = {
     "admin-settings-tab-integrations": "API Anahtarları",
     "admin-settings-tab-preferences": "Tercihler",
     "admin-settings-tab-password": "Parola",
-    "admin-settings-tab-memorandum": "Mutabakat",
+    "admin-settings-tab-memorandum": "Memorandum",
     "admin-settings-tab-notifications": "Bildirimler",
     "admin-settings-admin-required": "Yönetici erişimi gerekli",
     "admin-settings-failed-load": "Ayarlar yüklenemedi.",
@@ -1875,7 +1883,7 @@ export const ADMINISTRATION: Record<Locale, Record<string, string>> = {
     "admin-settings-preferences-title": "Tercihlerim",
     "admin-settings-preferences-desc":
       "Deneyiminizi kişiselleştirin — dil, görüntü ve bildirimler.",
-    "admin-settings-memorandum-title": "Mutabakat",
+    "admin-settings-memorandum-title": "Memorandum",
     "admin-settings-memorandum-desc":
       "Tüm PDF belgelerinin üstbilgi ve altbilgisini yapılandırın (teklifler, faturalar, proformalar).",
     "admin-settings-company-logo": "Şirket Logosu",
@@ -2303,7 +2311,7 @@ export const ADMINISTRATION: Record<Locale, Record<string, string>> = {
     "admin-perm-count": "{n} izin seçildi",
     "admin-mail-col-tenant": "Kiracı",
     "admin-mail-cross-tenant-note": "Tüm kiracılar gösteriliyor — kiracı bağlamı seçilmedi.",
-    "admin-vault-reveal-timer": "Auto-hides in {s}s",
+    "admin-vault-reveal-timer": "{s} sn sonra otomatik gizlenir",
     "admin-vault-reveal-loading": "Şifre çözülüyor…",
     "admin-vault-reveal-failed": "Sır gösterilemedi.",
     "admin-vault-reveal": "Değeri göster",
@@ -3065,7 +3073,7 @@ export const ADMINISTRATION: Record<Locale, Record<string, string>> = {
     "admin-perm-count": "{n} Berechtigung(en) ausgewählt",
     "admin-mail-col-tenant": "Mandant",
     "admin-mail-cross-tenant-note": "Alle Mandanten werden angezeigt — kein Mandantenkontext ausgewählt.",
-    "admin-vault-reveal-timer": "Auto-hides in {s}s",
+    "admin-vault-reveal-timer": "Wird in {s}s automatisch ausgeblendet",
     "admin-vault-reveal-loading": "Wird entschlüsselt…",
     "admin-vault-reveal-failed": "Geheimnis konnte nicht angezeigt werden.",
     "admin-vault-reveal": "Wert anzeigen",
@@ -3827,7 +3835,7 @@ export const ADMINISTRATION: Record<Locale, Record<string, string>> = {
     "admin-perm-count": "{n} разрешение(ий) выбрано",
     "admin-mail-col-tenant": "Арендатор",
     "admin-mail-cross-tenant-note": "Показаны все арендаторы — контекст арендатора не выбран.",
-    "admin-vault-reveal-timer": "Auto-hides in {s}s",
+    "admin-vault-reveal-timer": "Скроется автоматически через {s} с",
     "admin-vault-reveal-loading": "Расшифровка…",
     "admin-vault-reveal-failed": "Не удалось показать секрет.",
     "admin-vault-reveal": "Показать значение",
@@ -3846,4 +3854,15 @@ export const ADMINISTRATION: Record<Locale, Record<string, string>> = {
     "admin-webhooks-deliveries-title": "История доставки",
     "admin-webhooks-deliveries": "Доставки",
   },
+
+
+  // ── Split-file locale packs (see ../lang/*.ts) ──
+  fr: FR_ADMINISTRATION,
+  it: IT_ADMINISTRATION,
+  ar: AR_ADMINISTRATION,
+  pt: PT_ADMINISTRATION,
+  zh: ZH_ADMINISTRATION,
+  ja: JA_ADMINISTRATION,
+  el: EL_ADMINISTRATION,
+  es: ES_ADMINISTRATION,
 };

@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { Providers } from "@/components/providers";
 import { cookies } from "next/headers";
 import type { Locale } from "@/lib/i18n/dictionaries";
+import { RTL_LOCALES } from "@/lib/i18n/dictionaries";
 import { ServiceWorkerRegister } from "@/components/pwa/sw-register";
 import { PushNotificationsPrompt } from "@/components/pwa/push-notifications";
 import { ThemeProvider } from "next-themes";
@@ -114,12 +115,17 @@ export default async function RootLayout({
   // every page load for non-English users.
   const cookieStore = await cookies();
   const cookieLocale = cookieStore.get("velos-locale")?.value as Locale | undefined;
+  const VALID_LOCALES: Locale[] = ["en", "sr", "tr", "de", "ru", "fr", "it", "ar", "pt", "zh", "ja", "el", "es"];
   const initialLocale: Locale =
-    cookieLocale && ["en", "sr", "tr", "de", "ru"].includes(cookieLocale)
+    cookieLocale && VALID_LOCALES.includes(cookieLocale)
       ? cookieLocale
       : "en";
+  // Arabic (and any future RTL locale) must get dir="rtl" in the SSR HTML so
+  // the first paint already mirrors the layout — waiting for the client
+  // HtmlLangSetter would cause a visible flash of left-to-right layout.
+  const initialDir = RTL_LOCALES.includes(initialLocale) ? "rtl" : "ltr";
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang={initialLocale} dir={initialDir} suppressHydrationWarning>
       <head>
         {/* iOS / Android PWA "Add to Home Screen" support.
             The Next.js Metadata API (appleWebApp config above) already

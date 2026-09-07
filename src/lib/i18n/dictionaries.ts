@@ -3,7 +3,24 @@
  * Client-side i18n using Zustand store for instant switching
  */
 
-export type Locale = "en" | "sr" | "tr" | "de" | "ru";
+export type Locale =
+  | "en" | "sr" | "tr" | "de" | "ru"  // launch locales
+  | "fr" | "it" | "ar" | "pt"          // EU / MENA expansion
+  | "zh" | "ja" | "el" | "es";         // APAC / Greece / LATAM
+
+// Split-file locale packs (one file per language, src/lib/i18n/lang/*.ts).
+// Each pack exports NAV/UI/SECTIONS/DASHBOARD + the 9 domain dictionaries;
+// they are merged into the Record<Locale, …> literals below. Missing keys
+// fall back to English at runtime via t(), so a partially-filled pack never
+// breaks the build or the UI.
+import { NAV as FR_NAV, SECTIONS as FR_SECTIONS, UI as FR_UI, DASHBOARD as FR_DASHBOARD } from "./lang/fr";
+import { NAV as IT_NAV, SECTIONS as IT_SECTIONS, UI as IT_UI, DASHBOARD as IT_DASHBOARD } from "./lang/it";
+import { NAV as AR_NAV, SECTIONS as AR_SECTIONS, UI as AR_UI, DASHBOARD as AR_DASHBOARD } from "./lang/ar";
+import { NAV as PT_NAV, SECTIONS as PT_SECTIONS, UI as PT_UI, DASHBOARD as PT_DASHBOARD } from "./lang/pt";
+import { NAV as ZH_NAV, SECTIONS as ZH_SECTIONS, UI as ZH_UI, DASHBOARD as ZH_DASHBOARD } from "./lang/zh";
+import { NAV as JA_NAV, SECTIONS as JA_SECTIONS, UI as JA_UI, DASHBOARD as JA_DASHBOARD } from "./lang/ja";
+import { NAV as EL_NAV, SECTIONS as EL_SECTIONS, UI as EL_UI, DASHBOARD as EL_DASHBOARD } from "./lang/el";
+import { NAV as ES_NAV, SECTIONS as ES_SECTIONS, UI as ES_UI, DASHBOARD as ES_DASHBOARD } from "./lang/es";
 
 // ─── Navigation ────────────────────────────────────────────────────────────
 
@@ -95,7 +112,7 @@ export const NAV: Record<Locale, Record<string, string>> = {
     "portal-rfqs": "Klijentski zahtevi",
     "portal-uploads": "Portal fajlovi",
     "logistics-requests": "Zahtevi za logistiku",
-    "trade-globe": "Trgovinski Globus",
+    "trade-globe": "Trgovinski globus",
     "portal-logistics": "Logistika",
     "plan-upgrade-queue": "Zahtevi za paket",
     "portal-locations": "Lokacije portala",
@@ -111,7 +128,7 @@ export const NAV: Record<Locale, Record<string, string>> = {
     settings: "Podešavanja",
     "platform-dashboard": "Pregled sistema",
     tenants: "Tenanti",
-    "platform-audit": "Platforma revizija",
+    "platform-audit": "Revizija platforme",
     "platform-users": "Svi korisnici",
     "platform-health": "Zdravlje sistema",
     plans: "Paketi",
@@ -120,7 +137,7 @@ export const NAV: Record<Locale, Record<string, string>> = {
     "partner-360": "Partner 360",
     "custom-dashboard": "Prilagođena tabla",
     calendar: "Kalendar",
-    "email-templates": "Šabloni emailova",
+    "email-templates": "Šabloni e-pošte",
     "api-integrations": "API integracije",
     commissions: "Provizije",
     erp: "ERP / Knjigovodstvo",
@@ -314,6 +331,16 @@ export const NAV: Record<Locale, Record<string, string>> = {
     "signup-requests": "Запросы на регистрацию",
     "notifications": "Уведомления",
   },
+
+  // ── Split-file locale packs (see ./lang/*.ts) ──
+  fr: FR_NAV,
+  it: IT_NAV,
+  ar: AR_NAV,
+  pt: PT_NAV,
+  zh: ZH_NAV,
+  ja: JA_NAV,
+  el: EL_NAV,
+  es: ES_NAV,
 };
 
 // ─── Sections ──────────────────────────────────────────────────────────────
@@ -379,6 +406,15 @@ export const SECTIONS: Record<Locale, Record<string, string>> = {
     administration: "Администрирование",
     platform: "Платформа",
   },
+
+  fr: FR_SECTIONS,
+  it: IT_SECTIONS,
+  ar: AR_SECTIONS,
+  pt: PT_SECTIONS,
+  zh: ZH_SECTIONS,
+  ja: JA_SECTIONS,
+  el: EL_SECTIONS,
+  es: ES_SECTIONS,
 };
 
 // ─── Common UI ─────────────────────────────────────────────────────────────
@@ -1759,6 +1795,15 @@ export const UI: Record<Locale, Record<string, string>> = {
     "ui-previous-slide": "Предыдущий слайд",
     "ui-next-slide": "Следующий слайд",
   },
+
+  fr: FR_UI,
+  it: IT_UI,
+  ar: AR_UI,
+  pt: PT_UI,
+  zh: ZH_UI,
+  ja: JA_UI,
+  el: EL_UI,
+  es: ES_UI,
 };
 
 // ─── Dashboard ─────────────────────────────────────────────────────────────
@@ -1854,6 +1899,15 @@ export const DASHBOARD: Record<Locale, Record<string, string>> = {
     "import-data": "Импорт данных",
     "export-report": "Экспорт отчёта",
   },
+
+  fr: FR_DASHBOARD,
+  it: IT_DASHBOARD,
+  ar: AR_DASHBOARD,
+  pt: PT_DASHBOARD,
+  zh: ZH_DASHBOARD,
+  ja: JA_DASHBOARD,
+  el: EL_DASHBOARD,
+  es: ES_DASHBOARD,
 };
 
 // ─── Domain dictionaries ───────────────────────────────────────────────────
@@ -1907,6 +1961,14 @@ export const LOCALE_LABELS: Record<Locale, string> = {
   tr: "Türkçe",
   de: "Deutsch",
   ru: "Русский",
+  fr: "Français",
+  it: "Italiano",
+  ar: "العربية",
+  pt: "Português",
+  zh: "中文",
+  ja: "日本語",
+  el: "Ελληνικά",
+  es: "Español",
 };
 
 export const LOCALE_FLAGS: Record<Locale, string> = {
@@ -1915,4 +1977,15 @@ export const LOCALE_FLAGS: Record<Locale, string> = {
   tr: "🇹🇷",
   de: "🇩🇪",
   ru: "🇷🇺",
+  fr: "🇫🇷",
+  it: "🇮🇹",
+  ar: "🇸🇦",
+  pt: "🇵🇹",
+  zh: "🇨🇳",
+  ja: "🇯🇵",
+  el: "🇬🇷",
+  es: "🇪🇸",
 };
+
+/** Locales whose script runs right-to-left — drives <html dir> + layout mirroring. */
+export const RTL_LOCALES: Locale[] = ["ar"];

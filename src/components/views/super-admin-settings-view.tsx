@@ -47,7 +47,8 @@ import { WhiteLabelConfig } from "@/components/super-admin/white-label-config";
  *
  * Every label, description, impact line, tooltip, and section header is
  * i18n-keyed via the `pf-sa-*` namespace in
- * `src/lib/i18n/domains/platform.ts`. Five locales (en, sr, tr, de, ru)
+ * `src/lib/i18n/domains/platform.ts`. Thirteen locales (en, sr, tr, de, ru,
+ * fr, it, ar, pt, zh, ja, el, es)
  * are shipped. Missing keys fall back to English.
  */
 export function SuperAdminSettingsView() {

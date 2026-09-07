@@ -491,7 +491,7 @@ export function PortalShell({
   useEffect(() => {
     if (portalAccess?.locale) {
       const saved = portalAccess.locale as Locale;
-      if (["en", "sr", "tr", "de", "ru"].includes(saved)) {
+      if (["en", "sr", "tr", "de", "ru", "fr", "it", "ar", "pt", "zh", "ja", "el", "es"].includes(saved)) {
         // Only apply if the user hasn't already chosen a language on the login page.
         const localStorageLocale = typeof window !== "undefined"
           ? (localStorage.getItem("velos-locale") as Locale | null)

@@ -1,4 +1,12 @@
 import type { Locale } from "@/lib/i18n/dictionaries";
+import { ERROR_AUDIT as FR_ERROR_AUDIT } from "../lang/fr";
+import { ERROR_AUDIT as IT_ERROR_AUDIT } from "../lang/it";
+import { ERROR_AUDIT as AR_ERROR_AUDIT } from "../lang/ar";
+import { ERROR_AUDIT as PT_ERROR_AUDIT } from "../lang/pt";
+import { ERROR_AUDIT as ZH_ERROR_AUDIT } from "../lang/zh";
+import { ERROR_AUDIT as JA_ERROR_AUDIT } from "../lang/ja";
+import { ERROR_AUDIT as EL_ERROR_AUDIT } from "../lang/el";
+import { ERROR_AUDIT as ES_ERROR_AUDIT } from "../lang/es";
 
 // ─── Error audit domain (task 8-c) ─────────────────────────────────────────
 // Covers: error-audit-view.tsx (admin Error Audit view).
@@ -286,4 +294,15 @@ export const ERROR_AUDIT: Record<Locale, Record<string, string>> = {
     "error-audit-toast-failed": "Не удалось выполнить действие. Попробуйте ещё раз.",
     "error-audit-load-failed": "Не удалось загрузить ошибки.",
   },
+
+
+  // ── Split-file locale packs (see ../lang/*.ts) ──
+  fr: FR_ERROR_AUDIT,
+  it: IT_ERROR_AUDIT,
+  ar: AR_ERROR_AUDIT,
+  pt: PT_ERROR_AUDIT,
+  zh: ZH_ERROR_AUDIT,
+  ja: JA_ERROR_AUDIT,
+  el: EL_ERROR_AUDIT,
+  es: ES_ERROR_AUDIT,
 };

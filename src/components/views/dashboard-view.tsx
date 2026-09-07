@@ -91,6 +91,14 @@ function todayLabel(d = new Date()): string {
     else if (l === "tr") tag = "tr-TR";
     else if (l === "de") tag = "de-DE";
     else if (l === "ru") tag = "ru-RU";
+    else if (l === "fr") tag = "fr-FR";
+    else if (l === "it") tag = "it-IT";
+    else if (l === "ar") tag = "ar-AE";
+    else if (l === "pt") tag = "pt-PT";
+    else if (l === "zh") tag = "zh-CN";
+    else if (l === "ja") tag = "ja-JP";
+    else if (l === "el") tag = "el-GR";
+    else if (l === "es") tag = "es-ES";
   } catch {
     // store unavailable (SSR) — keep "en-US"
   }

@@ -1,4 +1,12 @@
 import type { Locale } from "@/lib/i18n/dictionaries";
+import { CRM as FR_CRM } from "../lang/fr";
+import { CRM as IT_CRM } from "../lang/it";
+import { CRM as AR_CRM } from "../lang/ar";
+import { CRM as PT_CRM } from "../lang/pt";
+import { CRM as ZH_CRM } from "../lang/zh";
+import { CRM as JA_CRM } from "../lang/ja";
+import { CRM as EL_CRM } from "../lang/el";
+import { CRM as ES_CRM } from "../lang/es";
 
 // Keys used by: product-catalog-view, products-view, supplier-offers-view,
 // inventory-view (already wired). Remaining CRM files (partners, deals,
@@ -994,7 +1002,7 @@ export const CRM: Record<Locale, Record<string, string>> = {
   sr: {
     "crm-product-deleted": "Proizvod obrisan.",
     "crm-delete-failed": "Brisanje nije uspelo.",
-    "crm-catalog-entries-desc": "stavki kataloga — specifikacije za ponude dobavljaca i portal klijenata (HS sifre, slike). Portal automatski prikazuje svaki aktivan proizvod, pa je katalog opcion.",
+    "crm-catalog-entries-desc": "stavki kataloga — specifikacije za ponude dobavljača i portal klijenata (HS šifre, slike). Portal automatski prikazuje svaki aktivan proizvod, pa je katalog opcion.",
     "crm-new-product": "Novi proizvod",
     "crm-search-name-hs": "Pretraga po nazivu, HS šifri…",
     "crm-category": "Kategorija",
@@ -1064,9 +1072,9 @@ export const CRM: Record<Locale, Record<string, string>> = {
     "crm-total-lower": "ukupno",
     "crm-export-csv": "Izvezi CSV",
     "crm-products-banner-title": "Proizvodi, cene i zalihe na jednom mestu",
-    "crm-products-banner-desc": "Lista proizvoda upravlja cenama, zalihama i vidljivoscu na portalu (prekidac po proizvodu). Katalog i dalje sadrzi dodatne specifikacije (HS sifre, slike).",
+    "crm-products-banner-desc": "Lista proizvoda upravlja cenama, zalihama i vidljivošću na portalu (prekidač po proizvodu). Katalog i dalje sadrži dodatne specifikacije (HS šifre, slike).",
     "crm-products-banner-active": "Aktivni proizvodi su za prodaju",
-    "crm-products-banner-portal": "Prekidac Portal prikazuje proizvod klijentima",
+    "crm-products-banner-portal": "Prekidač Portal prikazuje proizvod klijentima",
     "crm-products-banner-stock": "Zaliha se automatski azurira iz porudzbina",
     "crm-search-sku-name": "Pretraga po šifri (SKU) ili nazivu…",
     "crm-no-products-populate-desc": "Dodajte prvi proizvod da biste počeli da gradite katalog.",
@@ -1329,7 +1337,7 @@ export const CRM: Record<Locale, Record<string, string>> = {
     "crm-no-documents": "Još uvek nema dokumenata.",
     "crm-no-documents-uploaded": "Nema otpremljenih dokumenata.",
     "crm-contract": "Ugovor",
-    "crm-spec": "Spec",
+    "crm-spec": "Specifikacija",
     "crm-other": "Ostalo",
     "crm-visible": "Vidljivo",
     "crm-hidden": "Skriveno",
@@ -1837,7 +1845,7 @@ export const CRM: Record<Locale, Record<string, string>> = {
     "crm-iban-ph": "npr. DE89 3704 0044 0532 0130 00",
     "crm-swift-ph": "npr. DEUTDEFF",
     "crm-partner-notes-ph": "Dodatne napomene o ovom partneru…",
-    "crm-contact-name-ph": "John Doe",
+    "crm-contact-name-ph": "Marko Marković",
     "crm-contact-email-ph": "john@company.com",
     "crm-portal-email-ph": "partner@company.com",
     "crm-kyc-short": "KYC",
@@ -1882,7 +1890,7 @@ export const CRM: Record<Locale, Record<string, string>> = {
     "crm-import-success": "Uvezeno ${n} partnera. ${fail} neuspešno.",
     "crm-import-failed": "Uvoz nije uspeo. Proverite datoteku i pokušajte ponovo.",
     "crm-import-csv-tooltip": "Uvezite proizvode iz CSV fajla",
-    "crm-import-template": "CSV sablon",
+    "crm-import-template": "CSV šablon",
     "crm-import-template-tooltip": "Preuzmite CSV sablon sa ispravnim kolonama",
     "crm-partner-bulk-export-selected": "Izvezi izabrano",
     "crm-partner-bulk-delete-failed": "Grupno brisanje neuspelo.",
@@ -1976,7 +1984,7 @@ export const CRM: Record<Locale, Record<string, string>> = {
   tr: {
     "crm-product-deleted": "Ürün silindi.",
     "crm-delete-failed": "Silme başarısız oldu.",
-    "crm-catalog-entries-desc": "katalog kaydi — tedarikci teklifleri ve musteri portali için spesifikasyonlar (HS kodlari, gorseller). Portal her aktif urunu otomatik gosterir, katalog opsiyoneldir.",
+    "crm-catalog-entries-desc": "katalog kaydı — tedarikçi teklifleri ve müşteri portalı için spesifikasyonlar (HS kodları, görseller). Portal her aktif ürünü otomatik gösterir, katalog opsiyoneldir.",
     "crm-new-product": "Yeni Ürün",
     "crm-search-name-hs": "İsim, HS koduna göre ara…",
     "crm-category": "Kategori",
@@ -2045,11 +2053,11 @@ export const CRM: Record<Locale, Record<string, string>> = {
     "crm-hidden-portal": "Artık portal kataloğundan gizli.",
     "crm-total-lower": "toplam",
     "crm-export-csv": "CSV Dışa Aktar",
-    "crm-products-banner-title": "Urunler, fiyatlar ve stok tek yerde",
-    "crm-products-banner-desc": "Urun listesi fiyatlandirmayi, stogu ve musteri portali gorunurlugunu yonetir (urun basina anahtar). Katalog hala genisletilmis spesifikasyonlari icerir (HS kodlari, gorseller).",
-    "crm-products-banner-active": "Aktif urunler satilabilir",
-    "crm-products-banner-portal": "Portali anahtari urunu musteriye gosterir",
-    "crm-products-banner-stock": "Stok siparislerden otomatik guncellenir",
+    "crm-products-banner-title": "Ürünler, fiyatlar ve stok tek yerde",
+    "crm-products-banner-desc": "Ürün listesi fiyatlandırmayı, stoğu ve müşteri portalı görünürlüğünü yönetir (ürün başına anahtar). Katalog hâlâ genişletilmiş spesifikasyonları içerir (HS kodları, görseller).",
+    "crm-products-banner-active": "Aktif ürünler satılabilir",
+    "crm-products-banner-portal": "Portal anahtarı ürünü müşteriye gösterir",
+    "crm-products-banner-stock": "Stok siparişlerden otomatik güncellenir",
     "crm-search-sku-name": "SKU veya isme göre ara…",
     "crm-no-products-populate-desc": "Kataloğunuzu oluşturmaya başlamak için ilk ürününüzü ekleyin.",
     "crm-select-all-on-page": "Sayfadaki tümünü seç",
@@ -2479,7 +2487,7 @@ export const CRM: Record<Locale, Record<string, string>> = {
     "crm-incoterm-prefix": "Incoterm: ${value}",
     "crm-terms-prefix": "Şartlar: ${value}",
     "crm-tax-id-prefix": "Vergi No: ${value}",
-    "crm-stage-lead": "Lead",
+    "crm-stage-lead": "Potansiyel",
     "crm-stage-qualified": "Nitelikli",
     "crm-stage-proposal": "Teklif",
     "crm-stage-negotiation": "Müzakere",
@@ -2495,7 +2503,7 @@ export const CRM: Record<Locale, Record<string, string>> = {
     "crm-expected-close-label": "Beklenen Kapanış",
     "crm-pipeline-view": "Pipeline görünümü",
     "crm-table-view": "Tablo görünümü",
-    "crm-pipeline": "Pipeline",
+    "crm-pipeline": "Satış Hattı",
     "crm-table": "Tablo",
     "crm-no-deals-pipeline": "Anlaşma yok.",
     "crm-search-by-title": "Başlığa göre ara…",
@@ -2804,7 +2812,7 @@ export const CRM: Record<Locale, Record<string, string>> = {
     "crm-iban-ph": "örn. DE89 3704 0044 0532 0130 00",
     "crm-swift-ph": "örn. DEUTDEFF",
     "crm-partner-notes-ph": "Bu ortakla ilgili ek notlar…",
-    "crm-contact-name-ph": "John Doe",
+    "crm-contact-name-ph": "Ad Soyad",
     "crm-contact-email-ph": "john@company.com",
     "crm-portal-email-ph": "partner@company.com",
     "crm-kyc-short": "KYC",
@@ -2838,7 +2846,7 @@ export const CRM: Record<Locale, Record<string, string>> = {
     "crm-partner-import-template": "CSV şablonu",
     "crm-partner-import-csv-tooltip": "Ortakları toplu oluşturmak için CSV dosyası yükleyin",
     "crm-partner-import-csv": "CSV içe aktar",
-    "crm-import-csv": "CSV ice aktar",
+    "crm-import-csv": "CSV içe aktar",
     "crm-bulk-accept-label": "Kabul et",
     "crm-bulk-accept-confirm": "${n} teklif kabul edilsin mi?",
     "crm-bulk-reject-label": "Reddet",
@@ -2848,9 +2856,9 @@ export const CRM: Record<Locale, Record<string, string>> = {
     "crm-bulk-export-selected": "Seçilenleri dışa aktar",
     "crm-import-success": "${n} ortak içe aktarıldı. ${fail} başarısız.",
     "crm-import-failed": "İçe aktarma başarısız. Dosyayı kontrol edip tekrar deneyin.",
-    "crm-import-csv-tooltip": "Urunleri CSV dosyasindan ice aktarin",
-    "crm-import-template": "CSV sablonu",
-    "crm-import-template-tooltip": "Dogru kolonlarla CSV sablonunu indirin",
+    "crm-import-csv-tooltip": "Ürünleri CSV dosyasından içe aktarın",
+    "crm-import-template": "CSV şablonu",
+    "crm-import-template-tooltip": "Doğru kolonlarla CSV şablonunu indirin",
     "crm-partner-bulk-export-selected": "Seçilenleri dışa aktar",
     "crm-partner-bulk-delete-failed": "Toplu silme başarısız.",
     "crm-partner-bulk-delete-partial": "${ok} silindi · ${fail} başarısız.",
@@ -4874,4 +4882,15 @@ export const CRM: Record<Locale, Record<string, string>> = {
     "crm-act-marketplace-follow": "Подписался на компанию",
     "crm-act-rfq-created": "Отправил RFQ-запрос",
   },
+
+
+  // ── Split-file locale packs (see ../lang/*.ts) ──
+  fr: FR_CRM,
+  it: IT_CRM,
+  ar: AR_CRM,
+  pt: PT_CRM,
+  zh: ZH_CRM,
+  ja: JA_CRM,
+  el: EL_CRM,
+  es: ES_CRM,
 };

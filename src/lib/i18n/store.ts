@@ -3,7 +3,7 @@ import { create } from "zustand";
 import type { Locale } from "@/lib/i18n/dictionaries";
 import { t as translate } from "@/lib/i18n/dictionaries";
 
-const VALID_LOCALES: Locale[] = ["en", "sr", "tr", "de", "ru"];
+const VALID_LOCALES: Locale[] = ["en", "sr", "tr", "de", "ru", "fr", "it", "ar", "pt", "zh", "ja", "el", "es"];
 function isLocale(v: unknown): v is Locale {
   return typeof v === "string" && (VALID_LOCALES as string[]).includes(v);
 }

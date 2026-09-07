@@ -80,6 +80,14 @@ async function _get(req: NextRequest) {
     tr: "emtia piyasası haberleri",
     de: "rohstoffmarktnachrichten",
     ru: "новости товарного рынка",
+    fr: "actualités du marché des matières premières",
+    it: "notizie mercato delle materie prime",
+    ar: "أخبار سوق السلع الأساسية",
+    pt: "notícias do mercado de matérias-primas",
+    zh: "大宗商品市场新闻",
+    ja: "商品市況 ニュース",
+    el: "ειδήσεις αγοράς εμπορευμάτων",
+    es: "noticias del mercado de materias primas",
   };
   const suffix = suffixByLocale[locale] || suffixByLocale.en;
   const query = `${category} ${suffix}`;

@@ -1,4 +1,12 @@
 import type { Locale } from "@/lib/i18n/dictionaries";
+import { LOGISTICS as FR_LOGISTICS } from "../lang/fr";
+import { LOGISTICS as IT_LOGISTICS } from "../lang/it";
+import { LOGISTICS as AR_LOGISTICS } from "../lang/ar";
+import { LOGISTICS as PT_LOGISTICS } from "../lang/pt";
+import { LOGISTICS as ZH_LOGISTICS } from "../lang/zh";
+import { LOGISTICS as JA_LOGISTICS } from "../lang/ja";
+import { LOGISTICS as EL_LOGISTICS } from "../lang/el";
+import { LOGISTICS as ES_LOGISTICS } from "../lang/es";
 
 export const LOGISTICS: Record<Locale, Record<string, string>> = {
   en: {
@@ -680,9 +688,9 @@ export const LOGISTICS: Record<Locale, Record<string, string>> = {
 
     // ── Trade Calculator — truck types ──
     "log-truck-standard": "Standart Kuru Dorse",
-    "log-truck-refrigerated": "Refrigerated (Reefer)",
+    "log-truck-refrigerated": "Soğutmalı (Reefer)",
     "log-truck-tanker": "Tanker",
-    "log-truck-flatbed": "Flatbed",
+    "log-truck-flatbed": "Açık platform (Flatbed)",
     "log-truck-lowboy": "Lowboy / Ağır Yük",
     "log-truck-type": "Kamyon tipi",
     "log-num-trucks": "Kamyon sayısı",
@@ -1174,4 +1182,15 @@ export const LOGISTICS: Record<Locale, Record<string, string>> = {
     "log-delivery-port": "Порт доставки",
     "log-port-autocomplete-placeholder": "Начните вводить название порта…",
   },
+
+
+  // ── Split-file locale packs (see ../lang/*.ts) ──
+  fr: FR_LOGISTICS,
+  it: IT_LOGISTICS,
+  ar: AR_LOGISTICS,
+  pt: PT_LOGISTICS,
+  zh: ZH_LOGISTICS,
+  ja: JA_LOGISTICS,
+  el: EL_LOGISTICS,
+  es: ES_LOGISTICS,
 };

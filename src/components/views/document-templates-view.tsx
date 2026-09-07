@@ -671,7 +671,7 @@ export function DocumentTemplatesView() {
       <ModuleInfoTooltip
         title="Document Templates"
         description="Create reusable templates for invoices, proformas, letters, and contracts with variables and conditional sections."
-        howToUse={["Create a template with variables ({company_name}, {total})", "Add conditional sections (show/hide based on data)", "Multi-language support (en, sr, tr, de, ru)", "Preview with sample data", "Use templates when generating documents"]}
+        howToUse={["Create a template with variables ({company_name}, {total})", "Add conditional sections (show/hide based on data)", "Multi-language support (en, sr, tr, de, ru, fr, it, ar, pt, zh, ja, el, es)", "Preview with sample data", "Use templates when generating documents"]}
       />
 
       {superAdmin && (

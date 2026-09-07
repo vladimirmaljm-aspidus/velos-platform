@@ -16,6 +16,14 @@ const LOCALE_TAG: Record<Locale, string> = {
   tr: "tr-TR",
   de: "de-DE",
   ru: "ru-RU",
+  fr: "fr-FR",
+  it: "it-IT",
+  ar: "ar-AE",
+  pt: "pt-PT",
+  zh: "zh-CN",
+  ja: "ja-JP",
+  el: "el-GR",
+  es: "es-ES",
 };
 
 /**

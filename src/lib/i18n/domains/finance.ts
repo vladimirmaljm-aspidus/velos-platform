@@ -1,4 +1,12 @@
 import type { Locale } from "@/lib/i18n/dictionaries";
+import { FINANCE as FR_FINANCE } from "../lang/fr";
+import { FINANCE as IT_FINANCE } from "../lang/it";
+import { FINANCE as AR_FINANCE } from "../lang/ar";
+import { FINANCE as PT_FINANCE } from "../lang/pt";
+import { FINANCE as ZH_FINANCE } from "../lang/zh";
+import { FINANCE as JA_FINANCE } from "../lang/ja";
+import { FINANCE as EL_FINANCE } from "../lang/el";
+import { FINANCE as ES_FINANCE } from "../lang/es";
 
 // Finance domain — Invoices, Proformas, Document Register, ERP/Accounting.
 // All keys are prefixed with "fin-" to avoid collisions with other domain
@@ -1213,7 +1221,7 @@ export const FINANCE: Record<Locale, Record<string, string>> = {
     "fin-items-suffix": "kalem",
 
     "fin-export-csv": "CSV Dışa Aktar",
-    "fin-from-offer": "Teklifden",
+    "fin-from-offer": "Tekliften",
     "fin-new-invoice": "Yeni fatura",
     "fin-total-outstanding": "Toplam tahsil edilmemiş",
     "fin-sent-plus-overdue": "Gönderildi + vadesi geçti",
@@ -1221,7 +1229,7 @@ export const FINANCE: Record<Locale, Record<string, string>> = {
     "fin-past-due-date": "Vade tarihini geçti",
     "fin-paid-this-month": "Bu ay ödenen",
     "fin-no-invoices": "Fatura yok",
-    "fin-no-invoices-desc": "İlk faturanızı oluşturun veya onaylanmış bir teklifden otomatik oluşturun.",
+    "fin-no-invoices-desc": "İlk faturanızı oluşturun veya onaylanmış bir tekliften otomatik oluşturun.",
     "fin-delete-invoice-title": "Fatura silinsin mi?",
     "fin-delete-invoice-desc": "Bu işlem geri alınamaz. Fatura ve kalemleri kalıcı olarak silinecektir.",
     "fin-quick-actions-label": "Hızlı İşlemler",
@@ -1229,7 +1237,7 @@ export const FINANCE: Record<Locale, Record<string, string>> = {
     "fin-mark-as-paid": "Ödendi Olarak İşaretle",
     "fin-download-pdf": "PDF İndir",
     "fin-view-details": "Detayları Görüntüle",
-    "fin-create-invoice-from-offer": "Teklifden Fatura Oluştur",
+    "fin-create-invoice-from-offer": "Tekliften Fatura Oluştur",
     "fin-select-offer-invoice-desc": "Tüm alanları önceden doldurulmuş bir fatura otomatik oluşturmak için onaylanmış veya gönderilmiş bir teklif seçin.",
     "fin-search-offers-placeholder": "Numara veya konuya göre teklif ara…",
     "fin-no-accepted-offers": "Onaylanmış veya gönderilmiş teklif bulunamadı.",
@@ -1301,14 +1309,14 @@ export const FINANCE: Record<Locale, Record<string, string>> = {
     "fin-invoice-marked-paid": "Fatura ödendi olarak işaretlendi.",
     "fin-invoice-sent-portal": "Fatura portala gönderildi",
     "fin-invoice-deleted": "Fatura silindi.",
-    "fin-invoice-created-from-offer": "Fatura teklifden oluşturuldu.",
+    "fin-invoice-created-from-offer": "Fatura tekliften oluşturuldu.",
     "fin-select-partner-toast": "Bir ortak seçin.",
     "fin-invoice-updated-toast": "Fatura güncellendi.",
     "fin-invoice-created-toast": "Fatura başarıyla oluşturuldu!",
     "fin-could-not-update-invoice": "Fatura güncellenemedi.",
     "fin-failed-send-invoice": "Fatura gönderilemedi.",
     "fin-delete-failed": "Silme başarısız oldu.",
-    "fin-failed-create-invoice-offer": "Teklifden fatura oluşturulamadı.",
+    "fin-failed-create-invoice-offer": "Tekliften fatura oluşturulamadı.",
     "fin-pdf-downloaded": "PDF indirildi",
     "fin-failed-download-pdf": "PDF indirilemedi",
     "fin-notes-placeholder": "Ödeme talimatları, özel koşullar vb.",
@@ -1318,7 +1326,7 @@ export const FINANCE: Record<Locale, Record<string, string>> = {
     "fin-outstanding": "Tahsil edilmemiş",
     "fin-draft-sent-accepted": "Devam ediyor",
     "fin-expired-label": "Süresi Doldu",
-    "fin-past-valid-date": "Suresi gecti",
+    "fin-past-valid-date": "Süresi geçti",
     "fin-no-proformas": "Proforma fatura yok",
     "fin-no-proformas-desc": "Ön ödemeleri takip etmeye başlamak için ilk proforma faturanızı oluşturun.",
     "fin-delete-proforma-title": "Proforma fatura silinsin mi?",
@@ -1331,7 +1339,7 @@ export const FINANCE: Record<Locale, Record<string, string>> = {
     "fin-create-invoice-tooltip-warn": "Proforma fatura gönderildi ancak henüz onaylanmadı. Yine de fatura oluşturmak için tıklayın.",
     "fin-create-invoice-tooltip-blocked": "Fatura oluşturulmadan önce proforma faturanın gönderilmiş veya onaylanmış olması gerekir",
     "fin-mark-as-paid-action": "Ödendi olarak işaretle",
-    "fin-create-proforma-from-offer": "Teklifden Proforma Fatura Oluştur",
+    "fin-create-proforma-from-offer": "Tekliften Proforma Fatura Oluştur",
     "fin-select-offer-proforma-desc": "Otomatik olarak proforma fatura oluşturmak için bir teklif seçin. Ortak bilgileri, kalemler ve fiyatlandırma dahil tüm veriler otomatik doldurulur. Geçerlilik süresi 30 gün olarak ayarlanır.",
     "fin-no-offers-available": "Proforma fatura oluşturmak için uygun teklif yok.",
     "fin-edit-proforma": "Proforma faturayı düzenle",
@@ -1357,9 +1365,9 @@ export const FINANCE: Record<Locale, Record<string, string>> = {
     "fin-could-not-update-proforma": "Proforma fatura güncellenemedi.",
     "fin-failed-send-proforma": "Proforma fatura gönderilemedi.",
     "fin-failed-create-invoice": "Fatura oluşturulamadı.",
-    "fin-proforma-created-from-offer": "Proforma fatura teklifden oluşturuldu",
+    "fin-proforma-created-from-offer": "Proforma fatura tekliften oluşturuldu",
     "fin-proforma-autofill-desc": "Teklif verileri, ortak bilgileri ve kalemler otomatik dolduruldu. Geçerlilik süresi 30 gün olarak ayarlandı.",
-    "fin-failed-create-proforma-offer": "Teklifden proforma fatura oluşturulamadı.",
+    "fin-failed-create-proforma-offer": "Tekliften proforma fatura oluşturulamadı.",
     "fin-proforma-updated-toast": "Proforma fatura güncellendi.",
     "fin-proforma-created-toast": "Proforma fatura oluşturuldu!",
     "fin-reference-colon": "Referans:",
@@ -2875,4 +2883,15 @@ export const FINANCE: Record<Locale, Record<string, string>> = {
     "loi-clear-selection": "Очистить выбор",
     "loi-view-product": "Посмотреть товар в каталоге",
   },
+
+
+  // ── Split-file locale packs (see ../lang/*.ts) ──
+  fr: FR_FINANCE,
+  it: IT_FINANCE,
+  ar: AR_FINANCE,
+  pt: PT_FINANCE,
+  zh: ZH_FINANCE,
+  ja: JA_FINANCE,
+  el: EL_FINANCE,
+  es: ES_FINANCE,
 };
