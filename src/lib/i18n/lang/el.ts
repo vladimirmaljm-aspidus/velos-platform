@@ -1256,7 +1256,7 @@ export const CRM: Record<string, string> = {
   "crm-target-prefix": "Στόχος: ",
   "crm-search-partners-by": "Αναζήτηση ανά ονομασία, email, χώρα, πόλη…",
   "crm-loading-partners": "Φόρτωση συνεργατών…",
-  "crm-no-partners-match": "Κανένας συνεργάτης δεν ταιριάζει με «${search}».",
+  "crm-no-partners-match": "Κανένας συνεργάτης δεν ταιριάζει με «{search}».",
   "crm-no-partner": "Χωρίς συνεργάτη",
   "crm-partners-count": "Συνεργάτες ({n})",
   "crm-partner-type-prefix": "{type}",
