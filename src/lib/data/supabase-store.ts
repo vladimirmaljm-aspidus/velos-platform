@@ -294,6 +294,10 @@ export class SupabaseStore implements Store {
       // the exact same silent-data-loss bug selected_bank_accounts had
       // in audit20 (the column survived only because it's an ARRAY).
       "style_json", "layout_json",
+      // audit35 "Document Studio" — the block-authored body (migration
+      // 095). Same class of bug: without this entry every template save
+      // silently dropped the authored blocks.
+      "content_json",
     ]);
     const out: SupaRow = {};
     for (const [k, v] of Object.entries(row)) {
