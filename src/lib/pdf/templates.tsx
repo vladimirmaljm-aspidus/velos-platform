@@ -4,6 +4,7 @@ import type { Offer, Invoice, Proforma, LetterOfIntent, OfferLineItem, Partner, 
 import { substitutePlaceholders, hasPagePlaceholders, normalizeSegment, type ContentSegment, type PlaceholderData } from "@/lib/utils/content-config";
 import { parseStyleConfig, type TemplateStyleConfig } from "@/lib/utils/style-config";
 import { templateSegments, readTemplateLayout, type TemplateFieldLayout } from "@/lib/pdf/doc-template";
+import { normalizeBlocks, htmlToRuns, type DocBlock, type BlocksContent, type RichRun } from "@/lib/utils/doc-blocks";
 
 // ── Shared helpers (audit12 dedup) ─────────────────────────────────────────
 // mmToPoints, mapFont, boldVariant, lightenHex, fmtMoney, amountInWords,
@@ -1801,11 +1802,349 @@ export function buildPdfDocument({
     });
   }
 
+  // ── audit35 (Document Studio): block-authored body ──────────────────
+  // When the template carries a content_json block list, the body is
+  // FULLY authored (blocks replace the fixed section flow — title, parties,
+  // items, totals, terms, signatures are all blocks the author placed).
+  // The FRAME stays memorandum-owned: page setup, header, footer, QR and
+  // page numbers come from `m` exactly as before — blocks render strictly
+  // between the fixed memo header and footer.
+  const contentBlocks: BlocksContent | null = tpl ? normalizeBlocks((tpl as DocumentTemplate & { content_json?: unknown }).content_json) : null;
+
+  /** Render the rich-text runs of a block (variables resolved). Inline
+   *  styling per run: bold/italic map to the font variants, underline /
+   *  strike to textDecoration, color/highlight to color/backgroundColor. */
+  const renderRuns = (html: string, base: { fontSize?: number; color?: string; align?: any; lineHeight?: number }) => {
+    const runs = htmlToRuns(html);
+    if (!runs.length) return null;
+    const nodes = runs.map((r: RichRun, i: number) => {
+      const text = substitutePlaceholders(r.text, phData as any);
+      if (!text) return null;
+      const fam = r.bold ? boldVariant(r.italic ? "NotoSans" : fontFamily) : r.italic ? (fontFamily === "NotoSans" ? "NotoSans-Oblique" : fontFamily) : fontFamily;
+      return (
+        <Text
+          key={i}
+          style={{
+            fontFamily: fam,
+            color: r.color || base.color,
+            backgroundColor: r.highlight || undefined,
+            textDecoration: r.underline && r.strike ? "underline line-through" : r.underline ? "underline" : r.strike ? "line-through" : undefined,
+          }}
+        >
+          {text}
+        </Text>
+      );
+    });
+    return <Text style={{ fontSize: base.fontSize ?? fontSize, color: base.color, textAlign: base.align, lineHeight: base.lineHeight ?? lineHeight }}>{nodes}</Text>;
+  };
+
+  /** A paragraph whose text carries {page_number}/{total_pages}: render
+   *  through react-pdf's render-callback (the ONLY reliable way to fill
+   *  page numbers). Inline run styling is flattened for such paragraphs —
+   *  page placeholders are rare (footer notes, page refs). */
+  const renderRunsPaged = (html: string, base: { fontSize?: number; color?: string; align?: any }) => {
+    const plain = substitutePlaceholders(htmlToRuns(html).map((r) => r.text).join(""), phData as any);
+    return (
+      <Text
+        style={{ fontSize: base.fontSize ?? fontSize, color: base.color, textAlign: base.align, lineHeight }}
+        render={({ pageNumber, totalPages }: { pageNumber: number; totalPages: number }) =>
+          substitutePlaceholders(plain, { ...(phData as any), page_number: pageNumber, total_pages: totalPages })
+        }
+      />
+    );
+  };
+
+  const renderRichBlock = (html: string, base: { fontSize?: number; color?: string; align?: any; lineHeight?: number }) =>
+    hasPagePlaceholders(html) ? renderRunsPaged(html, base) : renderRuns(html, base);
+
+  /** Space after a block (mm → pt), rendered as margin. */
+  const blockGap = (mm: number | undefined) => (mm ? mmToPoints(Math.min(20, Math.max(0, mm))) : 0);
+
+  /** Render ONE block. Everything is clamped already (normalizeBlocks). */
+  const renderBlock = (b: DocBlock): React.ReactNode => {
+    switch (b.type) {
+      case "heading": {
+        const size = fontSize * (b.scale ?? 140) / 100 * (b.level === 1 ? 1 : b.level === 2 ? 0.8 : 0.66);
+        return (
+          <View key={b.id} style={{ marginTop: 2, marginBottom: blockGap(b.spacing), width: "100%" }} wrap={false}>
+            <Text style={{
+              fontSize: Math.max(8, size),
+              fontFamily: headingFontFamily,
+              color: b.color || primaryColor,
+              textAlign: b.align === "justify" ? "left" : b.align,
+              textTransform: b.uppercase ? "uppercase" : undefined,
+              letterSpacing: 0.3,
+            }}>
+              {substitutePlaceholders(htmlToRuns(b.html).map((r) => r.text).join(""), phData as any)}
+            </Text>
+          </View>
+        );
+      }
+      case "paragraph":
+        return (
+          <View key={b.id} style={{ marginBottom: blockGap(b.spacing), width: "100%" }}>
+            {renderRichBlock(b.html, {
+              fontSize: fontSize * (b.scale ?? 100) / 100,
+              color: b.color || bodyTextColor,
+              align: b.align === "justify" ? "justify" : b.align,
+              lineHeight: b.lineHeight ?? lineHeight,
+            })}
+          </View>
+        );
+      case "list": {
+        const markerOf = (i: number): string => {
+          const n = i + 1;
+          switch (b.marker) {
+            case "decimal": return `${n}.`;
+            case "lower-alpha": return `${String.fromCharCode(97 + (i % 26))}.`;
+            case "upper-alpha": return `${String.fromCharCode(65 + (i % 26))}.`;
+            case "lower-roman": case "upper-roman": {
+              const roman = (num: number): string => {
+                const map: [number, string][] = [[10, "X"], [9, "IX"], [5, "V"], [4, "IV"], [1, "I"]];
+                let out = "";
+                for (const [v, s] of map) { while (num >= v) { out += s; num -= v; } }
+                return out;
+              };
+              const r = roman(n);
+              return b.marker === "lower-roman" ? `${r.toLowerCase()}.` : `${r}.`;
+            }
+            default: return "•";
+          }
+        };
+        return (
+          <View key={b.id} style={{ marginBottom: blockGap(b.spacing), width: "100%" }}>
+            {b.items.map((it, i) => (
+              <View key={i} style={{ flexDirection: "row", marginBottom: 1.5 }}>
+                <Text style={{ fontSize, color: primaryColor, width: 18 }}>{b.ordered || b.marker !== "disc" ? markerOf(i) : "•"}</Text>
+                <View style={{ flex: 1 }}>
+                  {renderRuns(it, { fontSize, color: bodyTextColor, align: b.align === "justify" ? "justify" : b.align })}
+                </View>
+              </View>
+            ))}
+          </View>
+        );
+      }
+      case "fields": {
+        const rows = b.items.filter((f) => f.label || f.value);
+        return (
+          <View key={b.id} style={{
+            marginBottom: blockGap(b.spacing), width: "100%",
+            borderWidth: b.borders ? 0.75 : 0,
+            borderColor: tableBorderColor,
+            borderRadius: 3,
+          }} wrap={false}>
+            {rows.map((f, i) => (
+              <View key={i} style={{
+                flexDirection: "row",
+                backgroundColor: b.striped && i % 2 === 1 ? stripeBg : undefined,
+                borderBottomWidth: b.borders && i < rows.length - 1 ? 0.5 : 0,
+                borderBottomColor: tableBorderColor,
+                paddingTop: 2.5, paddingBottom: 2.5, paddingLeft: 6, paddingRight: 6,
+              }}>
+                <Text style={{ fontSize, width: `${b.labelWidth}%`, color: bodyTextColor, opacity: 0.8 }}>{substitutePlaceholders(f.label, phData as any)}</Text>
+                <View style={{ flex: 1, paddingLeft: 8 }}>
+                  {renderRuns(f.value, { fontSize, color: bodyTextColor, align: "left" })}
+                </View>
+              </View>
+            ))}
+          </View>
+        );
+      }
+      case "table": {
+        // Line-items source: the document's real items + totals, rendered
+        // as the studio's clean standard table (variables resolved per cell).
+        if (b.source === "items") {
+          const hasItems = items && items.length > 0;
+          return (
+            <View key={b.id} style={{ marginBottom: blockGap(b.spacing), width: "100%" }}>
+              <View style={{
+                flexDirection: "row",
+                backgroundColor: tableHeaderBg,
+                borderBottomWidth: 1,
+                borderBottomColor: tableBorderColor,
+                paddingTop: 4, paddingBottom: 4, paddingLeft: 6, paddingRight: 6,
+              }}>
+                <Text style={{ flex: 0.35, fontSize: fontSize * 0.9, fontFamily: headingFontFamily, color: tableHeaderColor }}>#</Text>
+                <Text style={{ flex: 3, fontSize: fontSize * 0.9, fontFamily: headingFontFamily, color: tableHeaderColor }}>Description</Text>
+                <Text style={{ flex: 1, fontSize: fontSize * 0.9, fontFamily: headingFontFamily, color: tableHeaderColor, textAlign: "right" }}>Qty</Text>
+                <Text style={{ flex: 1.2, fontSize: fontSize * 0.9, fontFamily: headingFontFamily, color: tableHeaderColor, textAlign: "right" }}>Unit price</Text>
+                <Text style={{ flex: 1.1, fontSize: fontSize * 0.9, fontFamily: headingFontFamily, color: tableHeaderColor, textAlign: "right" }}>Total</Text>
+              </View>
+              {hasItems ? items.map((item: any, i: number) => (
+                <View key={i} style={{
+                  flexDirection: "row",
+                  backgroundColor: b.zebra && i % 2 === 1 ? stripeBg : undefined,
+                  borderBottomWidth: b.borders === "none" ? 0 : 0.5,
+                  borderBottomColor: tableBorderColor,
+                  paddingTop: 3, paddingBottom: 3, paddingLeft: 6, paddingRight: 6,
+                }}>
+                  <Text style={{ flex: 0.35, fontSize: fontSize * 0.92, color: bodyTextColor }}>{i + 1}</Text>
+                  <Text style={{ flex: 3, fontSize: fontSize * 0.92, color: bodyTextColor }}>{item.name || item.description || "—"}</Text>
+                  <Text style={{ flex: 1, fontSize: fontSize * 0.92, color: bodyTextColor, textAlign: "right" }}>{fmtQty(item.quantity)}</Text>
+                  <Text style={{ flex: 1.2, fontSize: fontSize * 0.92, color: bodyTextColor, textAlign: "right" }}>{fmtMoney(item.unit_price, currency)}</Text>
+                  <Text style={{ flex: 1.1, fontSize: fontSize * 0.92, fontFamily: headingFontFamily, color: bodyTextColor, textAlign: "right" }}>{fmtMoney(item.total, currency)}</Text>
+                </View>
+              )) : (
+                <View style={{ paddingTop: 6, paddingBottom: 6 }}>
+                  <Text style={{ fontSize: fontSize * 0.9, color: "#9ca3af" }}>No line items on this document.</Text>
+                </View>
+              )}
+              {b.showTotals !== false && (
+                <View style={{ marginTop: 8, alignSelf: "flex-end", width: 250 }} wrap={false}>
+                  <View style={{ flexDirection: "row", marginBottom: 2 }}>
+                    <Text style={{ flex: 1, fontSize: 8.5, color: bodyTextColor, opacity: 0.8 }}>Subtotal:</Text>
+                    <Text style={{ fontSize: 8.5, fontFamily: headingFontFamily, color: bodyTextColor }}>{fmtMoney((doc as any).subtotal, currency)}</Text>
+                  </View>
+                  {(doc as any).tax_total > 0 && (
+                    <View style={{ flexDirection: "row", marginBottom: 2 }}>
+                      <Text style={{ flex: 1, fontSize: 8.5, color: bodyTextColor, opacity: 0.8 }}>VAT:</Text>
+                      <Text style={{ fontSize: 8.5, fontFamily: headingFontFamily, color: bodyTextColor }}>{fmtMoney((doc as any).tax_total, currency)}</Text>
+                    </View>
+                  )}
+                  <View style={{ flexDirection: "row", borderTopWidth: 1, borderTopColor: primaryColor, backgroundColor: lightenHex(primaryColor, 0.92), paddingTop: 4, paddingBottom: 4, paddingLeft: 8, paddingRight: 8 }}>
+                    <Text style={{ flex: 1, fontSize: 10, fontFamily: headingFontFamily, color: primaryColor }}>GRAND TOTAL:</Text>
+                    <Text style={{ fontSize: 12, fontFamily: headingFontFamily, color: primaryColor }}>{fmtMoney((doc as any).total, currency)}</Text>
+                  </View>
+                </View>
+              )}
+            </View>
+          );
+        }
+        // Custom static table (variables resolved per cell).
+        const colCount = Math.max(1, b.columns.length);
+        const flexes = (b.widths.length === colCount
+          ? b.widths.map((w) => Math.max(1, w))
+          : Array.from({ length: colCount }, () => 10));
+        return (
+          <View key={b.id} style={{ marginBottom: blockGap(b.spacing), width: "100%" }}>
+            {b.headerRow && (
+              <View style={{ flexDirection: "row", backgroundColor: tableHeaderBg, borderBottomWidth: 1, borderBottomColor: tableBorderColor, paddingTop: 4, paddingBottom: 4, paddingLeft: 6, paddingRight: 6 }}>
+                {b.columns.map((c, i) => (
+                  <Text key={i} style={{ flex: flexes[i], fontSize: fontSize * 0.9, fontFamily: headingFontFamily, color: tableHeaderColor, textAlign: b.align === "right" ? "right" : "left" }}>
+                    {substitutePlaceholders(c, phData as any)}
+                  </Text>
+                ))}
+              </View>
+            )}
+            {b.rows.map((row, r) => (
+              <View key={r} style={{ flexDirection: "row", backgroundColor: b.zebra && r % 2 === 1 ? stripeBg : undefined, borderBottomWidth: b.borders === "none" ? 0 : 0.5, borderBottomColor: tableBorderColor, paddingTop: 3, paddingBottom: 3, paddingLeft: 6, paddingRight: 6 }}>
+                {b.columns.map((_, i) => (
+                  <View key={i} style={{ flex: flexes[i] }}>
+                    {renderRuns(row[i] ?? "", { fontSize: fontSize * 0.92, color: bodyTextColor, align: b.align === "right" ? "right" : "left" })}
+                  </View>
+                ))}
+              </View>
+            ))}
+          </View>
+        );
+      }
+      case "quote":
+        return (
+          <View key={b.id} style={{
+            marginBottom: blockGap(b.spacing), width: "100%",
+            borderLeftWidth: 2.5,
+            borderLeftColor: b.accent || accentColor,
+            backgroundColor: b.background ? lightenHex(b.accent || primaryColor, 0.96) : undefined,
+            paddingTop: 6, paddingBottom: 6, paddingLeft: 10, paddingRight: 10,
+            borderRadius: 2,
+          }}>
+            {renderRichBlock(b.html, { fontSize: fontSize * 0.95, color: bodyTextColor, align: "left" })}
+          </View>
+        );
+      case "divider":
+        return (
+          <View key={b.id} style={{
+            marginBottom: blockGap(b.spacing),
+            marginTop: 2,
+            alignSelf: b.width >= 100 ? "stretch" : "center",
+            width: `${b.width}%`,
+            borderBottomWidth: b.thickness,
+            borderBottomColor: b.color || tableBorderColor,
+            borderBottomStyle: b.style,
+          }} />
+        );
+      case "spacer":
+        return <View key={b.id} style={{ height: mmToPoints(b.height) }} />;
+      case "pagebreak":
+        // Handled by the segment splitter below (a `break` prop on the View
+        // that WRAPS the following blocks — react-pdf only honours forced
+        // breaks reliably on block containers, not empty stubs).
+        return null;
+      case "image": {
+        const imgAlign = b.align === "center" ? "center" : b.align === "right" ? "flex-end" : "flex-start";
+        return (
+          <View key={b.id} style={{ marginBottom: blockGap(b.spacing), width: "100%", alignItems: imgAlign }}>
+            {/* eslint-disable-next-line jsx-a11y/alt-text */}
+            <Image src={b.src} style={{ width: `${b.width}%`, objectFit: "contain", borderRadius: b.rounded ? 6 : 0 }} />
+            {b.caption ? (
+              <Text style={{ fontSize: fontSize * 0.85, color: "#6b7280", textAlign: "center", marginTop: 3 }}>
+                {substitutePlaceholders(b.caption, phData as any)}
+              </Text>
+            ) : null}
+          </View>
+        );
+      }
+      case "signature": {
+        const box = (p: { name: string; role: string; label: string }, i: number) => (
+          <View key={i} style={{ flex: b.layout === "column" ? undefined : 1, minWidth: b.layout === "column" ? "100%" : 140, marginBottom: 8, marginRight: b.layout === "row" ? 18 : 0 }}>
+            <Text style={{ fontSize: fontSize * 0.85, color: bodyTextColor, opacity: 0.85, marginBottom: 1 }}>
+              {substitutePlaceholders(p.role || p.name, phData as any)}
+            </Text>
+            <Text style={{ fontSize: fontSize * 0.95, fontFamily: headingFontFamily, color: bodyTextColor, marginBottom: 14 }}>
+              {substitutePlaceholders(p.name, phData as any)}
+            </Text>
+            <View style={{ borderBottomWidth: 0.75, borderBottomColor: "#9ca3af", marginBottom: 3 }} />
+            <Text style={{ fontSize: fontSize * 0.8, color: "#6b7280" }}>{substitutePlaceholders(p.label, phData as any)}</Text>
+            {b.withDate && (
+              <Text style={{ fontSize: fontSize * 0.8, color: "#6b7280", marginTop: 2 }}>Date: ____________</Text>
+            )}
+          </View>
+        );
+        return (
+          <View key={b.id} style={{
+            marginTop: 10, marginBottom: blockGap(b.spacing), width: "100%",
+            flexDirection: b.layout === "column" ? "column" : "row",
+            flexWrap: "wrap",
+          }}>
+            {b.parties.map(box)}
+          </View>
+        );
+      }
+      default:
+        return null;
+    }
+  };
+
+  // Pagebreak blocks split the body into page segments. Each segment
+  // renders as its own bodyBlock-styled View — and segments after the first
+  // carry the react-pdf `break` prop, which is only honoured on DIRECT
+  // children of <Page> (same constraint as the memo frame's `fixed`).
+  const segments: DocBlock[][] = [[]];
+  for (const b of contentBlocks ? contentBlocks.blocks : []) {
+    if (b.type === "pagebreak") segments.push([]);
+    else segments[segments.length - 1].push(b);
+  }
+  const docStudioSegments = contentBlocks && segments.length > 1
+    ? segments.map((seg, i) => (
+        <View key={`pgseg-${i}`} style={styles.bodyBlock} break={i > 0}>
+          {seg.map(renderBlock)}
+        </View>
+      ))
+    : null;
+  const docStudioBody = contentBlocks
+    ? (docStudioSegments ?? segments[0].map(renderBlock))
+    : null;
+
   // Sort by the layout's y key (stable sort → ties keep insertion order,
   // which is the canonical order) and materialize the fragment list.
-  const orderedBody = [...bodySections]
-    .sort((a, b) => a.y - b.y)
-    .map((s) => <React.Fragment key={s.key}>{s.node}</React.Fragment>);
+  // audit35: a block-authored body REPLACES the fixed section flow — the
+  // author placed every section (title/parties/items/terms/signatures) as
+  // blocks. Legacy templates (content_json NULL) keep the fixed flow.
+  const orderedBody = docStudioBody
+    ? [<React.Fragment key="docstudio_blocks">{docStudioBody}</React.Fragment>]
+    : [...bodySections]
+      .sort((a, b) => a.y - b.y)
+      .map((s) => <React.Fragment key={s.key}>{s.node}</React.Fragment>);
 
   return (
     <Document
@@ -1989,6 +2328,13 @@ export function buildPdfDocument({
             on the page style. Everything between the fixed header and the
             fixed footer (title block, parties, trade terms, tables, totals,
             signatures, notices) renders inside it. */}
+        {/* audit35: multi-segment block bodies render as SIBLING
+            bodyBlock-styled Views directly under <Page> (react-pdf honours
+            the forced `break` only on direct Page children — same rule as
+            the memo frame's `fixed`). Classic flow keeps the single wrapper. */}
+        {docStudioSegments ? (
+          <>{docStudioSegments}</>
+        ) : (
         <View style={styles.bodyBlock}>
 
         {/* audit27: ordered body sections — every section is built above as
@@ -2000,13 +2346,16 @@ export function buildPdfDocument({
         {/* DOCUMENT NOTICE — legally required disclaimer per doc type.
             audit20: skipped when a template footer segment already carries
             the same text (it repeats on every page — the legal line is
-            covered without the body duplicate). */}
-        {!footerCoversNotice && (
+            covered without the body duplicate).
+            audit35: skipped in blocks mode — the author owns the body and
+            the starter skeleton ships the notice as a quote block. */}
+        {!footerCoversNotice && !contentBlocks && (
         <View style={styles.noticeBox} wrap={false}>
           <Text style={styles.noticeText}>{docNotice}</Text>
         </View>
         )}
         </View>
+        )}
 
         {/* ── FOOTER (memorandum frame — pinned to the bottom, every page)
             Inlined directly as <View fixed> (NOT wrapped in a component,

@@ -31,6 +31,7 @@ import {
   ProfitAndLoss, GeneralLedger, GeneralLedgerEntry,
   FxRevaluationAdjustment, FxRevaluationResult,
   UserPreference,
+  TemplateVersion, TemplateVersionSummary,
 } from "@/lib/supabase/types";
 
 function matchesSearch(haystack: string, needle?: string): boolean {
@@ -1224,6 +1225,44 @@ export class MockStore implements Store {
   }
   async deleteDocumentTemplate(id: string): Promise<void> {
     const idx = mock.documentTemplates.findIndex((t) => t.id === id); if (idx >= 0) mock.documentTemplates.splice(idx, 1);
+  }
+
+  // ─── Template Versions (audit35 Document Studio) ────────────────────────
+  async listTemplateVersions(tenantId: string, templateId: string): Promise<TemplateVersionSummary[]> {
+    return mock.templateVersions
+      .filter((v) => v.tenant_id === tenantId && v.template_id === templateId)
+      .sort((a, b) => b.version - a.version)
+      .map(({ snapshot: _s, ...rest }) => rest);
+  }
+  async createTemplateVersion(v: {
+    tenant_id: string;
+    template_id: string;
+    version: number;
+    name: string;
+    snapshot: Record<string, unknown>;
+    changelog?: string | null;
+    created_by?: string | null;
+  }): Promise<TemplateVersion> {
+    const row: TemplateVersion = {
+      id: mock.nid("tv_"),
+      tenant_id: v.tenant_id,
+      template_id: v.template_id,
+      version: Math.max(1, Math.round(v.version)),
+      name: String(v.name || "version").slice(0, 200),
+      snapshot: v.snapshot,
+      changelog: v.changelog ? String(v.changelog).slice(0, 500) : null,
+      created_by: v.created_by || null,
+      created_at: new Date().toISOString(),
+    };
+    mock.templateVersions.push(row);
+    return row;
+  }
+  async getTemplateVersionSnapshot(tenantId: string, templateId: string, version: number): Promise<TemplateVersion | null> {
+    return (
+      mock.templateVersions.find(
+        (v) => v.tenant_id === tenantId && v.template_id === templateId && v.version === Math.max(1, Math.round(version)),
+      ) || null
+    );
   }
 
   // ---- document verification ----

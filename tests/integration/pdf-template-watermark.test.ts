@@ -257,16 +257,20 @@ describe("audit23: sanitizeTemplatePayload (save + preview parity)", () => {
     expect(dropped).toContain("hacked_column");
   });
 
-  it("clamps numeric columns into their safe ranges", () => {
+  it("clamps numeric columns into their safe ranges; frame columns are dropped (audit35)", () => {
     const { sanitized } = sanitizeTemplatePayload({
       name: "X",
       page_margin_top: 999,
       body_font_size: 2,
       header_height: -50,
     });
-    expect(sanitized.page_margin_top).toBe(60);
+    // audit35: the frame columns (page_*, header_*, footer heights) left the
+    // whitelist — the memorandum is the ONLY frame writer, so the payload
+    // drops them instead of clamping-and-storing dead values.
+    expect(sanitized.page_margin_top).toBeUndefined();
+    expect(sanitized.header_height).toBeUndefined();
+    // Surviving numeric template columns still clamp.
     expect(sanitized.body_font_size).toBe(6);
-    expect(sanitized.header_height).toBe(0);
   });
 
   it("drops oversized style_json (preview payloads stay bounded)", () => {

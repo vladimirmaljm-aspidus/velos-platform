@@ -135,5 +135,26 @@ export async function POST(req: NextRequest) {
   if (bodyId) payload.id = bodyId;
   const created = await auth.store.upsertDocumentTemplate(payload as any);
   await audit(auth.store, auth.user, req, bodyId ? "doc_template.update" : "doc_template.create", "document_template", created.id, { name: created.name });
-  return NextResponse.json(created);
+
+  // ── audit35 Document Studio: optional publish snapshot ──────────────
+  // { publish: true, changelog?: "..." } — snapshot the freshly-saved
+  // state as a new version. A snapshot failure never fails the save.
+  let publishedVersion: number | null = null;
+  if (body.publish === true) {
+    try {
+      const { publishTemplateVersion } = await import("@/lib/api/template-versions");
+      const res = await publishTemplateVersion(
+        auth.store, tenantId, created.id,
+        typeof body.changelog === "string" ? body.changelog.slice(0, 500) : null,
+        auth.user.id,
+      );
+      if (res) {
+        publishedVersion = res.version;
+        await audit(auth.store, auth.user, req, "doc_template.publish", "document_template", created.id, { name: created.name, version: res.version });
+      }
+    } catch (e) {
+      console.warn("[POST /api/document-templates] publish snapshot failed:", e);
+    }
+  }
+  return NextResponse.json(publishedVersion ? { ...created, published_version: publishedVersion } : created);
 }

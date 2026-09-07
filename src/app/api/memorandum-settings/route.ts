@@ -47,11 +47,15 @@ export async function GET(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Auto-create default settings if none exist
+  // Auto-create default settings if none exist.
+  // audit35: a brand-new row starts UNLOCKED (setup mode) — the tenant tunes
+  // the memo freely, and the UI pushes the prominent "Lock memorandum"
+  // action. Rows created by migration 095 (existing, already-configured
+  // tenants) start locked=TRUE: once set, the frame is frozen everywhere.
   if (!data) {
     const { data: created, error: insErr } = await sb
       .from("memorandum_settings")
-      .insert({ tenant_id: tenantId })
+      .insert({ tenant_id: tenantId, locked: false })
       .select()
       .maybeSingle();
     if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 });
@@ -94,6 +98,79 @@ export async function PUT(req: NextRequest) {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+  }
+
+  // ── audit35: GLOBAL MEMORANDUM LOCK ────────────────────────────────
+  // The memo owns the document FRAME on EVERY document (renderer reads it
+  // exclusively — audit33). While locked=TRUE, NO frame edit is accepted:
+  //   • { action: "lock" }                  → freeze the memo
+  //   • { action: "unlock", unlock_phrase }  → type-to-confirm ritual
+  //       (phrase must be exactly "MEMORANDUM")
+  //   • any field write while locked         → 400 { code: "MEMO_LOCKED" }
+  // A mistake can never change the frame: no UI path sends the phrase
+  // unless a human typed it.
+  const action = body.action === "lock" || body.action === "unlock" ? body.action : undefined;
+  delete body.action;
+  const unlockPhrase = typeof body.unlock_phrase === "string" ? body.unlock_phrase.trim().toUpperCase() : "";
+  delete body.unlock_phrase;
+
+  if (action && Object.keys(body).some((k) => !isManagedKey(k))) {
+    return NextResponse.json(
+      { error: `The "${action}" action takes no settings — send it alone.` },
+      { status: 400 },
+    );
+  }
+
+  const sb = getSupabase();
+
+  // Ensure a row exists (auto-create on first PUT — matches GET behaviour;
+  // audit35: created unlocked = setup mode, same as GET).
+  const { data: existing } = await sb
+    .from("memorandum_settings")
+    .select("id, locked")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+
+  if (action === "lock" || action === "unlock") {
+    if (action === "unlock" && unlockPhrase !== "MEMORANDUM") {
+      return NextResponse.json(
+        { error: 'Wrong unlock phrase — type MEMORANDUM exactly.', code: "MEMO_LOCKED" },
+        { status: 400 },
+      );
+    }
+    const { data: updated, error: updErr } = await sb
+      .from("memorandum_settings")
+      .update({ locked: action === "lock", updated_at: new Date().toISOString() })
+      .eq("tenant_id", tenantId)
+      .select()
+      .maybeSingle();
+    if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+    try {
+      await audit(
+        auth.store, auth.user, req,
+        action === "lock" ? "memorandum_settings.lock" : "memorandum_settings.unlock",
+        "memorandum_settings", tenantId, {},
+      );
+    } catch (e) {
+      console.error("[audit]", e);
+    }
+    return NextResponse.json(updated);
+  }
+
+  // Normal field write while the memo is locked → refused.
+  if (existing?.locked === true) {
+    const attempted = Object.keys(body).filter((k) => !isManagedKey(k));
+    if (attempted.length > 0) {
+      return NextResponse.json(
+        {
+          error:
+            "The memorandum is LOCKED — its frame is identical on every document and cannot be edited. Unlock it first (type-to-confirm ritual).",
+          code: "MEMO_LOCKED",
+          locked: true,
+        },
+        { status: 423 },
+      );
+    }
   }
 
   // 31-f — numeric-field validation BEFORE the write (audit 30-a finding
@@ -170,24 +247,24 @@ export async function PUT(req: NextRequest) {
   delete body.tenant_id;
   delete body.created_at;
   delete body.updated_at;
+  // audit35: the lock flag itself is NEVER writable through a field PUT —
+  // only through the explicit lock/unlock actions above.
+  delete body.locked;
 
-  const sb = getSupabase();
+  function isManagedKey(k: string): boolean {
+    return k === "id" || k === "tenant_id" || k === "created_at" || k === "updated_at" || k === "locked";
+  }
 
-  // Ensure a row exists (auto-create on first PUT — matches GET behaviour).
-  // Use upsert semantics so a stale client (no prior GET) still works.
-  const { data: existing } = await sb
-    .from("memorandum_settings")
-    .select("id")
-    .eq("tenant_id", tenantId)
-    .maybeSingle();
-
+  // (the row-existence check + lock actions above already ran; this is the
+  // normal field-update path — reached only when unlocked or when the row
+  // doesn't exist yet, in which case the insert starts in setup mode)
   let data: Record<string, unknown> | null = null;
   let error: { message: string } | null = null;
 
   if (!existing) {
     const res = await sb
       .from("memorandum_settings")
-      .insert({ tenant_id: tenantId, ...body })
+      .insert({ tenant_id: tenantId, locked: false, ...body })
       .select()
       .maybeSingle();
     data = res.data;

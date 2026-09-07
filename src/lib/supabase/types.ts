@@ -1253,6 +1253,13 @@ export interface DocumentTemplate {
   /** Persisted visual-editor layout: { fields: [{ id, type, x, y, width,
    *  height, visible, locked, props }] } in mm. null = default layout. */
   layout_json?: unknown;
+  // ── audit35 "Document Studio" — authored block body ───────────────
+  /** Block-authored body: { version: 1, blocks: DocBlock[] } normalized by
+   *  src/lib/utils/doc-blocks.ts. NULL = classic fixed-section flow (the
+   *  7 pre-existing templates keep working untouched). Blocks render inside
+   *  the memorandum frame only — they can never touch page setup, header,
+   *  footer, QR or page numbers. */
+  content_json?: unknown;
   // ── QR code placement ─────────────────────────────────────────────
   // NOTE: these fields are NOT real DB columns. They live inside
   // `footer_content` as a `_qrConfig` JSON sub-key (see
@@ -1272,7 +1279,37 @@ export interface DocumentTemplate {
 }
 
 // ============================================================
+// TemplateVersion — Document Studio publish snapshot (audit35).
+// Append-only history per template; restore writes the snapshot back and
+// auto-snapshots the current state first (see
+// /api/document-templates/[id]/versions).
+// ============================================================
+export interface TemplateVersion {
+  id: string;
+  tenant_id: string;
+  template_id: string;
+  version: number;
+  name: string;
+  /** Full template column snapshot (whitelisted columns only). */
+  snapshot: Record<string, unknown>;
+  changelog: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+/** Light row shape for version lists (snapshot excluded — can be 32KB+). */
+export interface TemplateVersionSummary {
+  id: string;
+  version: number;
+  name: string;
+  changelog: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+// ============================================================
 // TenantLetterhead — Memorandum firme (company letterhead)
+// Per-tenant branded letterhead used by all document templates.
 // ============================================================
 export interface TenantLetterhead {
   id: string;
@@ -2190,6 +2227,13 @@ export interface MemorandumSettings {
   tenant_id: string;
   created_at: string;
   updated_at: string;
+
+  // ── audit35: global lock ────────────────────────────────────────────
+  /** TRUE = the frame is frozen on EVERY document; edits require the
+   *  type-to-confirm unlock ritual (PUT action:"unlock", phrase
+   *  "MEMORANDUM"). Rendered documents always read the frame from this
+   *  row — the lock makes that guarantee explicit and API-enforced. */
+  locked?: boolean;
 
   // Header
   header_enabled: boolean;

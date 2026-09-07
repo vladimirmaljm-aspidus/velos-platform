@@ -35,12 +35,16 @@ import {
   Building2, Stamp, ShieldCheck, Upload, ImageIcon, X, Lock,
   Waves, Droplet, RotateCw, MapPin, Pen, Layers, ChevronDown,
   Loader2, ExternalLink, FileSearch, RefreshCw, Braces, Grid3x3,
-  PanelRightClose, PanelRightOpen, TriangleAlert, QrCode,
+  PanelRightClose, PanelRightOpen, TriangleAlert, QrCode, History,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
 import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
+// audit35 Document Studio — block-authored template bodies.
+import { TemplateBlocksEditor, BlocksHtmlPreview } from "@/components/common/template-blocks-editor";
+import { TemplateVersionsDialog } from "@/components/common/template-versions-dialog";
+import { normalizeBlocks, starterBlocks as starterBlocksFor } from "@/lib/utils/doc-blocks";
 
 import { EmptyState } from "@/components/common/empty-state";
 import { QueryError } from "@/components/common/query-error";
@@ -463,6 +467,8 @@ function defaultTemplate(name = "Untitled template"): TemplateFormState {
     seal_id: null,
     seal_enabled: true,
     selected_bank_accounts: null,
+    // audit35 Document Studio — block body (null = classic fixed sections).
+    content_json: null,
     // QR placement defaults. These are stored INSIDE footer_content._qrConfig
     // at save time (see handleSave) — they are NOT real DB columns.
     qr_position: "footer-right",
@@ -2504,6 +2510,9 @@ const EDITOR_SECTIONS: { id: string; icon: any; labelKey: string }[] = [
   // audit33: the memorandum frame is LOCKED from document templates — one
   // read-only section replaces the old page/header/footer editors.
   { id: "memorandum", icon: Lock, labelKey: "doc-section-memorandum-frame" },
+  // audit35: Document Studio — the authored block body (replaces the fixed
+  // section flow when active).
+  { id: "blocks", icon: Layers, labelKey: "doc-editor-section-blocks" },
   { id: "body", icon: Type, labelKey: "doc-editor-nav-body" },
   { id: "styling", icon: Palette, labelKey: "doc-tab-styling" },
   { id: "layout", icon: Grid3x3, labelKey: "doc-editor-nav-layout" },
@@ -2725,6 +2734,10 @@ function TemplateMiniPreview({ form, memoSettings, tenant, letterhead }: {
     .map((k) => (S as Record<string, React.ReactNode>)[k])
     .filter(Boolean);
 
+  // audit35 Document Studio: a block-authored body REPLACES the fixed
+  // section flow in the draft preview too (mirrors the PDF renderer).
+  const blocksContent = normalizeBlocks(form.content_json);
+
   return (
     <div className="flex flex-col items-center gap-2">
       <div
@@ -2800,7 +2813,18 @@ function TemplateMiniPreview({ form, memoSettings, tenant, letterhead }: {
         )}
 
         {/* audit27: body sections — ordered + gated exactly like the PDF */}
-        {orderedSections}
+        {orderedSections && !blocksContent ? orderedSections : null}
+        {blocksContent ? (
+          <BlocksHtmlPreview
+            blocks={blocksContent.blocks}
+            scale={scale}
+            primaryColor={form.primary_color || "#0d9488"}
+            resolveVariable={(tk) => {
+              const v = (PREVIEW_PLACEHOLDER_DATA as unknown as Record<string, string>)[tk];
+              return v ?? "";
+            }}
+          />
+        ) : null}
 
         {/* audit27: custom overlays from layout_json (absolute, every page) */}
         {overlays.map((f) => {
@@ -3092,6 +3116,9 @@ function TemplateEditorDialog({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewDocNumber, setPreviewDocNumber] = useState<string>("");
 
+  // ── audit35 Document Studio: version history dialog ───────────────────
+  const [versionsOpen, setVersionsOpen] = useState(false);
+
   // audit21 — session-local “table header customised?” flag.
   // While the user has NOT explicitly edited the Table styling header
   // colour in THIS editing session, changing the primary (brand) colour
@@ -3144,6 +3171,26 @@ function TemplateEditorDialog({
   function set<K extends keyof TemplateFormState>(k: K, v: TemplateFormState[K]) {
     setForm((p) => ({ ...p, [k]: v }));
   }
+
+  // audit35: Ctrl/Cmd+S saves from anywhere in the studio.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        if (!saving) void handleSave();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, saving, form]);
+
+  // audit35: unsaved-changes guard — closing the studio with a dirty form
+  // asks first (a stray Esc / outside-click can no longer discard work).
+  const guardedOpenChange = (o: boolean) => {
+    if (!o && dirty && !window.confirm(t("doc-editor-discard-confirm"))) return;
+    onOpenChange(o);
+  };
 
   // audit24: section navigation — lazy-mounts a section the first time it
   // is opened, then keeps it mounted (hidden) so its local state survives.
@@ -3313,12 +3360,30 @@ function TemplateEditorDialog({
   );
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={guardedOpenChange}>
       <DialogContent
         size="full"
         showCloseButton={false}
         className="h-[95vh] gap-0 p-0 sm:max-w-[min(96vw,1680px)]"
       >
+        <TemplateVersionsDialog
+          open={versionsOpen}
+          onOpenChange={setVersionsOpen}
+          template={template}
+          dirty={dirty}
+          onRestored={(restored) => {
+            // Load the restored state back into the editor form.
+            const qr = parseQrConfig(restored.footer_content);
+            setForm({
+              ...restored,
+              qr_position: restored.qr_position ?? qr.position,
+              qr_size_mm: restored.qr_size_mm ?? qr.size,
+              qr_opacity: restored.qr_opacity ?? qr.opacity,
+            } as TemplateFormState);
+            setSnapshot(JSON.stringify(restored));
+            onSaved();
+          }}
+        />
         {/* ── Top bar: identity + actions ── */}
         <div className="flex items-center gap-3 border-b border-border/60 px-4 py-3 sm:px-5">
           <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -3355,11 +3420,24 @@ function TemplateEditorDialog({
             >
               <Eye className="size-4" />
             </Button>
+            {/* audit35: version history (publish + restore) */}
+            {template && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="size-9 p-0"
+                onClick={() => setVersionsOpen(true)}
+                title={t("doc-versions-title")}
+                aria-label={t("doc-versions-title")}
+              >
+                <History className="size-4" />
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"
               className="hidden sm:inline-flex"
-              onClick={() => onOpenChange(false)}
+              onClick={() => guardedOpenChange(false)}
             >
               {t("cancel")}
             </Button>
@@ -3575,6 +3653,26 @@ function TemplateEditorDialog({
                     </Button>
                   </CardContent>
                 </Card>
+              </section>
+              )}
+
+              {/* ── Body Blocks (Document Studio, audit35) ── */}
+              {mountedSections.includes("blocks") && (
+              <section className={cn("space-y-4", section !== "blocks" && "hidden")} aria-labelledby="tpl-sec-blocks">
+                <SectionIntro
+                  icon={Layers}
+                  id="tpl-sec-blocks"
+                  title={t("doc-editor-section-blocks")}
+                  description={t("docb-section-intro")}
+                />
+                <TemplateBlocksEditor
+                  value={form.content_json}
+                  onChange={(v) => set("content_json", v)}
+                  docType={form.type}
+                  tenantId={tenant?.id ?? null}
+                  templateId={template?.id ?? null}
+                  primaryColor={form.primary_color}
+                />
               </section>
               )}
 

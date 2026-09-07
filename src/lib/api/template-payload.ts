@@ -1,5 +1,7 @@
+import { normalizeBlocks } from "@/lib/utils/doc-blocks";
+
 /**
- * Shared document-templates payload sanitizer (audit23).
+ * Shared document-templates payload sanitizer (audit23 / audit35).
  *
  * The POST / PUT / preview document-template routes accept a JSON body from
  * the Template Studio editor. The column whitelist + clamps used to live
@@ -7,19 +9,39 @@
  * renders with the SAME form payload, so the sanitization is now shared —
  * one definition of "what a template payload may contain", no drift between
  * what is SAVED and what is PREVIEWED.
+ *
+ * audit35 (Document Studio sync): the FRAME columns (page_*, header_*,
+ * footer_enabled/height/footer_show_*) are REMOVED from the whitelist —
+ * they have been dead since audit33 (the renderer reads the frame from
+ * memorandum_settings ONLY). Old editor payloads that still carry them get
+ * them silently dropped (compat) instead of stored-and-ignored: nothing
+ * outside the memorandum route can ever touch the frame. footer_content
+ * stays — it renders as the memo footer's center note lines.
+ * Added: content_json (the Document Studio block body).
  */
 
 export const TEMPLATE_COLUMNS = new Set([
   "name", "type", "is_default",
-  "page_size", "page_margin_top", "page_margin_bottom", "page_margin_left", "page_margin_right",
-  "header_enabled", "header_height", "header_content", "header_show_logo", "header_show_company_name", "header_show_contact",
-  "footer_enabled", "footer_height", "footer_content", "footer_show_page_number", "footer_show_bank_details", "footer_show_tax_id",
+  // NOTE: page_*/header_*/footer_* frame columns are intentionally absent —
+  // memorandum-owned since audit33, hard-dropped since audit35.
+  "footer_content",
   "body_font_family", "body_font_size", "body_line_height",
   "primary_color", "accent_color",
   "table_header_bg", "table_header_color", "table_border_color", "table_stripe",
   "letterhead_id", "seal_id", "seal_enabled", "selected_bank_accounts",
   // audit22 Template Studio — extended styling + visual layout blobs.
   "style_json", "layout_json",
+  // audit35 Document Studio — block-authored body.
+  "content_json",
+]);
+
+/** Frame columns dropped by the sanitizer (audit35). Exported for the
+ *  routes' compat logging and for tests. */
+export const DROPPED_FRAME_COLUMNS = new Set([
+  "page_size", "page_margin_top", "page_margin_bottom", "page_margin_left", "page_margin_right",
+  "header_enabled", "header_height", "header_content", "header_show_logo", "header_show_company_name", "header_show_contact",
+  "footer_enabled", "footer_height", "footer_show_page_number", "footer_show_bank_details", "footer_show_tax_id",
+  "qr_position", "qr_size_mm", "qr_opacity",
 ]);
 
 export const TEMPLATE_TYPES = new Set(["offer", "invoice", "proforma", "contract", "loi", "generic"]);
@@ -29,17 +51,13 @@ export const TEMPLATE_PAGE_SIZES = new Set(["A4", "Letter"]);
 // still saves (the print layout stays usable); non-numeric junk is DROPPED
 // so the store defaults apply instead of poisoning the column with null/NaN.
 export const TEMPLATE_CLAMPS: Record<string, [number, number]> = {
-  page_margin_top: [5, 60], page_margin_bottom: [5, 60],
-  page_margin_left: [5, 60], page_margin_right: [5, 60],
-  header_height: [0, 120], footer_height: [0, 80],
   body_font_size: [6, 16], body_line_height: [1, 2.5],
 };
 
 // Columns that are Int in the schema (vs Float) — rounded after clamping so
 // a JSON float like 11.5 can't 500 the insert on the int columns.
 export const TEMPLATE_INT_COLUMNS = new Set([
-  "page_margin_top", "page_margin_bottom", "page_margin_left", "page_margin_right",
-  "header_height", "footer_height", "body_font_size",
+  "body_font_size",
 ]);
 
 export interface SanitizedTemplate {
@@ -70,15 +88,9 @@ export function sanitizeTemplatePayload(body: Record<string, unknown>): Sanitize
     console.warn(`[template-payload] dropped unknown fields: ${dropped.join(", ")}`);
   }
 
-  // Type / page size — hard rejects (caller 400s).
+  // Type — hard reject (caller 400s).
   if (sanitized.type !== undefined && (typeof sanitized.type !== "string" || !TEMPLATE_TYPES.has(sanitized.type))) {
     throw new Error("Invalid template type. Allowed: offer, invoice, proforma, contract, loi, generic.");
-  }
-  if (
-    sanitized.page_size !== undefined &&
-    (typeof sanitized.page_size !== "string" || !TEMPLATE_PAGE_SIZES.has(sanitized.page_size))
-  ) {
-    throw new Error('Invalid page size. Allowed: "A4", "Letter".');
   }
 
   // Numeric clamping.
@@ -116,6 +128,25 @@ export function sanitizeTemplatePayload(body: Record<string, unknown>): Sanitize
     if (!ok || size > 32768) {
       console.warn(`[template-payload] dropped invalid ${col}${ok ? " (too large)" : ""}`);
       delete sanitized[col];
+    }
+  }
+
+  // content_json (audit35 Document Studio) — the block body. Strictly
+  // normalized through the SAME gate the renderer uses: junk degrades to
+  // a DROP (never nulls existing content — a bad payload can't wipe a
+  // good body). null / "" are honoured (clears the block body on purpose).
+  if (sanitized.content_json !== undefined) {
+    const v = sanitized.content_json;
+    if (v === null || v === "" ) {
+      sanitized.content_json = null;
+    } else {
+      const normalized = normalizeBlocks(v);
+      if (!normalized) {
+        console.warn("[template-payload] dropped invalid content_json");
+        delete sanitized.content_json;
+      } else {
+        sanitized.content_json = normalized;
+      }
     }
   }
 

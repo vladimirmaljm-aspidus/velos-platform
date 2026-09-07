@@ -1162,6 +1162,9 @@ model DocumentTemplate {
   // NULL = built-in defaults; parsed by src/lib/utils/style-config.ts.
   style_json               Json?
   layout_json              Json?
+  // audit35 "Document Studio" — block-authored body ({version:1, blocks:[…]}).
+  // NULL = classic fixed sections. Normalized by src/lib/utils/doc-blocks.ts.
+  content_json             Json?
   // Metadata
   created_by               String?
   created_at               DateTime @default(now())
@@ -1178,6 +1181,28 @@ model DocumentTemplate {
   @@index([is_default])
   @@index([letterhead_id])
   @@index([seal_id])
+}
+
+// ============================================================
+// 30b-2. TemplateVersion — Document Studio publish snapshots (audit35).
+// Append-only: every publish writes a full template snapshot; restore =
+// write the snapshot back + auto-snapshot the current state first.
+// (Standalone model — no FK relation, mirroring the supabase-store access
+// pattern via template_id; production runs on SupabaseStore.)
+// ============================================================
+model TemplateVersion {
+  id          String   @id @default(uuid())
+  tenant_id   String
+  template_id String
+  version     Int
+  name        String
+  snapshot    Json
+  changelog   String?
+  created_by  String?
+  created_at  DateTime @default(now())
+
+  @@unique([template_id, version])
+  @@index([tenant_id, template_id, created_at])
 }
 
 // ============================================================

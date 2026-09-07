@@ -30,6 +30,7 @@ import {
   TrialBalance, TrialBalanceItem, BalanceSheetItem, BalanceSheet, ProfitAndLoss, GeneralLedger, GeneralLedgerEntry,
   FxRevaluationAdjustment, FxRevaluationResult,
   UserPreference,
+  TemplateVersion, TemplateVersionSummary,
 } from "@/lib/supabase/types";
 import { verifyPassword } from "@/lib/auth/password";
 import { createHash } from "crypto";
@@ -2774,6 +2775,60 @@ export class SupabaseStore implements Store {
   async deleteDocumentTemplate(id: string): Promise<void> {
     const { error } = await this.sb().from("document_templates").delete().eq("id", id);
     if (error) throw error;
+  }
+
+  // ---- template versions (audit35 Document Studio) ----
+  // Append-only publish snapshots. version = max(version)+1 per template
+  // (unique constraint on (template_id, version)); a restore writes the
+  // snapshot back and auto-snapshots the CURRENT state first, so history
+  // is never lost.
+  async listTemplateVersions(tenantId: string, templateId: string): Promise<TemplateVersionSummary[]> {
+    const { data, error } = await this.sb()
+      .from("template_versions")
+      .select("id, template_id, version, name, changelog, created_by, created_at")
+      .eq("tenant_id", tenantId)
+      .eq("template_id", templateId)
+      .order("version", { ascending: false })
+      .limit(200);
+    if (error) throw error;
+    return (data as TemplateVersionSummary[]) || [];
+  }
+  async createTemplateVersion(v: {
+    tenant_id: string;
+    template_id: string;
+    version: number;
+    name: string;
+    snapshot: Record<string, unknown>;
+    changelog?: string | null;
+    created_by?: string | null;
+  }): Promise<TemplateVersion> {
+    const payload: SupaRow = {
+      tenant_id: v.tenant_id,
+      template_id: v.template_id,
+      version: Math.max(1, Math.round(v.version)),
+      name: String(v.name || "version").slice(0, 200),
+      snapshot: v.snapshot,
+      changelog: v.changelog ? String(v.changelog).slice(0, 500) : null,
+      created_by: v.created_by || null,
+    };
+    const { data, error } = await this.sb()
+      .from("template_versions")
+      .insert(payload)
+      .select()
+      .single();
+    if (error) throw error;
+    return data as TemplateVersion;
+  }
+  async getTemplateVersionSnapshot(tenantId: string, templateId: string, version: number): Promise<TemplateVersion | null> {
+    const { data, error } = await this.sb()
+      .from("template_versions")
+      .select("*")
+      .eq("tenant_id", tenantId)
+      .eq("template_id", templateId)
+      .eq("version", Math.max(1, Math.round(version)))
+      .maybeSingle();
+    if (error) throw error;
+    return (data as TemplateVersion) || null;
   }
 
   // ---- document verification ----

@@ -19,8 +19,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Building2, Eye, FileDown, Image as ImageIcon, Loader2, Lock, Palette,
-  QrCode, RotateCcw, Ruler, Save, Type, Zap,
+  Building2, Eye, FileDown, Image as ImageIcon, Loader2, Lock, LockOpen, Palette,
+  QrCode, RotateCcw, Ruler, Save, Type, Zap, ShieldCheck,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useApiUrl, useTenantKey } from "@/lib/hooks/use-api-url";
 import { useT } from "@/lib/i18n/store";
 import { cn } from "@/lib/utils";
@@ -449,6 +450,12 @@ export function MemorandumStudio() {
   const [pdfSnapshot, setPdfSnapshot] = useState("");
   const pdfStale = !!previewUrl && formSig !== pdfSnapshot;
 
+  // ── audit35: GLOBAL MEMORANDUM LOCK state ──────────────────────────
+  const lockActive = settings?.locked === true;
+  const [unlockDialogOpen, setUnlockDialogOpen] = useState(false);
+  const [unlockPhrase, setUnlockPhrase] = useState("");
+  const [lockBusy, setLockBusy] = useState(false);
+
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
@@ -492,6 +499,13 @@ export function MemorandumStudio() {
 
   async function save() {
     if (!settings) return;
+    if (lockActive) {
+      // audit35: the server refuses writes while the memo is locked — open
+      // the unlock ritual instead of even attempting the PUT.
+      setUnlockPhrase("");
+      setUnlockDialogOpen(true);
+      return;
+    }
     setSaving(true);
     try {
       const r = await fetch(api("/api/memorandum-settings"), {
@@ -501,6 +515,11 @@ export function MemorandumStudio() {
       });
       if (!r.ok) {
         const e = await r.json().catch(() => ({}));
+        if (e.code === "MEMO_LOCKED" || r.status === 423) {
+          setUnlockPhrase("");
+          setUnlockDialogOpen(true);
+          return;
+        }
         throw new Error(e.error || "Failed to save");
       }
       const updated = await r.json();
@@ -512,6 +531,36 @@ export function MemorandumStudio() {
       toast.error(e instanceof Error ? e.message || t("memo-save-failed") : t("memo-save-failed"));
     } finally {
       setSaving(false);
+    }
+  }
+
+  // ── audit35: lock / unlock actions (server-enforced ritual) ─────────
+  async function setLock(next: "lock" | "unlock") {
+    setLockBusy(true);
+    try {
+      const body: Record<string, unknown> =
+        next === "lock" ? { action: "lock" } : { action: "unlock", unlock_phrase: unlockPhrase.trim().toUpperCase() };
+      const r = await fetch(api("/api/memorandum-settings"), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const e = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(e.error || "Failed");
+      const merged = { ...DEFAULT_MEMO, ...e } as MemorandumSettings;
+      setSettings(merged);
+      setSnapshot(JSON.stringify(merged));
+      if (next === "lock") {
+        toast.success(t("memo-lock-locked-toast"));
+      } else {
+        setUnlockDialogOpen(false);
+        setUnlockPhrase("");
+        toast.success(t("memo-lock-unlocked-toast"));
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message || t("memo-lock-failed") : t("memo-lock-failed"));
+    } finally {
+      setLockBusy(false);
     }
   }
 
@@ -601,21 +650,55 @@ export function MemorandumStudio() {
               {t("memo-dirty")}
             </Badge>
           )}
-          <Button variant="outline" size="sm" onClick={restoreDefaults}>
+          {/* audit35: global memorandum lock — the frame is frozen on every
+              document; edits require the type-to-confirm unlock ritual. */}
+          {lockActive ? (
+            <Button variant="outline" size="sm" onClick={() => { setUnlockPhrase(""); setUnlockDialogOpen(true); }} className="border-amber-500/50 text-amber-700 dark:text-amber-400">
+              <LockOpen className="size-4" />
+              <span className="ml-1.5 hidden sm:inline">{t("memo-lock-unlock")}</span>
+            </Button>
+          ) : (
+            <Button variant="outline" size="sm" onClick={() => void setLock("lock")} disabled={lockBusy} className="border-emerald-600/50 text-emerald-700 dark:text-emerald-400">
+              {lockBusy ? <Loader2 className="size-4 animate-spin" /> : <Lock className="size-4" />}
+              <span className="ml-1.5 hidden sm:inline">{t("memo-lock-lock")}</span>
+            </Button>
+          )}
+          <Button variant="outline" size="sm" onClick={restoreDefaults} disabled={lockActive}>
             <RotateCcw className="size-4" />
             <span className="ml-1.5 hidden sm:inline">{t("memo-restore-defaults")}</span>
           </Button>
-          <Button size="sm" onClick={save} disabled={saving}>
+          <Button size="sm" onClick={save} disabled={saving || lockActive} title={lockActive ? t("memo-lock-locked-hint") : undefined}>
             {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
             <span className="ml-1.5">{t("memo-save")}</span>
           </Button>
         </div>
       </div>
 
+      {/* audit35: lock status banner */}
+      {lockActive ? (
+        <div className="flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3">
+          <Lock className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-semibold text-amber-800 dark:text-amber-300">{t("memo-lock-locked-title")}</div>
+            <div className="text-xs text-amber-700/90 dark:text-amber-400/90">{t("memo-lock-locked-desc")}</div>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-start gap-3 rounded-lg border border-emerald-600/30 bg-emerald-500/10 px-4 py-3">
+          <ShieldCheck className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">{t("memo-lock-unlocked-title")}</div>
+            <div className="text-xs text-emerald-700/90 dark:text-emerald-400/90">{t("memo-lock-unlocked-desc")}</div>
+          </div>
+        </div>
+      )}
+
       {/* ── Body: settings | live preview ── */}
       <div className="grid gap-6 xl:grid-cols-[minmax(360px,480px)_minmax(0,1fr)]">
-        {/* LEFT — settings */}
-        <div className="custom-scroll max-h-[min(78vh,860px)] space-y-4 overflow-y-auto pr-1">
+        {/* LEFT — settings. audit35: a disabled <fieldset> freezes EVERY
+            control natively while the memorandum lock is active — editing is
+            impossible by accident, exactly the guarantee the owner asked for. */}
+        <fieldset disabled={lockActive} className="custom-scroll max-h-[min(78vh,860px)] space-y-4 overflow-y-auto pr-1">
 
           {/* Page setup */}
           <SectionCard icon={Ruler} title={t("memo-page-setup")}>
@@ -848,7 +931,7 @@ export function MemorandumStudio() {
               <ColorField label={t("memo-color") + " (brand)"} value={settings.primary_color} onChange={(v) => set("primary_color", v)} />
             </div>
           </SectionCard>
-        </div>
+        </fieldset>
 
         {/* RIGHT — preview */}
         <div className="xl:sticky xl:top-0 xl:self-start">
@@ -895,6 +978,51 @@ export function MemorandumStudio() {
           </Tabs>
         </div>
       </div>
+
+      {/* ── audit35: unlock ritual dialog ────────────────────────────── */}
+      <Dialog open={unlockDialogOpen} onOpenChange={setUnlockDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <div className="flex items-start gap-3">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-amber-500/15 text-amber-600 dark:text-amber-400">
+              <Lock className="size-5" />
+            </div>
+            <div className="min-w-0">
+              <DialogTitle className="text-base">{t("memo-lock-unlock-dialog-title")}</DialogTitle>
+              <DialogDescription>{t("memo-lock-unlock-dialog-desc")}</DialogDescription>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="memo-unlock-phrase">{t("memo-lock-phrase-label")}</Label>
+            <Input
+              id="memo-unlock-phrase"
+              value={unlockPhrase}
+              onChange={(e) => setUnlockPhrase(e.target.value)}
+              placeholder="MEMORANDUM"
+              autoComplete="off"
+              spellCheck={false}
+              className="font-mono uppercase tracking-widest"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && unlockPhrase.trim().toUpperCase() === "MEMORANDUM") void setLock("unlock");
+              }}
+            />
+            <p className="text-xs text-muted-foreground">{t("memo-lock-phrase-hint")}</p>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => setUnlockDialogOpen(false)}>
+              {t("cancel")}
+            </Button>
+            <Button
+              size="sm"
+              disabled={lockBusy || unlockPhrase.trim().toUpperCase() !== "MEMORANDUM"}
+              onClick={() => void setLock("unlock")}
+              className="bg-amber-600 text-white hover:bg-amber-700"
+            >
+              {lockBusy ? <Loader2 className="size-4 animate-spin" /> : <LockOpen className="size-4" />}
+              <span className="ml-1.5">{t("memo-lock-unlock")}</span>
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

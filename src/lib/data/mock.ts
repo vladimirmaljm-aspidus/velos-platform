@@ -10,6 +10,7 @@ import {
   MailQueueEntry,
   Tenant, ProductCatalogEntry, SupplierOffer, TradeCalculation,
   PortalAccess, DocumentTemplate, DocumentVerification,
+  TemplateVersion,
   KycSubmission, PortalRfq,
   TenantFeatureFlags,
   Notification,
@@ -61,6 +62,7 @@ export const tradeCalculations: TradeCalculation[] = [];
 export const portalAccess: PortalAccess[] = [];
 export const documentTemplates: DocumentTemplate[] = [];
 export const documentVerifications: DocumentVerification[] = [];
+export const templateVersions: TemplateVersion[] = [];
 export const kycSubmissions: KycSubmission[] = [];
 export const portalRfqs: PortalRfq[] = [];
 export const featureFlags: TenantFeatureFlags[] = [];

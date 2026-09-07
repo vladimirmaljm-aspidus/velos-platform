@@ -23,6 +23,7 @@ import {
   TrialBalance, BalanceSheet, ProfitAndLoss, GeneralLedger,
   FxRevaluationAdjustment, FxRevaluationResult,
   UserPreference,
+  TemplateVersion, TemplateVersionSummary,
 } from "@/lib/supabase/types";
 
 export interface ListParams {
@@ -325,6 +326,18 @@ export interface Store {
   getDefaultDocumentTemplate(tenantId: string, type: string): Promise<DocumentTemplate | null>;
   upsertDocumentTemplate(t: Partial<DocumentTemplate> & { id?: string }): Promise<DocumentTemplate>;
   deleteDocumentTemplate(id: string): Promise<void>;
+  // ---- template versions (audit35 Document Studio) ----
+  listTemplateVersions(tenantId: string, templateId: string): Promise<TemplateVersionSummary[]>;
+  createTemplateVersion(v: {
+    tenant_id: string;
+    template_id: string;
+    version: number;
+    name: string;
+    snapshot: Record<string, unknown>;
+    changelog?: string | null;
+    created_by?: string | null;
+  }): Promise<TemplateVersion>;
+  getTemplateVersionSnapshot(tenantId: string, templateId: string, version: number): Promise<TemplateVersion | null>;
 
   // ---- tenant letterheads (memorandum firme) ----
   listLetterheads(tenantId: string): Promise<TenantLetterhead[]>;

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, audit } from "@/lib/api/helpers";
+import { sanitizeTemplatePayload, DROPPED_FRAME_COLUMNS } from "@/lib/api/template-payload";
 
 export const runtime = "nodejs";
 
@@ -47,30 +48,63 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   } catch {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
-  // Strip JOIN results that come back from GET (letterhead, seal) — they're
-  // not real DB columns and would cause a 500 from PostgREST.
-  delete body.letterhead;
-  delete body.seal;
-  // Also strip virtual QR fields — they're stored inside footer_content._qrConfig
-  delete body.qr_position;
-  delete body.qr_size_mm;
-  delete body.qr_opacity;
-  // ── audit22: validate the new JSON blobs (shape-agnostic size guard) ──
-  // Deeper normalization happens at read time (parseStyleConfig / renderer);
-  // junk objects degrade to defaults rather than poisoning the column.
-  for (const col of ["style_json", "layout_json"] as const) {
-    const v = body[col];
-    if (v === undefined) continue;
-    const ok = v === null || (typeof v === "object" && !Array.isArray(v));
-    const size = ok ? JSON.stringify(v ?? "").length : 0;
-    if (!ok || size > 32768) {
-      console.warn(`[PUT /api/document-templates/${id}] dropped invalid ${col}`);
-      delete body[col];
+  // ── audit35: unified payload sanitization (same gate as POST + preview) ─
+  // The PUT route used to validate style_json/layout_json inline and let
+  // EVERYTHING else flow raw into the store — including the dead frame
+  // columns (page_*, header_*, footer_height…) that the renderer has
+  // ignored since audit33. The sanitizer now drops them here too: nothing
+  // outside /api/memorandum-settings can ever write the document frame.
+  // It also validates content_json (the Document Studio block body).
+  //
+  // `publish` + `changelog` are action keys, not columns — pulled out
+  // before sanitization.
+  const publish = body?.publish === true;
+  const changelog = typeof body?.changelog === "string" ? body.changelog.slice(0, 500) : null;
+  let sanitized: Record<string, unknown>;
+  try {
+    sanitized = sanitizeTemplatePayload(body).sanitized;
+  } catch (sanitizeErr) {
+    return NextResponse.json(
+      { error: sanitizeErr instanceof Error ? sanitizeErr.message : "Invalid template payload." },
+      { status: 400 },
+    );
+  }
+  // Compat logging: legacy editor payloads still carry the frame columns —
+  // a dropped-column warning keeps the API honest without breaking saves.
+  {
+    const droppedFrame = Object.keys(body || {}).filter((k) => DROPPED_FRAME_COLUMNS.has(k));
+    if (droppedFrame.length) {
+      console.warn(
+        `[PUT /api/document-templates/${id}] dropped memorandum-owned frame columns (audit33/35): ${droppedFrame.join(", ")}`,
+      );
     }
   }
-  const updated = await auth.store.upsertDocumentTemplate({ ...body, id, tenant_id: existing.tenant_id });
+
+  // Hard 400s on the columns that MUST stay valid (mirror POST semantics).
+  const name = typeof sanitized.name === "string" ? sanitized.name.trim() : "";
+  if (sanitized.name !== undefined && !name) {
+    return NextResponse.json({ error: "Template name is required." }, { status: 400 });
+  }
+  if (name) sanitized.name = name;
+
+  const updated = await auth.store.upsertDocumentTemplate({ ...sanitized, id, tenant_id: existing.tenant_id });
   await audit(auth.store, auth.user, req, "doc_template.update", "document_template", id, { name: updated.name });
-  return NextResponse.json(updated);
+
+  // ── audit35 Document Studio: optional publish snapshot ──────────────
+  let publishedVersion: number | null = null;
+  if (publish) {
+    try {
+      const { publishTemplateVersion } = await import("@/lib/api/template-versions");
+      const res = await publishTemplateVersion(auth.store, existing.tenant_id, id, changelog, auth.user.id);
+      if (res) {
+        publishedVersion = res.version;
+        await audit(auth.store, auth.user, req, "doc_template.publish", "document_template", id, { name: updated.name, version: res.version });
+      }
+    } catch (e) {
+      console.warn(`[PUT /api/document-templates/${id}] publish snapshot failed:`, e);
+    }
+  }
+  return NextResponse.json(publishedVersion ? { ...updated, published_version: publishedVersion } : updated);
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

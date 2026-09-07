@@ -27,6 +27,7 @@ import {
   TrialBalance, BalanceSheet, ProfitAndLoss, GeneralLedger,
   UserPreference,
   CommissionPayout,
+  TemplateVersion, TemplateVersionSummary,
 } from "@/lib/supabase/types";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -2108,6 +2109,56 @@ export class PrismaStore implements Store {
 
   async deleteDocumentTemplate(id: string): Promise<void> {
     await db.documentTemplate.delete({ where: { id } });
+  }
+
+  // ─── Template Versions (audit35 Document Studio) ────────────────────────
+  // Parity with SupabaseStore (production). PrismaStore is not used in
+  // production, but keeps the same invariants: append-only, max+1 version,
+  // tenant-scoped reads.
+  async listTemplateVersions(tenantId: string, templateId: string): Promise<TemplateVersionSummary[]> {
+    const rows = await db.templateVersion.findMany({
+      where: { tenant_id: tenantId, template_id: templateId },
+      orderBy: { version: "desc" },
+      take: 200,
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      template_id: r.template_id,
+      version: r.version,
+      name: r.name,
+      changelog: r.changelog,
+      created_by: r.created_by,
+      created_at: dateToISOOrNow(r.created_at),
+    }));
+  }
+  async createTemplateVersion(v: {
+    tenant_id: string;
+    template_id: string;
+    version: number;
+    name: string;
+    snapshot: Record<string, unknown>;
+    changelog?: string | null;
+    created_by?: string | null;
+  }): Promise<TemplateVersion> {
+    const row = await db.templateVersion.create({
+      data: {
+        tenant_id: v.tenant_id,
+        template_id: v.template_id,
+        version: Math.max(1, Math.round(v.version)),
+        name: String(v.name || "version").slice(0, 200),
+        snapshot: v.snapshot as any,
+        changelog: v.changelog ? String(v.changelog).slice(0, 500) : null,
+        created_by: v.created_by || null,
+      },
+    });
+    return { ...row, snapshot: (row.snapshot as any) ?? {}, created_at: dateToISOOrNow(row.created_at) };
+  }
+  async getTemplateVersionSnapshot(tenantId: string, templateId: string, version: number): Promise<TemplateVersion | null> {
+    const row = await db.templateVersion.findFirst({
+      where: { tenant_id: tenantId, template_id: templateId, version: Math.max(1, Math.round(version)) },
+    });
+    if (!row) return null;
+    return { ...row, snapshot: (row.snapshot as any) ?? {}, created_at: dateToISOOrNow(row.created_at) };
   }
 
   // ─── Tenant Letterheads (Memorandum firme) ──────────────────────────────
