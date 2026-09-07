@@ -9,12 +9,16 @@ export const runtime = "nodejs";
 /**
  * Cron endpoint — retries failed webhook deliveries.
  *
- * Called every 5 minutes by pg_cron via `net.http_get`:
+ * Called every 5 minutes by pg_cron via `net.http_get` (see migration 096 —
+ * all HTTP cron jobs target the Vercel deployment):
  *   SELECT net.http_get(
- *     url := 'https://aspidus.onrender.com/api/cron/webhook-retry',
+ *     url := 'https://velos-platform.vercel.app/api/cron/webhook-retry',
  *     headers := jsonb_build_object(
  *       'Authorization',
- *       'Bearer ' || current_setting('app.cron_token', true)
+ *       'Bearer ' || COALESCE(
+ *         nullif(current_setting('app.cron_token', true), ''),
+ *         (SELECT value FROM public.app_config WHERE key = 'cron_token')
+ *       )
  *     )
  *   );
  *

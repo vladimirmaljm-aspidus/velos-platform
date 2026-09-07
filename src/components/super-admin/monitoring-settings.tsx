@@ -167,7 +167,7 @@ export function MonitoringSettings() {
           <AlertDescription className="text-amber-700 dark:text-amber-300">
             Security events are currently only logged to <code>console.warn</code>. Set
             the <code>SENTRY_DSN</code> environment variable (and
-            <code>NEXT_PUBLIC_SENTRY_DSN</code> for client-side errors) on Render to
+            <code>NEXT_PUBLIC_SENTRY_DSN</code> for client-side errors) on Vercel to
             enable Sentry error capture, breadcrumb aggregation, and alert emails.
             Without Sentry, security incidents (failed logins, vault reads,
             cross-tenant probes, suspicious activity) are invisible unless an
@@ -187,7 +187,7 @@ export function MonitoringSettings() {
           <AlertDescription className="text-amber-700 dark:text-amber-300">
             <code>SENTRY_DSN</code> is set but <code>NEXT_PUBLIC_SENTRY_DSN</code> is
             not — client-side errors (React render failures, browser crashes) are
-            NOT captured. Set <code>NEXT_PUBLIC_SENTRY_DSN</code> on Render to enable
+            NOT captured. Set <code>NEXT_PUBLIC_SENTRY_DSN</code> on Vercel to enable
             client-side error capture.
           </AlertDescription>
         </Alert>
@@ -204,7 +204,7 @@ export function MonitoringSettings() {
           <AlertDescription className="text-amber-700 dark:text-amber-300">
             <code>NEXT_PUBLIC_SENTRY_DSN</code> is set but <code>SENTRY_DSN</code> is
             not — server-side errors (API route exceptions, cron failures, security
-            events) are NOT captured. Set <code>SENTRY_DSN</code> on Render to
+            events) are NOT captured. Set <code>SENTRY_DSN</code> on Vercel to
             enable server-side error capture.
           </AlertDescription>
         </Alert>

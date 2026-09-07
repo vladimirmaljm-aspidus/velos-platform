@@ -2,12 +2,12 @@ import { NextResponse } from "next/server";
 import { getSupabase, isSupabaseConfigured } from "@/lib/supabase/client";
 
 export const runtime = "nodejs";
-// Health checks should never be cached — Render polls every ~30s and a
+// Health checks should never be cached — uptime monitors poll every ~30s and a
 // stale 200 would mask an actual outage.
 export const dynamic = "force-dynamic";
 
 /**
- * Lightweight platform health probe for uptime monitors (Render, UptimeRobot,
+ * Lightweight platform health probe for uptime monitors (Vercel, UptimeRobot,
  * etc.) — see worklog P0/A-3.
  *
  * Behaviour:
@@ -21,7 +21,7 @@ export const dynamic = "force-dynamic";
  * Implementation note: the previous version called `store.listTenants()` but
  * SWALLOWED the error in the catch block (returning `{status:"ok"}` on
  * failure), which defeated the purpose of a health check. This version
- * surfaces failures with HTTP 503 so Render's health check correctly marks
+ * surfaces failures with HTTP 503 so the uptime monitor correctly marks
  * the service as unhealthy.
  *
  * The probe uses a HEAD query against the `tenants` table (always present,
@@ -34,7 +34,7 @@ export const dynamic = "force-dynamic";
  * P3 / task C-8 — Sentry status. The response now includes a `sentry`
  * field reporting whether error monitoring is enabled. This lets uptime
  * monitors / ops dashboards alert on a misconfigured production deploy
- * (e.g. someone forgot to set SENTRY_DSN on Render). The field does NOT
+ * (e.g. someone forgot to set SENTRY_DSN on Vercel). The field does NOT
  * affect the HTTP status — a missing Sentry DSN is a degraded
  * observability state, not a service outage, so we still return 200 if
  * the DB is reachable. The startup-time warning in

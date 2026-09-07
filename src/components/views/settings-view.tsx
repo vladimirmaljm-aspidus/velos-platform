@@ -869,7 +869,7 @@ function CommsTab() {
               <h4 className="text-sm font-semibold">SMTP Configuration</h4>
             </div>
             <p className="text-xs text-muted-foreground">
-              Note: SMTP on ports 465/587 is blocked on Render free plan.
+              Note: SMTP on ports 465/587 is blocked on Vercel serverless functions.
               If your test email times out, switch to Resend or Postmark.
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1160,7 +1160,7 @@ function EmailTestSection({ value }: { value: CommsForm }) {
                   {result.category === "auth_failed" &&
                     "Hint: the username or password / API key is incorrect. For Gmail, use an App Password, not your account password."}
                   {result.category === "timeout" &&
-                    "Hint: the server did not respond in time. SMTP on ports 465/587 is blocked on Render free plan — switch to Resend."}
+                    "Hint: the server did not respond in time. SMTP on ports 465/587 is blocked on Vercel serverless functions — switch to Resend."}
                   {result.category === "tls" &&
                     "Hint: TLS/certificate problem. If you trust the server, try port 587 with STARTTLS."}
                   {result.category === "domain_not_verified" &&

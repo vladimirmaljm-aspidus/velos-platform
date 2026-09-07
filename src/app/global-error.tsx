@@ -27,7 +27,7 @@ export default function GlobalError({
   useEffect(() => {
     // Report to Sentry (no-op if SENTRY_DSN not set — see sentry.client.config.ts).
     Sentry.captureException(error);
-    // Also log to console — Render captures stdout/stderr so this is the
+    // Also log to console — Vercel captures stdout/stderr in runtime logs so this is the
     // default error trail when Sentry is not configured.
     console.error("[GlobalError]", error);
     // 8-c (error audit): record the boundary-level crash in the in-house

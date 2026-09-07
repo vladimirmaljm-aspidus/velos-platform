@@ -216,8 +216,8 @@ async function createRealtimeSocket(
   });
   s.on("connect_error", (err) => {
     // Likely the gateway is down or not yet deployed (the current
-    // state — the mini-service exists in source but is not on
-    // Render). Logged at debug so prod doesn't get spammed during an
+    // state — the mini-service exists in source but is not yet
+    // hosted). Logged at debug so prod doesn't get spammed during an
     // outage; the polling fallback keeps the UI updating.
     console.debug("[realtime] connect_error:", err.message);
     setPolling(true);

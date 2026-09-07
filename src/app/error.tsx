@@ -50,8 +50,8 @@ export default function Error({
 }) {
   useEffect(() => {
     // Report to Sentry (no-op if SENTRY_DSN not set — see
-    // sentry.client.config.ts). Also log to console so Render's
-    // stdout/stderr capture picks it up as the default error trail.
+    // sentry.client.config.ts). Also log to console so Vercel's
+    // runtime log capture picks it up as the default error trail.
     Sentry.captureException(error);
     console.error("[RouteError]", error);
     // 8-c (error audit): record the React render error in the in-house
