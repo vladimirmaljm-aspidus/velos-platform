@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { requirePortalModule } from "@/lib/portal/module-permissions";
+import { requireMarketplaceEnabled } from "@/lib/portal/marketplace-gate";
 import { requireSuperAdmin, sanitizeError } from "@/lib/api/helpers";
 import {
   deleteSustainabilityCert,
@@ -110,6 +111,9 @@ async function _put(req: NextRequest, ctx: RouteCtx) {
   // 099 — module permission gate (marketplace.esg).
   const _moduleBlock = await requirePortalModule(access, "marketplace.esg");
   if (_moduleBlock) return _moduleBlock;
+  // 100 — tenant marketplace switch (Layer 0).
+  const _enabledBlock = await requireMarketplaceEnabled(access);
+  if (_enabledBlock) return _enabledBlock;
 
   try {
     const updated = await patchSustainabilityCert(id, {
@@ -160,6 +164,9 @@ async function _delete(req: NextRequest, ctx: RouteCtx) {
   // 099 — module permission gate (marketplace.esg).
   const _moduleBlock = await requirePortalModule(access, "marketplace.esg");
   if (_moduleBlock) return _moduleBlock;
+  // 100 — tenant marketplace switch (Layer 0).
+  const _enabledBlock = await requireMarketplaceEnabled(access);
+  if (_enabledBlock) return _enabledBlock;
   const { id } = await ctx.params;
   try {
     const ok = await deleteSustainabilityCert(id, access.partner_id);

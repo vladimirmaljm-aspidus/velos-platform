@@ -3,7 +3,7 @@ import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { requireMarketplacePoster, requireMarketplaceEnabled } from "@/lib/portal/marketplace-gate";
 import { requirePortalModule } from "@/lib/portal/module-permissions";
 import { validateStatusTransition } from "@/lib/api/status-validator";
-import { listMarketplacePosts, createMarketplacePost, MarketplaceRuleError } from "@/lib/data/marketplace-store";
+import { listMarketplacePosts, createMarketplacePost, MarketplaceRuleError, validateAuctionParams } from "@/lib/data/marketplace-store";
 import { sanitizeFields } from "@/lib/security/sanitize-input";
 import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
@@ -127,6 +127,34 @@ async function _post(req: NextRequest) {
   if (body.post_type && !allowedTypes.includes(body.post_type)) {
     return NextResponse.json({ error: "Invalid post_type." }, { status: 400 });
   }
+
+  // 100 — auction parameters (post_type="auction" only). The shared
+  // validator requires auction_type / auction_start_price /
+  // auction_ends_at on auction creates and validates every supplied
+  // value (enum, > 0, ≥ 0, ISO > now + 1h, ≥ 1) with a clear 400 message.
+  // The store stamps auction_current_price = auction_start_price on
+  // insert; auction_winner_id is set by processAuctionEnd().
+  {
+    const auctionErr = validateAuctionParams(body);
+    if (auctionErr) {
+      return NextResponse.json({ error: auctionErr }, { status: 400 });
+    }
+    // Auction params on a non-auction create would be silently dropped
+    // by the store — reject loudly instead so the contract is crisp.
+    const effectiveCreateType = body.post_type ?? "sell";
+    const auctionFieldSupplied =
+      body.auction_type !== undefined ||
+      body.auction_start_price !== undefined ||
+      body.auction_reserve_price !== undefined ||
+      body.auction_ends_at !== undefined ||
+      body.auction_min_increment !== undefined;
+    if (auctionFieldSupplied && effectiveCreateType !== "auction") {
+      return NextResponse.json(
+        { error: "Auction parameters can only be set on auction posts." },
+        { status: 400 },
+      );
+    }
+  }
   const allowedPriceTypes = ["fixed", "range", "on_request"];
   if (body.price_type && !allowedPriceTypes.includes(body.price_type)) {
     return NextResponse.json({ error: "Invalid price_type." }, { status: 400 });
@@ -188,6 +216,11 @@ async function _post(req: NextRequest) {
   delete body.verification_level;
   delete body.created_at;
   delete body.updated_at;
+  // 100 — server-owned auction lifecycle fields: current price is
+  // initialised from auction_start_price by the store, the winner is
+  // set by processAuctionEnd(). Never trust a caller-supplied value.
+  delete body.auction_current_price;
+  delete body.auction_winner_id;
 
   try {
     const created = await createMarketplacePost(

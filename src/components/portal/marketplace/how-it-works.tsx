@@ -1,58 +1,84 @@
 "use client";
 
 /**
- * UI-3 step 6 — "How the marketplace works" section.
+ * Task 2-c — "How the marketplace works" explainer, rebuilt as a
+ * professional 4-stage trade-lifecycle walkthrough (the old 3-step
+ * "post → offers → negotiate" version stopped at the negotiation and
+ * never showed the rest of the funnel):
  *
- * A 3-step explanation:
- *   1. Post what you need (buy or sell)
- *   2. Receive offers from verified companies
- *   3. Negotiate and close the deal
+ *   1. Browse & analyze   → marketplace feed + intelligence
+ *   2. Connect & negotiate → private negotiation rooms
+ *   3. Deal room           → documents + payment instruments
+ *   4. Ship & track        → logistics
  *
- * Surfaced by `MarketplaceList` when the list is empty (either no posts at
- * all OR no posts match the active filters) so first-time visitors and
- * empty-result searches both get a friendly explanation + a clear CTA.
- * Also reused on the portal dashboard redesign for brand-new accounts.
+ * Every stage carries a real CTA that navigates the SPA (setView), so the
+ * explainer doubles as in-product wayfinding — not just marketing copy.
+ *
+ * Surfaced by `MarketplaceList` when the list is empty, by the portal
+ * dashboard for brand-new accounts, and inside the MarketplaceBrowser's
+ * "How it works" dialog (hideHeader — the dialog supplies the title).
  */
 
-import { PenLine, BadgeCheck, Handshake, ArrowRight } from "lucide-react";
+import { Search, MessagesSquare, FileSignature, Truck, ArrowRight } from "lucide-react";
 import { useT } from "@/lib/i18n/store";
 import { Button } from "@/components/ui/button";
+import { useAppStore, type ViewKey } from "@/lib/store/app-store";
 import { cn } from "@/lib/utils";
 
-interface Step {
+interface Stage {
   icon: React.ComponentType<{ className?: string }>;
   number: number;
   titleKey: string;
   descKey: string;
+  ctaKey: string;
+  /** SPA view the stage CTA navigates to. */
+  ctaView: ViewKey;
   /** Tailwind classes for the icon tile background + text color. */
   tile: string;
   ring: string;
 }
 
-const STEPS: Step[] = [
+const STAGES: Stage[] = [
   {
-    icon: PenLine,
+    icon: Search,
     number: 1,
-    titleKey: "how-it-works-step-1-title",
-    descKey: "how-it-works-step-1-desc",
+    titleKey: "marketplace-how-stage1-title",
+    descKey: "marketplace-how-stage1-desc",
+    ctaKey: "marketplace-how-cta-browse",
+    ctaView: "portal-marketplace",
     tile: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
     ring: "ring-emerald-500/20",
   },
   {
-    icon: BadgeCheck,
+    icon: MessagesSquare,
     number: 2,
-    titleKey: "how-it-works-step-2-title",
-    descKey: "how-it-works-step-2-desc",
-    tile: "bg-sky-500/10 text-sky-700 dark:text-sky-400",
-    ring: "ring-sky-500/20",
-  },
-  {
-    icon: Handshake,
-    number: 3,
-    titleKey: "how-it-works-step-3-title",
-    descKey: "how-it-works-step-3-desc",
+    titleKey: "marketplace-how-stage2-title",
+    descKey: "marketplace-how-stage2-desc",
+    ctaKey: "marketplace-how-cta-negotiate",
+    ctaView: "portal-marketplace-negotiations",
     tile: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
     ring: "ring-amber-500/20",
+  },
+  {
+    icon: FileSignature,
+    number: 3,
+    titleKey: "marketplace-how-stage3-title",
+    descKey: "marketplace-how-stage3-desc",
+    ctaKey: "marketplace-how-cta-deal",
+    // The deal room lives inside the negotiations surface (accepted rooms).
+    ctaView: "portal-marketplace-negotiations",
+    tile: "bg-primary/10 text-primary",
+    ring: "ring-primary/20",
+  },
+  {
+    icon: Truck,
+    number: 4,
+    titleKey: "marketplace-how-stage4-title",
+    descKey: "marketplace-how-stage4-desc",
+    ctaKey: "marketplace-how-cta-ship",
+    ctaView: "portal-logistics",
+    tile: "bg-teal-500/10 text-teal-700 dark:text-teal-400",
+    ring: "ring-teal-500/20",
   },
 ];
 
@@ -60,17 +86,26 @@ export function HowItWorks({
   onCreateClick,
   className,
   showCta = true,
+  hideHeader = false,
+  onNavigate,
 }: {
   onCreateClick?: () => void;
   className?: string;
   showCta?: boolean;
+  /** Dialog usage: the dialog supplies its own title/description — hide
+   *  the section header so it isn't rendered twice. */
+  hideHeader?: boolean;
+  /** Dialog usage: fired after a stage CTA navigates, so the hosting
+   *  dialog can close itself instead of lingering over the target view. */
+  onNavigate?: () => void;
 }) {
   const t = useT();
+  const setView = useAppStore((s) => s.setView);
 
   return (
     <section
       className={cn(
-        "rounded-2xl border border-border/60 bg-card overflow-hidden",
+        "@container rounded-2xl border border-border/60 bg-card overflow-hidden",
         "shadow-soft relative",
         className,
       )}
@@ -79,49 +114,80 @@ export function HowItWorks({
       <div className="absolute inset-0 bg-mesh-portal opacity-40 pointer-events-none" />
 
       <div className="relative p-6 sm:p-8">
-        <header className="text-center max-w-2xl mx-auto">
-          {/* audit26: was uppercase tracking-wider — read as "shouting"
-              marketing copy. Now a quiet, normal-case eyebrow. */}
-          <p className="text-sm text-muted-foreground">
-            {t("how-it-works-subtitle")}
-          </p>
-          <h2 className="text-xl sm:text-2xl font-semibold tracking-tight mt-1.5">
-            {t("how-it-works-title")}
-          </h2>
-        </header>
+        {!hideHeader && (
+          <header className="text-center max-w-2xl mx-auto">
+            <p className="text-sm text-muted-foreground">
+              {t("how-it-works-subtitle")}
+            </p>
+            <h2 className="text-xl sm:text-2xl font-semibold tracking-tight mt-1.5">
+              {t("how-it-works-title")}
+            </h2>
+          </header>
+        )}
 
-        <ol className="mt-7 grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 relative">
-          {/* Connecting dashed line between steps (desktop only). */}
+        <ol
+          className={cn(
+            // Container-query grid (not viewport breakpoints) so the same
+            // component lays out correctly at full page width (4 stages in
+            // a row) AND inside the max-w-3xl "How it works" dialog (2×2).
+            "grid grid-cols-1 @md:grid-cols-2 @3xl:grid-cols-4 gap-4 relative",
+            !hideHeader && "mt-7",
+          )}
+        >
+          {/* Connecting dashed line between the stage tiles (only when the
+              four stages sit in a single row — @3xl container). The cards
+              are opaque, so the line only shows in the gaps between them. */}
           <div
             aria-hidden
-            className="hidden md:block absolute top-9 left-[16.67%] right-[16.67%] h-px border-t border-dashed border-border"
+            className="hidden @3xl:block absolute top-11 left-[68px] right-[68px] h-px border-t border-dashed border-border"
           />
 
-          {STEPS.map((step) => {
-            const Icon = step.icon;
+          {STAGES.map((stage) => {
+            const Icon = stage.icon;
             return (
               <li
-                key={step.number}
-                className="relative rounded-xl bg-background/60 backdrop-blur-sm border border-border/40 p-5 text-center"
+                key={stage.number}
+                className="group relative rounded-xl bg-background border border-border/40 p-5 transition-colors hover:border-primary/40"
               >
-                <div
-                  className={cn(
-                    "size-14 mx-auto rounded-2xl flex items-center justify-center ring-1",
-                    step.tile,
-                    step.ring,
-                  )}
-                >
-                  <Icon className="size-7" />
-                </div>
-                <div className="mt-3 flex items-center justify-center gap-1.5">
-                  <span className="text-xs font-medium text-muted-foreground">
-                    {t("marketplace-wizard-progress").replace("{n}", String(step.number)).replace("{total}", "3")}
+                <div className="flex items-start justify-between gap-2">
+                  <div
+                    className={cn(
+                      "size-12 rounded-xl flex items-center justify-center ring-1",
+                      stage.tile,
+                      stage.ring,
+                    )}
+                  >
+                    <Icon className="size-6" />
+                  </div>
+                  {/* Numbered badge — implies the stage order at a glance. */}
+                  <span
+                    aria-hidden
+                    className="size-6 rounded-full bg-muted border border-border/60 text-xs font-semibold text-muted-foreground flex items-center justify-center tabular"
+                  >
+                    {stage.number}
+                  </span>
+                  <span className="sr-only">
+                    {t("marketplace-wizard-progress")
+                      .replace("{n}", String(stage.number))
+                      .replace("{total}", String(STAGES.length))}
                   </span>
                 </div>
-                <h3 className="text-sm font-semibold mt-1.5">{t(step.titleKey)}</h3>
+                <h3 className="text-sm font-semibold mt-4">{t(stage.titleKey)}</h3>
                 <p className="text-sm text-muted-foreground mt-1.5 leading-relaxed">
-                  {t(step.descKey)}
+                  {t(stage.descKey)}
                 </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="mt-4 w-full sm:w-auto gap-1.5 rounded-full group-hover:border-primary/40 group-hover:text-primary"
+                  onClick={() => {
+                    setView(stage.ctaView);
+                    onNavigate?.();
+                  }}
+                >
+                  {t(stage.ctaKey)}
+                  <ArrowRight className="size-3.5" />
+                </Button>
               </li>
             );
           })}

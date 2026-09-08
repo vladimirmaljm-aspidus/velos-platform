@@ -438,16 +438,42 @@ export async function updateInstrument(
 }
 
 /**
- * List a partner's own instruments, newest first. Returns the FULL row (no
- * sanitisation) — the caller IS the owning partner.
+ * List financial instruments, newest first. Returns the FULL row (no
+ * sanitisation) — on the default path the caller IS the owning partner.
  *
  * The `type` filter is optional and accepts the same values as the
  * instrument_type enum. `limit` is capped at 100.
+ *
+ * 100 — DEAL-ROOM MODE:
+ *   • opts.negotiation_id set → the query filters by negotiation_id
+ *     INSTEAD of partner_id and requires the caller to be one of the two
+ *     parties of that negotiation (partner_id_a / partner_id_b). The
+ *     negotiation must exist in the caller's tenant (tenant_id_a / _b),
+ *     otherwise a 404-style error is thrown ("Negotiation not found.").
+ *   • opts.post_id set (and no negotiation_id) → the query filters by
+ *     post_id INSTEAD of partner_id, mirroring getInstrument()'s
+ *     established authorisation rule:
+ *       – the post owner (marketplace_posts.partner_id === caller), or
+ *       – a party to ANY negotiation on that post, or
+ *       – the instrument's owner / counterparty
+ *         (partner_id / counterparty_partner_id === caller — row filter).
+ *     Unauthorised callers therefore still see their OWN instruments on
+ *     the post, never a colleague's.
+ *   • Both set → both filters apply; authorisation accepts either the
+ *     negotiation-party rule or the post-level rule.
+ * "Post not found." / "Negotiation not found." errors are mapped to 404
+ * by the routes (the /not found/ catch pattern).
  */
 export async function listInstruments(
   tenantId: string,
   partnerId: string,
-  opts?: { type?: string; limit?: number; offset?: number },
+  opts?: {
+    type?: string;
+    limit?: number;
+    offset?: number;
+    post_id?: string;
+    negotiation_id?: string;
+  },
 ): Promise<{ items: FinancialInstrument[]; total: number }> {
   const sb = getSupabase();
   const limit = Math.min(Math.max(opts?.limit ?? 50, 1), 100);
@@ -456,8 +482,58 @@ export async function listInstruments(
   let q = sb
     .from("marketplace_financial_instruments")
     .select("*", { count: "exact" })
-    .eq("tenant_id", tenantId)
-    .eq("partner_id", partnerId);
+    .eq("tenant_id", tenantId);
+
+  if (opts?.negotiation_id) {
+    // ── Negotiation mode: both parties of that negotiation see every
+    // instrument attached to it.
+    const { data: negRow, error: negErr } = await sb
+      .from("marketplace_negotiations")
+      .select("tenant_id_a, tenant_id_b, partner_id_a, partner_id_b")
+      .eq("id", opts.negotiation_id)
+      .maybeSingle();
+    if (negErr) throw negErr;
+    if (!negRow) throw new Error("Negotiation not found.");
+    const n = negRow as {
+      tenant_id_a: string;
+      tenant_id_b: string;
+      partner_id_a: string;
+      partner_id_b: string;
+    };
+    if (n.tenant_id_a !== tenantId && n.tenant_id_b !== tenantId) {
+      throw new Error("Negotiation not found.");
+    }
+    const isParty = n.partner_id_a === partnerId || n.partner_id_b === partnerId;
+    if (opts?.post_id) {
+      // Both filters: authorised as a negotiation party OR via the
+      // post-level rule below.
+      const postAuthorised =
+        isParty || (await isPostLevelAuthorised(sb, opts.post_id, tenantId, partnerId));
+      if (!postAuthorised) throw new Error("Negotiation not found.");
+      q = q.eq("post_id", opts.post_id);
+    } else if (!isParty) {
+      throw new Error("Negotiation not found.");
+    }
+    q = q.eq("negotiation_id", opts.negotiation_id);
+  } else if (opts?.post_id) {
+    // ── Post mode: post owner / negotiation party / own-or-counterparty
+    // instruments on that post (getInstrument rule mirrored).
+    const postLevelAuthorised = await isPostLevelAuthorised(
+      sb,
+      opts.post_id,
+      tenantId,
+      partnerId,
+    );
+    q = q.eq("post_id", opts.post_id);
+    if (!postLevelAuthorised) {
+      // Row-level fallback: the caller's own instruments + ones where
+      // they are the recorded counterparty.
+      q = q.or(`partner_id.eq.${partnerId},counterparty_partner_id.eq.${partnerId}`);
+    }
+  } else {
+    // ── Default mode: the caller's own instruments ──
+    q = q.eq("partner_id", partnerId);
+  }
 
   if (opts?.type && VALID_INSTRUMENT_TYPES.has(opts.type)) {
     q = q.eq("instrument_type", opts.type);
@@ -470,6 +546,37 @@ export async function listInstruments(
     items: (data as FinancialInstrument[]) || [],
     total: count ?? 0,
   };
+}
+
+/**
+ * 100 — shared post-level authorisation for the finance deal-room list:
+ * TRUE when the caller owns the post OR is a party to ANY negotiation on
+ * it. FALSE when the post does not exist / is cross-tenant (the caller
+ * then keeps only the row-level owner/counterparty fallback).
+ */
+async function isPostLevelAuthorised(
+  sb: ReturnType<typeof getSupabase>,
+  postId: string,
+  tenantId: string,
+  partnerId: string,
+): Promise<boolean> {
+  const { data: postRow } = await sb
+    .from("marketplace_posts")
+    .select("id, tenant_id, partner_id")
+    .eq("id", postId)
+    .maybeSingle();
+  if (!postRow) return false;
+  const post = postRow as { tenant_id: string; partner_id: string | null };
+  if (post.tenant_id !== tenantId) return false;
+  if (post.partner_id === partnerId) return true;
+  const { data: negRow } = await sb
+    .from("marketplace_negotiations")
+    .select("id")
+    .eq("post_id", postId)
+    .or(`partner_id_a.eq.${partnerId},partner_id_b.eq.${partnerId}`)
+    .limit(1)
+    .maybeSingle();
+  return Boolean(negRow);
 }
 
 // ─── Payment milestones ─────────────────────────────────────────────────────

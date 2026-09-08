@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { requirePortalModule } from "@/lib/portal/module-permissions";
+import { requireMarketplaceEnabled } from "@/lib/portal/marketplace-gate";
 import {
   listWatchlistIds,
   listWatchlistPosts,
@@ -28,6 +29,9 @@ async function _get(req: NextRequest) {
   // 099 — module permission gate (marketplace).
   const _moduleBlock = await requirePortalModule(access, "marketplace");
   if (_moduleBlock) return _moduleBlock;
+  // 100 — tenant marketplace switch (Layer 0).
+  const _enabledBlock = await requireMarketplaceEnabled(access);
+  if (_enabledBlock) return _enabledBlock;
   const url = new URL(req.url);
   const hydrate = url.searchParams.get("hydrate") === "1";
   try {
@@ -64,6 +68,9 @@ async function _post(req: NextRequest) {
   // 099 — module permission gate (marketplace).
   const _moduleBlock = await requirePortalModule(access, "marketplace");
   if (_moduleBlock) return _moduleBlock;
+  // 100 — tenant marketplace switch (Layer 0).
+  const _enabledBlock = await requireMarketplaceEnabled(access);
+  if (_enabledBlock) return _enabledBlock;
   let body;
   try {
     body = await req.json();

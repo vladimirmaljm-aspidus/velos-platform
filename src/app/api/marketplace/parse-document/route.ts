@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requirePortalModule } from "@/lib/portal/module-permissions";
 import {
   parseCertificateOfAnalysis,
   parseProductSpecSheet,
@@ -85,6 +86,9 @@ async function _post(req: NextRequest) {
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 100 — module permission gate (marketplace.post).
+  const _moduleBlock = await requirePortalModule(access, "marketplace.post");
+  if (_moduleBlock) return _moduleBlock;
 
   // MARKET-H23: per-partner rate limit — the VLM call is expensive (each
   // parse charges a credit on the AI vision provider). Without a cap, a

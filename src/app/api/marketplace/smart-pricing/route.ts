@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requirePortalModule } from "@/lib/portal/module-permissions";
 import { getMarketPriceStats } from "@/lib/data/marketplace-auction-store";
 import { withApm } from "@/lib/monitoring/apm";
 
@@ -17,6 +18,9 @@ async function _get(req: NextRequest) {
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 100 — module permission gate (marketplace).
+  const _moduleBlock = await requirePortalModule(access, "marketplace");
+  if (_moduleBlock) return _moduleBlock;
   const url = new URL(req.url);
   const product = url.searchParams.get("product") || "";
   const priceRaw = url.searchParams.get("price");

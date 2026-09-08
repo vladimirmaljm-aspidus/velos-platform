@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requirePortalModule } from "@/lib/portal/module-permissions";
 import { getSupabase } from "@/lib/supabase/client";
 import { getMarketPriceStats } from "@/lib/data/marketplace-auction-store";
 import { assessPostRisk, type RiskAssessment } from "@/lib/marketplace/risk-scoring";
@@ -34,6 +35,9 @@ async function _get(req: NextRequest, ctx: { params: Promise<{ id: string }> }) 
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 100 — module permission gate (marketplace).
+  const _moduleBlock = await requirePortalModule(access, "marketplace");
+  if (_moduleBlock) return _moduleBlock;
   const { id } = await ctx.params;
 
   const sb = getSupabase();

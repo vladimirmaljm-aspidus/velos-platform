@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { requirePortalModule } from "@/lib/portal/module-permissions";
-import { requireMarketplaceCommunicator } from "@/lib/portal/marketplace-gate";
+import { requireMarketplaceCommunicator, requireMarketplaceEnabled } from "@/lib/portal/marketplace-gate";
 import {
   createInstrument,
   listInstruments,
@@ -43,6 +43,9 @@ const VALID_STATUSES: InstrumentStatus[] = [
 
 // GET /api/marketplace/finance — list the caller's instruments.
 // Optional query: ?type=<lc|escrow|factoring|…>&limit=50&offset=0
+// 100 — ?post_id=<uuid> / ?negotiation_id=<uuid> switch to DEAL-ROOM
+// mode: instruments tied to that post / negotiation that the caller may
+// see (parties of the negotiation / post owner / own / counterparty).
 async function _get(req: NextRequest) {
   const access = await getPortalSessionAccess();
   if (!access) {
@@ -51,20 +54,41 @@ async function _get(req: NextRequest) {
   // 099 — module permission gate (marketplace.finance).
   const _moduleBlock = await requirePortalModule(access, "marketplace.finance");
   if (_moduleBlock) return _moduleBlock;
+  // 100 — tenant marketplace switch (Layer 0), matching the shipments
+  // deal-room list route.
+  const _enabledBlock = await requireMarketplaceEnabled(access);
+  if (_enabledBlock) return _enabledBlock;
   try {
     const url = new URL(req.url);
     const type = url.searchParams.get("type") || undefined;
     const limit = url.searchParams.get("limit");
     const offset = url.searchParams.get("offset");
+    // 100 — deal-room filters (visibility enforced in the store).
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const rawPostId = url.searchParams.get("post_id");
+    if (rawPostId && !UUID_RE.test(rawPostId)) {
+      return NextResponse.json({ error: "post_id must be a valid UUID." }, { status: 400 });
+    }
+    const rawNegotiationId = url.searchParams.get("negotiation_id");
+    if (rawNegotiationId && !UUID_RE.test(rawNegotiationId)) {
+      return NextResponse.json({ error: "negotiation_id must be a valid UUID." }, { status: 400 });
+    }
     const items = await listInstruments(access.tenant_id, access.partner_id, {
       type,
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined,
+      post_id: rawPostId || undefined,
+      negotiation_id: rawNegotiationId || undefined,
     });
     return NextResponse.json(items);
   } catch (e: any) {
     console.error("[marketplace.finance.list]", e);
-    return NextResponse.json({ error: "Failed to load instruments." }, { status: 500 });
+    const msg = sanitizeError(e);
+    const notFound = /not found/i.test(msg);
+    return NextResponse.json(
+      { error: notFound ? msg : "Failed to load instruments." },
+      { status: notFound ? 404 : 500 },
+    );
   }
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Dialog,
@@ -38,7 +38,10 @@ import {
   Tag,
   Ruler,
   FileText,
+  Gavel,
+  Clock,
   Info,
+  AlertTriangle,
 } from "lucide-react";
 import { useT } from "@/lib/i18n/store";
 import { useAppStore } from "@/lib/store/app-store";
@@ -52,6 +55,7 @@ import {
 } from "@/lib/data/reference";
 import { cn } from "@/lib/utils";
 import type { MarketplacePostType, MarketplacePriceType, MarketplacePostStatus, MarketplaceVisibility } from "@/lib/supabase/marketplace-types";
+import type { AuctionType } from "@/lib/supabase/marketplace-auction-types";
 import { SmartPricing } from "./smart-pricing";
 import { DocumentScanner, type DocumentScannerFillPayload } from "./document-scanner";
 
@@ -126,6 +130,16 @@ interface FormState {
   quality_specs: string[];
   status: MarketplacePostStatus;
   visibility: MarketplaceVisibility;
+  // ── Auction parameters (100 — only submitted when post_type ===
+  //    "auction"; type + start + ends are REQUIRED for auctions, mirroring
+  //    the shared validateAuctionParams on POST/PUT). Stored as strings —
+  //    they come from text inputs and are coerced at submit time.
+  auction_type: AuctionType;
+  auction_start_price: string;
+  auction_reserve_price: string;
+  /** datetime-local value (converted to ISO at submit). */
+  auction_ends_at: string;
+  auction_min_increment: string;
 }
 
 /** GET /api/marketplace/categories — active curated taxonomy (099). */
@@ -144,6 +158,211 @@ interface MarketplaceSettingsResponse {
     default_visibility: string;
     allow_private_posts: boolean;
   };
+}
+
+/**
+ * Edit-mode source post — the shape GET /api/marketplace/[id] returns for
+ * the post OWNER (the full row). Every field except `id` is optional so
+ * the My-Posts row (a subset) also satisfies it; the wizard re-fetches
+ * the full detail on open and merges it over the prop before prefilling.
+ */
+export interface MarketplaceEditPost {
+  id: string;
+  post_type?: MarketplacePostType;
+  product_name?: string;
+  product_category?: string | null;
+  product_subcategory?: string | null;
+  quantity?: number;
+  unit?: string;
+  target_price?: number | null;
+  price_max?: number | null;
+  price_visible?: boolean;
+  price_type?: MarketplacePriceType;
+  currency?: string;
+  delivery_location?: string | null;
+  delivery_country?: string | null;
+  delivery_date?: string | null;
+  incoterm?: string | null;
+  origin_country?: string | null;
+  packaging?: string | null;
+  payment_terms?: string | null;
+  description?: string | null;
+  specifications?: Record<string, unknown> | null;
+  quality_specs?: unknown[] | null;
+  status?: string;
+  visibility?: MarketplaceVisibility;
+  auction_type?: AuctionType | null;
+  auction_start_price?: number | null;
+  auction_reserve_price?: number | null;
+  auction_ends_at?: string | null;
+  auction_min_increment?: number | null;
+}
+
+/** ISO timestamp → "YYYY-MM-DDTHH:mm" for datetime-local inputs. */
+function isoToLocalInput(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** ISO timestamp → "YYYY-MM-DD" for date inputs. */
+function isoToDateInput(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** Prefill the wizard from an (owner-view) post object. */
+function formFromPost(p: MarketplaceEditPost): FormState {
+  const specs =
+    p.specifications && typeof p.specifications === "object" && !Array.isArray(p.specifications)
+      ? (p.specifications as Record<string, string>)
+      : {};
+  const qualitySpecs = Array.isArray(p.quality_specs)
+    ? p.quality_specs.filter((s): s is string => typeof s === "string")
+    : [];
+  return {
+    post_type: p.post_type ?? "sell",
+    product_name: p.product_name ?? "",
+    product_category: p.product_category ?? "",
+    product_subcategory: p.product_subcategory ?? "",
+    quantity: p.quantity != null ? String(p.quantity) : "",
+    unit: p.unit || "MT",
+    target_price: p.target_price != null ? String(p.target_price) : "",
+    price_max: p.price_max != null ? String(p.price_max) : "",
+    price_visible: p.price_visible !== false,
+    currency: p.currency || "USD",
+    price_type: p.price_type ?? "fixed",
+    delivery_location: p.delivery_location ?? "",
+    delivery_country: p.delivery_country ?? "",
+    delivery_date: isoToDateInput(p.delivery_date),
+    incoterm: p.incoterm ?? "",
+    origin_country: p.origin_country ?? "",
+    packaging: p.packaging ?? "",
+    payment_terms: p.payment_terms ?? "",
+    description: p.description ?? "",
+    specifications: specs,
+    quality_specs: qualitySpecs,
+    status: (p.status as MarketplacePostStatus) ?? "active",
+    visibility: p.visibility ?? "public",
+    auction_type: p.auction_type ?? "english",
+    auction_start_price: p.auction_start_price != null ? String(p.auction_start_price) : "",
+    auction_reserve_price: p.auction_reserve_price != null ? String(p.auction_reserve_price) : "",
+    auction_ends_at: isoToLocalInput(p.auction_ends_at),
+    auction_min_increment: p.auction_min_increment != null ? String(p.auction_min_increment) : "1",
+  };
+}
+
+/**
+ * Build the wizard's API payload from the current form (shared by the
+ * create POST and the edit PUT). Auction parameters are included ONLY
+ * for auction posts — the server 400s ("Auction parameters can only be
+ * set on auction posts.") when they appear on any other type.
+ */
+function buildFormPayload(
+  f: FormState,
+  opts: { visibility: MarketplaceVisibility; status: MarketplacePostStatus },
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    post_type: f.post_type,
+    product_name: f.product_name,
+    quantity: Number(f.quantity),
+    unit: f.unit,
+    currency: f.currency,
+    price_type: f.price_type,
+    price_visible: f.price_visible,
+    status: opts.status,
+    visibility: opts.visibility,
+    description: f.description || null,
+  };
+  if (f.product_category) payload.product_category = f.product_category;
+  if (f.product_subcategory) payload.product_subcategory = f.product_subcategory;
+  if (Object.keys(f.specifications).length > 0) {
+    payload.specifications = f.specifications;
+  }
+  if (f.quality_specs.length > 0) {
+    payload.quality_specs = f.quality_specs;
+  }
+  if (f.target_price) payload.target_price = Number(f.target_price);
+  if (f.price_max) payload.price_max = Number(f.price_max);
+  if (f.delivery_location) payload.delivery_location = f.delivery_location;
+  if (f.delivery_country) payload.delivery_country = f.delivery_country;
+  if (f.delivery_date) payload.delivery_date = new Date(f.delivery_date).toISOString();
+  if (f.incoterm) payload.incoterm = f.incoterm;
+  if (f.origin_country) payload.origin_country = f.origin_country;
+  if (f.packaging) payload.packaging = f.packaging;
+  if (f.payment_terms) payload.payment_terms = f.payment_terms;
+  if (f.post_type === "auction") {
+    // Contract (1-a): type + start + ends REQUIRED for auctions;
+    // reserve ≥ 0 optional; increment ≥ 1 (default 1). Client-side
+    // validation (auctionFieldErrors) gates the submit buttons, so these
+    // values are trusted here.
+    payload.auction_type = f.auction_type;
+    if (f.auction_start_price) payload.auction_start_price = Number(f.auction_start_price);
+    if (f.auction_reserve_price !== "") {
+      payload.auction_reserve_price = Number(f.auction_reserve_price);
+    }
+    if (f.auction_ends_at) {
+      payload.auction_ends_at = new Date(f.auction_ends_at).toISOString();
+    }
+    if (f.auction_min_increment) {
+      payload.auction_min_increment = Number(f.auction_min_increment);
+    }
+  }
+  return payload;
+}
+
+/**
+ * Form keys whose cleared value ("") means "remove the stored value" —
+ * in edit mode the PUT must send an explicit null for them, otherwise an
+ * absent key is simply not patched and the old value silently survives.
+ */
+const CLEARABLE_FIELDS = [
+  "product_category",
+  "product_subcategory",
+  "target_price",
+  "price_max",
+  "delivery_location",
+  "delivery_country",
+  "delivery_date",
+  "incoterm",
+  "origin_country",
+  "packaging",
+  "payment_terms",
+  "description",
+] as const;
+
+/**
+ * Edit-mode payload diff: send ONLY the keys whose underlying FORM value
+ * changed vs the prefill snapshot (all payload keys map 1:1 onto FormState
+ * keys of the same name, so the comparison happens at the form level and
+ * the payload value is emitted verbatim). Beyond bandwidth, this is what
+ * keeps the PUT from tripping the pre-bid auction lock: untouched auction
+ * parameters are simply not sent, so editing the description of an
+ * auction post that already has bids stays legal — the server only 400s
+ * ("Cannot change auction parameters after bids are placed.") when an
+ * auction parameter is actually present in the body.
+ */
+function diffEditPayload(
+  full: Record<string, unknown>,
+  form: FormState,
+  initial: FormState | null,
+): Record<string, unknown> {
+  if (!initial) return full;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(full)) {
+    if (k in initial && form[k as keyof FormState] !== initial[k as keyof FormState]) {
+      out[k] = v;
+    }
+  }
+  for (const fk of CLEARABLE_FIELDS) {
+    if (form[fk] === "" && initial[fk] !== "") out[fk] = null;
+  }
+  return out;
 }
 
 const DEFAULT_FORM: FormState = {
@@ -170,14 +389,26 @@ const DEFAULT_FORM: FormState = {
   quality_specs: [],
   status: "active",
   visibility: "public",
+  auction_type: "english",
+  auction_start_price: "",
+  auction_reserve_price: "",
+  auction_ends_at: "",
+  auction_min_increment: "1",
 };
 
 export function MarketplaceCreatePost({
   open,
   onOpenChange,
+  editPost,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** When set, the wizard runs in EDIT mode: the title becomes "Edit
+   *  post", all five steps prefill from the post (the full owner-view row
+   * is re-fetched on open — the My-Posts row alone lacks the heavy
+   *  fields), and the submit becomes a PATCH-style PUT that only sends
+   *  changed fields. Create mode stays 100% intact when omitted. */
+  editPost?: MarketplaceEditPost;
 }) {
   const t = useT();
   const setSelectedId = useAppStore((s) => s.setSelectedId);
@@ -188,6 +419,56 @@ export function MarketplaceCreatePost({
   // user explicitly picked a visibility in the wizard; until then the
   // tenant's default_visibility (when private is allowed) wins.
   const [visibilityChosen, setVisibilityChosen] = useState(false);
+  // 100 — auction inline errors appear after the user tries to leave step
+  // 2 (or submit) with invalid auction data, not while they type.
+  const [showAuctionErrors, setShowAuctionErrors] = useState(false);
+  // 2-a — edit mode prefill: the post id + the FormState snapshot it
+  // produced. The PUT diff (diffEditPayload) and the auction validation
+  // compare the live form against the snapshot; null = create mode (send
+  // the whole payload / validate everything). Kept in STATE (not a ref)
+  // because the validation memo reads it during render.
+  const [prefill, setPrefill] = useState<{ id: string; form: FormState } | null>(null);
+
+  // ── Edit mode: full post detail (2-a) ───────────────────────────────
+  // The editPost prop may be just the My-Posts row (no description /
+  // specs / delivery / auction fields) — fetch the full owner-view row
+  // from GET /api/marketplace/[id] and merge it over the prop before
+  // prefilling, so all five steps (and the auction section) prefill.
+  const editQ = useQuery<{ post: Record<string, unknown> }>({
+    queryKey: ["marketplace-edit-post", editPost?.id],
+    queryFn: async () => {
+      const r = await fetch(`/api/marketplace/${editPost!.id}`);
+      if (!r.ok) throw new Error("failed");
+      return r.json();
+    },
+    enabled: open && !!editPost,
+    staleTime: 30_000,
+    retry: 0,
+  });
+
+  // Prefill once per (post id, settled fetch) when the dialog opens in
+  // edit mode. The settled full detail is authoritative; when the fetch
+  // fails we fall back to whatever fields the prop carries. The per-id
+  // guard keeps a background query refetch from clobbering user edits.
+  // (An effect is unavoidable here: useState cannot initialize from a
+  // fetch that resolves after mount — the same sanctioned pattern as the
+  // browser's ?create=1 auto-open effect, which carries the identical
+  // disable.)
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (!open || !editPost) return;
+    if (editQ.isPending) return;
+    if (prefill?.id === editPost.id) return;
+    const fetched = (editQ.data?.post ?? {}) as Partial<MarketplaceEditPost>;
+    const source: MarketplaceEditPost = { ...editPost, ...fetched };
+    const prefilled = formFromPost(source);
+    setPrefill({ id: editPost.id, form: prefilled });
+    setForm(prefilled);
+    setVisibilityChosen(true); // the post's own visibility is explicit
+    setStep(0);
+    setShowAuctionErrors(false);
+  }, [open, editPost, editQ.isPending, editQ.data, prefill]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // ── Categories from the API (099) ───────────────────────────────────────
   // The admin-curated marketplace_categories taxonomy replaces the hardcoded
@@ -208,7 +489,11 @@ export function MarketplaceCreatePost({
     if (apiItems.length > 0) {
       return apiItems.map((c) => ({ value: c.name, label: c.name }));
     }
-    return PRODUCT_CATEGORIES.map((c) => ({ value: c.code, label: c.name }));
+    // 2-a — posts store taxonomy NAMES since 099 (migration 100
+    // normalised the legacy codes), so the fallback VALUE must be the
+    // name too — a post saved with a code would be invisible to every
+    // name-based feed filter.
+    return PRODUCT_CATEGORIES.map((c) => ({ value: c.name, label: c.name }));
   }, [categoriesQ.data]);
 
   // ── Tenant settings (099) ────────────────────────────────────────────────
@@ -264,7 +549,9 @@ export function MarketplaceCreatePost({
             c.name.toLowerCase().includes(data.category!.toLowerCase()) ||
             c.code.toLowerCase() === data.category!.toLowerCase(),
           );
-          if (match) out.product_category = match.code;
+          // 2-a — .name (not .code): the Select's option values are names
+          // (posts store taxonomy names since 099).
+          if (match) out.product_category = match.name;
         }
       }
       if (data.specifications && Object.keys(data.specifications).length > 0) {
@@ -287,43 +574,124 @@ export function MarketplaceCreatePost({
     return COMMON_PRODUCTS.filter((p) => p.toLowerCase().includes(q)).slice(0, 5);
   }, [form.product_name]);
 
-  // ── Save / publish mutation ───────────────────────────────────────────
+  // ── Auction validation (100) ────────────────────────────────────────
+  // Mirrors validateAuctionParams on POST/PUT (type + start + ends
+  // REQUIRED for auctions, start > 0, reserve ≥ 0, ends > now + 1h,
+  // increment ≥ 1) with clear inline errors.
+  //
+  // EDIT-mode semantics (the server likewise only validates fields
+  // PRESENT in the PUT body):
+  //   • a field is REQUIRED while creating, while CONVERTING a non-auction
+  //     post to an auction, or after the user CLEARED a stored value;
+  //   • the ends-at "≥ now + 1h" rule applies only to fields the user
+  //     actually changed — an untouched (possibly already-running)
+  //     auction whose stored end date is near must not block an
+  //     unrelated description edit (and it is simply not sent: see
+  //     diffEditPayload).
+  const auctionFieldErrors = useMemo(() => {
+    const empty = { start: null, reserve: null, ends: null, increment: null };
+    if (form.post_type !== "auction") return empty;
+    const initial = prefill?.form ?? null;
+    const createMode = !initial;
+    // Creating, or converting a non-auction post into an auction.
+    const becomesAuction = createMode || initial!.post_type !== "auction";
+    const changed = (k: keyof FormState) => createMode || form[k] !== initial![k];
+    const out: { start: string | null; reserve: string | null; ends: string | null; increment: string | null } = {
+      ...empty,
+    };
+    // Start price — required (create / conversion / cleared), always > 0.
+    if (!form.auction_start_price) {
+      if (becomesAuction || initial!.auction_start_price !== "") {
+        out.start = t("marketplace-auction-error-start-required");
+      }
+    } else if (!(Number(form.auction_start_price) > 0)) {
+      out.start = t("marketplace-auction-error-start-invalid");
+    }
+    // Reserve — optional, never negative.
+    if (
+      form.auction_reserve_price !== "" &&
+      Number(form.auction_reserve_price) < 0
+    ) {
+      out.reserve = t("marketplace-auction-error-reserve");
+    }
+    // End date — required (create / conversion / cleared); must be a valid
+    // datetime ≥ now + 1h when it matters (changed or new).
+    if (!form.auction_ends_at) {
+      if (becomesAuction || initial!.auction_ends_at !== "") {
+        out.ends = t("marketplace-auction-error-ends-required");
+      }
+    } else if (becomesAuction || changed("auction_ends_at")) {
+      const d = new Date(form.auction_ends_at);
+      if (Number.isNaN(d.getTime())) {
+        out.ends = t("marketplace-auction-error-ends-required");
+      } else if (d.getTime() <= Date.now() + 60 * 60 * 1000) {
+        out.ends = t("marketplace-auction-error-ends-future");
+      }
+    }
+    // Min increment — optional, ≥ 1 when set.
+    if (
+      form.auction_min_increment !== "" &&
+      !(Number(form.auction_min_increment) >= 1)
+    ) {
+      out.increment = t("marketplace-auction-error-increment");
+    }
+    return out;
+  }, [form, t, prefill]);
+  const auctionHasErrors =
+    auctionFieldErrors.start != null ||
+    auctionFieldErrors.reserve != null ||
+    auctionFieldErrors.ends != null ||
+    auctionFieldErrors.increment != null;
+
+  // ── Save / publish mutation (create POST) + edit PUT (2-a) ───────────
   const create = useMutation({
     mutationFn: async (mode: "publish" | "draft") => {
-      const payload: Record<string, unknown> = {
-        post_type: form.post_type,
-        product_name: form.product_name,
-        quantity: Number(form.quantity),
-        unit: form.unit,
-        currency: form.currency,
-        price_type: form.price_type,
-        price_visible: form.price_visible,
-        status: mode === "draft" ? "draft" : form.status,
+      const full = buildFormPayload(form, {
         visibility: effectiveVisibility,
-        description: form.description || null,
-      };
-      if (form.product_category) payload.product_category = form.product_category;
-      if (form.product_subcategory) payload.product_subcategory = form.product_subcategory;
-      if (Object.keys(form.specifications).length > 0) {
-        payload.specifications = form.specifications;
+        status: mode === "draft" ? "draft" : form.status,
+      });
+
+      if (editPost) {
+        // Edit mode — PATCH-style PUT: only the changed keys (plus explicit
+        // nulls for cleared optional fields). An empty diff is a no-op.
+        const payload = diffEditPayload(full, form, prefill?.form ?? null);
+        // When the post is BECOMING an auction (post_type is in the diff),
+        // the server requires the whole defining set (type + start + ends)
+        // in the body — the diff may have dropped an unchanged default
+        // (e.g. the "english" type default), so merge the full auction
+        // set back in. For an already-auction post whose post_type is NOT
+        // in the diff, untouched auction params stay out of the body,
+        // keeping pre-bid/with-bid edits of unrelated fields legal.
+        if (payload.post_type === "auction") {
+          for (const k of [
+            "auction_type",
+            "auction_start_price",
+            "auction_reserve_price",
+            "auction_ends_at",
+            "auction_min_increment",
+          ]) {
+            if (k in full) payload[k] = full[k];
+          }
+        }
+        if (Object.keys(payload).length === 0) {
+          return { id: editPost.id, unchanged: true as const };
+        }
+        const r = await fetch(`/api/marketplace/${editPost.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!r.ok) {
+          const e = await r.json().catch(() => ({}));
+          throw new Error(e.error || "Failed to update post.");
+        }
+        return r.json();
       }
-      if (form.quality_specs.length > 0) {
-        payload.quality_specs = form.quality_specs;
-      }
-      if (form.target_price) payload.target_price = Number(form.target_price);
-      if (form.price_max) payload.price_max = Number(form.price_max);
-      if (form.delivery_location) payload.delivery_location = form.delivery_location;
-      if (form.delivery_country) payload.delivery_country = form.delivery_country;
-      if (form.delivery_date) payload.delivery_date = new Date(form.delivery_date).toISOString();
-      if (form.incoterm) payload.incoterm = form.incoterm;
-      if (form.origin_country) payload.origin_country = form.origin_country;
-      if (form.packaging) payload.packaging = form.packaging;
-      if (form.payment_terms) payload.payment_terms = form.payment_terms;
 
       const r = await fetch("/api/marketplace", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(full),
       });
       if (!r.ok) {
         const e = await r.json().catch(() => ({}));
@@ -331,7 +699,17 @@ export function MarketplaceCreatePost({
       }
       return r.json();
     },
-    onSuccess: (created: { id: string; status?: string }, mode) => {
+    onSuccess: (created: { id?: string; status?: string; unchanged?: boolean }, mode) => {
+      if (editPost) {
+        // Edit success — refresh the lists + the cached edit source, no
+        // drill-down (the user is already looking at their own post row).
+        toast.success(t("marketplace-post-updated"));
+        qc.invalidateQueries({ queryKey: ["marketplace-my-posts"] });
+        qc.invalidateQueries({ queryKey: ["marketplace-list"] });
+        qc.invalidateQueries({ queryKey: ["marketplace-edit-post"] });
+        onOpenChange(false);
+        return;
+      }
       // 099 — moderated tenants: the server converts an "active" create into
       // "pending" (awaiting admin approval). Toast the approval message
       // instead of the plain "created" one so the poster isn't surprised the
@@ -344,12 +722,13 @@ export function MarketplaceCreatePost({
             : t("marketplace-post-created"),
       );
       qc.invalidateQueries({ queryKey: ["marketplace-list"] });
+      qc.invalidateQueries({ queryKey: ["marketplace-my-posts"] });
       onOpenChange(false);
       setForm(DEFAULT_FORM);
       setVisibilityChosen(false);
       setStep(0);
       // Drill into the new post only when publishing — drafts stay list-only.
-      if (mode === "publish") setSelectedId(created.id);
+      if (mode === "publish" && created.id) setSelectedId(created.id);
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -357,16 +736,26 @@ export function MarketplaceCreatePost({
   // ── Per-step gating ───────────────────────────────────────────────────
   const stepErrors: Record<number, string | null> = {
     0: form.product_name.trim().length === 0 ? t("marketplace-wizard-required-product") : null,
-    1: !(Number(form.quantity) > 0) ? t("marketplace-wizard-required-quantity") : null,
+    1:
+      !(Number(form.quantity) > 0)
+        ? t("marketplace-wizard-required-quantity")
+        : form.post_type === "auction" && auctionHasErrors
+          ? t("marketplace-auction-error-summary")
+          : null,
     2: null,
     3: null,
     4: null,
   };
   const canContinue = (s: number) => !stepErrors[s];
-  const canPublish = stepErrors[0] === null && stepErrors[1] === null && !create.isPending;
+  // Auction drafts are impossible (the server validates the defining
+  // params on EVERY auction create regardless of status) — gate the
+  // draft button the same way as publish.
+  const canPublish =
+    stepErrors[0] === null && stepErrors[1] === null && !create.isPending;
 
   function next() {
     if (!canContinue(step)) {
+      if (step === 1 && form.post_type === "auction") setShowAuctionErrors(true);
       toast.error(stepErrors[step] as string);
       return;
     }
@@ -376,9 +765,17 @@ export function MarketplaceCreatePost({
     setStep((s) => Math.max(s - 1, 0));
   }
   function reset() {
+    if (editPost && prefill) {
+      // Edit mode — restore the prefilled snapshot.
+      setForm(prefill.form);
+      setStep(0);
+      setShowAuctionErrors(false);
+      return;
+    }
     setForm(DEFAULT_FORM);
     setVisibilityChosen(false);
     setStep(0);
+    setShowAuctionErrors(false);
   }
 
   // Reset everything when the dialog closes so reopening starts fresh.
@@ -387,6 +784,8 @@ export function MarketplaceCreatePost({
       setForm(DEFAULT_FORM);
       setVisibilityChosen(false);
       setStep(0);
+      setShowAuctionErrors(false);
+      setPrefill(null);
     }
     onOpenChange(o);
   }
@@ -399,7 +798,7 @@ export function MarketplaceCreatePost({
         <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
           <DialogTitle className="flex items-center gap-2">
             <StepIcon className="size-5 text-emerald-700 dark:text-emerald-400" />
-            {t("marketplace-create-post")}
+            {editPost ? t("marketplace-edit-post") : t("marketplace-create-post")}
           </DialogTitle>
           <DialogDescription>{t("marketplace-create-post-desc")}</DialogDescription>
         </DialogHeader>
@@ -449,6 +848,16 @@ export function MarketplaceCreatePost({
 
         {/* ─── Step content ────────────────────────────────────────────── */}
         <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-5">
+          {/* 2-a — edit mode: the full-detail fetch is in flight. Render a
+              loader INSTEAD of the (empty) form so the prefill can never
+              clobber anything the user typed. */}
+          {editPost && editQ.isPending && prefill?.id !== editPost.id ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
+              <Loader2 className="size-6 animate-spin" />
+              <p className="text-sm">{t("marketplace-skeleton-loading")}</p>
+            </div>
+          ) : (
+          <>
           {/* STEP 1 — type + product + category */}
           {step === 0 && (
             <div className="space-y-5">
@@ -632,6 +1041,102 @@ export function MarketplaceCreatePost({
                 />
                 {t("marketplace-price-visible")}
               </label>
+
+              {/* 100 — auction parameters (ONLY for auction posts; the
+                  server 400s when they appear on any other type). Contract:
+                  type + start + ends REQUIRED, start > 0, reserve ≥ 0,
+                  ends > now + 1h, increment ≥ 1 (default 1). */}
+              {form.post_type === "auction" && (
+                <div className="space-y-3 rounded-xl border border-primary/25 bg-primary/5 p-3.5">
+                  <div className="flex items-center gap-1.5">
+                    <Gavel className="size-4 text-primary" aria-hidden="true" />
+                    <p className="text-sm font-semibold">{t("marketplace-auction-settings-title")}</p>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="p-auction-type" className="text-sm font-medium">
+                        {t("marketplace-auction-type")}
+                      </Label>
+                      <Select
+                        value={form.auction_type}
+                        onValueChange={(v) => set("auction_type", v as AuctionType)}
+                      >
+                        <SelectTrigger id="p-auction-type"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="english">{t("marketplace-auction-type-english")}</SelectItem>
+                          <SelectItem value="dutch">{t("marketplace-auction-type-dutch")}</SelectItem>
+                          <SelectItem value="sealed">{t("marketplace-auction-type-sealed")}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="p-auction-start" className="text-sm font-medium">
+                        {t("marketplace-auction-start-price")} <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        id="p-auction-start"
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={form.auction_start_price}
+                        onChange={(e) => set("auction_start_price", e.target.value)}
+                        placeholder="0.00"
+                      />
+                      {showAuctionErrors && auctionFieldErrors.start && (
+                        <p className="text-xs text-destructive">{auctionFieldErrors.start}</p>
+                      )}
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="p-auction-reserve" className="text-sm font-medium">
+                        {t("marketplace-auction-reserve-price")}
+                      </Label>
+                      <Input
+                        id="p-auction-reserve"
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={form.auction_reserve_price}
+                        onChange={(e) => set("auction_reserve_price", e.target.value)}
+                        placeholder="—"
+                      />
+                      {showAuctionErrors && auctionFieldErrors.reserve && (
+                        <p className="text-xs text-destructive">{auctionFieldErrors.reserve}</p>
+                      )}
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="p-auction-ends" className="text-sm font-medium">
+                        {t("marketplace-auction-ends-at")} <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        id="p-auction-ends"
+                        type="datetime-local"
+                        min={isoToLocalInput(new Date(Date.now() + 60 * 60 * 1000).toISOString())}
+                        value={form.auction_ends_at}
+                        onChange={(e) => set("auction_ends_at", e.target.value)}
+                      />
+                      {showAuctionErrors && auctionFieldErrors.ends && (
+                        <p className="text-xs text-destructive">{auctionFieldErrors.ends}</p>
+                      )}
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="p-auction-incr" className="text-sm font-medium">
+                        {t("marketplace-auction-min-increment")}
+                      </Label>
+                      <Input
+                        id="p-auction-incr"
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={form.auction_min_increment}
+                        onChange={(e) => set("auction_min_increment", e.target.value)}
+                      />
+                      {showAuctionErrors && auctionFieldErrors.increment && (
+                        <p className="text-xs text-destructive">{auctionFieldErrors.increment}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {form.price_type !== "on_request" && (
                 <SmartPricing
@@ -846,6 +1351,48 @@ export function MarketplaceCreatePost({
                 {form.incoterm && (
                   <ReviewRow icon={FileText} label={t("marketplace-incoterm")} value={form.incoterm} />
                 )}
+                {/* 100 — auction summary lines. */}
+                {form.post_type === "auction" && (
+                  <>
+                    <ReviewRow
+                      icon={Gavel}
+                      label={t("marketplace-auction-type")}
+                      value={t(`marketplace-auction-type-${form.auction_type}`)}
+                    />
+                    <ReviewRow
+                      icon={Gavel}
+                      label={t("marketplace-auction-start-price")}
+                      value={
+                        form.auction_start_price
+                          ? fmtPreview(form.auction_start_price, form.currency)
+                          : "—"
+                      }
+                    />
+                    {form.auction_reserve_price !== "" && (
+                      <ReviewRow
+                        icon={Gavel}
+                        label={t("marketplace-auction-reserve-price")}
+                        value={fmtPreview(form.auction_reserve_price, form.currency)}
+                      />
+                    )}
+                    <ReviewRow
+                      icon={Clock}
+                      label={t("marketplace-auction-ends-at")}
+                      value={
+                        form.auction_ends_at
+                          ? new Date(form.auction_ends_at).toLocaleString()
+                          : "—"
+                      }
+                    />
+                    {form.auction_min_increment && (
+                      <ReviewRow
+                        icon={Gavel}
+                        label={t("marketplace-auction-min-increment")}
+                        value={form.auction_min_increment}
+                      />
+                    )}
+                  </>
+                )}
                 {form.quality_specs.length > 0 && (
                   <ReviewRow
                     icon={CheckCircle2}
@@ -869,7 +1416,20 @@ export function MarketplaceCreatePost({
                   ))}
                 </div>
               )}
+
+              {/* 100 — invalid auction data reached the review step: show
+                  why Save/Publish is disabled and point back to step 2. */}
+              {step === 4 && form.post_type === "auction" && auctionHasErrors && (
+                <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5">
+                  <AlertTriangle className="size-4 shrink-0 text-destructive mt-0.5" />
+                  <p className="text-xs text-muted-foreground">
+                    {t("marketplace-auction-error-summary")}
+                  </p>
+                </div>
+              )}
             </div>
+          )}
+          </>
           )}
         </div>
 
@@ -903,13 +1463,20 @@ export function MarketplaceCreatePost({
 
           <div className="flex gap-2 ml-auto">
             {/* Save as draft — visible from step 2 onwards so the user has
-                filled in at least the product name. */}
-            {step >= 1 && step !== 4 && (
+                filled in at least the product name. Hidden in edit mode:
+                switching an existing post's status is a state-machine
+                transition (e.g. active→draft is invalid — 409), and the
+                My-Posts "Publish" button already handles draft→active. */}
+            {!editPost && step >= 1 && step !== 4 && (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => create.mutate("draft")}
-                disabled={create.isPending || !form.product_name.trim()}
+                disabled={
+                  create.isPending ||
+                  !form.product_name.trim() ||
+                  (form.post_type === "auction" && auctionHasErrors)
+                }
                 className="gap-1"
               >
                 {create.isPending ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
@@ -929,8 +1496,16 @@ export function MarketplaceCreatePost({
                 size="sm"
                 className="gap-1"
               >
-                {create.isPending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-                {t("marketplace-wizard-publish")}
+                {create.isPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : editPost ? (
+                  <Save className="size-4" />
+                ) : (
+                  <Send className="size-4" />
+                )}
+                {editPost
+                  ? t("portal-action-save-changes")
+                  : t("marketplace-wizard-publish")}
               </Button>
             )}
           </div>

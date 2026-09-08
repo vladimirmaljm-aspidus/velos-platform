@@ -401,16 +401,31 @@ export async function addShipmentEvent(
 // ─── Listing + timeline ────────────────────────────────────────────────────
 
 /**
- * List a partner's own shipments, newest first. Returns the FULL row (no
- * sanitisation) — the caller IS the booking partner.
+ * List shipments, newest first. Returns the FULL row (no sanitisation) —
+ * the caller is the booking partner on the default path.
  *
  * The `status` filter is optional and accepts the same values as the
  * shipment_status enum.
+ *
+ * 100 — DEAL-ROOM MODE (opts.post_id): when set, the query filters by
+ * post_id INSTEAD of partner_id and returns every shipment on the post
+ * the caller is allowed to see, mirroring getShipmentIfAuthorised:
+ *   • the post owner (marketplace_posts.partner_id === caller),
+ *   • a party to ANY negotiation on that post (marketplace_negotiations
+ *     where post_id = X and partner_id_a/b includes the caller),
+ *   • or the booking partner of an individual shipment
+ *     (shipment.partner_id === caller — kept as a row filter so an
+ *     unauthorised caller still sees their OWN shipments on that post,
+ *     never a colleague's).
+ * The post must exist in the caller's tenant, otherwise a 404-style
+ * error is thrown ("Post not found.") — routes map it via /not found/.
+ * Pagination + total stay correct: the partner fallback is folded into
+ * the query (`.eq("partner_id", …)`) instead of post-filtering rows.
  */
 export async function listShipments(
   tenantId: string,
   partnerId: string,
-  opts?: { status?: string; limit?: number; offset?: number },
+  opts?: { status?: string; limit?: number; offset?: number; post_id?: string },
 ): Promise<{ items: Shipment[]; total: number }> {
   const sb = getSupabase();
   const limit = Math.min(Math.max(opts?.limit ?? 50, 1), 100);
@@ -419,8 +434,43 @@ export async function listShipments(
   let q = sb
     .from("marketplace_shipments")
     .select("*", { count: "exact" })
-    .eq("tenant_id", tenantId)
-    .eq("partner_id", partnerId);
+    .eq("tenant_id", tenantId);
+
+  if (opts?.post_id) {
+    // ── Deal-room mode ──
+    // Fetch the post (tenant check) + whether the caller is the owner or
+    // a party to any negotiation on it.
+    const { data: postRow, error: postErr } = await sb
+      .from("marketplace_posts")
+      .select("id, tenant_id, partner_id")
+      .eq("id", opts.post_id)
+      .maybeSingle();
+    if (postErr) throw postErr;
+    if (!postRow || (postRow as { tenant_id: string }).tenant_id !== tenantId) {
+      throw new Error("Post not found.");
+    }
+    let postLevelAuthorised =
+      (postRow as { partner_id: string | null }).partner_id === partnerId;
+    if (!postLevelAuthorised) {
+      const { data: negRow } = await sb
+        .from("marketplace_negotiations")
+        .select("id")
+        .eq("post_id", opts.post_id)
+        .or(`partner_id_a.eq.${partnerId},partner_id_b.eq.${partnerId}`)
+        .limit(1)
+        .maybeSingle();
+      postLevelAuthorised = Boolean(negRow);
+    }
+    q = q.eq("post_id", opts.post_id);
+    if (!postLevelAuthorised) {
+      // Not the owner / not a negotiation party → only their own
+      // shipments on this post.
+      q = q.eq("partner_id", partnerId);
+    }
+  } else {
+    // ── Default mode: the caller's own shipments ──
+    q = q.eq("partner_id", partnerId);
+  }
 
   if (opts?.status && VALID_STATUSES.has(opts.status)) {
     q = q.eq("status", opts.status);

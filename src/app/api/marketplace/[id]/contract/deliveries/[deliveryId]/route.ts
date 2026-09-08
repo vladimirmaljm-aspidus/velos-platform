@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requirePortalModule } from "@/lib/portal/module-permissions";
 import { requireKycApproved } from "@/lib/portal/kyc-gate";
 import { updateContractDelivery } from "@/lib/data/marketplace-auction-store";
 import { getSupabase } from "@/lib/supabase/client";
@@ -22,6 +23,9 @@ async function _put(
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 100 — module permission gate (marketplace).
+  const _moduleBlock = await requirePortalModule(access, "marketplace");
+  if (_moduleBlock) return _moduleBlock;
   // AUDIT2-LOGIC-UX H7 — gate delivery update on KYC approval.
   const _kycBlock = await requireKycApproved(access);
   if (_kycBlock) return _kycBlock;

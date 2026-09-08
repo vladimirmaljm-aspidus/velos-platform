@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -44,6 +45,11 @@ export interface MarketplacePostCardData {
   /** Poster's company name (API: poster_name) — same-tenant feed cards
    *  show WHO posted; null/absent keeps the layout untouched. */
   poster_name?: string | null;
+  /** 100 — the poster's partner id, exposed on the SAME-TENANT feed +
+   *  non-owner detail (the anonymous public feed stays stripped). When
+   *  present, the "by {name}" byline becomes a link to the poster's
+   *  company profile. */
+  poster_partner_id?: string | null;
   views_count: number;
   responses_count: number;
   expires_at: string | null;
@@ -115,6 +121,7 @@ export function MarketplacePostCard({
   onClick?: (id: string) => void;
 }) {
   const t = useT();
+  const router = useRouter();
   const meta = TYPE_META[post.post_type] ?? TYPE_META.sell;
   const TypeIcon = meta.icon;
   const country = post.delivery_country ? getCountry(post.delivery_country) : null;
@@ -179,17 +186,35 @@ export function MarketplacePostCard({
             {/* KYC-verified trust signal (icon-only, tooltip) — mirrors the
                 detail-view badge; emerald check only when approved. */}
             <KycVerifiedIconOnly verified={post.poster_kyc_verified} />
-            {/* 099 — poster identity: subtle "by {company}" next to the KYC
-                badge (previously feed cards stripped WHO posted, which made
-                same-tenant posts look anonymous). */}
-            {post.poster_name && (
-              <span
-                className="truncate text-xs text-muted-foreground"
-                title={post.poster_name}
-              >
-                {t("marketplace-posted-by").replace("{name}", post.poster_name)}
-              </span>
-            )}
+            {/* 099/100 — poster identity: subtle "by {company}" next to the
+                KYC badge. With poster_partner_id (same-tenant feed) the
+                byline is a link to the poster's company profile —
+                underline on hover only; posts without it stay plain text
+                (anonymous public feed). */}
+            {post.poster_name &&
+              (post.poster_partner_id ? (
+                <button
+                  type="button"
+                  className="truncate text-xs text-muted-foreground underline-offset-2 hover:underline hover:text-foreground smooth"
+                  title={post.poster_name}
+                  onClick={(e) => {
+                    // Don't trigger the card's own drill-down click.
+                    e.stopPropagation();
+                    router.push(
+                      `/portal/marketplace/company/${post.poster_partner_id}`,
+                    );
+                  }}
+                >
+                  {t("marketplace-posted-by").replace("{name}", post.poster_name)}
+                </button>
+              ) : (
+                <span
+                  className="truncate text-xs text-muted-foreground"
+                  title={post.poster_name}
+                >
+                  {t("marketplace-posted-by").replace("{name}", post.poster_name)}
+                </span>
+              ))}
           </div>
           {post.is_verified ? (
             <div className="flex items-center gap-1">

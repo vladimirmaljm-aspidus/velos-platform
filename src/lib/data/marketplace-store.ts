@@ -21,6 +21,7 @@
 
 import { getSupabase } from "@/lib/supabase/client";
 import { validateStatusTransition } from "@/lib/api/status-validator";
+import { notify } from "@/lib/notif/helper";
 import type {
   MarketplaceMessage,
   MarketplaceMessageCreate,
@@ -46,6 +47,86 @@ export class MarketplaceRuleError extends Error {
     this.name = "MarketplaceRuleError";
     this.status = status;
   }
+}
+
+/**
+ * 100 — route-level auction-parameter validation, shared by
+ * POST /api/marketplace and PUT /api/marketplace/[id] (identical rules +
+ * messages on both paths).
+ *
+ *   • When body.post_type === "auction" (creating or converting a post),
+ *     the defining params are REQUIRED: auction_type,
+ *     auction_start_price, auction_ends_at.
+ *   • Any auction_* field present is validated:
+ *       auction_type           ∈ {"english", "dutch", "sealed"}
+ *       auction_start_price     number > 0
+ *       auction_reserve_price   number ≥ 0 (optional, null = no reserve)
+ *       auction_ends_at         ISO date, strictly > now + 1h
+ *       auction_min_increment   number ≥ 1 (optional; 1 is the default)
+ *   • Numeric strings are coerced to numbers in place (the create form
+ *     sends text inputs) and auction_ends_at is normalised to ISO.
+ *
+ * Returns a 400 message when invalid, null when valid. Callers strip the
+ * server-owned auction_current_price / auction_winner_id separately.
+ */
+export function validateAuctionParams(body: Record<string, unknown>): string | null {
+  const present = (k: string) => body[k] !== undefined && body[k] !== null && body[k] !== "";
+  const requireAll = body.post_type === "auction";
+
+  if (requireAll && !present("auction_type")) {
+    return "auction_type is required for auction posts (english, dutch or sealed).";
+  }
+  if (requireAll && !present("auction_start_price")) {
+    return "auction_start_price is required for auction posts.";
+  }
+  if (requireAll && !present("auction_ends_at")) {
+    return "auction_ends_at is required for auction posts.";
+  }
+
+  if (present("auction_type")) {
+    const t = String(body.auction_type);
+    if (!["english", "dutch", "sealed"].includes(t)) {
+      return "Invalid auction_type. Allowed values: english, dutch, sealed.";
+    }
+    body.auction_type = t;
+  }
+
+  if (present("auction_start_price")) {
+    const n = Number(body.auction_start_price);
+    if (!Number.isFinite(n) || n <= 0 || n > 1_000_000_000) {
+      return "auction_start_price must be a positive number.";
+    }
+    body.auction_start_price = n;
+  }
+
+  if (present("auction_reserve_price")) {
+    const n = Number(body.auction_reserve_price);
+    if (!Number.isFinite(n) || n < 0 || n > 1_000_000_000) {
+      return "auction_reserve_price must be a non-negative number.";
+    }
+    body.auction_reserve_price = n;
+  }
+
+  if (present("auction_min_increment")) {
+    const n = Number(body.auction_min_increment);
+    if (!Number.isFinite(n) || n < 1) {
+      return "auction_min_increment must be a number of at least 1.";
+    }
+    body.auction_min_increment = n;
+  }
+
+  if (present("auction_ends_at")) {
+    const d = new Date(String(body.auction_ends_at));
+    if (Number.isNaN(d.getTime())) {
+      return "auction_ends_at must be a valid ISO date.";
+    }
+    if (d.getTime() <= Date.now() + 60 * 60 * 1000) {
+      return "auction_ends_at must be at least 1 hour in the future.";
+    }
+    body.auction_ends_at = d.toISOString();
+  }
+
+  return null;
 }
 
 // ─── Tenant marketplace settings (migration 099) ─────────────────────────
@@ -371,6 +452,15 @@ export async function listMarketplacePosts(
       ...sanitisePublicPost(r),
       poster_kyc_verified: kycByPartner.get(r.partner_id) ?? false,
       poster_name: r.partner_id ? nameByPartner.get(r.partner_id) ?? null : null,
+      // 100 — poster_partner_id: the poster's partner id, exposed ONLY on
+      // the tenant-scoped feed (this query is .eq("tenant_id", tenantId),
+      // so every viewer here is a same-tenant colleague). The anonymous
+      // cross-tenant public feed (listPublicMarketplacePosts →
+      // redactPostRow) stays fully stripped. sanitisePublicPost() still
+      // removes the raw `partner_id` field name — this is the explicit,
+      // same-tenant-only alias the deal-room UI uses to open a
+      // negotiation/context with the poster.
+      poster_partner_id: r.partner_id ?? null,
     })),
     total: count ?? 0,
   };
@@ -460,6 +550,12 @@ export async function getMarketplacePost(
     ...sanitisePublicPost(post),
     poster_kyc_verified: posterKycVerified,
     poster_name: posterName,
+    // 100 — same-tenant viewers get the poster's partner id (this branch
+    // is only reachable through the tenant-scoped query above; the
+    // anonymous public detail endpoint is getPublicMarketplacePost, which
+    // stays stripped). Enables the deal-room actions (negotiate / respond
+    // / follow) without a second lookup.
+    poster_partner_id: post.partner_id ?? null,
   };
 }
 
@@ -537,6 +633,23 @@ export async function createMarketplacePost(
     status: effectiveStatus,
     visibility: effectiveVisibility,
     expires_at: data.expires_at ?? null,
+    // ── Auction metadata (columns from migration 046). Only stamped for
+    //    post_type = "auction" — the API route validates the values
+    //    (auction_type enum, start price > 0, ends_at > now + 1h, min
+    //    increment ≥ 1) before the store is called. auction_current_price
+    //    starts at the opening price (the cron/bid path keeps it in sync
+    //    once bidding begins). auction_winner_id stays NULL until
+    //    processAuctionEnd() settles the auction.
+    ...(data.post_type === "auction"
+      ? {
+          auction_type: data.auction_type ?? "english",
+          auction_start_price: data.auction_start_price ?? null,
+          auction_current_price: data.auction_start_price ?? null,
+          auction_reserve_price: data.auction_reserve_price ?? null,
+          auction_ends_at: data.auction_ends_at ?? null,
+          auction_min_increment: data.auction_min_increment ?? 1,
+        }
+      : {}),
   };
   const { data: inserted, error } = await sb
     .from("marketplace_posts")
@@ -544,7 +657,89 @@ export async function createMarketplacePost(
     .select()
     .single();
   if (error) throw error;
-  return inserted as MarketplacePost;
+  const created = inserted as MarketplacePost;
+
+  // 100 — saved-search alerts: when the post is immediately visible
+  // (status "active" — NOT pending/draft), notify every tenant user with
+  // an alert-enabled saved search matching this post. Fire-and-forget:
+  // the alert pipeline must NEVER block or fail post creation, so the
+  // promise is left un-awaited and swallows its own errors.
+  if (created.status === "active") {
+    void notifySavedSearchMatches(created).catch(() => {});
+  }
+
+  return created;
+}
+
+/**
+ * 100 — saved-search alert matching (internal, fire-and-forget).
+ *
+ * Loads every alert-enabled saved search in the post's tenant, skips the
+ * poster's own (same portal_access_id) and partner-less rows (notify()
+ * needs a partner target), then matches the filter set against the post:
+ *   • product_category absent OR === post.product_category
+ *   • post_type        absent OR === post.post_type
+ *   • search           absent OR contained in product_name/description
+ *                      (case-insensitive)
+ * (`country` is stored on the filter set for the feed UI but is
+ * deliberately NOT part of the alert match rule — alerts stay broader
+ * than the feed filter so a near-miss listing still surfaces.)
+ *
+ * On match → notify() with the generic marketplace notification type
+ * ("marketplace_message_received" — the same value notifyContractCreated
+ * / notifyEscrowReleased reuse; NotificationType is a closed union and
+ * "system_message" is not portal-safe, so this is the correct existing
+ * value for partner-facing marketplace events). Never throws.
+ */
+async function notifySavedSearchMatches(post: MarketplacePost): Promise<void> {
+  const sb = getSupabase();
+  const { data: searches, error } = await sb
+    .from("marketplace_saved_searches")
+    .select("id, portal_access_id, partner_id, name, filters")
+    .eq("tenant_id", post.tenant_id)
+    .eq("alert_enabled", true);
+  if (error || !searches) return;
+
+  const haystack = `${post.product_name ?? ""} ${post.description ?? ""}`.toLowerCase();
+  for (const raw of searches as {
+    id: string;
+    portal_access_id: string | null;
+    partner_id: string | null;
+    name: string;
+    filters: Record<string, unknown> | null;
+  }[]) {
+    // The poster's own saved search must not alert the poster about their
+    // own listing; partner-less rows have no notification target.
+    if (!raw.partner_id) continue;
+    if (post.portal_access_id && raw.portal_access_id === post.portal_access_id) continue;
+
+    const filters = raw.filters ?? {};
+    const fCategory =
+      typeof filters.product_category === "string" ? filters.product_category.trim() : "";
+    const fType = typeof filters.post_type === "string" ? filters.post_type.trim() : "";
+    const fSearch = typeof filters.search === "string" ? filters.search.trim().toLowerCase() : "";
+
+    if (fCategory && fCategory !== post.product_category) continue;
+    if (fType && fType !== post.post_type) continue;
+    if (fSearch && !haystack.includes(fSearch)) continue;
+
+    try {
+      await notify({
+        tenantId: post.tenant_id,
+        partnerId: raw.partner_id,
+        type: "marketplace_message_received",
+        title: "Saved search match",
+        message: `A new marketplace post matches your saved search "${raw.name}": "${post.product_name}".`,
+        entityType: "marketplace_post",
+        entityId: post.id,
+        actionUrl: `/portal/marketplace/${post.id}`,
+        actionLabel: "View post",
+        dedupKey: `saved-search-match:${post.id}`,
+      });
+    } catch {
+      // One failed notification must not stop the remaining matches.
+    }
+  }
 }
 
 /**
@@ -557,7 +752,15 @@ export async function createMarketplacePost(
 export async function updateMarketplacePost(
   postId: string,
   tenantId: string,
-  patch: Partial<MarketplacePostCreate> & { status?: string; responses_count?: number; is_verified?: boolean; verification_level?: string },
+  patch: Partial<MarketplacePostCreate> & {
+    status?: string;
+    responses_count?: number;
+    is_verified?: boolean;
+    verification_level?: string;
+    /** 100 — server-set mirror of auction_start_price while the auction
+     *    has zero bids (the PUT route stamps it; callers never send it). */
+    auction_current_price?: number | null;
+  },
 ): Promise<MarketplacePost | null> {
   const sb = getSupabase();
   // Strip fields the DB owns (id, tenant_id, partner_id, created_at,
@@ -954,12 +1157,39 @@ export async function createNegotiation(
 }
 
 /**
- * List all negotiations a partner is party to (either as A or B).
+ * 100 — enriched negotiation list row. Every raw MarketplaceNegotiation
+ * field is preserved (backward compatible); the extra fields let the
+ * deal-room list render counterparty + post context without N+1 fetches:
+ *   • counterparty_partner_id — the OTHER partner (relative to the caller
+ *     the store was queried for; partner_id_a/b stay raw on the row)
+ *   • counterparty_name       — that partner's company name
+ *   • post_product_name / post_type / post_status — the post snapshot
+ *     (quantity / unit are already on the raw row via the post join in
+ *     createNegotiation callers; the post lookup below adds the summary
+ *     fields the list card renders).
+ */
+export interface MarketplaceNegotiationListItem extends MarketplaceNegotiation {
+  counterparty_partner_id: string | null;
+  counterparty_name: string | null;
+  post_product_name: string | null;
+  post_type: string | null;
+  post_status: string | null;
+}
+
+/**
+ * List all negotiations a partner is party to (either as A or B),
+ * enriched with the counterparty's company name + the negotiated post's
+ * summary (100 — the deal-room list previously had to open every
+ * negotiation to learn who the other side was). Counterparty names and
+ * post summaries resolve in TWO batched lookups (partners.in / posts.in —
+ * the poster_name pattern from listMarketplacePosts), so the list stays
+ * O(1) queries regardless of row count. Lookups fail open (null name /
+ * null post fields) — a deleted partner or post must not break the list.
  */
 export async function listNegotiations(
   tenantId: string,
   partnerId: string,
-): Promise<MarketplaceNegotiation[]> {
+): Promise<MarketplaceNegotiationListItem[]> {
   const sb = getSupabase();
   // PostgREST `or` for partner_id_a OR partner_id_b. Use the post_id IN
   // (SELECT id FROM marketplace_posts WHERE tenant_id = ...) shape so we
@@ -975,9 +1205,73 @@ export async function listNegotiations(
   // Defence-in-depth: tenant filter (negotiations.tenant_id_a / _b both
   // must match — but since both sides are stored, we check that EITHER
   // matches the caller's tenant).
-  return ((data as MarketplaceNegotiation[]) || []).filter(
+  const rows = ((data as MarketplaceNegotiation[]) || []).filter(
     (n) => n.tenant_id_a === tenantId || n.tenant_id_b === tenantId,
   );
+
+  // ── 100 enrichment: batched partner-name + post-summary lookups ─────
+  const partnerIds = [
+    ...new Set(
+      rows.flatMap((n) => [n.partner_id_a, n.partner_id_b]).filter(Boolean),
+    ),
+  ];
+  const postIds = [...new Set(rows.map((n) => n.post_id).filter(Boolean))];
+
+  const nameByPartner = new Map<string, string>();
+  if (partnerIds.length > 0) {
+    try {
+      const { data: partnerRows } = await sb
+        .from("partners")
+        .select("id, name")
+        .in("id", partnerIds);
+      for (const p of (partnerRows || []) as { id: string; name: string }[]) {
+        nameByPartner.set(p.id, p.name);
+      }
+    } catch {
+      // Fail-open — counterparty_name stays null.
+    }
+  }
+
+  const postById = new Map<
+    string,
+    { product_name: string | null; post_type: string | null; status: string | null }
+  >();
+  if (postIds.length > 0) {
+    try {
+      const { data: postRows } = await sb
+        .from("marketplace_posts")
+        .select("id, product_name, post_type, status")
+        .in("id", postIds);
+      for (const p of (postRows || []) as {
+        id: string;
+        product_name: string | null;
+        post_type: string | null;
+        status: string | null;
+      }[]) {
+        postById.set(p.id, {
+          product_name: p.product_name,
+          post_type: p.post_type,
+          status: p.status,
+        });
+      }
+    } catch {
+      // Fail-open — post_* fields stay null.
+    }
+  }
+
+  return rows.map((n) => {
+    const counterpartyId =
+      n.partner_id_a === partnerId ? n.partner_id_b : n.partner_id_a;
+    const post = n.post_id ? postById.get(n.post_id) : undefined;
+    return {
+      ...n,
+      counterparty_partner_id: counterpartyId ?? null,
+      counterparty_name: counterpartyId ? nameByPartner.get(counterpartyId) ?? null : null,
+      post_product_name: post?.product_name ?? null,
+      post_type: post?.post_type ?? null,
+      post_status: post?.status ?? null,
+    };
+  });
 }
 
 /**
@@ -1469,6 +1763,180 @@ export async function listWatchlistPosts(
     })),
     total: count ?? 0,
   };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Saved searches (migration 100) — portal clients save a filter set and
+// opt into match alerts (see notifySavedSearchMatches above).
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Filter-set shape stored in marketplace_saved_searches.filters. */
+export interface MarketplaceSavedSearchFilters {
+  search?: string;
+  post_type?: string;
+  product_category?: string;
+  country?: string;
+}
+
+/** Row shape of marketplace_saved_searches (migration 100). */
+export interface MarketplaceSavedSearch {
+  id: string;
+  tenant_id: string;
+  portal_access_id: string;
+  partner_id: string | null;
+  name: string;
+  filters: MarketplaceSavedSearchFilters;
+  alert_enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Whitelisted filter keys — anything else is rejected on create. */
+const SAVED_SEARCH_FILTER_KEYS = new Set([
+  "search",
+  "post_type",
+  "product_category",
+  "country",
+]);
+
+/**
+ * Validate + normalise a caller-supplied saved-search payload.
+ * Rules (mirrored at the route layer with the same messages):
+ *   • name: trimmed, 1–80 chars
+ *   • filters: plain object; keys ⊆ {search, post_type,
+ *     product_category, country}; values strings; search ≤ 100 chars;
+ *     empty-string values are dropped
+ *   • alert_enabled: boolean (defaults false at the route)
+ * Throws MarketplaceRuleError(400) on violations.
+ */
+export function validateSavedSearchInput(input: {
+  name: unknown;
+  filters: unknown;
+  alert_enabled?: unknown;
+}): { name: string; filters: MarketplaceSavedSearchFilters; alert_enabled: boolean } {
+  if (typeof input.name !== "string" || input.name.trim().length === 0) {
+    throw new MarketplaceRuleError("Saved search name is required.", 400);
+  }
+  const name = input.name.trim();
+  if (name.length > 80) {
+    throw new MarketplaceRuleError("Saved search name is too long (max 80 chars).", 400);
+  }
+
+  let filters: MarketplaceSavedSearchFilters = {};
+  if (input.filters !== undefined && input.filters !== null) {
+    if (typeof input.filters !== "object" || Array.isArray(input.filters)) {
+      throw new MarketplaceRuleError("Saved search filters must be an object.", 400);
+    }
+    for (const [k, v] of Object.entries(input.filters as Record<string, unknown>)) {
+      if (!SAVED_SEARCH_FILTER_KEYS.has(k)) {
+        throw new MarketplaceRuleError(
+          `Unknown saved-search filter key: "${k}". Allowed: search, post_type, product_category, country.`,
+          400,
+        );
+      }
+      if (typeof v !== "string") {
+        throw new MarketplaceRuleError(`Saved-search filter "${k}" must be a string.`, 400);
+      }
+      if (k === "search" && v.length > 100) {
+        throw new MarketplaceRuleError(
+          "Saved-search search term is too long (max 100 chars).",
+          400,
+        );
+      }
+    }
+    // Drop empty-string values (an empty filter is no filter).
+    filters = Object.fromEntries(
+      Object.entries(input.filters as Record<string, unknown>)
+        .filter(([, v]) => typeof v === "string" && v.length > 0)
+        .map(([k, v]) => [k, v as string]),
+    ) as MarketplaceSavedSearchFilters;
+  }
+
+  let alert_enabled = false;
+  if (input.alert_enabled !== undefined && input.alert_enabled !== null) {
+    if (typeof input.alert_enabled !== "boolean") {
+      throw new MarketplaceRuleError("alert_enabled must be a boolean.", 400);
+    }
+    alert_enabled = input.alert_enabled;
+  }
+
+  return { name, filters, alert_enabled };
+}
+
+/**
+ * List a portal user's saved searches, newest first. Scoped to
+ * (tenant_id, portal_access_id) — a user only ever sees their own.
+ */
+export async function listSavedSearches(
+  tenantId: string,
+  portalAccessId: string,
+): Promise<MarketplaceSavedSearch[]> {
+  const sb = getSupabase();
+  const { data, error } = await sb
+    .from("marketplace_saved_searches")
+    .select("*")
+    .eq("tenant_id", tenantId)
+    .eq("portal_access_id", portalAccessId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data as MarketplaceSavedSearch[]) || [];
+}
+
+/**
+ * Create a saved search. tenant_id / portal_access_id / partner_id are
+ * stamped by the API route from the auth context (the store also refuses
+ * body-supplied identity fields). The route validates via
+ * validateSavedSearchInput() BEFORE calling this; the store re-validates
+ * defensively (a direct store caller gets the same 400s).
+ */
+export async function createSavedSearch(input: {
+  tenant_id: string;
+  portal_access_id: string;
+  partner_id: string | null;
+  name: string;
+  filters: MarketplaceSavedSearchFilters;
+  alert_enabled: boolean;
+}): Promise<MarketplaceSavedSearch> {
+  const { name, filters, alert_enabled } = validateSavedSearchInput(input);
+  const sb = getSupabase();
+  const { data, error } = await sb
+    .from("marketplace_saved_searches")
+    .insert({
+      tenant_id: input.tenant_id,
+      portal_access_id: input.portal_access_id,
+      partner_id: input.partner_id ?? null,
+      name,
+      filters,
+      alert_enabled,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as MarketplaceSavedSearch;
+}
+
+/**
+ * Delete a saved search — ownership enforced HERE (tenant + portal_access
+ * match), so a user can never delete a colleague's saved search even by
+ * guessing ids. Returns true when deleted, false when not found / not
+ * owned.
+ */
+export async function deleteSavedSearch(
+  tenantId: string,
+  portalAccessId: string,
+  savedSearchId: string,
+): Promise<boolean> {
+  const sb = getSupabase();
+  const { data, error } = await sb
+    .from("marketplace_saved_searches")
+    .delete()
+    .eq("id", savedSearchId)
+    .eq("tenant_id", tenantId)
+    .eq("portal_access_id", portalAccessId)
+    .select()
+    .maybeSingle();
+  if (error) throw error;
+  return Boolean(data);
 }
 
 // ════════════════════════════════════════════════════════════════════════════

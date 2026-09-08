@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requirePortalModule } from "@/lib/portal/module-permissions";
 import { withdrawBid } from "@/lib/data/marketplace-auction-store";
 import { getSupabase } from "@/lib/supabase/client";
 import { audit, sanitizeError } from "@/lib/api/helpers";
@@ -26,6 +27,9 @@ async function _get(req: NextRequest, ctx: { params: Promise<{ id: string; bidId
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 100 — module permission gate (marketplace).
+  const _moduleBlock = await requirePortalModule(access, "marketplace");
+  if (_moduleBlock) return _moduleBlock;
   const { id, bidId } = await ctx.params;
 
   const sb = getSupabase();
@@ -120,6 +124,9 @@ async function _delete(req: NextRequest, ctx: { params: Promise<{ id: string; bi
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 100 — module permission gate (marketplace).
+  const _moduleBlock = await requirePortalModule(access, "marketplace");
+  if (_moduleBlock) return _moduleBlock;
   const { id, bidId } = await ctx.params;
 
   // 8d-10 / 8d-11: route-level pre-checks. The bid is fetched JOINED to

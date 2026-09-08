@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { requirePortalModule } from "@/lib/portal/module-permissions";
+import { requireMarketplaceEnabled } from "@/lib/portal/marketplace-gate";
 import {
   VALID_OFFSET_TYPES,
   createCarbonOffset,
@@ -32,6 +33,9 @@ async function _get(req: NextRequest) {
   // 099 — module permission gate (marketplace.esg).
   const _moduleBlock = await requirePortalModule(access, "marketplace.esg");
   if (_moduleBlock) return _moduleBlock;
+  // 100 — tenant marketplace switch (Layer 0).
+  const _enabledBlock = await requireMarketplaceEnabled(access);
+  if (_enabledBlock) return _enabledBlock;
   try {
     const url = new URL(req.url);
     const requestedPartnerId = url.searchParams.get("partnerId");
@@ -72,6 +76,9 @@ async function _post(req: NextRequest) {
   // 099 — module permission gate (marketplace.esg).
   const _moduleBlock = await requirePortalModule(access, "marketplace.esg");
   if (_moduleBlock) return _moduleBlock;
+  // 100 — tenant marketplace switch (Layer 0).
+  const _enabledBlock = await requireMarketplaceEnabled(access);
+  if (_enabledBlock) return _enabledBlock;
 
   let body;
   try {

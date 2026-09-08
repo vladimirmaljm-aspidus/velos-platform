@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { LineChart, Globe2, Newspaper, Gauge, Calendar, Store } from "lucide-react";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { LineChart, Globe2, Store } from "lucide-react";
 import { useT } from "@/lib/i18n/store";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -35,7 +36,22 @@ import { SeasonalPanel } from "@/components/portal/marketplace/seasonal-panel";
  *
  * Layout: 2-column grid on lg+, single column on mobile.
  */
-const CATEGORIES = [
+
+/** GET /api/marketplace/categories — active curated taxonomy (099),
+ *  same shape/behaviour as marketplace-create-post.tsx. */
+interface MarketplaceCategoryItem {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+/** Task 2-c — fallback only. The selector's real options come from the
+ *  admin-curated taxonomy (GET /api/marketplace/categories, migration
+ *  054/099 seeds). The list below previously hardcoded a THIRD category
+ *  vocabulary that matched neither the DB taxonomy ("Construction") nor
+ *  the static PRODUCT_CATEGORIES codes — it stays purely as the offline
+ *  fallback when the query fails or returns empty. */
+const FALLBACK_CATEGORIES = [
   "Agriculture",
   "Metals",
   "Energy",
@@ -58,6 +74,27 @@ export function MarketplaceIntelligenceDashboard() {
   const t = useT();
   const [category, setCategory] = useState<string>("all");
   const [timeRangeKey, setTimeRangeKey] = useState<TimeRangeKey>("3m");
+
+  // Task 2-c — category options from the SAME taxonomy the feed and the
+  // create-post form use (query key shared with marketplace-create-post
+  // so both surfaces hit one cached request). The static list is only a
+  // fallback for a failed/empty response.
+  const categoriesQ = useQuery<{ items: MarketplaceCategoryItem[] }>({
+    queryKey: ["marketplace-categories"],
+    queryFn: async () => {
+      const r = await fetch("/api/marketplace/categories");
+      if (!r.ok) throw new Error("failed");
+      return r.json();
+    },
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+  const categoryOptions = useMemo(() => {
+    const apiNames = (categoriesQ.data?.items ?? [])
+      .map((c) => c.name?.trim())
+      .filter((n): n is string => Boolean(n));
+    return apiNames.length > 0 ? apiNames : [...FALLBACK_CATEGORIES];
+  }, [categoriesQ.data]);
 
   const timeRange = TIME_RANGES.find((r) => r.key === timeRangeKey)!;
   const categoryParam = category === "all" ? undefined : category;
@@ -87,7 +124,7 @@ export function MarketplaceIntelligenceDashboard() {
               <SelectItem value="all">
                 {t("marketplace-intel-category-all")}
               </SelectItem>
-              {CATEGORIES.map((c) => (
+              {categoryOptions.map((c) => (
                 <SelectItem key={c} value={c}>
                   {c}
                 </SelectItem>
@@ -132,14 +169,6 @@ export function MarketplaceIntelligenceDashboard() {
         <Globe2 className="h-3 w-3" />
         <span>{t("marketplace-intel-footer")}</span>
       </div>
-
-      {/* Icons to satisfy unused-imports while keeping bundle shape
-          aligned with the dashboard's visual vocabulary. */}
-      <span className="hidden">
-        <Newspaper />
-        <Gauge />
-        <Calendar />
-      </span>
     </div>
   );
 }

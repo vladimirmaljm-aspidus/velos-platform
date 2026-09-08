@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useQuery, useMutation, useQueryClient, type UseMutationResult, type UseQueryResult } from "@tanstack/react-query";
 import {
   Card,
@@ -59,6 +60,7 @@ import {
   ChevronUp,
   Info,
   LockKeyhole,
+  ArrowRight,
 } from "lucide-react";
 import { useT } from "@/lib/i18n/store";
 import { useAppStore } from "@/lib/store/app-store";
@@ -85,7 +87,7 @@ import { CarbonFootprint } from "./carbon-footprint";
 import { MarketplacePostCard, type MarketplacePostCardData } from "./marketplace-post-card";
 import { KycVerifiedBadge } from "./kyc-verified-badge";
 import { CommunicationLockedCard } from "./communication-locked";
-import { useMarketplacePermissions } from "@/lib/portal/use-marketplace-permissions";
+import { useMarketplacePermissions, type MarketplaceBlockReason } from "@/lib/portal/use-marketplace-permissions";
 import { SafetyCompliancePanel } from "./marketplace-disclaimer";
 import { WatchlistStarButton, SharePostButton, ReportPostDialog } from "./marketplace-actions";
 
@@ -126,6 +128,12 @@ interface PostDetail {
   // Owner-only field — the store keeps it on the row only when the caller
   // is the post owner. Presence === ownership on the client side.
   partner_id?: string;
+  // 2-b (API contract 1-a) — poster identity for the company card.
+  // `poster_partner_id` is exposed to same-tenant NON-owner viewers (the
+  // owner branch carries the raw `partner_id` instead); `poster_name` is
+  // the poster's company name. Anonymous/public detail stays stripped.
+  poster_name?: string | null;
+  poster_partner_id?: string | null;
   // Phase 4 auction columns (NULL on non-auction posts).
   auction_type?: AuctionType | null;
   auction_start_price?: number | null;
@@ -155,8 +163,18 @@ function flagNode(code: string | null | undefined) {
 export function MarketplacePostDetail({ postId }: { postId: string }) {
   const t = useT();
   const setSelectedId = useAppStore((s) => s.setSelectedId);
+  const setView = useAppStore((s) => s.setView);
+  const setSelectedNegotiationId = useAppStore((s) => s.setSelectedNegotiationId);
+  const moduleAccess = useAppStore((s) => s.moduleAccess);
   const qc = useQueryClient();
   const { canCommunicate, blockReason } = useMarketplacePermissions();
+
+  // 2-b — module gate for the community-backed Q&A section. The questions /
+  // answers API is module-gated `marketplace.community` while this view is
+  // module `marketplace` — a user denied community would otherwise see a
+  // composer whose POSTs 403. Absent key / null map = show (fail-open,
+  // mirroring the sidebar's nav filter + the server evaluator).
+  const communityAllowed = moduleAccess?.["marketplace.community"] !== false;
 
   const [showResponseForm, setShowResponseForm] = useState(false);
   const [response, setResponse] = useState({
@@ -267,7 +285,9 @@ export function MarketplacePostDetail({ postId }: { postId: string }) {
       if (!r.ok) throw new Error("failed");
       return r.json();
     },
-    enabled: !!q.data?.post,
+    // 2-b — also skip the fetch when the community module is denied (the
+    // route would 403 module_disabled for such users).
+    enabled: !!q.data?.post && communityAllowed,
   });
 
   const askMut = useMutation({
@@ -337,13 +357,22 @@ export function MarketplacePostDetail({ postId }: { postId: string }) {
       return { id: neg.id, messageOk: true };
     },
     onSuccess: (data) => {
-      toast.success(t("marketplace-detail-contact-seller-sent"));
       setShowContact(false);
       setContactMessage("");
-      // Surface the room link via toast action; full navigation would require
-      // the router which isn't wired here. The toast message tells the user
-      // to visit /portal/marketplace/negotiations.
-      if (!data.messageOk) {
+      // 2-b — navigate straight into the room instead of only toasting.
+      // Same store mechanism the notifications click uses to reach the
+      // negotiations view (setView) plus the room drill-down id the
+      // NegotiationsBrowser reads (setSelectedNegotiationId) — the new
+      // room appears in the inbox immediately.
+      qc.invalidateQueries({ queryKey: ["marketplace-negotiations"] });
+      setSelectedNegotiationId(data.id);
+      setView("portal-marketplace-negotiations");
+      if (data.messageOk) {
+        toast.success(t("marketplace-negotiation-room-opened"));
+      } else {
+        // The room exists but the first message failed — still navigate
+        // (the conversation has been started); the user can re-send the
+        // message from inside the room.
         toast.warning(t("marketplace-detail-contact-seller-open-room"));
       }
     },
@@ -380,11 +409,38 @@ export function MarketplacePostDetail({ postId }: { postId: string }) {
     ? PRODUCT_CATEGORIES.find((c) => c.code === post.product_category)
     : null;
   const isOwner = !!post.partner_id;
+  // 2-b — poster identity for the company card. Same-tenant viewers get
+  // `poster_partner_id` from the detail API; the owner branch carries the
+  // raw `partner_id` (their own). Posts without either (stripped shapes)
+  // render a plain, non-clickable card.
+  const posterPartnerId = post.poster_partner_id ?? post.partner_id ?? null;
+  const posterLabel = post.poster_name
+    ?? (isOwner
+        ? t("marketplace-detail-company-you")
+        : post.is_verified
+          ? t("marketplace-detail-company-verified")
+          : t("marketplace-detail-company-unverified"));
 
   // Related posts — same category, exclude current.
   const relatedItems = (relatedQ.data?.items ?? [])
     .filter((p) => p.id !== postId)
     .slice(0, 3);
+
+  function submitOffer() {
+    // 2-b — client-side required validation before the POST: the server
+    // 400s on non-positive quantity / unit_price, but only after a round
+    // trip; catch it here with a clear localized message.
+    const qty = Number(response.quantity);
+    const price = Number(response.unit_price);
+    if (
+      !response.quantity || !Number.isFinite(qty) || qty <= 0 ||
+      !response.unit_price || !Number.isFinite(price) || price <= 0
+    ) {
+      toast.error(t("marketplace-detail-offer-invalid"));
+      return;
+    }
+    sendResponse.mutate();
+  }
 
   function fmtPrice(): string {
     if (!post.price_visible || post.price_type === "on_request") {
@@ -651,8 +707,17 @@ export function MarketplacePostDetail({ postId }: { postId: string }) {
 
         {/* ─── Right column: company card + Send Offer CTA ────────── */}
         <div className="lg:col-span-1 space-y-6">
-          {/* Posting partner card */}
-          <Card className="overflow-hidden border-border/60">
+          {/* Posting partner card — 2-b: the identity block is a link into
+              the company profile when the poster's partner id is known
+              (same-tenant detail carries poster_partner_id; the owner has
+              their own partner_id). The contact CTA stays OUTSIDE the link
+              so no interactive element is nested inside the anchor. */}
+          <Card
+            className={cn(
+              "overflow-hidden border-border/60",
+              posterPartnerId && "transition-colors hover:border-primary/40",
+            )}
+          >
             <div className="relative">
               <div className="absolute inset-0 bg-mesh-portal opacity-50" />
               <CardContent className="relative p-5 space-y-4">
@@ -661,40 +726,33 @@ export function MarketplacePostDetail({ postId }: { postId: string }) {
                     {t("marketplace-detail-company-card")}
                   </p>
                 </div>
-                <div className="flex items-start gap-3">
-                  <div className="size-12 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0">
-                    <Building2 className="size-6 text-emerald-700 dark:text-emerald-400" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold truncate">
-                      {post.is_verified
-                        ? t("marketplace-detail-company-verified")
-                        : t("marketplace-detail-company-unverified")}
-                    </p>
-                    {country && (
-                      <p className="text-xs text-muted-foreground mt-0.5 inline-flex items-center gap-1">
-                        <span>{flagNode(post.delivery_country)}</span>
-                        {country.name}
-                      </p>
-                    )}
-                  </div>
-                </div>
-                {/* Verification level pill */}
-                {post.is_verified && (
-                  <Badge
-                    variant="outline"
-                    className="gap-1 border-transparent bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 w-full justify-center"
+                {posterPartnerId ? (
+                  <Link
+                    href={`/portal/marketplace/company/${posterPartnerId}`}
+                    className="block rounded-xl -m-1 p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 group"
                   >
-                    <ShieldCheck className="size-3.5" />
-                    {t(`marketplace-verification-${post.verification_level}`)}
-                  </Badge>
+                    <CompanyIdentity
+                      label={posterLabel}
+                      isVerified={post.is_verified}
+                      verificationLevel={post.verification_level}
+                      country={country}
+                      countryCode={post.delivery_country}
+                      posterKycVerified={post.poster_kyc_verified}
+                      showViewProfile
+                      t={t}
+                    />
+                  </Link>
+                ) : (
+                  <CompanyIdentity
+                    label={posterLabel}
+                    isVerified={post.is_verified}
+                    verificationLevel={post.verification_level}
+                    country={country}
+                    countryCode={post.delivery_country}
+                    posterKycVerified={post.poster_kyc_verified}
+                    t={t}
+                  />
                 )}
-                {/* KYC document check — independent of the admin badge above. */}
-                <KycVerifiedBadge
-                  verified={post.poster_kyc_verified}
-                  size="md"
-                  className="w-full justify-center"
-                />
                 <p className="text-xs text-muted-foreground leading-relaxed border-t border-border/40 pt-3">
                   {t("marketplace-detail-contact-hint")}
                 </p>
@@ -837,7 +895,7 @@ export function MarketplacePostDetail({ postId }: { postId: string }) {
                 </div>
               </div>
               <div className="flex gap-2">
-                <Button onClick={() => sendResponse.mutate()} disabled={sendResponse.isPending} className="flex-1 gap-1">
+                <Button onClick={() => submitOffer()} disabled={sendResponse.isPending} className="flex-1 gap-1">
                   {sendResponse.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                   {t("marketplace-send-offer")}
                 </Button>
@@ -852,20 +910,30 @@ export function MarketplacePostDetail({ postId }: { postId: string }) {
       </div>
 
       {/* ─── Q&A section (FIX-MARKET-UI / FIX 1) ─────────────────────────── */}
-      <PostQACard
-        postId={postId}
-        questionsQ={questionsQ}
-        newQuestion={newQuestion}
-        setNewQuestion={setNewQuestion}
-        askMut={askMut}
-        expandedQuestions={expandedQuestions}
-        toggleQuestion={toggleQuestion}
-        answerDrafts={answerDrafts}
-        setAnswerDrafts={setAnswerDrafts}
-        canCommunicate={canCommunicate}
-        blockReason={blockReason}
-        t={t}
-      />
+      {/* 2-b — hidden entirely when the community module is denied for this
+          user (the Q&A API lives behind marketplace.community; fail-open
+          when the module map is absent). */}
+      {communityAllowed ? (
+        <PostQACard
+          postId={postId}
+          questionsQ={questionsQ}
+          newQuestion={newQuestion}
+          setNewQuestion={setNewQuestion}
+          askMut={askMut}
+          expandedQuestions={expandedQuestions}
+          toggleQuestion={toggleQuestion}
+          answerDrafts={answerDrafts}
+          setAnswerDrafts={setAnswerDrafts}
+          canCommunicate={canCommunicate}
+          blockReason={blockReason}
+          t={t}
+        />
+      ) : (
+        <p className="text-xs text-muted-foreground text-center flex items-center justify-center gap-1.5 py-3">
+          <LockKeyhole className="h-3 w-3 shrink-0" aria-hidden="true" />
+          {t("marketplace-detail-qa-hidden")}
+        </p>
+      )}
 
       {/* ─── Safety & due-diligence quick access ──────────────────────── */}
       <div className="flex justify-center">
@@ -1033,7 +1101,7 @@ function PostQACard({
   answerDrafts: Record<string, string>;
   setAnswerDrafts: (next: Record<string, string> | ((prev: Record<string, string>) => Record<string, string>)) => void;
   canCommunicate: boolean;
-  blockReason: "tier" | "kyc" | null;
+  blockReason: MarketplaceBlockReason;
   t: (k: string) => string;
 }) {
   const qc = useQueryClient();
@@ -1173,7 +1241,7 @@ function PostQAQuestionItem({
   onAnswer: () => void;
   answering: boolean;
   canCommunicate: boolean;
-  blockReason: "tier" | "kyc" | null;
+  blockReason: MarketplaceBlockReason;
   t: (k: string) => string;
 }) {
   return (
@@ -1238,7 +1306,7 @@ function PostQAAnswers({
   onAnswer: () => void;
   answering: boolean;
   canCommunicate: boolean;
-  blockReason: "tier" | "kyc" | null;
+  blockReason: MarketplaceBlockReason;
   t: (k: string) => string;
 }) {
   const answersQ = useQuery<{ items: PostQAAnswer[] }>({
@@ -1318,6 +1386,76 @@ function PostQAAnswers({
           )
         )}
       </div>
+    </div>
+  );
+}
+
+// ─── CompanyIdentity (2-b) ──────────────────────────────────────────────────
+//
+// The identity block of the posting-partner card: avatar tile, company
+// name (poster_name when the API carries it), country, verification-level
+// pill and the independent KYC badge. Rendered either plain or wrapped in
+// a Link to the company profile by the caller (see the company card in
+// MarketplacePostDetail) — the `showViewProfile` flag adds the
+// "View company profile →" affordance text when the block is clickable.
+
+function CompanyIdentity({
+  label,
+  isVerified,
+  verificationLevel,
+  country,
+  countryCode,
+  posterKycVerified,
+  showViewProfile,
+  t,
+}: {
+  label: string;
+  isVerified: boolean;
+  verificationLevel: string;
+  country: ReturnType<typeof getCountry>;
+  countryCode: string | null;
+  posterKycVerified?: boolean;
+  showViewProfile?: boolean;
+  t: (k: string) => string;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start gap-3">
+        <div className="size-12 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0">
+          <Building2 className="size-6 text-emerald-700 dark:text-emerald-400" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold truncate">{label}</p>
+          {country && (
+            <p className="text-xs text-muted-foreground mt-0.5 inline-flex items-center gap-1">
+              <span>{flagNode(countryCode)}</span>
+              {country.name}
+            </p>
+          )}
+        </div>
+        {showViewProfile && (
+          <p className="text-xs font-medium text-primary inline-flex items-center gap-1 shrink-0 pt-0.5">
+            {t("marketplace-detail-company-view-profile")}
+            <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+          </p>
+        )}
+      </div>
+      {/* Verification level pill */}
+      {isVerified && (
+        <Badge
+          variant="outline"
+          className="gap-1 border-transparent bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 w-full justify-center"
+        >
+          <ShieldCheck className="size-3.5" />
+          {t(`marketplace-verification-${verificationLevel}`)}
+        </Badge>
+      )}
+      {/* KYC document check — independent of the admin badge above. */}
+      <KycVerifiedBadge
+        verified={posterKycVerified}
+        size="md"
+        className="w-full justify-center"
+      />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { requirePortalModule } from "@/lib/portal/module-permissions";
+import { requireMarketplaceEnabled } from "@/lib/portal/marketplace-gate";
 // 8c-2: KYC gate — mirror top-level marketplace POST route. Without this,
 // a portal client whose KYC is `rejected` / `suspended` could still create
 // shipments / sign trade documents / post community content — binding
@@ -19,6 +20,8 @@ export const runtime = "nodejs";
 
 // GET /api/marketplace/shipments — list the caller's shipments.
 // Optional query: ?status=<pending|booked|…>&limit=50&offset=0
+// 100 — ?post_id=<uuid> switches to DEAL-ROOM mode: every shipment on
+// that post the caller may see (post owner / negotiation party / own).
 async function _get(req: NextRequest) {
   const access = await getPortalSessionAccess();
   if (!access) {
@@ -27,20 +30,36 @@ async function _get(req: NextRequest) {
   // 099 — module permission gate (marketplace.logistics).
   const _moduleBlock = await requirePortalModule(access, "marketplace.logistics");
   if (_moduleBlock) return _moduleBlock;
+  // 100 — tenant marketplace switch (Layer 0).
+  const _enabledBlock = await requireMarketplaceEnabled(access);
+  if (_enabledBlock) return _enabledBlock;
   try {
     const url = new URL(req.url);
     const status = url.searchParams.get("status") || undefined;
     const limit = url.searchParams.get("limit");
     const offset = url.searchParams.get("offset");
+    // 100 — deal-room mode: list the shipments of one marketplace post
+    // (visibility enforced in the store: post owner / negotiation party /
+    // booking partner).
+    const rawPostId = url.searchParams.get("post_id");
+    if (rawPostId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawPostId)) {
+      return NextResponse.json({ error: "post_id must be a valid UUID." }, { status: 400 });
+    }
     const items = await listShipments(access.tenant_id, access.partner_id, {
       status,
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined,
+      post_id: rawPostId || undefined,
     });
     return NextResponse.json(items);
   } catch (e: any) {
     console.error("[marketplace.shipments.list]", e);
-    return NextResponse.json({ error: "Failed to load shipments." }, { status: 500 });
+    const msg = sanitizeError(e);
+    const notFound = /not found/i.test(msg);
+    return NextResponse.json(
+      { error: notFound ? msg : "Failed to load shipments." },
+      { status: notFound ? 404 : 500 },
+    );
   }
 }
 
@@ -56,6 +75,9 @@ async function _post(req: NextRequest) {
   // 099 — module permission gate (marketplace.logistics).
   const _moduleBlock = await requirePortalModule(access, "marketplace.logistics");
   if (_moduleBlock) return _moduleBlock;
+  // 100 — tenant marketplace switch (Layer 0).
+  const _enabledBlock = await requireMarketplaceEnabled(access);
+  if (_enabledBlock) return _enabledBlock;
   // 8c-2: KYC gate — defence-in-depth, mirror top-level marketplace POST.
   const _kycBlock = await requireKycApproved(access);
   if (_kycBlock) return _kycBlock;

@@ -104,6 +104,25 @@ export interface MarketplacePostCreate {
   status?: MarketplacePostStatus;
   visibility?: MarketplaceVisibility;
   expires_at?: string | null;
+  // ── Auction metadata (migration 046 columns; only read when
+  //    post_type = "auction" — the 100 professional upgrade makes the
+  //    create/update routes accept + validate them).
+  //    auction_current_price / auction_winner_id are SERVER-OWNED — never
+  //    accepted from a caller payload (the store sets
+  //    auction_current_price = auction_start_price on insert).
+  //    Re-declared inline instead of importing AuctionType from
+  //    marketplace-auction-types.ts to avoid a circular import (see the
+  //    note in that file).
+  /** "english" | "dutch" | "sealed". */
+  auction_type?: "english" | "dutch" | "sealed";
+  /** Opening price (> 0). */
+  auction_start_price?: number | null;
+  /** Optional reserve price (≥ 0). */
+  auction_reserve_price?: number | null;
+  /** ISO timestamptz — auction close (must be > now + 1h). */
+  auction_ends_at?: string | null;
+  /** Minimum bid increment (≥ 1, default 1). */
+  auction_min_increment?: number | null;
 }
 
 // ─── marketplace_responses ────────────────────────────────────────────────

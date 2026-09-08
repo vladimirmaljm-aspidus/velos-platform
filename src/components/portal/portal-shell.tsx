@@ -38,6 +38,7 @@ import {
   WifiOff,
   RefreshCw,
   HandCoins,
+  Handshake,
 } from "lucide-react";
 import { useAppStore, ViewKey } from "@/lib/store/app-store";
 import { useT, useI18nStore } from "@/lib/i18n/store";
@@ -198,6 +199,11 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { key: "portal-dashboard", labelKey: "portal-nav-dashboard", icon: LayoutDashboard },
   { key: "portal-marketplace", labelKey: "portal-nav-marketplace", icon: Store, module: "marketplace" },
+  // Task 2-c — negotiations were previously invisible in the sidebar (the
+  // view + router entry existed, only the nav item was missing; the
+  // dashboard's Handshake stat card already linked here). Nested under the
+  // marketplace module gate, same as intelligence/community.
+  { key: "portal-marketplace-negotiations", labelKey: "portal-nav-marketplace-negotiations", icon: Handshake, module: "marketplace" },
   { key: "portal-marketplace-intelligence", labelKey: "portal-nav-marketplace-intelligence", icon: LineChart, module: "marketplace" },
   { key: "portal-marketplace-community", labelKey: "portal-nav-marketplace-community", icon: Users, module: "marketplace" },
   { key: "portal-offers", labelKey: "portal-nav-my-offers", icon: FileText, gate: "can_view_offers", module: "offers" },
@@ -257,7 +263,7 @@ const VIEW_TITLE_KEYS: Record<string, string> = {
   "portal-dashboard": "portal-nav-dashboard",
   "portal-marketplace": "portal-nav-marketplace",
   "portal-marketplace-company": "portal-nav-marketplace",
-  "portal-marketplace-negotiations": "portal-nav-marketplace",
+  "portal-marketplace-negotiations": "portal-nav-marketplace-negotiations",
   "portal-marketplace-intelligence": "portal-nav-marketplace-intelligence",
   "portal-marketplace-community": "portal-nav-marketplace-community",
   "portal-offers": "portal-nav-my-offers",

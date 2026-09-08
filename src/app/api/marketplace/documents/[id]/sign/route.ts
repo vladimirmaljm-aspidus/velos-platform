@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requirePortalModule } from "@/lib/portal/module-permissions";
+import { requireMarketplaceEnabled } from "@/lib/portal/marketplace-gate";
 // 8c-2: KYC gate — mirror top-level marketplace POST route. Without this,
 // a portal client whose KYC is `rejected` / `suspended` could still create
 // shipments / sign trade documents / post community content — binding
@@ -52,6 +54,12 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 100 — module permission gate (marketplace).
+  const _moduleBlock = await requirePortalModule(access, "marketplace");
+  if (_moduleBlock) return _moduleBlock;
+  // 100 — tenant marketplace switch (Layer 0).
+  const _enabledBlock = await requireMarketplaceEnabled(access);
+  if (_enabledBlock) return _enabledBlock;
   // 8c-2: KYC gate — defence-in-depth, mirror top-level marketplace POST.
   const _kycBlock = await requireKycApproved(access);
   if (_kycBlock) return _kycBlock;

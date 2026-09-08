@@ -1,12 +1,13 @@
 "use client";
 
-import { LockKeyhole, ShieldCheck, ArrowUpRight } from "lucide-react";
+import { LockKeyhole, ShieldCheck, ArrowUpRight, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/lib/i18n/store";
 import { useAppStore } from "@/lib/store/app-store";
 import { cn } from "@/lib/utils";
+import type { MarketplaceBlockReason } from "@/lib/portal/use-marketplace-permissions";
 
-export type LockReason = "tier" | "kyc";
+export type LockReason = Exclude<MarketplaceBlockReason, null>;
 
 export interface CommunicationLockedCardProps {
   reason: LockReason;
@@ -17,20 +18,75 @@ export interface CommunicationLockedCardProps {
    *   • negotiate → negotiation room composer
    *   • bid       → auction bid box
    *   • qa        → Q&A / review forms
+   *   (only the tier/kyc reasons carry per-context copy; the policy-level
+   *   reasons below render the same message everywhere.)
    */
   context?: "browser" | "respond" | "negotiate" | "bid" | "qa";
   className?: string;
 }
 
+/** Copy + CTA per lock reason — mirrors the server marketplace-gate codes
+ *  (tier_insufficient / kyc_required / posting_admins_only /
+ *  marketplace_disabled / module_disabled) so UI and API never disagree. */
+function lockCopy(
+  reason: LockReason,
+  context: NonNullable<CommunicationLockedCardProps["context"]>,
+): { titleKey: string; bodyKey: string; cta: "upgrade" | "kyc" | "contact" | null } {
+  switch (reason) {
+    case "tier":
+      return {
+        titleKey: "marketplace-locked-tier-title",
+        bodyKey:
+          context === "browser"
+            ? "marketplace-locked-tier-body"
+            : `marketplace-locked-tier-body-${context}`,
+        cta: "upgrade",
+      };
+    case "kyc":
+      return {
+        titleKey: "marketplace-locked-kyc-title",
+        bodyKey:
+          context === "browser"
+            ? "marketplace-locked-kyc-body"
+            : `marketplace-locked-kyc-body-${context}`,
+        cta: "kyc",
+      };
+    case "admins_only":
+      // posting_policy = admins_only — the tenant admin manages every
+      // listing; portal clients cannot post/respond/negotiate at all.
+      return {
+        titleKey: "marketplace-locked-admins-title",
+        bodyKey: "marketplace-locked-admins-body",
+        cta: "contact",
+      };
+    case "marketplace_disabled":
+      // The tenant's marketplace switch is off — reuses the same keys the
+      // feed's 403 error card renders (099).
+      return {
+        titleKey: "marketplace-disabled-title",
+        bodyKey: "marketplace-disabled-desc",
+        cta: null,
+      };
+    case "module":
+      // Per-user/per-tenant module permission denied (module_disabled).
+      return {
+        titleKey: "marketplace-locked-module-title",
+        bodyKey: "marketplace-locked-module-body",
+        cta: null,
+      };
+  }
+}
+
 /**
  * CommunicationLockedCard — rendered INSTEAD of an actionable form when
- * the client's tier / KYC status doesn't meet the marketplace
- * communication policy. Mirrors the server-side marketplace-gate rules:
- *   • tier    → basic/limited can browse but must upgrade to Standard+.
- *   • kyc     → Standard+ requires a fully approved KYC review.
+ * the client doesn't meet the marketplace communication policy.
  *
- * Mirrors error codes `tier_insufficient` / `kyc_required` from
- * requireMarketplaceCommunicator() so UI and API never disagree.
+ * Mirrors the server-side marketplace-gate rules:
+ *   • tier                → basic/limited can browse but must upgrade.
+ *   • kyc                 → KYC review must be fully approved.
+ *   • admins_only         → posting is restricted to tenant admins.
+ *   • marketplace_disabled→ the tenant switch is off for everyone.
+ *   • module              → the marketplace module is denied for the user.
  */
 export function CommunicationLockedCard({
   reason,
@@ -39,17 +95,7 @@ export function CommunicationLockedCard({
 }: CommunicationLockedCardProps) {
   const t = useT();
   const setView = useAppStore((s) => s.setView);
-
-  const titleKey =
-    reason === "tier" ? "marketplace-locked-tier-title" : "marketplace-locked-kyc-title";
-  const bodyKey =
-    reason === "tier"
-      ? context === "browser"
-        ? "marketplace-locked-tier-body"
-        : `marketplace-locked-tier-body-${context}`
-      : context === "browser"
-        ? "marketplace-locked-kyc-body"
-        : `marketplace-locked-kyc-body-${context}`;
+  const copy = lockCopy(reason, context);
 
   return (
     <div
@@ -65,15 +111,15 @@ export function CommunicationLockedCard({
         </div>
         <div>
           <p className="text-sm font-semibold flex items-center gap-1.5">
-            {t(titleKey)}
+            {t(copy.titleKey)}
           </p>
           <p className="mt-0.5 max-w-prose text-[13px] leading-relaxed text-muted-foreground">
-            {t(bodyKey)}
+            {t(copy.bodyKey)}
           </p>
         </div>
       </div>
 
-      {reason === "tier" ? (
+      {copy.cta === "upgrade" ? (
         <Button
           size="sm"
           variant="outline"
@@ -89,7 +135,7 @@ export function CommunicationLockedCard({
           {t("marketplace-locked-upgrade-cta")}
           <ArrowUpRight className="ml-1 h-3.5 w-3.5" aria-hidden="true" />
         </Button>
-      ) : (
+      ) : copy.cta === "kyc" ? (
         <Button
           size="sm"
           variant="outline"
@@ -99,7 +145,21 @@ export function CommunicationLockedCard({
           <ShieldCheck className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
           {t("marketplace-locked-kyc-cta")}
         </Button>
-      )}
+      ) : copy.cta === "contact" ? (
+        <Button
+          size="sm"
+          variant="outline"
+          className="shrink-0"
+          onClick={() => {
+            // Contact request → the portal messages channel (the client
+            // cannot reach the admin console).
+            setView("portal-messages");
+          }}
+        >
+          <MessageCircle className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+          {t("marketplace-locked-contact-cta")}
+        </Button>
+      ) : null}
     </div>
   );
 }

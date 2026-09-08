@@ -61,8 +61,13 @@ export function useWatchlist() {
         const cur = prev ?? [];
         return data.on_watchlist ? [postId, ...cur] : cur.filter((id) => id !== postId);
       });
-      // The hydrated watchlist feed (if open) is now stale.
-      qc.invalidateQueries({ queryKey: ["marketplace-watchlist-feed"] });
+      // 2-a — the feed lists are now stale: the starred/unstarred post
+      // appears in / disappears from the watchlist-only feed. The ROOT
+      // ["marketplace-list"] key covers every filter variant (the key is
+      // ["marketplace-list", type, category, country, sort, search,
+      // watchlistOnly] in MarketplaceList). The old
+      // ["marketplace-watchlist-feed"] key was used by NOTHING.
+      qc.invalidateQueries({ queryKey: ["marketplace-list"] });
     },
     onError: (e: Error) => toast.error(e.message),
   });

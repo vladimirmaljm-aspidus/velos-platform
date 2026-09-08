@@ -5,11 +5,19 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Card,
   CardContent,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Select,
   SelectContent,
@@ -17,12 +25,29 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Eye, MessageSquare, Plus, Trash2, Package, Send, Clock } from "lucide-react";
+import {
+  Loader2,
+  Eye,
+  MessageSquare,
+  Plus,
+  Trash2,
+  Package,
+  Send,
+  Clock,
+  Pencil,
+  Flag,
+  AlertTriangle,
+} from "lucide-react";
 import { useT } from "@/lib/i18n/store";
 import { useAppStore } from "@/lib/store/app-store";
 import { toast } from "sonner";
 import { fmtMoney, fmtRelative } from "@/lib/utils/format";
-import type { MarketplacePostType } from "@/lib/supabase/marketplace-types";
+import { cn } from "@/lib/utils";
+import type {
+  MarketplacePostType,
+  MarketplaceVisibility,
+} from "@/lib/supabase/marketplace-types";
+import type { MarketplaceEditPost } from "./marketplace-create-post";
 
 interface MyPost {
   id: string;
@@ -34,7 +59,7 @@ interface MyPost {
   target_price: number | null;
   currency: string;
   status: string;
-  visibility: string;
+  visibility: MarketplaceVisibility;
   views_count: number;
   responses_count: number;
   created_at: string;
@@ -58,13 +83,20 @@ const STATUS_LABEL_KEY: Record<string, string> = {
 
 export function MarketplaceMyPosts({
   onCreateClick,
+  onEditClick,
 }: {
   onCreateClick?: () => void;
+  /** 2-a — opens the create-post wizard in EDIT mode with this post
+   *  (threaded up to MarketplaceBrowser, which owns the dialog). */
+  onEditClick?: (post: MarketplaceEditPost) => void;
 }) {
   const t = useT();
   const setSelectedId = useAppStore((s) => s.setSelectedId);
   const qc = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  // 2-a — the post pending delete-confirmation (shadcn AlertDialog
+  // replaces the native confirm()).
+  const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const q = useQuery<{ items: MyPost[] }>({
     queryKey: ["marketplace-my-posts"],
@@ -141,6 +173,12 @@ export function MarketplaceMyPosts({
   const items = statusFilter === "all"
     ? allItems
     : allItems.filter((p) => p.status === statusFilter);
+  // 2-a — editable while the post is still live/awaiting review; closed,
+  // cancelled, expired and flagged posts are read-only rows (the edit
+  // button renders disabled so the layout doesn't jump).
+  const isEditable = (p: MyPost) =>
+    p.status === "draft" || p.status === "active" || p.status === "pending";
+  const deleteTarget = allItems.find((p) => p.id === deleteId) ?? null;
 
   return (
     <div className="space-y-4">
@@ -153,12 +191,13 @@ export function MarketplaceMyPosts({
         </div>
         <div className="flex items-center gap-2">
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">{t("marketplace-status-all")}</SelectItem>
               <SelectItem value="active">{t("marketplace-status-active")}</SelectItem>
               <SelectItem value="draft">{t("marketplace-status-draft")}</SelectItem>
               <SelectItem value="pending">{t("marketplace-status-pending")}</SelectItem>
+              <SelectItem value="flagged">{t("marketplace-status-flagged")}</SelectItem>
               <SelectItem value="closed">{t("marketplace-status-closed")}</SelectItem>
               <SelectItem value="expired">{t("marketplace-status-expired")}</SelectItem>
             </SelectContent>
@@ -173,6 +212,18 @@ export function MarketplaceMyPosts({
       {q.isLoading ? (
         <div className="flex justify-center py-12">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      ) : q.isError ? (
+        // 2-a — failed load: error card with retry, matching the lock-card
+        // styling pattern MarketplaceList renders for its failures.
+        <div className="text-center py-16 rounded-xl border border-dashed border-border/60 bg-muted/10">
+          <div className="size-12 mx-auto rounded-xl bg-muted flex items-center justify-center mb-3">
+            <AlertTriangle className="h-6 w-6 text-muted-foreground" />
+          </div>
+          <p className="font-medium">{t("marketplace-load-error")}</p>
+          <Button variant="outline" size="sm" className="mt-4" onClick={() => q.refetch()}>
+            {t("portal-action-try-again")}
+          </Button>
         </div>
       ) : items.length === 0 ? (
         <div className="text-center py-12">
@@ -192,6 +243,20 @@ export function MarketplaceMyPosts({
                     <Badge variant="outline" className="text-xs">
                       {t(STATUS_LABEL_KEY[p.status] || `marketplace-status-${p.status}`)}
                     </Badge>
+                    {/* 2-a — distinct amber Flagged badge next to the status
+                        badge (mirrors the pending "awaiting approval"
+                        hint-badge pattern). */}
+                    {p.status === "flagged" && (
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-xs gap-1 border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+                        )}
+                      >
+                        <Flag className="h-3 w-3" />
+                        {t("marketplace-status-flagged")}
+                      </Badge>
+                    )}
                     {p.status === "pending" && (
                       <Badge
                         variant="outline"
@@ -227,6 +292,25 @@ export function MarketplaceMyPosts({
                     <Eye className="h-3.5 w-3.5 mr-1" />
                     {t("portal-action-view")}
                   </Button>
+                  {/* 2-a — open the wizard in edit mode (threaded up to the
+                      browser, which owns the dialog). Enabled while the post
+                      is still editable; disabled for closed/cancelled/
+                      expired/flagged rows. */}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1"
+                    disabled={!isEditable(p)}
+                    title={
+                      isEditable(p)
+                        ? t("marketplace-edit")
+                        : t(STATUS_LABEL_KEY[p.status] || `marketplace-status-${p.status}`)
+                    }
+                    onClick={() => onEditClick?.(p)}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    {t("marketplace-edit")}
+                  </Button>
                   {p.status === "draft" && (
                     <Button
                       size="sm"
@@ -256,10 +340,9 @@ export function MarketplaceMyPosts({
                   <Button
                     size="sm"
                     variant="ghost"
-                    onClick={() => {
-                      if (confirm(t("marketplace-confirm-delete"))) del.mutate(p.id);
-                    }}
+                    onClick={() => setDeleteId(p.id)}
                     disabled={del.isPending}
+                    aria-label={t("marketplace-confirm-delete")}
                     className="text-destructive hover:text-destructive"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
@@ -270,6 +353,33 @@ export function MarketplaceMyPosts({
           ))}
         </div>
       )}
+
+      {/* 2-a — destructive delete confirmation (shadcn AlertDialog,
+          replacing the native confirm()). */}
+      <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("marketplace-confirm-delete")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget ? deleteTarget.product_name : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDeleteId(null)}>
+              {t("portal-action-cancel")}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (deleteId) del.mutate(deleteId);
+                setDeleteId(null);
+              }}
+            >
+              {t("marketplace-delete-cta")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { requirePortalModule } from "@/lib/portal/module-permissions";
+import { requireMarketplaceEnabled } from "@/lib/portal/marketplace-gate";
 import { followPartner, unfollowPartner } from "@/lib/data/marketplace-profile-store";
 import { getSupabase } from "@/lib/supabase/client";
 import { audit, sanitizeError } from "@/lib/api/helpers";
@@ -25,6 +26,9 @@ async function _post(req: NextRequest) {
   // 099 — module permission gate (marketplace).
   const _moduleBlock = await requirePortalModule(access, "marketplace");
   if (_moduleBlock) return _moduleBlock;
+  // 100 — tenant marketplace switch (Layer 0).
+  const _enabledBlock = await requireMarketplaceEnabled(access);
+  if (_enabledBlock) return _enabledBlock;
 
   let body;
   try {
@@ -95,6 +99,9 @@ async function _delete(req: NextRequest) {
   // 099 — module permission gate (marketplace).
   const _moduleBlock = await requirePortalModule(access, "marketplace");
   if (_moduleBlock) return _moduleBlock;
+  // 100 — tenant marketplace switch (Layer 0).
+  const _enabledBlock = await requireMarketplaceEnabled(access);
+  if (_enabledBlock) return _enabledBlock;
   const url = new URL(req.url);
   const partnerId = url.searchParams.get("partnerId");
   if (!partnerId) {

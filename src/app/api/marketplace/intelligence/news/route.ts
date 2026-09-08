@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { requirePortalModule } from "@/lib/portal/module-permissions";
+import { requireMarketplaceEnabled } from "@/lib/portal/marketplace-gate";
 import { withApm } from "@/lib/monitoring/apm";
 
 export const runtime = "nodejs";
@@ -59,6 +60,9 @@ async function _get(req: NextRequest) {
   // 099 — module permission gate (marketplace.intelligence).
   const _moduleBlock = await requirePortalModule(access, "marketplace.intelligence");
   if (_moduleBlock) return _moduleBlock;
+  // 100 — tenant marketplace switch (Layer 0).
+  const _enabledBlock = await requireMarketplaceEnabled(access);
+  if (_enabledBlock) return _enabledBlock;
   const url = new URL(req.url);
   const category = url.searchParams.get("category") || "commodity";
   const locale = url.searchParams.get("locale") || "en";

@@ -8,6 +8,7 @@ import {
   updateMarketplacePost,
   deleteMarketplacePost,
   getMarketplaceTenantSettings,
+  validateAuctionParams,
 } from "@/lib/data/marketplace-store";
 import { getSupabase } from "@/lib/supabase/client";
 import { sanitizeFields } from "@/lib/security/sanitize-input";
@@ -81,7 +82,7 @@ async function _put(req: NextRequest, ctx: { params: Promise<{ id: string }> }) 
   const sb = getSupabase();
   const { data: raw, error: rawErr } = await sb
     .from("marketplace_posts")
-    .select("id, tenant_id, partner_id, status")
+    .select("id, tenant_id, partner_id, status, post_type")
     .eq("id", id)
     .maybeSingle();
   if (rawErr) {
@@ -166,19 +167,50 @@ async function _put(req: NextRequest, ctx: { params: Promise<{ id: string }> }) 
     "description",
   ]);
 
-  // FIX-MARKET-2 / fix #2: if the post already has bids (auction_bids table
-  // rows for this post_id), the owner may NOT change auction-defining fields.
-  // Mutating post_type / auction_ends_at / auction_start_price /
-  // auction_reserve_price / auction_min_increment after bids are placed
-  // would retroactively change the rules of an active auction and let an
-  // owner manipulate the outcome. Reject with 400.
+  // 100 — auction parameters are writable ONLY while the post has zero
+  // bids (pre-bid); once any bid exists every defining field is
+  // immutable. Extends the FIX-MARKET-2 lock with auction_type + full
+  // route-level validation (shared with the create route so the messages
+  // never drift) + the server-owned-field strip + the pre-bid
+  // current-price mirror.
+  //
+  // FIX-MARKET-2 / fix #2 (original): mutating post_type /
+  // auction_ends_at / auction_start_price / auction_reserve_price /
+  // auction_min_increment after bids are placed would retroactively
+  // change the rules of an active auction and let an owner manipulate
+  // the outcome. Reject with 400.
+  //
+  // Server-owned auction lifecycle fields are never writable by callers:
+  // auction_current_price mirrors auction_start_price while there are no
+  // bids (set below), auction_winner_id is set by processAuctionEnd().
+  delete body.auction_winner_id;
+  delete body.auction_current_price;
+
   const auctionParamsPresent =
     body.post_type !== undefined ||
+    body.auction_type !== undefined ||
     body.auction_ends_at !== undefined ||
     body.auction_start_price !== undefined ||
     body.auction_reserve_price !== undefined ||
     body.auction_min_increment !== undefined;
   if (auctionParamsPresent) {
+    // Auction params only make sense on auction posts — check against the
+    // EFFECTIVE type (patched post_type, else the stored one).
+    const effectivePostType =
+      (body.post_type as string | undefined) ?? (raw as { post_type?: string }).post_type;
+    if (effectivePostType !== "auction") {
+      return NextResponse.json(
+        { error: "Auction parameters can only be set on auction posts." },
+        { status: 400 },
+      );
+    }
+    // Shared validator (same rules as POST /api/marketplace): enum,
+    // start > 0, reserve ≥ 0, ends_at ISO > now + 1h, min increment ≥ 1.
+    const auctionErr = validateAuctionParams(body);
+    if (auctionErr) {
+      return NextResponse.json({ error: auctionErr }, { status: 400 });
+    }
+    // The auction lock: any bid on this post freezes every defining param.
     const { data: existingBid } = await sb
       .from("marketplace_auction_bids")
       .select("id")
@@ -190,6 +222,11 @@ async function _put(req: NextRequest, ctx: { params: Promise<{ id: string }> }) 
         { error: "Cannot change auction parameters after bids are placed." },
         { status: 400 },
       );
+    }
+    // Pre-bid start-price change → keep auction_current_price in sync
+    // (with zero bids the current price is still the opening price).
+    if (body.auction_start_price !== undefined && body.auction_start_price !== null) {
+      body.auction_current_price = body.auction_start_price;
     }
   }
 
@@ -242,6 +279,16 @@ async function _delete(req: NextRequest, ctx: { params: Promise<{ id: string }> 
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 100 — gate parity with PUT: the DELETE handler previously had NO
+  // gates at all (GET/PUT were fully gated in 099) — a tenant with the
+  // marketplace disabled, a module-denied user, or a downgraded
+  // tier/KYC could still delete their posts. Same three gates as PUT.
+  const _moduleBlock = await requirePortalModule(access, "marketplace.post");
+  if (_moduleBlock) return _moduleBlock;
+  const _enabledBlock = await requireMarketplaceEnabled(access);
+  if (_enabledBlock) return _enabledBlock;
+  const _posterBlock = await requireMarketplacePoster(access);
+  if (_posterBlock) return _posterBlock;
   const { id } = await ctx.params;
 
   const sb = getSupabase();

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requirePortalModule } from "@/lib/portal/module-permissions";
 import { calculateFactoringCost } from "@/lib/data/marketplace-finance-store";
 import { withApm } from "@/lib/monitoring/apm";
 
@@ -14,6 +15,9 @@ async function _get(req: NextRequest) {
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 100 — module permission gate (marketplace.finance).
+  const _moduleBlock = await requirePortalModule(access, "marketplace.finance");
+  if (_moduleBlock) return _moduleBlock;
   const url = new URL(req.url);
   const amountParam = url.searchParams.get("amount");
   const discountParam = url.searchParams.get("discountRate");

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { requirePortalModule } from "@/lib/portal/module-permissions";
+import { requireMarketplaceEnabled } from "@/lib/portal/marketplace-gate";
 import { getESGScore } from "@/lib/data/marketplace-esg-store";
 import { withApm } from "@/lib/monitoring/apm";
 
@@ -22,6 +23,9 @@ async function _get(_req: NextRequest, ctx: { params: Promise<{ partnerId: strin
   // 099 — module permission gate (marketplace.esg).
   const _moduleBlock = await requirePortalModule(access, "marketplace.esg");
   if (_moduleBlock) return _moduleBlock;
+  // 100 — tenant marketplace switch (Layer 0).
+  const _enabledBlock = await requireMarketplaceEnabled(access);
+  if (_enabledBlock) return _enabledBlock;
   const { partnerId } = await ctx.params;
   try {
     const score = await getESGScore(partnerId);

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { requirePortalModule } from "@/lib/portal/module-permissions";
+import { requireMarketplaceEnabled } from "@/lib/portal/marketplace-gate";
 import {
   getShipmentIfAuthorised,
   sanitisePublicShipment,
@@ -24,6 +25,9 @@ async function _get(_req: NextRequest, ctx: { params: Promise<{ id: string }> })
   // 099 — module permission gate (marketplace.logistics).
   const _moduleBlock = await requirePortalModule(access, "marketplace.logistics");
   if (_moduleBlock) return _moduleBlock;
+  // 100 — tenant marketplace switch (Layer 0).
+  const _enabledBlock = await requireMarketplaceEnabled(access);
+  if (_enabledBlock) return _enabledBlock;
   const { id } = await ctx.params;
   try {
     const auth = await getShipmentIfAuthorised(id, access.tenant_id, access.partner_id);
@@ -71,6 +75,9 @@ async function _put(req: NextRequest, ctx: { params: Promise<{ id: string }> }) 
   // 099 — module permission gate (marketplace.logistics).
   const _moduleBlock = await requirePortalModule(access, "marketplace.logistics");
   if (_moduleBlock) return _moduleBlock;
+  // 100 — tenant marketplace switch (Layer 0).
+  const _enabledBlock = await requireMarketplaceEnabled(access);
+  if (_enabledBlock) return _enabledBlock;
   const { id } = await ctx.params;
 
   let body;
