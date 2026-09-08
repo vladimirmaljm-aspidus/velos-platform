@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requirePortalModule } from "@/lib/portal/module-permissions";
 import { getBlogPost, incrementViews, updateBlogPost } from "@/lib/data/marketplace-community-store";
 import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
@@ -54,6 +55,9 @@ async function _put(req: NextRequest, ctx: RouteCtx) {
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 099 — module permission gate (marketplace.community).
+  const _moduleBlock = await requirePortalModule(access, "marketplace.community");
+  if (_moduleBlock) return _moduleBlock;
   const { slug } = await ctx.params;
 
   let body;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
@@ -38,6 +38,7 @@ import {
   Tag,
   Ruler,
   FileText,
+  Info,
 } from "lucide-react";
 import { useT } from "@/lib/i18n/store";
 import { useAppStore } from "@/lib/store/app-store";
@@ -127,6 +128,24 @@ interface FormState {
   visibility: MarketplaceVisibility;
 }
 
+/** GET /api/marketplace/categories — active curated taxonomy (099). */
+interface MarketplaceCategoryItem {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+/** GET /api/marketplace/settings — the caller's tenant policy (099). */
+interface MarketplaceSettingsResponse {
+  settings: {
+    enabled: boolean;
+    posting_policy: string;
+    require_approval: boolean;
+    default_visibility: string;
+    allow_private_posts: boolean;
+  };
+}
+
 const DEFAULT_FORM: FormState = {
   post_type: "sell",
   product_name: "",
@@ -165,6 +184,60 @@ export function MarketplaceCreatePost({
   const qc = useQueryClient();
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<FormState>(DEFAULT_FORM);
+  // 099 — tenant policy awareness. `visibilityChosen` tracks whether the
+  // user explicitly picked a visibility in the wizard; until then the
+  // tenant's default_visibility (when private is allowed) wins.
+  const [visibilityChosen, setVisibilityChosen] = useState(false);
+
+  // ── Categories from the API (099) ───────────────────────────────────────
+  // The admin-curated marketplace_categories taxonomy replaces the hardcoded
+  // PRODUCT_CATEGORIES list; on failure/empty the static list stays as the
+  // fallback so the form always has options.
+  const categoriesQ = useQuery<{ items: MarketplaceCategoryItem[] }>({
+    queryKey: ["marketplace-categories"],
+    queryFn: async () => {
+      const r = await fetch("/api/marketplace/categories");
+      if (!r.ok) throw new Error("failed");
+      return r.json();
+    },
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+  const categoryOptions = useMemo(() => {
+    const apiItems = categoriesQ.data?.items ?? [];
+    if (apiItems.length > 0) {
+      return apiItems.map((c) => ({ value: c.name, label: c.name }));
+    }
+    return PRODUCT_CATEGORIES.map((c) => ({ value: c.code, label: c.name }));
+  }, [categoriesQ.data]);
+
+  // ── Tenant settings (099) ────────────────────────────────────────────────
+  // Fail-open on error (server still enforces the policy on submit): private
+  // stays selectable and no approval notice is shown until we KNOW otherwise.
+  const settingsQ = useQuery<MarketplaceSettingsResponse>({
+    queryKey: ["marketplace-settings"],
+    queryFn: async () => {
+      const r = await fetch("/api/marketplace/settings");
+      if (!r.ok) throw new Error("failed");
+      return r.json();
+    },
+    staleTime: 60_000,
+    retry: 1,
+  });
+  const tenantSettings = settingsQ.data?.settings ?? null;
+  const allowPrivatePosts = tenantSettings?.allow_private_posts ?? true;
+  const requireApproval = tenantSettings?.require_approval ?? false;
+
+  // Effective visibility — derived, never stored twice:
+  //   • private disallowed by the tenant → forced public
+  //   • user hasn't chosen + tenant default is private (and private is
+  //     allowed) → private
+  //   • otherwise whatever the user picked ("public" until then)
+  const effectiveVisibility: MarketplaceVisibility = !allowPrivatePosts
+    ? "public"
+    : !visibilityChosen && tenantSettings?.default_visibility === "private"
+      ? "private"
+      : form.visibility;
 
   function set<K extends keyof FormState>(k: K, v: FormState[K]) {
     setForm((f) => ({ ...f, [k]: v }));
@@ -178,11 +251,21 @@ export function MarketplaceCreatePost({
         out.product_name = data.productName.trim();
       }
       if (data.category) {
-        const match = PRODUCT_CATEGORIES.find((c) =>
-          c.name.toLowerCase().includes(data.category!.toLowerCase()) ||
-          c.code.toLowerCase() === data.category!.toLowerCase(),
+        // Prefer a category that actually exists in the current options
+        // (API taxonomy first, static fallback codes second) so the
+        // pre-filled value matches what the Select offers.
+        const apiMatch = categoryOptions.find((c) =>
+          c.label.toLowerCase().includes(data.category!.toLowerCase()),
         );
-        if (match) out.product_category = match.code;
+        if (apiMatch) {
+          out.product_category = apiMatch.value;
+        } else {
+          const match = PRODUCT_CATEGORIES.find((c) =>
+            c.name.toLowerCase().includes(data.category!.toLowerCase()) ||
+            c.code.toLowerCase() === data.category!.toLowerCase(),
+          );
+          if (match) out.product_category = match.code;
+        }
       }
       if (data.specifications && Object.keys(data.specifications).length > 0) {
         out.specifications = { ...out.specifications, ...data.specifications };
@@ -216,7 +299,7 @@ export function MarketplaceCreatePost({
         price_type: form.price_type,
         price_visible: form.price_visible,
         status: mode === "draft" ? "draft" : form.status,
-        visibility: form.visibility,
+        visibility: effectiveVisibility,
         description: form.description || null,
       };
       if (form.product_category) payload.product_category = form.product_category;
@@ -248,13 +331,22 @@ export function MarketplaceCreatePost({
       }
       return r.json();
     },
-    onSuccess: (created: { id: string }, mode) => {
+    onSuccess: (created: { id: string; status?: string }, mode) => {
+      // 099 — moderated tenants: the server converts an "active" create into
+      // "pending" (awaiting admin approval). Toast the approval message
+      // instead of the plain "created" one so the poster isn't surprised the
+      // post hasn't appeared in the feed yet.
       toast.success(
-        mode === "draft" ? t("marketplace-wizard-draft-saved") : t("marketplace-post-created"),
+        mode === "draft"
+          ? t("marketplace-wizard-draft-saved")
+          : created.status === "pending"
+            ? t("marketplace-publish-pending")
+            : t("marketplace-post-created"),
       );
       qc.invalidateQueries({ queryKey: ["marketplace-list"] });
       onOpenChange(false);
       setForm(DEFAULT_FORM);
+      setVisibilityChosen(false);
       setStep(0);
       // Drill into the new post only when publishing — drafts stay list-only.
       if (mode === "publish") setSelectedId(created.id);
@@ -285,6 +377,7 @@ export function MarketplaceCreatePost({
   }
   function reset() {
     setForm(DEFAULT_FORM);
+    setVisibilityChosen(false);
     setStep(0);
   }
 
@@ -292,6 +385,7 @@ export function MarketplaceCreatePost({
   function handleOpenChange(o: boolean) {
     if (!o) {
       setForm(DEFAULT_FORM);
+      setVisibilityChosen(false);
       setStep(0);
     }
     onOpenChange(o);
@@ -425,8 +519,8 @@ export function MarketplaceCreatePost({
                   <Select value={form.product_category} onValueChange={(v) => set("product_category", v)}>
                     <SelectTrigger id="p-cat"><SelectValue placeholder="—" /></SelectTrigger>
                     <SelectContent>
-                      {PRODUCT_CATEGORIES.map((c) => (
-                        <SelectItem key={c.code} value={c.code}>{c.name}</SelectItem>
+                      {categoryOptions.map((c) => (
+                        <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -693,11 +787,22 @@ export function MarketplaceCreatePost({
 
               <div className="space-y-2">
                 <Label htmlFor="p-vis" className="text-sm font-medium">{t("marketplace-visibility")}</Label>
-                <Select value={form.visibility} onValueChange={(v) => set("visibility", v as MarketplaceVisibility)}>
+                {/* 099 — tenant policy: the "Private — only via direct link"
+                    option disappears when the tenant disallows private posts
+                    (the derived effectiveVisibility is then forced public). */}
+                <Select
+                  value={effectiveVisibility}
+                  onValueChange={(v) => {
+                    set("visibility", v as MarketplaceVisibility);
+                    setVisibilityChosen(true);
+                  }}
+                >
                   <SelectTrigger id="p-vis"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="public">{t("marketplace-visibility-public")}</SelectItem>
-                    <SelectItem value="private">{t("marketplace-visibility-private")}</SelectItem>
+                    {allowPrivatePosts && (
+                      <SelectItem value="private">{t("marketplace-visibility-private")}</SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -771,6 +876,17 @@ export function MarketplaceCreatePost({
         {/* ─── Wizard navigation ─────────────────────────────────────────── */}
         <div className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4 space-y-2">
         <Separator />
+        {/* 099 — moderated tenants: approval notice next to the submit
+            button on the review step so the poster knows what happens
+            after they hit Publish. */}
+        {step === STEPS.length - 1 && requireApproval && (
+          <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2.5">
+            <Info className="size-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+            <p className="text-xs text-muted-foreground">
+              {t("marketplace-approval-notice")}
+            </p>
+          </div>
+        )}
         <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
           <div className="flex gap-2">
             <Button

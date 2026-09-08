@@ -1194,6 +1194,14 @@ export interface PortalAccess {
   failed_attempts: number;
   locked_until: string | null;
   token_version: number;
+  /**
+   * Per-USER module permission overrides (migration 099):
+   *   { "marketplace": false, "marketplace.post": false, "referrals": true, … }
+   * Keys are dot-format module ids (see src/lib/portal/module-permissions.ts).
+   * `null`/absent = no override → the tenant-level defaults apply, then the
+   * legacy boolean fallbacks. Evaluated by requirePortalModule().
+   */
+  module_permissions?: Record<string, boolean> | null;
 }
 
 // ============================================================

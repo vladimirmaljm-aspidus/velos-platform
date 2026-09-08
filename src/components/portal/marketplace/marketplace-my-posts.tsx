@@ -17,7 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Eye, MessageSquare, Plus, Trash2, Package } from "lucide-react";
+import { Loader2, Eye, MessageSquare, Plus, Trash2, Package, Send, Clock } from "lucide-react";
 import { useT } from "@/lib/i18n/store";
 import { useAppStore } from "@/lib/store/app-store";
 import { toast } from "sonner";
@@ -49,6 +49,7 @@ const TYPE_LABEL_KEY: Record<string, string> = {
 
 const STATUS_LABEL_KEY: Record<string, string> = {
   draft: "marketplace-status-draft",
+  pending: "marketplace-status-pending",
   active: "marketplace-status-active",
   closed: "marketplace-status-closed",
   expired: "marketplace-status-expired",
@@ -108,6 +109,34 @@ export function MarketplaceMyPosts({
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // 099 — draft publishing. PUT status:"active"; when the tenant requires
+  // approval the server converts draft→pending and answers with
+  // `pending_approval: true` so we toast "awaiting approval" instead of the
+  // plain published message. Without this button drafts were a dead end.
+  const publishPost = useMutation({
+    mutationFn: async (id: string) => {
+      const r = await fetch(`/api/marketplace/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "active" }),
+      });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.error || "Failed.");
+      }
+      return r.json() as Promise<{ pending_approval?: boolean } | null>;
+    },
+    onSuccess: (data) => {
+      toast.success(
+        data?.pending_approval
+          ? t("marketplace-publish-pending")
+          : t("marketplace-published"),
+      );
+      qc.invalidateQueries({ queryKey: ["marketplace-my-posts"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const allItems = q.data?.items ?? [];
   const items = statusFilter === "all"
     ? allItems
@@ -129,6 +158,7 @@ export function MarketplaceMyPosts({
               <SelectItem value="all">{t("marketplace-status-all")}</SelectItem>
               <SelectItem value="active">{t("marketplace-status-active")}</SelectItem>
               <SelectItem value="draft">{t("marketplace-status-draft")}</SelectItem>
+              <SelectItem value="pending">{t("marketplace-status-pending")}</SelectItem>
               <SelectItem value="closed">{t("marketplace-status-closed")}</SelectItem>
               <SelectItem value="expired">{t("marketplace-status-expired")}</SelectItem>
             </SelectContent>
@@ -162,6 +192,15 @@ export function MarketplaceMyPosts({
                     <Badge variant="outline" className="text-xs">
                       {t(STATUS_LABEL_KEY[p.status] || `marketplace-status-${p.status}`)}
                     </Badge>
+                    {p.status === "pending" && (
+                      <Badge
+                        variant="outline"
+                        className="text-xs gap-1 border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+                      >
+                        <Clock className="h-3 w-3" />
+                        {t("marketplace-pending-hint")}
+                      </Badge>
+                    )}
                     {p.visibility === "private" && (
                       <Badge variant="outline" className="text-xs">
                         {t("marketplace-visibility-private")}
@@ -188,6 +227,22 @@ export function MarketplaceMyPosts({
                     <Eye className="h-3.5 w-3.5 mr-1" />
                     {t("portal-action-view")}
                   </Button>
+                  {p.status === "draft" && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => publishPost.mutate(p.id)}
+                      disabled={publishPost.isPending}
+                      className="gap-1"
+                    >
+                      {publishPost.isPending ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Send className="h-3.5 w-3.5" />
+                      )}
+                      {t("marketplace-publish")}
+                    </Button>
+                  )}
                   {p.status === "active" && (
                     <Button
                       size="sm"

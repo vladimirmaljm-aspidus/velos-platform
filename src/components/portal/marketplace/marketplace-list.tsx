@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Plus, Search, SearchX, FilterX, ChevronDown, Star } from "lucide-react";
+import { Loader2, Plus, Search, SearchX, FilterX, ChevronDown, Star, Lock } from "lucide-react";
 import { useT } from "@/lib/i18n/store";
 import { useAppStore } from "@/lib/store/app-store";
 import {
@@ -113,7 +113,14 @@ export function MarketplaceList({ onCreateClick }: { onCreateClick?: () => void 
       const r = watchlistOnly
         ? await fetch(`/api/marketplace/watchlist?hydrate=1&limit=${PAGE_SIZE}&offset=${pageIdx * PAGE_SIZE}`)
         : await fetch(`/api/marketplace?${buildQuery(pageIdx)}`);
-      if (!r.ok) throw new Error("failed");
+      if (!r.ok) {
+        // 099 — surface the machine-readable error code (e.g.
+        // "marketplace_disabled") from the JSON error body so the error
+        // branch below can render the tenant lock card instead of the
+        // generic failure.
+        const e = await r.json().catch(() => ({}));
+        throw new Error((e as { code?: string }).code || "failed");
+      }
       return r.json();
     },
     enabled: !watchlistOnly || watchlist.ids.length > 0 || watchlist.loading,
@@ -138,6 +145,10 @@ export function MarketplaceList({ onCreateClick }: { onCreateClick?: () => void 
   const loadingMore = infiniteQ.isFetching && (infiniteQ.isFetchingNextPage ?? false);
   const isInitialLoading = infiniteQ.isLoading;
   const isError = infiniteQ.isError;
+  // 099 — the feed 403s with code "marketplace_disabled" when the tenant
+  // switch is off; the queryFn above pipes that code into the Error message.
+  const marketplaceDisabled =
+    isError && (infiniteQ.error as Error | null)?.message === "marketplace_disabled";
 
   function onCardClick(id: string) {
     setSelectedId(id);
@@ -178,7 +189,7 @@ export function MarketplaceList({ onCreateClick }: { onCreateClick?: () => void 
             {t("marketplace-subtitle")}
           </p>
         </div>
-        {onCreateClick && (
+        {onCreateClick && !marketplaceDisabled && (
           <Button
             onClick={onCreateClick}
             className="shrink-0 gap-1.5 self-start sm:self-auto w-full sm:w-auto"
@@ -190,6 +201,9 @@ export function MarketplaceList({ onCreateClick }: { onCreateClick?: () => void 
       </div>
 
       {/* ─── Sticky filter bar ────────────────────────────────────────── */}
+      {/* 099 — filters + result count are pointless when the marketplace is
+          disabled for the tenant; only the lock card below renders. */}
+      {!marketplaceDisabled && (
       <div className="sticky top-16 z-20 -mx-4 px-4 py-3 sm:mx-0 sm:px-0 sm:py-0 sm:space-y-3">
         <div className="rounded-xl border border-border/60 bg-background/80 backdrop-blur-md shadow-soft p-3 sm:bg-background/60 sm:border sm:border-border/60 sm:shadow-sm sm:backdrop-blur-sm">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
@@ -274,8 +288,10 @@ export function MarketplaceList({ onCreateClick }: { onCreateClick?: () => void 
           </div>
         </div>
       </div>
+      )}
 
-      {/* ─── Result count + clear filters ──────────────────────────────── */}
+      {/* ─── Result count + clear filters ──────────────────────────── */}
+      {!marketplaceDisabled && (
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <p className="text-sm text-muted-foreground">
           {isInitialLoading
@@ -299,6 +315,7 @@ export function MarketplaceList({ onCreateClick }: { onCreateClick?: () => void 
           </Button>
         )}
       </div>
+      )}
 
       {/* ─── Grid ──────────────────────────────────────────────────────── */}
       {isInitialLoading ? (
@@ -308,12 +325,26 @@ export function MarketplaceList({ onCreateClick }: { onCreateClick?: () => void 
           ))}
         </div>
       ) : isError ? (
-        <div className="text-center py-20 text-muted-foreground">
-          <p>{t("marketplace-load-error")}</p>
-          <Button variant="outline" size="sm" className="mt-3" onClick={() => infiniteQ.refetch()}>
-            {t("portal-action-try-again")}
-          </Button>
-        </div>
+        marketplaceDisabled ? (
+          // 099 — the tenant administrator turned the marketplace off: a
+          // friendly lock card instead of the raw "failed to load" error.
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <div className="size-14 rounded-2xl bg-muted flex items-center justify-center mb-4">
+              <Lock className="size-7 text-muted-foreground" />
+            </div>
+            <p className="text-base font-semibold">{t("marketplace-disabled-title")}</p>
+            <p className="text-sm text-muted-foreground mt-1 max-w-md">
+              {t("marketplace-disabled-desc")}
+            </p>
+          </div>
+        ) : (
+          <div className="text-center py-20 text-muted-foreground">
+            <p>{t("marketplace-load-error")}</p>
+            <Button variant="outline" size="sm" className="mt-3" onClick={() => infiniteQ.refetch()}>
+              {t("portal-action-try-again")}
+            </Button>
+          </div>
+        )
       ) : items.length === 0 ? (
         isUnfilteredEmpty ? (
           // Truly empty marketplace — show the HowItWorks explainer + CTA.

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requirePortalModule } from "@/lib/portal/module-permissions";
 import { requireKycApproved } from "@/lib/portal/kyc-gate";
 import { requireGpsVerified } from "@/lib/portal/require-gps";
 import { getSupabase } from "@/lib/supabase/client";
@@ -63,6 +64,9 @@ async function nextNumber(tenantId: string): Promise<string> {
 export async function GET(req: NextRequest) {
   const access = await getPortalSessionAccess();
   if (!access) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+  // 099 — module permission gate (logistics).
+  const _moduleBlock = await requirePortalModule(access, "logistics");
+  if (_moduleBlock) return _moduleBlock;
 
   const kyc = await requireKycApproved(access);
   if (kyc) return kyc;
@@ -104,6 +108,9 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const access = await getPortalSessionAccess();
   if (!access) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+  // 099 — module permission gate (logistics).
+  const _moduleBlock = await requirePortalModule(access, "logistics");
+  if (_moduleBlock) return _moduleBlock;
 
   const kyc = await requireKycApproved(access);
   if (kyc) return kyc;

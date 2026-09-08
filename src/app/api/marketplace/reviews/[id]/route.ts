@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requirePortalModule } from "@/lib/portal/module-permissions";
 import { getReview, respondToReview } from "@/lib/data/marketplace-profile-store";
 import { sanitizeFields } from "@/lib/security/sanitize-input";
 import { audit, sanitizeError } from "@/lib/api/helpers";
@@ -17,6 +18,9 @@ async function _get(_req: NextRequest, ctx: { params: Promise<{ id: string }> })
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 099 — module permission gate (marketplace.community).
+  const _moduleBlock = await requirePortalModule(access, "marketplace.community");
+  if (_moduleBlock) return _moduleBlock;
   const { id } = await ctx.params;
   try {
     const review = await getReview(id, access.partner_id);
@@ -40,6 +44,9 @@ async function _put(req: NextRequest, ctx: { params: Promise<{ id: string }> }) 
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 099 — module permission gate (marketplace.community).
+  const _moduleBlock = await requirePortalModule(access, "marketplace.community");
+  if (_moduleBlock) return _moduleBlock;
   const { id } = await ctx.params;
 
   let body;

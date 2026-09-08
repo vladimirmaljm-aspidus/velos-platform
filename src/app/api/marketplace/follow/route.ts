@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requirePortalModule } from "@/lib/portal/module-permissions";
 import { followPartner, unfollowPartner } from "@/lib/data/marketplace-profile-store";
 import { getSupabase } from "@/lib/supabase/client";
 import { audit, sanitizeError } from "@/lib/api/helpers";
@@ -21,6 +22,9 @@ async function _post(req: NextRequest) {
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 099 — module permission gate (marketplace).
+  const _moduleBlock = await requirePortalModule(access, "marketplace");
+  if (_moduleBlock) return _moduleBlock;
 
   let body;
   try {
@@ -88,6 +92,9 @@ async function _delete(req: NextRequest) {
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 099 — module permission gate (marketplace).
+  const _moduleBlock = await requirePortalModule(access, "marketplace");
+  if (_moduleBlock) return _moduleBlock;
   const url = new URL(req.url);
   const partnerId = url.searchParams.get("partnerId");
   if (!partnerId) {

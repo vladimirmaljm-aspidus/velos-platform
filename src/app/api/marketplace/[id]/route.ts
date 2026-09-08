@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
-import { requireMarketplaceCommunicator } from "@/lib/portal/marketplace-gate";
+import { requireMarketplacePoster, requireMarketplaceEnabled } from "@/lib/portal/marketplace-gate";
+import { requirePortalModule } from "@/lib/portal/module-permissions";
 import { validateStatusTransition } from "@/lib/api/status-validator";
 import {
   getMarketplacePost,
   updateMarketplacePost,
   deleteMarketplacePost,
+  getMarketplaceTenantSettings,
 } from "@/lib/data/marketplace-store";
 import { getSupabase } from "@/lib/supabase/client";
 import { sanitizeFields } from "@/lib/security/sanitize-input";
@@ -23,6 +25,9 @@ async function _get(req: NextRequest, ctx: { params: Promise<{ id: string }> }) 
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 099 — module + tenant gates (same as the list route).
+  const _moduleBlock = await requirePortalModule(access, "marketplace");
+  if (_moduleBlock) return _moduleBlock;
   const { id } = await ctx.params;
   try {
     const post = await getMarketplacePost(id, access.tenant_id, access.partner_id);
@@ -57,14 +62,16 @@ async function _put(req: NextRequest, ctx: { params: Promise<{ id: string }> }) 
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
-  // AUDIT4-PATHS / Fix 2 — gate marketplace PUT on KYC approval. A
-  // portal client whose KYC has been suspended / rejected must not be
-  // able to mutate existing posts (price, quantity, status, visibility).
-  // Combined with the missing transition graph (Fix 3 below), an
-  // unverified partner could otherwise revive an expired/closed/flagged
-  // post by setting status="active". Mirrors the gate on the POST route.
-  const _kycBlock = await requireMarketplaceCommunicator(access);
-  if (_kycBlock) return _kycBlock;
+  // 099 — module + tenant gates; the posting ladder applies to every
+  // mutation (an owner whose tier/KYC was downgraded since creation must
+  // not keep editing their listings — mirrors the AUDIT4-PATHS Fix 2
+  // rationale).
+  const _moduleBlock = await requirePortalModule(access, "marketplace.post");
+  if (_moduleBlock) return _moduleBlock;
+  const _enabledBlock = await requireMarketplaceEnabled(access);
+  if (_enabledBlock) return _enabledBlock;
+  const _posterBlock = await requireMarketplacePoster(access);
+  if (_posterBlock) return _posterBlock;
   const { id } = await ctx.params;
 
   // Verify ownership — fetch raw post row (not the sanitised public shape).
@@ -96,7 +103,7 @@ async function _put(req: NextRequest, ctx: { params: Promise<{ id: string }> }) 
   }
 
   // Validate enums that may be patched.
-  const allowedStatus = ["draft", "active", "closed", "expired", "flagged"];
+  const allowedStatus = ["draft", "pending", "active", "closed", "expired", "flagged"];
   if (body.status && !allowedStatus.includes(body.status)) {
     return NextResponse.json({ error: "Invalid status." }, { status: 400 });
   }
@@ -187,7 +194,23 @@ async function _put(req: NextRequest, ctx: { params: Promise<{ id: string }> }) 
   }
 
   try {
-    const updated = await updateMarketplacePost(id, access.tenant_id, body);
+    // 099 — moderated publishing: when the tenant requires approval, an
+    // owner publishing a draft (draft → active) lands on 'pending' instead
+    // — the post enters the feed only after an admin approves it. The
+    // response carries `pending_approval: true` so the My-Posts UI can
+    // show "awaiting approval" instead of "active".
+    let effectiveBody = body;
+    if (body.status === "active" && (raw as any).status === "draft") {
+      try {
+        const settings = await getMarketplaceTenantSettings(access.tenant_id);
+        if (settings.require_approval) {
+          effectiveBody = { ...body, status: "pending" };
+        }
+      } catch {
+        // Settings read failure — keep the requested status.
+      }
+    }
+    const updated = await updateMarketplacePost(id, access.tenant_id, effectiveBody);
     try {
       const store = await getStore();
       await audit(
@@ -197,12 +220,15 @@ async function _put(req: NextRequest, ctx: { params: Promise<{ id: string }> }) 
         "marketplace.post_updated",
         "marketplace_post",
         id,
-        { status: body.status, visibility: body.visibility },
+        { status: effectiveBody.status, visibility: effectiveBody.visibility },
       );
     } catch (e) {
       console.error("[marketplace.put] audit failed:", e);
     }
-    return NextResponse.json({ post: updated });
+    return NextResponse.json({
+      post: updated,
+      pending_approval: effectiveBody.status === "pending" && body.status === "active",
+    });
   } catch (e: any) {
     console.error("[marketplace.put]", e);
     return NextResponse.json({ error: sanitizeError(e)}, { status: 500 });

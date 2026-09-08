@@ -187,27 +187,32 @@ interface NavItem {
   labelKey: string;
   icon: React.ComponentType<{ className?: string }>;
   gate?: keyof PortalAccess;
+  /** 099 — module permission key from GET /api/portal/me's module_access
+   *  map (see lib/portal/module-catalog.ts). When the map is loaded and
+   *  this key is `false`, the item is hidden. Fail-open when the map is
+   *  missing (mirrors the server-side evaluator). */
+  module?: string;
   badgeKey?: "messages_unread";
 }
 
 const NAV_ITEMS: NavItem[] = [
   { key: "portal-dashboard", labelKey: "portal-nav-dashboard", icon: LayoutDashboard },
-  { key: "portal-marketplace", labelKey: "portal-nav-marketplace", icon: Store },
-  { key: "portal-marketplace-intelligence", labelKey: "portal-nav-marketplace-intelligence", icon: LineChart },
-  { key: "portal-marketplace-community", labelKey: "portal-nav-marketplace-community", icon: Users },
-  { key: "portal-offers", labelKey: "portal-nav-my-offers", icon: FileText, gate: "can_view_offers" },
-  { key: "portal-invoices", labelKey: "portal-nav-my-invoices", icon: FileText, gate: "can_view_invoices" },
-  { key: "portal-proformas", labelKey: "portal-nav-my-proformas", icon: FileText, gate: "can_view_invoices" },
+  { key: "portal-marketplace", labelKey: "portal-nav-marketplace", icon: Store, module: "marketplace" },
+  { key: "portal-marketplace-intelligence", labelKey: "portal-nav-marketplace-intelligence", icon: LineChart, module: "marketplace" },
+  { key: "portal-marketplace-community", labelKey: "portal-nav-marketplace-community", icon: Users, module: "marketplace" },
+  { key: "portal-offers", labelKey: "portal-nav-my-offers", icon: FileText, gate: "can_view_offers", module: "offers" },
+  { key: "portal-invoices", labelKey: "portal-nav-my-invoices", icon: FileText, gate: "can_view_invoices", module: "invoices" },
+  { key: "portal-proformas", labelKey: "portal-nav-my-proformas", icon: FileText, gate: "can_view_invoices", module: "proformas" },
   // BUILD-LOI-PORTAL — gated on can_view_offers (trade documents the
   // partner can see; portal_access has no dedicated can_view_lois flag).
-  { key: "portal-lois", labelKey: "portal-nav-my-lois", icon: FileCheck2, gate: "can_view_offers" },
-  { key: "portal-messages", labelKey: "portal-nav-messages", icon: MessageSquare, badgeKey: "messages_unread" },
-  { key: "portal-notifications", labelKey: "portal-nav-notifications", icon: Bell },
-  { key: "portal-documents", labelKey: "portal-nav-my-documents", icon: FolderOpen, gate: "can_view_documents" },
-  { key: "portal-catalog", labelKey: "portal-nav-product-catalog", icon: Package, gate: "can_view_catalog" },
-  { key: "portal-rfq", labelKey: "portal-nav-request-quote", icon: ShoppingCart, gate: "can_submit_rfq" },
-  { key: "portal-referrals", labelKey: "portal-nav-referrals", icon: HandCoins },
-  { key: "portal-logistics", labelKey: "portal-nav-logistics", icon: Truck },
+  { key: "portal-lois", labelKey: "portal-nav-my-lois", icon: FileCheck2, gate: "can_view_offers", module: "lois" },
+  { key: "portal-messages", labelKey: "portal-nav-messages", icon: MessageSquare, module: "messages", badgeKey: "messages_unread" },
+  { key: "portal-notifications", labelKey: "portal-nav-notifications", icon: Bell, module: "notifications" },
+  { key: "portal-documents", labelKey: "portal-nav-my-documents", icon: FolderOpen, gate: "can_view_documents", module: "documents" },
+  { key: "portal-catalog", labelKey: "portal-nav-product-catalog", icon: Package, gate: "can_view_catalog", module: "catalog" },
+  { key: "portal-rfq", labelKey: "portal-nav-request-quote", icon: ShoppingCart, gate: "can_submit_rfq", module: "rfq" },
+  { key: "portal-referrals", labelKey: "portal-nav-referrals", icon: HandCoins, module: "referrals" },
+  { key: "portal-logistics", labelKey: "portal-nav-logistics", icon: Truck, module: "logistics" },
   { key: "portal-kyc", labelKey: "portal-nav-kyc", icon: ShieldCheck },
   { key: "portal-profile", labelKey: "portal-nav-my-profile", icon: User, gate: "can_view_profile" },
   // NOTE: "Company Info" removed — no `portal-company` view exists yet, and the
@@ -285,6 +290,8 @@ export function PortalShell({
   const t = useT();
   const portalAccess = useAppStore((s) => s.portalAccess) as PortalAccess | null;
   const setPortalAccess = useAppStore((s) => s.setPortalAccess);
+  const moduleAccess = useAppStore((s) => s.moduleAccess) as Record<string, boolean> | null;
+  const setModuleAccess = useAppStore((s) => s.setModuleAccess);
   const setPartnerKycStatus = useAppStore((s) => s.setPartnerKycStatus);
   const setAppMode = useAppStore((s) => s.setAppMode);
   const view = useAppStore((s) => s.view);
@@ -359,6 +366,13 @@ export function PortalShell({
             setPortalAccess(data.access);
             setAppMode("portal");
             setConnProblem(false);
+            // 099 — module permission map for the nav filter (stored in the
+            // app store next to portalAccess). Empty/unloaded map = fail-open.
+            setModuleAccess(
+              data.module_access && typeof data.module_access === "object"
+                ? (data.module_access as Record<string, boolean>)
+                : {},
+            );
           } else {
             // 200 with no access — genuinely not signed in.
             window.location.href = "/portal/login";
@@ -383,7 +397,33 @@ export function PortalShell({
     };
     tryHydrate();
     return () => { mounted = false; };
-  }, [portalAccess, setPortalAccess, setAppMode]);
+  }, [portalAccess, setPortalAccess, setAppMode, setModuleAccess]);
+
+  // 099 — module_access for the nav filter when the store was hydrated by
+  // something OTHER than the effect above (portal-login / app-entry set
+  // portalAccess directly from the login response, which has no module map).
+  // Fetch /api/portal/me once; on failure store an empty map (fail-open —
+  // same as the server's evaluator).
+  useEffect(() => {
+    if (!portalAccess?.id || moduleAccess) return;
+    let mounted = true;
+    fetch("/api/portal/me", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json().catch(() => null) : null))
+      .then((data) => {
+        if (!mounted) return;
+        setModuleAccess(
+          data?.module_access && typeof data.module_access === "object"
+            ? (data.module_access as Record<string, boolean>)
+            : {},
+        );
+      })
+      .catch(() => {
+        if (mounted) setModuleAccess({});
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [portalAccess?.id, moduleAccess, setModuleAccess]);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [partner, setPartner] = useState<Partner | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
@@ -548,6 +588,7 @@ export function PortalShell({
     // down the realtime WS connection so the logged-out tab doesn't keep
     // an open socket under a stale identity, then full-page navigate.
     setPortalAccess(null);
+    setModuleAccess(null);
     try {
       disconnectRealtime();
     } catch {
@@ -663,6 +704,7 @@ export function PortalShell({
       >
         <SidebarContent
           portalAccess={portalAccess}
+          moduleAccess={moduleAccess}
           partnerName={partnerName}
           partner={partner}
           profileLoading={profileLoading}
@@ -691,6 +733,7 @@ export function PortalShell({
           <aside className="absolute left-0 top-0 h-full w-72 glass-strong border-r border-border/60 flex flex-col smooth">
             <SidebarContent
               portalAccess={portalAccess}
+              moduleAccess={moduleAccess}
               partnerName={partnerName}
               partner={partner}
               profileLoading={profileLoading}
@@ -970,6 +1013,7 @@ export function PortalShell({
 // ---- Sidebar content (shared between desktop + mobile drawer) ----
 function SidebarContent({
   portalAccess,
+  moduleAccess,
   partnerName,
   partner,
   profileLoading,
@@ -984,6 +1028,8 @@ function SidebarContent({
   onToggleCollapse,
 }: {
   portalAccess: PortalAccess;
+  /** 099 — resolved module permission map (empty/missing = fail-open). */
+  moduleAccess: Record<string, boolean> | null;
   partnerName: string;
   partner: Partner | null;
   profileLoading: boolean;
@@ -1005,7 +1051,12 @@ function SidebarContent({
   const t = useT();
   const visibleItems = NAV_ITEMS.filter((n) => {
     if (kycBlocking && n.key !== "portal-kyc" && n.key !== "portal-profile") return false;
-    return !n.gate || (portalAccess[n.gate] as boolean);
+    if (n.gate && !(portalAccess[n.gate] as boolean)) return false;
+    // 099 — module permissions: hide items whose module the user/tenant
+    // has off. An unloaded (null) or absent key shows the item (fail-open,
+    // same as the server's requirePortalModule evaluator).
+    if (n.module && moduleAccess && moduleAccess[n.module] === false) return false;
+    return true;
   });
 
   // Group items: main workspace vs account (matched by nav key, not label text,

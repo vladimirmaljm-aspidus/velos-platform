@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requirePortalModule } from "@/lib/portal/module-permissions";
 import { requireSuperAdmin, sanitizeError } from "@/lib/api/helpers";
 import {
   deleteSustainabilityCert,
@@ -106,6 +107,9 @@ async function _put(req: NextRequest, ctx: RouteCtx) {
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 099 — module permission gate (marketplace.esg).
+  const _moduleBlock = await requirePortalModule(access, "marketplace.esg");
+  if (_moduleBlock) return _moduleBlock;
 
   try {
     const updated = await patchSustainabilityCert(id, {
@@ -153,6 +157,9 @@ async function _delete(req: NextRequest, ctx: RouteCtx) {
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 099 — module permission gate (marketplace.esg).
+  const _moduleBlock = await requirePortalModule(access, "marketplace.esg");
+  if (_moduleBlock) return _moduleBlock;
   const { id } = await ctx.params;
   try {
     const ok = await deleteSustainabilityCert(id, access.partner_id);

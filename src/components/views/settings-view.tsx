@@ -24,7 +24,13 @@ import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
 
 import { ShieldAlert, Building2, ShieldCheck, Mail, Upload, Loader2, UserCog, X, ImageIcon, Send, CheckCircle2, XCircle, Zap, AlertTriangle, Globe, Info, FileText, Palette, QrCode, Save, Bell, DollarSign, MessageSquare, Store, Clock, UserPlus, ArrowLeftRight, TrendingUp, CloudSun, Ship, Anchor, MapPin, ClipboardList } from "lucide-react";
 import { useAppStore, isAdmin } from "@/lib/store/app-store";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  PortalModuleGrid,
+  initModulePermDraft,
+  buildModulePermissionsPayload,
+  type ModulePermDraft,
+} from "@/components/common/portal-module-grid";
 import { TwoFactorSetup } from "@/components/auth/two-factor-setup";
 import { CURRENCIES } from "@/lib/data/reference";
 import { useApiUrl, useTenantKey } from "@/lib/hooks/use-api-url";
@@ -219,10 +225,11 @@ export function SettingsView() {
 
       <Tabs defaultValue="company">
         {/* NOTIF-UX — bumped from sm:grid-cols-7 → 8 to accommodate the new
-            Notifications tab. The list still scrolls horizontally on mobile
-            (overflow-x-auto) so the 8-tab layout doesn't break small
-            viewports. */}
-        <TabsList className="flex w-full max-w-2xl overflow-x-auto justify-start sm:grid sm:grid-cols-8">
+            Notifications tab, then 8 → 9 for the Portal Modules tab (099
+            per-tenant portal module defaults). The list still scrolls
+            horizontally on mobile (overflow-x-auto) so the 9-tab layout
+            doesn't break small viewports. */}
+        <TabsList className="flex w-full max-w-2xl overflow-x-auto justify-start sm:grid sm:grid-cols-9">
           <TabsTrigger value="company">{t("admin-settings-tab-company")}</TabsTrigger>
           {canManageDangerousSettings && (
             <TabsTrigger value="security">{t("admin-settings-tab-security")}</TabsTrigger>
@@ -231,6 +238,11 @@ export function SettingsView() {
             <TabsTrigger value="comms">{t("admin-settings-tab-comms")}</TabsTrigger>
           )}
           <TabsTrigger value="integrations">{t("admin-settings-tab-integrations")}</TabsTrigger>
+          {/* 099 — per-TENANT portal module defaults. Visible to every admin
+              (super_admin + tenant admin — the view itself already gates on
+              isAdmin); the GET/PUT /api/admin/portal-defaults endpoint is
+              gated on the `portal.manage` permission server-side. */}
+          <TabsTrigger value="portal-modules">{t("portal-modules-tab")}</TabsTrigger>
           <TabsTrigger value="preferences">{t("admin-settings-tab-preferences")}</TabsTrigger>
           <TabsTrigger value="memorandum">{t("admin-settings-tab-memorandum")}</TabsTrigger>
           {/* FEAT-1 (Password change in Settings): always visible to
@@ -269,6 +281,9 @@ export function SettingsView() {
         </TabsContent>
         <TabsContent value="integrations" className="mt-4">
           <IntegrationsTab />
+        </TabsContent>
+        <TabsContent value="portal-modules" className="mt-4">
+          <PortalModulesTab />
         </TabsContent>
         <TabsContent value="preferences" className="mt-4">
           <PreferencesTab />
@@ -1551,6 +1566,207 @@ function ToggleRow({
       <p className="text-sm font-medium">{label}</p>
       <Switch checked={checked} onCheckedChange={onCheckedChange} aria-label={label} />
     </div>
+  );
+}
+
+// ─── Portal Modules Tab (099 per-tenant defaults) ──────────────────────────
+
+/**
+ * PortalModulesTab — per-TENANT portal module defaults (migration 099,
+ * tenant_portal_defaults table; GET/PUT /api/admin/portal-defaults).
+ *
+ * • Tenant admins — edit their own tenant (the server auto-scopes both
+ *   GET and PUT; no tenant_id is sent).
+ * • Super admins — edit the ACTIVE tenant context, or pick any tenant
+ *   from a selector when operating in platform scope (GET ?tenant_id=,
+ *   PUT body tenant_id — both required for super-admin cross-tenant use).
+ *
+ * The grid is the shared PortalModuleGrid tri-state editor: Inherit =
+ * key absent (the module keeps its default behaviour — legacy boolean or
+ * open), Allow = true, Deny = false. An all-inherit draft saves
+ * `modules: null` which deletes the defaults row.
+ */
+function PortalModulesTab() {
+  const api = useApiUrl();
+  const tenantKey = useTenantKey();
+  const t = useT();
+  const qc = useQueryClient();
+
+  const user = useAppStore((s) => s.user);
+  const activeTenantId = useAppStore((s) => s.activeTenantId);
+  const activeTenantName = useAppStore((s) => s.activeTenantName);
+  const isSuperAdmin = !!user && user.role === "super_admin";
+
+  // Super admin in platform scope: tenant selector (feature-flags-view
+  // pattern). In a tenant context the active tenant wins — useApiUrl()
+  // appends ?tenant_id= for super admins anyway, so a selector would be
+  // misleading there.
+  const needsTenantPicker = isSuperAdmin && !activeTenantId;
+  const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null);
+
+  const tenantsQ = useQuery<{ items: Tenant[] }>({
+    queryKey: ["tenants", tenantKey, "list"],
+    queryFn: async () => {
+      const r = await fetch(api("/api/tenants"));
+      if (!r.ok) throw new Error("Failed to load tenants");
+      return r.json();
+    },
+    enabled: needsTenantPicker,
+  });
+  const tenants = tenantsQ.data?.items ?? [];
+  // Auto-select the first tenant once loaded.
+  if (needsTenantPicker && !selectedTenantId && tenants.length > 0) {
+    setSelectedTenantId(tenants[0].id);
+  }
+
+  // The tenant whose defaults are loaded/edited. Tenant admins send no
+  // tenant_id at all (server scopes to their own tenant).
+  const effectiveTenantId = needsTenantPicker ? selectedTenantId : activeTenantId;
+
+  const defaultsQ = useQuery<{ modules: Record<string, boolean> }>({
+    queryKey: ["portal-defaults", tenantKey, effectiveTenantId],
+    queryFn: async () => {
+      const path = isSuperAdmin && effectiveTenantId
+        ? `/api/admin/portal-defaults?tenant_id=${encodeURIComponent(effectiveTenantId)}`
+        : "/api/admin/portal-defaults";
+      const r = await fetch(api(path));
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.error || "Failed to load portal defaults");
+      }
+      return r.json();
+    },
+    enabled: !isSuperAdmin || !!effectiveTenantId,
+  });
+
+  // Draft resync — "store previous state" pattern (same as
+  // feature-flags-view) instead of useEffect+setState, which trips the
+  // react-hooks/set-state-in-effect rule.
+  const [draft, setDraft] = useState<ModulePermDraft>({});
+  const [syncedFor, setSyncedFor] = useState<string | null>(null);
+  const syncKey = `${tenantKey}:${effectiveTenantId ?? "own"}`;
+  if (defaultsQ.isSuccess && syncedFor !== syncKey) {
+    setSyncedFor(syncKey);
+    setDraft(initModulePermDraft(defaultsQ.data?.modules));
+  }
+
+  const saveMut = useMutation({
+    mutationFn: async () => {
+      const body: { modules: ModulePermDraft | null; tenant_id?: string } = {
+        // Inherit keys are absent; an all-inherit draft sends null which
+        // DELETES the tenant_portal_defaults row (default behaviour again).
+        modules: buildModulePermissionsPayload(draft),
+      };
+      if (isSuperAdmin) {
+        if (!effectiveTenantId) throw new Error("Select a tenant first.");
+        body.tenant_id = effectiveTenantId; // required for super-admin writes
+      }
+      const r = await fetch(api("/api/admin/portal-defaults"), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.error || "Failed to save portal defaults");
+      }
+      return r.json() as Promise<{ modules: Record<string, boolean> | null }>;
+    },
+    onSuccess: (data) => {
+      toast.success(t("portal-modules-saved"));
+      setDraft(initModulePermDraft(data?.modules));
+      qc.invalidateQueries({ queryKey: ["portal-defaults", tenantKey] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const loading = defaultsQ.isLoading || (needsTenantPicker && tenantsQ.isLoading);
+
+  return (
+    <Card className="border-border/60 shadow-soft rounded-xl">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <ShieldCheck className="size-5" /> {t("portal-modules-tab")}
+        </CardTitle>
+        <CardDescription>{t("portal-modules-tenant-defaults-desc")}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {loading ? (
+          <div className="space-y-3">
+            {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+          </div>
+        ) : defaultsQ.error ? (
+          <p className="text-sm text-destructive">
+            {(defaultsQ.error as Error).message || String(t("portal-modules-load-failed"))}
+          </p>
+        ) : (
+          <>
+            {needsTenantPicker && (
+              <div className="space-y-1.5">
+                <Label>{t("portal-modules-tenant-label")}</Label>
+                {tenantsQ.error ? (
+                  <p className="text-sm text-destructive">{t("admin-flags-failed-tenants")}</p>
+                ) : tenants.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">{t("admin-flags-no-tenants")}</p>
+                ) : (
+                  <Select
+                    value={selectedTenantId ?? undefined}
+                    onValueChange={(v) => setSelectedTenantId(v)}
+                  >
+                    <SelectTrigger className="w-full sm:w-80">
+                      <SelectValue placeholder={t("portal-modules-choose-tenant")} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {tenants.map((tn) => (
+                        <SelectItem key={tn.id} value={tn.id}>
+                          <span className="flex items-center gap-2">
+                            <Building2 className="size-3.5 text-muted-foreground" />
+                            <span className="truncate">{tn.name}</span>
+                            <Badge variant="outline" className="ml-1 text-xs capitalize">
+                              {tn.plan}
+                            </Badge>
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            )}
+            {isSuperAdmin && activeTenantId && (
+              <p className="text-sm text-muted-foreground">
+                {t("portal-modules-editing-tenant").replace(
+                  "{tenant}",
+                  activeTenantName || activeTenantId,
+                )}
+              </p>
+            )}
+
+            <PortalModuleGrid
+              value={draft}
+              onChange={setDraft}
+              disabled={saveMut.isPending}
+            />
+
+            <p className="text-xs text-muted-foreground">
+              {t("portal-modules-inherit-note")} {t("portal-modules-submodule-note")}
+            </p>
+
+            <div className="flex justify-end">
+              <Button
+                onClick={() => saveMut.mutate()}
+                disabled={
+                  saveMut.isPending || defaultsQ.isLoading ||
+                  (isSuperAdmin && !effectiveTenantId)
+                }
+              >
+                {saveMut.isPending ? t("admin-saving") : t("portal-modules-save")}
+              </Button>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

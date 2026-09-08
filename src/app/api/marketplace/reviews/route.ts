@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requirePortalModule } from "@/lib/portal/module-permissions";
 import { requireMarketplaceCommunicator } from "@/lib/portal/marketplace-gate";
 import { createReview, listReviews } from "@/lib/data/marketplace-profile-store";
 import { getSupabase } from "@/lib/supabase/client";
@@ -20,6 +21,9 @@ async function _get(req: NextRequest) {
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 099 — module permission gate (marketplace.community).
+  const _moduleBlock = await requirePortalModule(access, "marketplace.community");
+  if (_moduleBlock) return _moduleBlock;
   const url = new URL(req.url);
   const partnerId = url.searchParams.get("partnerId");
   if (!partnerId) {
@@ -65,6 +69,9 @@ async function _post(req: NextRequest) {
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 099 — module permission gate (marketplace.community).
+  const _moduleBlock = await requirePortalModule(access, "marketplace.community");
+  if (_moduleBlock) return _moduleBlock;
   // AUDIT2-LOGIC-UX H7 — gate review creation on KYC approval.
   const _kycBlock = await requireMarketplaceCommunicator(access);
   if (_kycBlock) return _kycBlock;

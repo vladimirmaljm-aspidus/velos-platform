@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requirePortalModule } from "@/lib/portal/module-permissions";
 import { releaseEscrow } from "@/lib/data/marketplace-finance-store";
 import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
@@ -34,6 +35,9 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 099 — module permission gate (marketplace.finance).
+  const _moduleBlock = await requirePortalModule(access, "marketplace.finance");
+  if (_moduleBlock) return _moduleBlock;
   const { id } = await ctx.params;
 
   try {

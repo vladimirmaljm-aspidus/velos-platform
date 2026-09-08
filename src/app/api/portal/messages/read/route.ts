@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requirePortalModule } from "@/lib/portal/module-permissions";
 import { markThreadRead } from "@/lib/portal/messages";
 
 export const runtime = "nodejs";
@@ -19,6 +20,9 @@ export async function POST() {
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 099 — module permission gate (messages).
+  const _moduleBlock = await requirePortalModule(access, "messages");
+  if (_moduleBlock) return _moduleBlock;
   try {
     await markThreadRead(access.tenant_id, access.partner_id, "portal").catch(
       () => {},

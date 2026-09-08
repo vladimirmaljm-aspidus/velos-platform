@@ -220,6 +220,15 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
 
     return NextResponse.json(created);
   } catch (e: any) {
+    // Business-rule rejections (post flagged/removed, own-post, rate cap)
+    // are EXPECTED user-facing outcomes, not system errors — they map to
+    // 4xx with their own status and are NOT console.error'd, otherwise the
+    // console-tee records them as error-level rows in error_logs even
+    // though nothing is broken (that is exactly how "Post is not active."
+    // landed in the audit as a false-positive server error).
+    if (e && e.name === "MarketplaceRuleError") {
+      return NextResponse.json({ error: e.message }, { status: e.status ?? 403 });
+    }
     console.error("[marketplace.response.create]", e);
     const msg = sanitizeError(e);
     // Surface "post not found" / "post expired" / "not active" / "own post" /

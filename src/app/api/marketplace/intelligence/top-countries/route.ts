@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requirePortalModule } from "@/lib/portal/module-permissions";
 import { getSupabase } from "@/lib/supabase/client";
 import { calculateTopCountries } from "@/lib/marketplace/intelligence";
 import { getCountry } from "@/lib/data/geo/countries";
@@ -37,6 +38,9 @@ async function _get(req: NextRequest) {
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 099 — module permission gate (marketplace.intelligence).
+  const _moduleBlock = await requirePortalModule(access, "marketplace.intelligence");
+  if (_moduleBlock) return _moduleBlock;
   const url = new URL(req.url);
   const category = url.searchParams.get("category") || undefined;
   const daysRaw = Number(url.searchParams.get("days")) || 30;

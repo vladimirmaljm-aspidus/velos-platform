@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requirePortalModule } from "@/lib/portal/module-permissions";
 import { listThread, insertMessage, markThreadRead, sanitizeMessageBody } from "@/lib/portal/messages";
 import { sendEmail, newMessageEmail } from "@/lib/email/service";
 import { getStore } from "@/lib/data/store";
@@ -67,6 +68,9 @@ function sanitizeAttachmentUrl(value: unknown): string | null {
 export async function GET() {
   const access = await getPortalSessionAccess();
   if (!access) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+  // 099 — module permission gate (messages).
+  const _moduleBlock = await requirePortalModule(access, "messages");
+  if (_moduleBlock) return _moduleBlock;
 
   try {
     const items = await listThread(access.tenant_id, access.partner_id);
@@ -79,6 +83,9 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const access = await getPortalSessionAccess();
   if (!access) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+  // 099 — module permission gate (messages).
+  const _moduleBlock = await requirePortalModule(access, "messages");
+  if (_moduleBlock) return _moduleBlock;
 
   // 8b-10: per-portal-access rate limit (20 msgs/min). See import comment.
   const rl = await checkRateLimit(`portal-msg:${access.id}`, 20, 60_000);

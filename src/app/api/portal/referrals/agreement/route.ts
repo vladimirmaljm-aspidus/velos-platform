@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requirePortalModule } from "@/lib/portal/module-permissions";
 import { getStore } from "@/lib/data/store";
 import { audit, sanitizeError, getIp } from "@/lib/api/helpers";
 import { notify } from "@/lib/notif/helper";
@@ -24,6 +25,9 @@ export async function POST(req: NextRequest) {
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 099 — module permission gate (referrals).
+  const _moduleBlock = await requirePortalModule(access, "referrals");
+  if (_moduleBlock) return _moduleBlock;
   const store = await getStore();
 
   let body: { typed_name?: unknown; consent?: unknown };

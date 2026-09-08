@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requirePortalModule } from "@/lib/portal/module-permissions";
 import {
   listWatchlistIds,
   listWatchlistPosts,
@@ -24,6 +25,9 @@ async function _get(req: NextRequest) {
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 099 — module permission gate (marketplace).
+  const _moduleBlock = await requirePortalModule(access, "marketplace");
+  if (_moduleBlock) return _moduleBlock;
   const url = new URL(req.url);
   const hydrate = url.searchParams.get("hydrate") === "1";
   try {
@@ -57,6 +61,9 @@ async function _post(req: NextRequest) {
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 099 — module permission gate (marketplace).
+  const _moduleBlock = await requirePortalModule(access, "marketplace");
+  if (_moduleBlock) return _moduleBlock;
   let body;
   try {
     body = await req.json();

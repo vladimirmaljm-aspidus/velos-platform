@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requirePortalModule } from "@/lib/portal/module-permissions";
 import { getStore } from "@/lib/data/store";
 import { uploadPortalFile } from "@/lib/upload/service";
 import { verifyPortalUpload } from "@/lib/upload/verify-file";
@@ -61,6 +62,9 @@ export async function POST(req: NextRequest) {
     if (!access) {
       return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
     }
+  // 099 — module permission gate (uploads).
+  const _moduleBlock = await requirePortalModule(access, "uploads");
+  if (_moduleBlock) return _moduleBlock;
     const store = await getStore();
 
     // ── Parse multipart form-data ───────────────────────────────────────

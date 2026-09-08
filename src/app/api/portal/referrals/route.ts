@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requirePortalModule } from "@/lib/portal/module-permissions";
 import { getStore } from "@/lib/data/store";
 import { decryptField } from "@/lib/crypto/field-encryption";
 import { attachmentsForReferrals, attachToReferrals } from "@/lib/portal/referral-attachments";
@@ -18,6 +19,9 @@ export async function GET() {
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 099 — module permission gate (referrals).
+  const _moduleBlock = await requirePortalModule(access, "referrals");
+  if (_moduleBlock) return _moduleBlock;
   const store = await getStore();
 
   const [items, agreement, account] = await Promise.all([

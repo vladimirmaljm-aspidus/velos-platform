@@ -41,6 +41,9 @@ export interface MarketplacePostCardData {
   verification_level: string;
   /** True when the poster's KYC is fully approved (API: poster_kyc_verified). */
   poster_kyc_verified?: boolean;
+  /** Poster's company name (API: poster_name) — same-tenant feed cards
+   *  show WHO posted; null/absent keeps the layout untouched. */
+  poster_name?: string | null;
   views_count: number;
   responses_count: number;
   expires_at: string | null;
@@ -176,6 +179,17 @@ export function MarketplacePostCard({
             {/* KYC-verified trust signal (icon-only, tooltip) — mirrors the
                 detail-view badge; emerald check only when approved. */}
             <KycVerifiedIconOnly verified={post.poster_kyc_verified} />
+            {/* 099 — poster identity: subtle "by {company}" next to the KYC
+                badge (previously feed cards stripped WHO posted, which made
+                same-tenant posts look anonymous). */}
+            {post.poster_name && (
+              <span
+                className="truncate text-xs text-muted-foreground"
+                title={post.poster_name}
+              >
+                {t("marketplace-posted-by").replace("{name}", post.poster_name)}
+              </span>
+            )}
           </div>
           {post.is_verified ? (
             <div className="flex items-center gap-1">

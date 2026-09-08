@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requirePortalModule } from "@/lib/portal/module-permissions";
 import {
   VALID_CERT_TYPES,
   addSustainabilityCert,
@@ -27,6 +28,9 @@ async function _get(req: NextRequest) {
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 099 — module permission gate (marketplace.esg).
+  const _moduleBlock = await requirePortalModule(access, "marketplace.esg");
+  if (_moduleBlock) return _moduleBlock;
   try {
     const url = new URL(req.url);
     const partnerId = url.searchParams.get("partnerId");
@@ -54,6 +58,9 @@ async function _post(req: NextRequest) {
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 099 — module permission gate (marketplace.esg).
+  const _moduleBlock = await requirePortalModule(access, "marketplace.esg");
+  if (_moduleBlock) return _moduleBlock;
 
   let body;
   try {

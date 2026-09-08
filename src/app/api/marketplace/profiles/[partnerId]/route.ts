@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requirePortalModule } from "@/lib/portal/module-permissions";
 import { canReviewPartner, getCompanyProfile } from "@/lib/data/marketplace-profile-store";
 import { getStore } from "@/lib/data/store";
 import { withApm } from "@/lib/monitoring/apm";
@@ -28,6 +29,9 @@ async function _get(_req: NextRequest, ctx: { params: Promise<{ partnerId: strin
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 099 — module permission gate (marketplace).
+  const _moduleBlock = await requirePortalModule(access, "marketplace");
+  if (_moduleBlock) return _moduleBlock;
   const { partnerId } = await ctx.params;
   try {
     const profile = await getCompanyProfile(partnerId, access.tenant_id, access.partner_id);

@@ -198,11 +198,13 @@ const SECTIONS: NavSection[] = [
       { key: "feature-flags", i18nKey: "feature-flags", i18nSection: "platform", icon: ToggleRight, permission: "platform.feature_flags.read" },
       { key: "plan-upgrade-queue", i18nKey: "plan-upgrade-queue", i18nSection: "platform", icon: TrendingUp, permission: "platform.plans.write" },
       { key: "verification-logs", i18nKey: "verification-logs", i18nSection: "platform", icon: Shield, superAdminOnly: true },
-      // UI-2 — super-admin marketplace management panel (cross-tenant:
-      // posts, verification, reviews, categories, blacklist, stats).
-      // Visible to super-admins only; the view itself also re-checks
-      // isSuperAdmin before rendering.
-      { key: "marketplace-admin", i18nKey: "marketplace-admin", i18nSection: "platform", icon: Store, superAdminOnly: true },
+      // UI-2 / 2-e — marketplace management panel. Permission-gated
+      // (`marketplace.moderate`): super admins get the full cross-tenant
+      // panel; tenant admins (role "admin" passes any non-platform
+      // permission via canUser) get the tenant-scoped view (the backend
+      // scopes posts/reports/tenant-settings to their own tenant). The
+      // view itself re-checks the role before rendering.
+      { key: "marketplace-admin", i18nKey: "marketplace-admin", i18nSection: "platform", icon: Store, permission: "marketplace.moderate" },
       // P0-4 — unified super-admin settings interface (security, roles,
       // data protection, monitoring, incidents, platform config,
       // system health). Visible to super-admins only; the view itself
@@ -314,7 +316,18 @@ export function Sidebar({ hideCollapseToggle = false, forceExpanded = false }: {
           // whole section vanishes for non-super-admins regardless of
           // any per-item permission logic. This runs BEFORE per-item
           // filtering so we short-circuit the section entirely.
-          if (section.superAdminOnly && !superAdmin) return null;
+          // 2-e EXCEPTION: a section item explicitly gated by a
+          // NON-platform `permission` (marketplace-admin →
+          // marketplace.moderate) is intentionally tenant-visible — the
+          // gate only nulls the section when no such item exists, so
+          // tenant admins still see just that item while every
+          // platform.* / superAdminOnly item stays hidden below.
+          if (section.superAdminOnly && !superAdmin) {
+            const hasTenantVisibleItem = section.items.some(
+              (n) => !n.superAdminOnly && !!n.permission && !n.permission.startsWith("platform."),
+            );
+            if (!hasTenantVisibleItem) return null;
+          }
 
           const visibleItems = section.items.filter((n) => {
             // ── Super-admin scoping ───────────────────────────────────────

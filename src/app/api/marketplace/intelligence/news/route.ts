@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requirePortalModule } from "@/lib/portal/module-permissions";
 import { withApm } from "@/lib/monitoring/apm";
 
 export const runtime = "nodejs";
@@ -55,6 +56,9 @@ async function _get(req: NextRequest) {
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 099 — module permission gate (marketplace.intelligence).
+  const _moduleBlock = await requirePortalModule(access, "marketplace.intelligence");
+  if (_moduleBlock) return _moduleBlock;
   const url = new URL(req.url);
   const category = url.searchParams.get("category") || "commodity";
   const locale = url.searchParams.get("locale") || "en";
@@ -140,7 +144,11 @@ async function _get(req: NextRequest) {
       source: items.length > 0 ? "web-search" : "empty",
     });
   } catch (e: any) {
-    console.error("[marketplace.intelligence.news] web_search failed:", e);
+    // Transient external-dependency failure (the web_search provider) —
+    // NOT a platform error. console.warn (not console.error) so the
+    // server console-tee does not record it as an error-level row in
+    // error_logs; the route already degrades to an empty feed.
+    console.warn("[marketplace.intelligence.news] web_search failed:", e?.message || e);
     // Return an empty feed with source 'empty' rather than a 500 — the
     // dashboard panel can render the empty state gracefully.
     return NextResponse.json({

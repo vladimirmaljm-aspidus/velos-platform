@@ -1,16 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireSuperAdmin, sanitizeError } from "@/lib/api/helpers";
+import { requireAuth, sanitizeError } from "@/lib/api/helpers";
 import { getSupabase } from "@/lib/supabase/client";
 import { withApm } from "@/lib/monitoring/apm";
+import { requirePermission } from "@/lib/permissions/can";
 
 export const runtime = "nodejs";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/admin/marketplace/stats
 //
-// Aggregated marketplace metrics for the super-admin Overview tab +
-// Statistics tab. All counts are CROSS-TENANT — the admin sees the whole
-// platform at once.
+// Aggregated marketplace metrics for the Overview tab + Statistics tab.
+// Super admins get CROSS-TENANT totals (the whole platform at once);
+// tenant admins (099) get the same shape scoped to their OWN tenant so
+// their Overview tab works without super-admin rights.
 //
 // Response shape:
 //   {
@@ -26,36 +28,56 @@ export const runtime = "nodejs";
 //     top_companies:     [{ partner_id, name, posts, responses }]
 //   }
 //
-// Auth: super_admin only.
+// Auth: `marketplace.read` permission (super admin cross-tenant; tenant
+// admin auto-scoped to own tenant).
 // ─────────────────────────────────────────────────────────────────────────────
 async function _get(req: NextRequest) {
-  const auth = await requireSuperAdmin(req);
+  const auth = await requireAuth(req);
   if (auth instanceof NextResponse) return auth;
+  {
+    const _d = requirePermission(auth, "marketplace.read");
+    if (_d) return _d;
+  }
+  // Tenant admins are scoped to their own tenant (super admins keep the
+  // cross-tenant view).
+  const scopeTenant: string | null = auth.isSuperAdmin ? null : auth.tenantId!;
 
   try {
     const sb = getSupabase();
 
     // ── Totals (head=true count queries — no rows transferred) ──────────────
-    const [
-      postsC, responsesC, negotiationsC, profilesC, reviewsC, blacklistC,
-      flaggedPostsC, flaggedReviewsC,
-    ] = await Promise.all([
-      sb.from("marketplace_posts").select("id", { count: "exact", head: true }),
-      sb.from("marketplace_responses").select("id", { count: "exact", head: true }),
-      sb.from("marketplace_negotiations").select("id", { count: "exact", head: true }),
+    const [a, b, c, d, e, f, g, h] = await Promise.all([
+      scopeTenant
+        ? sb.from("marketplace_posts").select("id", { count: "exact", head: true }).eq("tenant_id", scopeTenant)
+        : sb.from("marketplace_posts").select("id", { count: "exact", head: true }),
+      scopeTenant
+        ? sb.from("marketplace_responses").select("id", { count: "exact", head: true }).eq("tenant_id", scopeTenant)
+        : sb.from("marketplace_responses").select("id", { count: "exact", head: true }),
+      scopeTenant
+        ? sb.from("marketplace_negotiations").select("id", { count: "exact", head: true }).eq("tenant_id", scopeTenant)
+        : sb.from("marketplace_negotiations").select("id", { count: "exact", head: true }),
       sb.from("marketplace_company_profiles").select("id", { count: "exact", head: true }),
       sb.from("marketplace_reviews").select("id", { count: "exact", head: true }),
       sb.from("marketplace_blacklist").select("id", { count: "exact", head: true }),
-      sb.from("marketplace_posts").select("id", { count: "exact", head: true }).eq("status", "flagged"),
+      scopeTenant
+        ? sb.from("marketplace_posts").select("id", { count: "exact", head: true }).eq("status", "flagged").eq("tenant_id", scopeTenant)
+        : sb.from("marketplace_posts").select("id", { count: "exact", head: true }).eq("status", "flagged"),
       sb.from("marketplace_reviews").select("id", { count: "exact", head: true }).eq("is_flagged", true),
     ]);
+    const postsC = a, responsesC = b, negotiationsC = c, profilesC = d, reviewsC = e, blacklistC = f, flaggedPostsC = g, flaggedReviewsC = h;
 
     // ── Distributions — fetch all rows once, aggregate in JS so we make
     // one query per table instead of one per status. Capped at 5000 rows
     // per table to keep the response time bounded on a busy platform. ──────
     const [{ data: posts }, { data: responses }] = await Promise.all([
-      sb.from("marketplace_posts").select("id, status, post_type, product_category, delivery_country, partner_id, created_at").limit(5000).order("created_at", { ascending: false }),
-      sb.from("marketplace_responses").select("id, status, created_at").limit(5000).order("created_at", { ascending: false }),
+      (scopeTenant
+        ? sb.from("marketplace_posts").select("id, status, post_type, product_category, delivery_country, partner_id, created_at").eq("tenant_id", scopeTenant)
+        : sb.from("marketplace_posts").select("id, status, post_type, product_category, delivery_country, partner_id, created_at")
+      ).limit(5000).order("created_at", { ascending: false }),
+      (scopeTenant
+        ? sb.from("marketplace_responses").select("id, status, created_at").eq("tenant_id", scopeTenant)
+        : sb.from("marketplace_responses").select("id, status, created_at")
+      ).limit(5000).order("created_at", { ascending: false }),
     ]);
 
     const postsByStatus: Record<string, number> = {};
@@ -126,12 +148,14 @@ async function _get(req: NextRequest) {
     // ── Recent activity — last 20 marketplace.* audit entries ───────────────
     let recentActivity: any[] = [];
     try {
-      const { data: actRows } = await sb
+      let actQ = sb
         .from("audit_logs")
         .select("*")
         .like("action", "marketplace.%")
         .order("created_at", { ascending: false })
         .limit(20);
+      if (scopeTenant) actQ = actQ.eq("tenant_id", scopeTenant);
+      const { data: actRows } = await actQ;
       recentActivity = actRows ?? [];
     } catch {
       // audit_logs table may not be readable in some configs — degrade

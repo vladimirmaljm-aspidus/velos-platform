@@ -1,21 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireSuperAdmin, audit, sanitizeError } from "@/lib/api/helpers";
+import { requireAuth, audit, sanitizeError } from "@/lib/api/helpers";
 import { getSupabase } from "@/lib/supabase/client";
 import { withApm } from "@/lib/monitoring/apm";
+import { requirePermission } from "@/lib/permissions/can";
 
 export const runtime = "nodejs";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/admin/marketplace/posts
 //
-// Cross-tenant marketplace posts browser for the super-admin panel.
+// Marketplace posts browser for moderation.
 //
-// The public-facing /api/marketplace/* routes are tenant-scoped (a partner
-// only sees their own tenant's posts); this admin variant returns rows from
-// EVERY tenant so the super-admin can flag / remove / feature globally.
+// • super_admin  — cross-tenant (every tenant's posts).
+// • tenant admin — ONLY their own tenant's posts (099: the tenant admin
+//                  gets a moderation surface — previously this route was
+//                  super-admin-only, so a tenant could not moderate its
+//                  own marketplace at all).
 //
 // Query params:
-//   - status:    draft | active | closed | expired | flagged  (default: all)
+//   - status:    draft | pending | active | closed | expired | flagged
 //   - post_type: buy | sell | auction | contract               (default: all)
 //   - search:    case-insensitive substring on product_name + description
 //   - limit:     page size (default 50, max 200)
@@ -23,11 +26,15 @@ export const runtime = "nodejs";
 //   - featured:  'true' → only is_featured posts; 'false' → only non-featured
 //                omitted → all (no filter)
 //
-// Auth: super_admin only. `requireSuperAdmin` enforces.
+// Auth: `marketplace.moderate` permission (admin implicit; super bypass).
 // ─────────────────────────────────────────────────────────────────────────────
 async function _get(req: NextRequest) {
-  const auth = await requireSuperAdmin(req);
+  const auth = await requireAuth(req);
   if (auth instanceof NextResponse) return auth;
+  {
+    const _d = requirePermission(auth, "marketplace.moderate");
+    if (_d) return _d;
+  }
 
   try {
     const sb = getSupabase();
@@ -43,6 +50,9 @@ async function _get(req: NextRequest) {
       .from("marketplace_posts")
       .select("*", { count: "exact" })
       .order("created_at", { ascending: false });
+
+    // Tenant admins are scoped to their own tenant.
+    if (!auth.isSuperAdmin) q = q.eq("tenant_id", auth.tenantId!);
 
     if (status) q = q.eq("status", status);
     if (postType) q = q.eq("post_type", postType);
@@ -112,13 +122,27 @@ async function _get(req: NextRequest) {
 // what the admin table's row-action menu offers.
 //
 // Body:
-//   { post_id: string, action: "flag" | "unflag" | "remove" | "feature" | "unfeature" }
+//   { post_id: string, action: "flag" | "unflag" | "remove" | "feature"
+//                        | "unfeature" | "approve" }
 //
-// Auth: super_admin only. Every action writes an audit_logs row.
+//   'approve' (099) — pending → active: the moderated-publishing approval
+//   step. Without it, posts created under require_approval would stay
+//   invisible forever.
+//
+// • super_admin  — any post (cross-tenant).
+// • tenant admin — only posts in their OWN tenant (404 otherwise — no
+//                  cross-tenant existence leak).
+//
+// Auth: `marketplace.moderate` permission. Every action writes an
+// audit_logs row.
 // ─────────────────────────────────────────────────────────────────────────────
 async function _put(req: NextRequest) {
-  const auth = await requireSuperAdmin(req);
+  const auth = await requireAuth(req);
   if (auth instanceof NextResponse) return auth;
+  {
+    const _d = requirePermission(auth, "marketplace.moderate");
+    if (_d) return _d;
+  }
 
   let body: any;
   try {
@@ -131,7 +155,7 @@ async function _put(req: NextRequest) {
     return NextResponse.json({ error: "post_id is required." }, { status: 400 });
   }
   const action = String(body.action || "");
-  const allowed = ["flag", "unflag", "remove", "feature", "unfeature"];
+  const allowed = ["flag", "unflag", "remove", "feature", "unfeature", "approve"];
   if (!allowed.includes(action)) {
     return NextResponse.json(
       { error: `action must be one of: ${allowed.join(", ")}.` },
@@ -142,15 +166,25 @@ async function _put(req: NextRequest) {
   try {
     const sb = getSupabase();
 
-    // Verify the post exists (cross-tenant — super-admin scope).
-    const { data: post, error: pErr } = await sb
+    // Verify the post exists. Tenant admins: scope to their own tenant —
+    // a post id from another tenant reads as "not found" (no leak).
+    let q = sb
       .from("marketplace_posts")
       .select("id, tenant_id, partner_id, product_name, status, is_featured")
-      .eq("id", body.post_id)
-      .maybeSingle();
+      .eq("id", body.post_id);
+    if (!auth.isSuperAdmin) q = q.eq("tenant_id", auth.tenantId!);
+    const { data: post, error: pErr } = await q.maybeSingle();
     if (pErr) throw pErr;
     if (!post) {
       return NextResponse.json({ error: "Post not found." }, { status: 404 });
+    }
+
+    // 'approve' is only valid on a pending post (moderated publishing).
+    if (action === "approve" && post.status !== "pending") {
+      return NextResponse.json(
+        { error: "Only posts awaiting approval (pending) can be approved." },
+        { status: 409 },
+      );
     }
 
     let patch: Record<string, unknown> = {};
@@ -165,6 +199,11 @@ async function _put(req: NextRequest) {
         // the report and decided the post is fine.
         patch = { status: "active" };
         auditAction = "marketplace.post_unflagged";
+        break;
+      case "approve":
+        // 099 — moderated publishing approval: pending → active.
+        patch = { status: "active" };
+        auditAction = "marketplace.post_approved";
         break;
       case "remove":
         // "Remove" doesn't physically delete the row — it sets status to

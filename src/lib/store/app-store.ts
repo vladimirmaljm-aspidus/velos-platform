@@ -154,6 +154,15 @@ interface AppState {
   portalAccess: any | null;
   setPortalAccess: (a: any | null) => void;
   /**
+   * 099 — per-user/per-tenant module permission map (module key → enabled),
+   * resolved server-side by GET /api/portal/me (`module_access`) and stored
+   * here by PortalShell (same pattern as portalAccess). EMPTY/NULL = fail
+   * open (everything visible) — mirrors the server's fail-open evaluator.
+   * PortalShell's nav filter hides items whose module key maps to false.
+   */
+  moduleAccess: Record<string, boolean> | null;
+  setModuleAccess: (m: Record<string, boolean> | null) => void;
+  /**
    * The portal partner's KYC status ("not_submitted" | "pending" |
    * "approved" | "rejected"), mirrored from GET /api/portal/profile by
    * PortalShell. Marketplace components read this (via
@@ -243,6 +252,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   portalAccess: null,
   setPortalAccess: (a) => set({ portalAccess: a }),
+  moduleAccess: null,
+  setModuleAccess: (m) => set({ moduleAccess: m }),
   partnerKycStatus: null,
   setPartnerKycStatus: (s) => set({ partnerKycStatus: s }),
   appMode: "crm",

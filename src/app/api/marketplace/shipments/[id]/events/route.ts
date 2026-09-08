@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requirePortalModule } from "@/lib/portal/module-permissions";
 import {
   addShipmentEvent,
   getShipmentIfAuthorised,
@@ -21,6 +22,9 @@ async function _get(_req: NextRequest, ctx: { params: Promise<{ id: string }> })
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 099 — module permission gate (marketplace.logistics).
+  const _moduleBlock = await requirePortalModule(access, "marketplace.logistics");
+  if (_moduleBlock) return _moduleBlock;
   const { id } = await ctx.params;
   try {
     const auth = await getShipmentIfAuthorised(id, access.tenant_id, access.partner_id);
@@ -50,6 +54,9 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 099 — module permission gate (marketplace.logistics).
+  const _moduleBlock = await requirePortalModule(access, "marketplace.logistics");
+  if (_moduleBlock) return _moduleBlock;
   const { id } = await ctx.params;
 
   let body;

@@ -53,7 +53,23 @@ export async function GET() {
       const { decryptField } = await import("@/lib/crypto/field-encryption");
       safeAccess.portal_email = decryptField(safeAccess.portal_email);
     }
-    return NextResponse.json({ access: safeAccess });
+    // 099 — resolve the FULL module_access map server-side (user overrides
+    // → tenant defaults → legacy booleans) so the portal shell can filter
+    // the navigation without duplicating the evaluation logic client-side.
+    // module_permissions itself stays in the payload (the client mirror
+    // needs the explicit overrides); fail-open on a defaults read error —
+    // a closed module is an availability feature, not a data boundary.
+    let moduleAccess: Record<string, boolean> = {};
+    try {
+      const { resolveAllPortalModules, getTenantPortalDefaults } = await import(
+        "@/lib/portal/module-permissions"
+      );
+      const tenantDefaults = await getTenantPortalDefaults(access.tenant_id);
+      moduleAccess = resolveAllPortalModules({ access, tenantDefaults });
+    } catch {
+      moduleAccess = {};
+    }
+    return NextResponse.json({ access: safeAccess, module_access: moduleAccess });
   } catch (e) {
     console.error("[portal/me] Error:", e);
     // AUDIT16 — DB outage ≠ "not authenticated" (same fix as /api/auth/me):

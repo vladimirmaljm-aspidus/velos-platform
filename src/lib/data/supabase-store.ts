@@ -3135,10 +3135,14 @@ export class SupabaseStore implements Store {
     return (data as Notification[]) || [];
   }
   async listNotificationsByPartner(tenantId: string, partnerId: string, limit?: number): Promise<Notification[]> {
-    // STRICT: only notifications addressed to this exact partner. No broadcast
-    // leak — internal notifications with partner_id=null are NEVER exposed to
-    // the portal. Also restricted to portal-safe types so misrouted internal
-    // notifications can't slip through.
+    // Partner-addressed rows PLUS tenant-wide broadcasts. Broadcast rows
+    // (partner_id IS NULL) were previously excluded entirely, so any
+    // tenant-wide announcement was invisible to EVERY portal user — one
+    // half of "portal users never see each other's/admin posts". The
+    // PORTAL_SAFE_TYPES allowlist still gates what a broadcast may carry
+    // (internal notification types stay admin-only), so no internal row
+    // leaks: only a portal-safe type with partner_id NULL (an intentional
+    // broadcast) passes.
     const PORTAL_SAFE_TYPES = [
       "kyc_submitted", "kyc_approved", "kyc_rejected",
       "rfq_received", "rfq_quoted",
@@ -3165,12 +3169,15 @@ export class SupabaseStore implements Store {
     // with thousands of historical notifications no longer pulls the full
     // table on every page load.
     const effectiveLimit = Math.min(Math.max(limit ?? 200, 1), 200);
+    // partner_id is a cuid (letters/digits only) but sanitize defensively —
+    // it is interpolated into a PostgREST `or()` filter string.
+    const safePartnerId = String(partnerId).replace(/[^a-zA-Z0-9_-]/g, "");
     const { data, error } = await this.sb()
       .from("notifications")
       .select("*")
       .eq("tenant_id", tenantId)
-      .eq("partner_id", partnerId)
       .in("type", PORTAL_SAFE_TYPES)
+      .or(`partner_id.eq.${safePartnerId},partner_id.is.null`)
       .order("created_at", { ascending: false })
       .limit(effectiveLimit);
     if (error) throw error;

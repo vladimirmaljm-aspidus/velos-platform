@@ -1,22 +1,31 @@
 "use client";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MarketplaceAdminView — super-admin marketplace management panel (task UI-2).
+// MarketplaceAdminView — marketplace management panel (task UI-2, 2-e).
 //
-// One view, seven tabs:
+// One view, nine tabs (super admin):
 //
 //   1. Overview              — KPI tiles + recent activity feed
 //   2. Posts Management      — cross-tenant post list, flag/remove/feature
+//                              + approve (2-e: pending posts from the
+//                              require_approval tenant policy)
 //   3. Company Verification  — verification queue + tier changes
 //   4. Reviews Moderation    — hide/show/flag/delete reviews
 //   5. Categories Management — CRUD on marketplace_categories
 //   6. Blacklist              — block / unblock companies
 //   7. Statistics             — recharts visualisations over time
+//   8. Tenant Settings (2-e) — per-tenant marketplace policy knobs
+//   9. Reports (2-e)         — post-report triage queue
 //
-// Auth gate: the sidebar item is `superAdminOnly: true` AND the API routes
-// all use `requireSuperAdmin(req)`. The view ALSO re-checks `isSuperAdmin`
-// client-side so a non-super-admin who reaches it via state manipulation
-// sees a clear denial card instead of a steady stream of 403 fetches.
+// Auth gate (2-e): super admins see everything above. TENANT admins
+// (role === "admin") get a REDUCED tab set — overview, posts (backend
+// scopes GET to their own tenant), reports and tenant-settings (own
+// tenant) — because the verification/reviews/negotiations/categories/
+// blacklist/stats routes are still super-admin-only or cross-tenant.
+// The sidebar item is gated by the `marketplace.moderate` permission;
+// the view ALSO re-checks the role client-side so a user who reaches it
+// via state manipulation sees a clear denial card instead of a steady
+// stream of 403 fetches.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import * as React from "react";
@@ -43,11 +52,12 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
 import {
   LayoutDashboard, Package, Building2, Star, FolderTree, Ban,
   BarChart3, RefreshCw, Eye, Flag, Trash2, Sparkles, CheckCircle2,
   XCircle, ShieldCheck, ShieldAlert, Loader2, Search, Plus,
-  MessageSquare, Users, TrendingUp, Activity, Gavel,
+  MessageSquare, Users, TrendingUp, Activity, Gavel, SlidersHorizontal,
 } from "lucide-react";
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
@@ -57,7 +67,7 @@ import {
 import { useT } from "@/lib/i18n/store";
 import { useAppStore, isSuperAdmin } from "@/lib/store/app-store";
 import { PageHeader } from "@/components/common/page-header";
-import { fmtDateTime, fmtMoney } from "@/lib/utils/format";
+import { fmtDateTime, fmtMoney, fmtRelative } from "@/lib/utils/format";
 import { toast } from "sonner";
 
 // ── VELOS copper palette (matches dashboard/charts.tsx) ─────────────────────
@@ -86,6 +96,9 @@ const POST_STATUS_TONE: Record<string, string> = {
   closed:   "border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300",
   expired: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400",
   flagged: "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-400",
+  // 2-e — posts parked by the require_approval tenant policy wait for an
+  // admin Approve (PUT action "approve") before they become active.
+  pending: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-400",
 };
 
 // FIX-AUDIT3-MED-2 #2 — negotiation status badge tones. The raw
@@ -135,9 +148,14 @@ export function MarketplaceAdminView() {
   const t = useT();
   const userObj = useAppStore((s) => s.user);
   const isSuper = isSuperAdmin(userObj);
+  // 2-e — tenant admins (role "admin", NOT super admin) manage their OWN
+  // tenant's marketplace with a reduced tab set (the backend scopes GET
+  // /api/admin/marketplace/posts + /reports to their tenant and
+  // /tenant-settings to their own policy). Everyone else is denied.
+  const isTenantAdmin = !isSuper && userObj?.role === "admin";
 
-  // Defense-in-depth: super-admin-only surface.
-  if (!isSuper) {
+  // Defense-in-depth: admin-only surface (super admin OR tenant admin).
+  if (!isSuper && !isTenantAdmin) {
     return (
       <div>
         <PageHeader title={t("pf-ma-title")} description={t("pf-ma-desc")} />
@@ -159,31 +177,54 @@ export function MarketplaceAdminView() {
   return (
     <div>
       <PageHeader title={t("pf-ma-title")} description={t("pf-ma-desc")} />
+      {/* 2-e — scoping notice for tenant admins: their tabs are tenant-local. */}
+      {isTenantAdmin && (
+        <Card className="mb-4 border-sky-500/30 bg-sky-50/40 dark:bg-sky-500/5">
+          <CardContent className="p-4 flex items-start gap-3">
+            <div className="size-8 rounded-lg bg-sky-500/15 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0">
+              <ShieldCheck className="size-4" />
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              {t("admin-marketplace-tenant-admin-notice")}
+            </p>
+          </CardContent>
+        </Card>
+      )}
       <Tabs defaultValue="overview" className="w-full">
         <TabsList className="flex flex-wrap h-auto bg-muted/40 p-1 rounded-xl gap-1 mb-6">
           <TabTrigger value="overview"     icon={LayoutDashboard} label={t("pf-ma-tab-overview")} />
           <TabTrigger value="posts"        icon={Package}          label={t("pf-ma-tab-posts")} />
-          <TabTrigger value="verification" icon={Building2}        label={t("pf-ma-tab-verification")} />
-          <TabTrigger value="reviews"      icon={Star}             label={t("pf-ma-tab-reviews")} />
+          {/* 2-e — cross-tenant / super-admin-only tabs are hidden for
+              tenant admins (their backend routes stay super-admin-only). */}
+          {!isTenantAdmin && <TabTrigger value="verification" icon={Building2}    label={t("pf-ma-tab-verification")} />}
+          {!isTenantAdmin && <TabTrigger value="reviews"      icon={Star}         label={t("pf-ma-tab-reviews")} />}
           {/* FIX-AUDIT3-MED-2 #2 — admin Negotiations tab for cross-tenant
               intervention. Placed between the user-content tabs
               (posts / verification / reviews) and the metadata tabs
               (categories / blacklist / stats) because negotiations are
               user-generated content like posts + reviews. */}
-          <TabTrigger value="negotiations" icon={MessageSquare}    label={t("pf-ma-tab-negotiations")} />
-          <TabTrigger value="categories"  icon={FolderTree}        label={t("pf-ma-tab-categories")} />
-          <TabTrigger value="blacklist"   icon={Ban}               label={t("pf-ma-tab-blacklist")} />
-          <TabTrigger value="stats"       icon={BarChart3}        label={t("pf-ma-tab-stats")} />
+          {!isTenantAdmin && <TabTrigger value="negotiations" icon={MessageSquare} label={t("pf-ma-tab-negotiations")} />}
+          {!isTenantAdmin && <TabTrigger value="categories"  icon={FolderTree}    label={t("pf-ma-tab-categories")} />}
+          {!isTenantAdmin && <TabTrigger value="blacklist"   icon={Ban}           label={t("pf-ma-tab-blacklist")} />}
+          {!isTenantAdmin && <TabTrigger value="stats"       icon={BarChart3}     label={t("pf-ma-tab-stats")} />}
+          {/* 2-e — post-report triage queue (both roles; tenant admins
+              only see their own tenant's reports). */}
+          <TabTrigger value="reports"        icon={Gavel}             label={t("admin-marketplace-tab-reports")} />
+          {/* 2-e — per-tenant marketplace policy knobs (super admin grid,
+              tenant admin single card for their own tenant). */}
+          <TabTrigger value="tenant-settings" icon={SlidersHorizontal} label={t("admin-marketplace-tab-settings")} />
         </TabsList>
 
         <TabsContent value="overview"     className="mt-0"><OverviewTab /></TabsContent>
         <TabsContent value="posts"        className="mt-0"><PostsTab /></TabsContent>
-        <TabsContent value="verification" className="mt-0"><VerificationTab /></TabsContent>
-        <TabsContent value="reviews"      className="mt-0"><ReviewsTab /></TabsContent>
-        <TabsContent value="negotiations" className="mt-0"><NegotiationsTab /></TabsContent>
-        <TabsContent value="categories"  className="mt-0"><CategoriesTab /></TabsContent>
-        <TabsContent value="blacklist"   className="mt-0"><BlacklistTab /></TabsContent>
-        <TabsContent value="stats"       className="mt-0"><StatsTab /></TabsContent>
+        {!isTenantAdmin && <TabsContent value="verification" className="mt-0"><VerificationTab /></TabsContent>}
+        {!isTenantAdmin && <TabsContent value="reviews"      className="mt-0"><ReviewsTab /></TabsContent>}
+        {!isTenantAdmin && <TabsContent value="negotiations" className="mt-0"><NegotiationsTab /></TabsContent>}
+        {!isTenantAdmin && <TabsContent value="categories"  className="mt-0"><CategoriesTab /></TabsContent>}
+        {!isTenantAdmin && <TabsContent value="blacklist"   className="mt-0"><BlacklistTab /></TabsContent>}
+        {!isTenantAdmin && <TabsContent value="stats"       className="mt-0"><StatsTab /></TabsContent>}
+        <TabsContent value="reports"        className="mt-0"><ReportsTab /></TabsContent>
+        <TabsContent value="tenant-settings" className="mt-0"><TenantSettingsTab isSuper={isSuper} /></TabsContent>
       </Tabs>
     </div>
   );
@@ -510,6 +551,8 @@ function PostsTab() {
         remove: t("pf-ma-toast-post-removed"),
         feature: t("pf-ma-toast-post-featured"),
         unfeature: t("pf-ma-toast-post-unfeatured"),
+        // 2-e — moderated publishing: pending → active.
+        approve: t("admin-marketplace-toast-approved"),
       };
       toast.success(labels[vars.action] || t("pf-ma-toast-done"));
       qc.invalidateQueries({ queryKey: ["admin-marketplace-posts"] });
@@ -548,6 +591,10 @@ function PostsTab() {
                   locales and switch to it here so the family is consistent. */}
               <SelectItem value="active">{t("pf-ma-status-active")}</SelectItem>
               <SelectItem value="flagged">{t("pf-ma-status-flagged")}</SelectItem>
+              {/* 2-e — posts parked by the require_approval tenant policy
+                  (migration 099) wait in `pending` until an admin approves
+                  them (PUT action "approve"). */}
+              <SelectItem value="pending">{t("admin-marketplace-pending-badge")}</SelectItem>
               <SelectItem value="expired">{t("pf-ma-status-expired")}</SelectItem>
               <SelectItem value="draft">{t("pf-ma-status-draft")}</SelectItem>
               <SelectItem value="closed">{t("pf-ma-status-closed")}</SelectItem>
@@ -635,17 +682,28 @@ function PostsTab() {
                         {p.quantity} {p.unit}
                       </TableCell>
                       <TableCell className="hidden lg:table-cell">
-                        <Badge variant="outline" className={`text-xs ${POST_STATUS_TONE[p.status] ?? ""}`}>
-                          {/* FIX-AUDIT3 #2 — admin posts tab showed the raw
-                              `p.status` string ("flagged", "active", ...) while
-                              the portal post-detail view translated the same
-                              status via `marketplace-status-*`. Now both
-                              surfaces show the same translated label. The
-                              `|| p.status` fallback guards against an unknown
-                              status value (keeps the badge readable instead
-                              of showing the missing-key literal). */}
-                          {t(`marketplace-status-${p.status}`) || p.status}
-                        </Badge>
+                        <div className="flex items-center gap-1.5">
+                          <Badge variant="outline" className={`text-xs ${POST_STATUS_TONE[p.status] ?? ""}`}>
+                            {/* FIX-AUDIT3 #2 — admin posts tab showed the raw
+                                `p.status` string ("flagged", "active", ...) while
+                                the portal post-detail view translated the same
+                                status via `marketplace-status-*`. Now both
+                                surfaces show the same translated label. The
+                                `|| p.status` fallback guards against an unknown
+                                status value (keeps the badge readable instead
+                                of showing the missing-key literal). */}
+                            {t(`marketplace-status-${p.status}`) || p.status}
+                          </Badge>
+                          {/* 2-e — small "pending" marker on awaiting-approval
+                              rows (mobile: the status column is hidden ≤lg,
+                              so the badge keeps the state visible there
+                              through the Approve button context). */}
+                          {p.status === "pending" && (
+                            <span className="hidden lg:inline text-[10px] uppercase tracking-wide text-sky-600 dark:text-sky-400">
+                              {t("admin-marketplace-pending-badge")}
+                            </span>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell className="text-xs text-right tabular hidden md:table-cell">{p.views_count}</TableCell>
                       <TableCell className="text-xs text-right tabular hidden md:table-cell">{p.responses_count}</TableCell>
@@ -655,6 +713,15 @@ function PostsTab() {
                           <Button size="icon" variant="ghost" className="size-7" title={t("view")} aria-label={t("view")} onClick={() => setDetailPost(p)}>
                             <Eye className="size-3.5" />
                           </Button>
+                          {/* 2-e — moderated publishing: approve a pending
+                              post (PUT action "approve", pending → active). */}
+                          {p.status === "pending" && (
+                            <Button size="icon" variant="ghost" className="size-7" title={t("admin-marketplace-approve")} aria-label={t("admin-marketplace-approve")}
+                              onClick={() => actionMut.mutate({ postId: p.id, action: "approve" })}
+                              disabled={actionMut.isPending}>
+                              <CheckCircle2 className="size-3.5 text-emerald-600" />
+                            </Button>
+                          )}
                           {p.status === "flagged" ? (
                             <Button size="icon" variant="ghost" className="size-7" title={t("pf-ma-action-unflag")} aria-label={t("pf-ma-action-unflag")}
                               onClick={() => actionMut.mutate({ postId: p.id, action: "unflag" })}
@@ -756,6 +823,13 @@ function PostsTab() {
               } />
               <Separator />
               <div className="flex flex-wrap gap-2 pt-2">
+                {/* 2-e — moderated publishing: approve a pending post. */}
+                {detailPost.status === "pending" && (
+                  <Button size="sm" variant="outline" onClick={() => { actionMut.mutate({ postId: detailPost.id, action: "approve" }); setDetailPost(null); }}>
+                    <CheckCircle2 className="size-3.5 mr-1 text-emerald-600" />
+                    {t("admin-marketplace-approve")}
+                  </Button>
+                )}
                 {detailPost.status === "flagged" ? (
                   <Button size="sm" variant="outline" onClick={() => { actionMut.mutate({ postId: detailPost.id, action: "unflag" }); setDetailPost(null); }}>
                     <CheckCircle2 className="size-3.5 mr-1 text-emerald-600" />
@@ -2403,6 +2477,490 @@ function BarTooltip(props: TooltipProps<number, string>) {
         <span className="text-muted-foreground">{valueKey}: </span>
         <span className="font-mono text-foreground">{String(p[valueKey])}</span>
       </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 8. TENANT SETTINGS TAB (2-e) — per-tenant marketplace policy knobs
+// ═══════════════════════════════════════════════════════════════════════════
+// GET /api/admin/marketplace/tenant-settings (no params):
+//   • super admin   → { items: [...] } — one card per tenant
+//   • tenant admin  → { settings }     — server scopes to their own tenant
+// PUT { tenant_id?, enabled?, posting_policy?, require_approval?,
+//      public_feed_enabled?, default_visibility?, allow_private_posts? }
+// (super admin must include tenant_id; tenant admin sends just the knobs).
+interface TenantMarketplaceSettings {
+  tenant_id: string;
+  tenant_name?: string;
+  enabled: boolean;
+  posting_policy: string;
+  require_approval: boolean;
+  public_feed_enabled: boolean;
+  default_visibility: string;
+  allow_private_posts: boolean;
+  updated_by: string | null;
+  updated_at: string | null;
+}
+
+// Posting ladder labels (migration 099) — mirrors the exact set
+// MARKETPLACE_POSTING_POLICIES validates server-side.
+const POSTING_POLICY_LABEL_KEY: Record<string, string> = {
+  all_active:    "admin-marketplace-policy-all-active",
+  kyc_verified:  "admin-marketplace-policy-kyc-verified",
+  tier_standard: "admin-marketplace-policy-tier-standard",
+  tier_business: "admin-marketplace-policy-tier-business",
+  tier_premium:  "admin-marketplace-policy-tier-premium",
+  admins_only:   "admin-marketplace-policy-admins-only",
+};
+
+function TenantSettingsTab({ isSuper }: { isSuper: boolean }) {
+  const t = useT();
+  const settingsQ = useQuery<{ items?: TenantMarketplaceSettings[]; settings?: TenantMarketplaceSettings }>({
+    queryKey: ["admin-marketplace-tenant-settings"],
+    queryFn: async () => {
+      const r = await fetch("/api/admin/marketplace/tenant-settings");
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({ error: r.statusText }));
+        throw new Error(e.error || "Failed to load marketplace settings.");
+      }
+      return r.json();
+    },
+  });
+
+  const items = isSuper ? (settingsQ.data?.items ?? []) : [];
+  const ownSettings = !isSuper ? settingsQ.data?.settings : undefined;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-end gap-2">
+        <Button size="sm" variant="outline" onClick={() => settingsQ.refetch()} disabled={settingsQ.isFetching}>
+          <RefreshCw className={`size-3.5 mr-1 ${settingsQ.isFetching ? "animate-spin" : ""}`} />
+          {t("refresh")}
+        </Button>
+      </div>
+
+      {settingsQ.isLoading && (
+        <Card>
+          <CardContent className="p-6 text-sm text-muted-foreground flex items-center gap-2">
+            <Loader2 className="size-4 animate-spin" />
+            {t("pf-ma-loading")}
+          </CardContent>
+        </Card>
+      )}
+      {settingsQ.error && (
+        <Card>
+          <CardContent className="p-6 text-sm text-destructive">
+            {t("pf-ma-load-failed")}: {(settingsQ.error as Error).message}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Super admin: compact grid of tenant cards. Tenant admin: the server
+          already scopes the response to their own tenant → single card. */}
+      {isSuper ? (
+        !settingsQ.isLoading && !settingsQ.error && items.length === 0 ? (
+          <Card>
+            <CardContent className="p-6 text-sm text-muted-foreground text-center">
+              {t("admin-marketplace-settings-empty")}
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2">
+            {items.map((it) => (
+              <TenantSettingsCard
+                // Keyed by tenant_id + updated_at: a refetch that actually
+                // changed the policy (own save, another admin) remounts the
+                // card with the fresh server values; unchanged data keeps
+                // the local draft (no lost edits on window-focus refetch).
+                key={`${it.tenant_id}:${it.updated_at ?? ""}`}
+                initial={it}
+                isSuper={isSuper}
+              />
+            ))}
+          </div>
+        )
+      ) : (
+        ownSettings && <TenantSettingsCard initial={ownSettings} isSuper={false} />
+      )}
+    </div>
+  );
+}
+
+function TenantSettingsCard({
+  initial, isSuper,
+}: {
+  initial: TenantMarketplaceSettings;
+  isSuper: boolean;
+}) {
+  const t = useT();
+  const qc = useQueryClient();
+  // Mount-time snapshot (the parent's key guarantees a fresh mount when
+  // the server values change — see TenantSettingsTab).
+  const [draft, setDraft] = React.useState<TenantMarketplaceSettings>(initial);
+
+  const dirty =
+    draft.enabled !== initial.enabled ||
+    draft.posting_policy !== initial.posting_policy ||
+    draft.require_approval !== initial.require_approval ||
+    draft.public_feed_enabled !== initial.public_feed_enabled ||
+    draft.default_visibility !== initial.default_visibility ||
+    draft.allow_private_posts !== initial.allow_private_posts;
+
+  const saveMut = useMutation({
+    // Only the CHANGED knobs travel (super admin must name the tenant;
+    // tenant admin sends just the knobs — the server scopes the write).
+    mutationFn: async () => {
+      const patch: Record<string, unknown> = {};
+      if (draft.enabled !== initial.enabled) patch.enabled = draft.enabled;
+      if (draft.posting_policy !== initial.posting_policy) patch.posting_policy = draft.posting_policy;
+      if (draft.require_approval !== initial.require_approval) patch.require_approval = draft.require_approval;
+      if (draft.public_feed_enabled !== initial.public_feed_enabled) patch.public_feed_enabled = draft.public_feed_enabled;
+      if (draft.default_visibility !== initial.default_visibility) patch.default_visibility = draft.default_visibility;
+      if (draft.allow_private_posts !== initial.allow_private_posts) patch.allow_private_posts = draft.allow_private_posts;
+      if (isSuper) patch.tenant_id = initial.tenant_id;
+      const r = await fetch("/api/admin/marketplace/tenant-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({ error: r.statusText }));
+        throw new Error(e.error || "Save failed.");
+      }
+      return r.json();
+    },
+    onSuccess: () => {
+      toast.success(t("admin-marketplace-settings-saved"));
+      qc.invalidateQueries({ queryKey: ["admin-marketplace-tenant-settings"] });
+    },
+    // 403 (tenant admin targeting another tenant) + validation errors both
+    // surface as an error toast with the server's message.
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const title = isSuper ? (initial.tenant_name ?? initial.tenant_id) : t("admin-marketplace-tab-settings");
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm flex items-center gap-2">
+          <SlidersHorizontal className="size-4 text-primary" />
+          <span className="truncate">{title}</span>
+        </CardTitle>
+        <CardDescription className="text-xs">
+          {initial.updated_at
+            ? `${formatDate(initial.updated_at)}${initial.updated_by ? ` · ${initial.updated_by}` : ""}`
+            : t("admin-never")}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="pt-0 space-y-3">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <SettingsSwitchRow
+            label={t("admin-marketplace-settings-enabled")}
+            desc={t("admin-marketplace-settings-enabled-desc")}
+            checked={draft.enabled}
+            disabled={saveMut.isPending}
+            onCheckedChange={(v) => setDraft((d) => ({ ...d, enabled: v }))}
+          />
+          <div className="rounded-lg border border-border/60 p-3 space-y-2">
+            <Label className="text-xs font-medium leading-tight">
+              {t("admin-marketplace-settings-posting-policy")}
+            </Label>
+            <Select
+              value={draft.posting_policy}
+              onValueChange={(v) => setDraft((d) => ({ ...d, posting_policy: v }))}
+              disabled={saveMut.isPending}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(POSTING_POLICY_LABEL_KEY).map(([value, key]) => (
+                  <SelectItem key={value} value={value}>{t(key)}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <SettingsSwitchRow
+            label={t("admin-marketplace-settings-require-approval")}
+            desc={t("admin-marketplace-settings-require-approval-desc")}
+            checked={draft.require_approval}
+            disabled={saveMut.isPending}
+            onCheckedChange={(v) => setDraft((d) => ({ ...d, require_approval: v }))}
+          />
+          <SettingsSwitchRow
+            label={t("admin-marketplace-settings-public-feed")}
+            desc={t("admin-marketplace-settings-public-feed-desc")}
+            checked={draft.public_feed_enabled}
+            disabled={saveMut.isPending}
+            onCheckedChange={(v) => setDraft((d) => ({ ...d, public_feed_enabled: v }))}
+          />
+          <div className="rounded-lg border border-border/60 p-3 space-y-2">
+            <Label className="text-xs font-medium leading-tight">
+              {t("admin-marketplace-settings-default-visibility")}
+            </Label>
+            <Select
+              value={draft.default_visibility}
+              onValueChange={(v) => setDraft((d) => ({ ...d, default_visibility: v }))}
+              disabled={saveMut.isPending}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="public">{t("admin-marketplace-settings-visibility-public")}</SelectItem>
+                <SelectItem value="private">{t("admin-marketplace-settings-visibility-private")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <SettingsSwitchRow
+            label={t("admin-marketplace-settings-allow-private")}
+            desc={t("admin-marketplace-settings-allow-private-desc")}
+            checked={draft.allow_private_posts}
+            disabled={saveMut.isPending}
+            onCheckedChange={(v) => setDraft((d) => ({ ...d, allow_private_posts: v }))}
+          />
+        </div>
+        <div className="flex items-center justify-end gap-2 pt-1">
+          <Button
+            size="sm"
+            onClick={() => saveMut.mutate()}
+            disabled={saveMut.isPending || !dirty}
+          >
+            {saveMut.isPending ? (
+              <Loader2 className="size-3.5 mr-1 animate-spin" />
+            ) : (
+              <CheckCircle2 className="size-3.5 mr-1" />
+            )}
+            {t("save")}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function SettingsSwitchRow({
+  label, desc, checked, onCheckedChange, disabled,
+}: {
+  label: string;
+  desc: string;
+  checked: boolean;
+  onCheckedChange: (v: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3 rounded-lg border border-border/60 p-3">
+      <div className="min-w-0">
+        <Label className="text-xs font-medium leading-tight">{label}</Label>
+        <p className="text-[11px] text-muted-foreground mt-1 leading-snug">{desc}</p>
+      </div>
+      <Switch
+        checked={checked}
+        onCheckedChange={onCheckedChange}
+        disabled={disabled}
+        className="mt-0.5 shrink-0"
+      />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 9. REPORTS TAB (2-e) — post-report triage queue
+// ═══════════════════════════════════════════════════════════════════════════
+// GET /api/admin/marketplace/reports?status= → { items, total, limit, offset }
+// (tenant admins only ever see their own tenant's rows — server-scoped).
+// PUT { report_id, status: "reviewed" | "dismissed" } → { report }.
+interface PostReportRow {
+  id: string;
+  post_id: string;
+  reporter_name: string | null;
+  product_name: string | null;
+  reason: string | null;
+  details: string | null;
+  status: string;
+  created_at: string;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+}
+
+const REPORT_STATUS_TONE: Record<string, string> = {
+  open:      "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+  reviewed:  "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+  dismissed: "border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300",
+};
+
+const REPORT_STATUS_LABEL_KEY: Record<string, string> = {
+  open:      "admin-marketplace-reports-status-open",
+  reviewed:  "admin-marketplace-reports-status-reviewed",
+  dismissed: "admin-marketplace-reports-status-dismissed",
+};
+
+function ReportsTab() {
+  const t = useT();
+  const qc = useQueryClient();
+  const [statusFilter, setStatusFilter] = React.useState<string>("all");
+
+  const reportsQ = useQuery<{ items: PostReportRow[]; total: number }>({
+    queryKey: ["admin-marketplace-reports", statusFilter],
+    queryFn: async () => {
+      const params = new URLSearchParams({ limit: "100" });
+      if (statusFilter !== "all") params.set("status", statusFilter);
+      const r = await fetch(`/api/admin/marketplace/reports?${params}`);
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({ error: r.statusText }));
+        throw new Error(e.error || "Failed to load reports.");
+      }
+      return r.json();
+    },
+  });
+
+  const triageMut = useMutation({
+    mutationFn: async ({ reportId, status }: { reportId: string; status: "reviewed" | "dismissed" }) => {
+      const r = await fetch("/api/admin/marketplace/reports", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ report_id: reportId, status }),
+      });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({ error: r.statusText }));
+        throw new Error(e.error || "Action failed.");
+      }
+      return r.json();
+    },
+    onSuccess: (_data, vars) => {
+      toast.success(
+        vars.status === "reviewed"
+          ? t("admin-marketplace-toast-report-reviewed")
+          : t("admin-marketplace-toast-report-dismissed"),
+      );
+      qc.invalidateQueries({ queryKey: ["admin-marketplace-reports"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const reports = reportsQ.data?.items ?? [];
+
+  return (
+    <div className="space-y-3">
+      {/* Filters */}
+      <Card>
+        <CardContent className="p-3 flex flex-wrap items-center gap-2">
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[150px]"><SelectValue placeholder={t("pf-ma-filter-status")} /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t("all")}</SelectItem>
+              <SelectItem value="open">{t("admin-marketplace-reports-status-open")}</SelectItem>
+              <SelectItem value="reviewed">{t("admin-marketplace-reports-status-reviewed")}</SelectItem>
+              <SelectItem value="dismissed">{t("admin-marketplace-reports-status-dismissed")}</SelectItem>
+            </SelectContent>
+          </Select>
+          <span className="text-xs text-muted-foreground tabular-nums ml-auto">
+            {t("pf-ma-showing-of")
+              .replace("{shown}", String(reports.length))
+              .replace("{total}", String(reportsQ.data?.total ?? 0))}
+          </span>
+          <Button size="sm" variant="outline" onClick={() => reportsQ.refetch()} disabled={reportsQ.isFetching}>
+            <RefreshCw className={`size-3.5 mr-1 ${reportsQ.isFetching ? "animate-spin" : ""}`} />
+            {t("refresh")}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Table */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Gavel className="size-4 text-primary" />
+            {t("admin-marketplace-reports-title")}
+          </CardTitle>
+          <CardDescription className="text-xs">
+            {t("admin-marketplace-reports-desc")}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-xs">{t("pf-ma-col-product")}</TableHead>
+                  <TableHead className="text-xs">{t("admin-marketplace-reports-col-reason")}</TableHead>
+                  <TableHead className="text-xs hidden md:table-cell">{t("admin-marketplace-reports-col-reporter")}</TableHead>
+                  <TableHead className="text-xs hidden lg:table-cell">{t("admin-marketplace-reports-col-details")}</TableHead>
+                  <TableHead className="text-xs hidden md:table-cell">{t("admin-marketplace-reports-col-created")}</TableHead>
+                  <TableHead className="text-xs">{t("status")}</TableHead>
+                  <TableHead className="text-xs text-right">{t("actions")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {reportsQ.isLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center text-xs text-muted-foreground py-8">
+                      <Loader2 className="size-4 animate-spin inline mr-2" />
+                      {t("pf-ma-loading")}
+                    </TableCell>
+                  </TableRow>
+                ) : reports.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center text-xs text-muted-foreground py-8">
+                      {t("admin-marketplace-reports-empty")}
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  reports.map((r) => (
+                    <TableRow key={r.id} className="hover:bg-muted/40">
+                      <TableCell className="text-xs font-medium max-w-[200px] truncate" title={r.product_name ?? ""}>
+                        {r.product_name ?? "—"}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs capitalize">{r.reason ?? "—"}</Badge>
+                      </TableCell>
+                      <TableCell className="text-xs max-w-[140px] truncate hidden md:table-cell" title={r.reporter_name ?? ""}>
+                        {r.reporter_name ?? "—"}
+                      </TableCell>
+                      <TableCell className="text-xs max-w-[220px] truncate text-muted-foreground hidden lg:table-cell" title={r.details ?? ""}>
+                        {r.details ?? "—"}
+                      </TableCell>
+                      <TableCell className="text-xs whitespace-nowrap hidden md:table-cell" title={formatDate(r.created_at)}>
+                        {fmtRelative(r.created_at)}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={`text-xs ${REPORT_STATUS_TONE[r.status] ?? ""}`}>
+                          {t(REPORT_STATUS_LABEL_KEY[r.status] ?? "") || r.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {r.status === "open" ? (
+                          <div className="flex items-center justify-end gap-1">
+                            <Button size="sm" variant="outline" className="h-7 px-2 text-xs"
+                              onClick={() => triageMut.mutate({ reportId: r.id, status: "reviewed" })}
+                              disabled={triageMut.isPending}>
+                              <CheckCircle2 className="size-3.5 mr-1 text-emerald-600" />
+                              {t("admin-marketplace-reports-mark-reviewed")}
+                            </Button>
+                            <Button size="sm" variant="outline" className="h-7 px-2 text-xs"
+                              onClick={() => triageMut.mutate({ reportId: r.id, status: "dismissed" })}
+                              disabled={triageMut.isPending}>
+                              <XCircle className="size-3.5 mr-1 text-slate-500" />
+                              {t("admin-marketplace-reports-dismiss")}
+                            </Button>
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-muted-foreground text-right whitespace-nowrap" title={formatDate(r.reviewed_at)}>
+                            {r.reviewed_by ? `${r.reviewed_by} · ` : ""}
+                            {r.reviewed_at ? fmtRelative(r.reviewed_at) : "—"}
+                          </p>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

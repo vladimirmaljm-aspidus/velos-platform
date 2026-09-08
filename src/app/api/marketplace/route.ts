@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
-import { requireMarketplaceCommunicator } from "@/lib/portal/marketplace-gate";
+import { requireMarketplacePoster, requireMarketplaceEnabled } from "@/lib/portal/marketplace-gate";
+import { requirePortalModule } from "@/lib/portal/module-permissions";
 import { validateStatusTransition } from "@/lib/api/status-validator";
-import { listMarketplacePosts, createMarketplacePost } from "@/lib/data/marketplace-store";
+import { listMarketplacePosts, createMarketplacePost, MarketplaceRuleError } from "@/lib/data/marketplace-store";
 import { sanitizeFields } from "@/lib/security/sanitize-input";
 import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
@@ -26,6 +27,11 @@ async function _get(req: NextRequest) {
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 099 — tenant marketplace switch + per-user/per-tenant module permission.
+  const _moduleBlock = await requirePortalModule(access, "marketplace");
+  if (_moduleBlock) return _moduleBlock;
+  const _enabledBlock = await requireMarketplaceEnabled(access);
+  if (_enabledBlock) return _enabledBlock;
   const url = new URL(req.url);
   const filters = {
     post_type: url.searchParams.get("type") || undefined,
@@ -68,17 +74,17 @@ async function _post(req: NextRequest) {
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
-  // AUDIT4-PATHS / Fix 1 — gate marketplace POST on KYC approval. The
-  // audit task spec requires `requireKycApproved` on marketplace
-  // POST/PUT (not GET). Every other marketplace creation route
-  // (responses, negotiations, contract, finance, reviews) already gates
-  // on KYC; the top-level POST that creates the post itself was missing
-  // the gate, so a partner with unapproved KYC could publicly list
-  // buy/sell/auction/contract posts. requireKycApproved returns null
-  // when allowed; a 403/503 NextResponse when blocked (503 = fail-closed
-  // on transient DB errors).
-  const _kycBlock = await requireMarketplaceCommunicator(access);
-  if (_kycBlock) return _kycBlock;
+  // 099 — module permission for posting + the tenant posting ladder
+  // (all_active | kyc_verified | tier_* | admins_only — see
+  // marketplace-gate.ts). requireMarketplacePoster returns null when
+  // allowed; a 403/503 NextResponse when blocked (503 = fail-closed on
+  // transient DB errors).
+  const _moduleBlock = await requirePortalModule(access, "marketplace.post");
+  if (_moduleBlock) return _moduleBlock;
+  const _enabledBlock = await requireMarketplaceEnabled(access);
+  if (_enabledBlock) return _enabledBlock;
+  const _posterBlock = await requireMarketplacePoster(access);
+  if (_posterBlock) return _posterBlock;
 
   let body;
   try {
@@ -125,7 +131,7 @@ async function _post(req: NextRequest) {
   if (body.price_type && !allowedPriceTypes.includes(body.price_type)) {
     return NextResponse.json({ error: "Invalid price_type." }, { status: 400 });
   }
-  const allowedStatus = ["draft", "active", "closed", "expired", "flagged"];
+  const allowedStatus = ["draft", "pending", "active", "closed", "expired", "flagged"];
   if (body.status && !allowedStatus.includes(body.status)) {
     return NextResponse.json({ error: "Invalid status." }, { status: 400 });
   }
@@ -225,6 +231,10 @@ async function _post(req: NextRequest) {
     }
     return NextResponse.json(created);
   } catch (e: any) {
+    // Business rules (blacklist, policy) → their own status, not 500.
+    if (e instanceof MarketplaceRuleError) {
+      return NextResponse.json({ error: e.message }, { status: e.status });
+    }
     console.error("[marketplace.create]", e);
     return NextResponse.json({ error: sanitizeError(e)}, { status: 500 });
   }

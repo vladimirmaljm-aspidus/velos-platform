@@ -33,6 +33,133 @@ import type {
   MarketplaceResponseStatus,
 } from "@/lib/supabase/marketplace-types";
 
+/**
+ * Business-rule violation (not a system error). Routes map `status`
+ * (default 403) instead of 500 — previously "Post is not active." and
+ * friends surfaced as 500s in the error audit even though they are
+ * legitimate user-facing rejections.
+ */
+export class MarketplaceRuleError extends Error {
+  status: number;
+  constructor(message: string, status = 403) {
+    super(message);
+    this.name = "MarketplaceRuleError";
+    this.status = status;
+  }
+}
+
+// ─── Tenant marketplace settings (migration 099) ─────────────────────────
+
+export interface MarketplaceTenantSettings {
+  tenant_id: string;
+  enabled: boolean;
+  posting_policy:
+    | "all_active"
+    | "kyc_verified"
+    | "tier_standard"
+    | "tier_business"
+    | "tier_premium"
+    | "admins_only";
+  require_approval: boolean;
+  public_feed_enabled: boolean;
+  default_visibility: "public" | "private";
+  allow_private_posts: boolean;
+  updated_by: string | null;
+  updated_at: string;
+}
+
+/** DEFAULT when a tenant has no settings row — reproduces the previous
+ *  global hardcoded policy so existing tenants see no behaviour change. */
+export const DEFAULT_MARKETPLACE_TENANT_SETTINGS: MarketplaceTenantSettings = {
+  tenant_id: "",
+  enabled: true,
+  posting_policy: "kyc_verified",
+  require_approval: false,
+  public_feed_enabled: true,
+  default_visibility: "public",
+  allow_private_posts: true,
+  updated_by: null,
+  updated_at: "",
+};
+
+const SETTINGS_CACHE = new Map<string, { value: MarketplaceTenantSettings; fetchedAt: number }>();
+const SETTINGS_TTL_MS = 30_000;
+
+/** Cached read of a tenant's marketplace policy (30s in-process). */
+export async function getMarketplaceTenantSettings(
+  tenantId: string,
+): Promise<MarketplaceTenantSettings> {
+  const cached = SETTINGS_CACHE.get(tenantId);
+  if (cached && Date.now() - cached.fetchedAt < SETTINGS_TTL_MS) {
+    return cached.value;
+  }
+  const sb = getSupabase();
+  const { data, error } = await sb
+    .from("marketplace_tenant_settings")
+    .select("*")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+  if (error) throw error;
+  const value: MarketplaceTenantSettings = data
+    ? { ...(data as MarketplaceTenantSettings) }
+    : { ...DEFAULT_MARKETPLACE_TENANT_SETTINGS, tenant_id: tenantId };
+  SETTINGS_CACHE.set(tenantId, { value, fetchedAt: Date.now() });
+  return value;
+}
+
+/** Admin write-through — upsert + cache refresh + returns the new row. */
+export async function upsertMarketplaceTenantSettings(
+  settings: Partial<MarketplaceTenantSettings> & { tenant_id: string; updated_by?: string | null },
+): Promise<MarketplaceTenantSettings> {
+  const sb = getSupabase();
+  const { data, error } = await sb
+    .from("marketplace_tenant_settings")
+    .upsert(
+      {
+        tenant_id: settings.tenant_id,
+        enabled: settings.enabled ?? true,
+        posting_policy: settings.posting_policy ?? "kyc_verified",
+        require_approval: settings.require_approval ?? false,
+        public_feed_enabled: settings.public_feed_enabled ?? true,
+        default_visibility: settings.default_visibility ?? "public",
+        allow_private_posts: settings.allow_private_posts ?? true,
+        updated_by: settings.updated_by ?? null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "tenant_id" },
+    )
+    .select()
+    .single();
+  if (error) throw error;
+  const row = data as MarketplaceTenantSettings;
+  SETTINGS_CACHE.set(row.tenant_id, { value: row, fetchedAt: Date.now() });
+  return row;
+}
+
+/** Tenant ids whose posts must NOT appear on the anonymous public feed. */
+export async function listPublicFeedOptOutTenants(): Promise<string[]> {
+  const sb = getSupabase();
+  const { data, error } = await sb
+    .from("marketplace_tenant_settings")
+    .select("tenant_id")
+    .eq("public_feed_enabled", false);
+  if (error) throw error;
+  return ((data as { tenant_id: string }[]) || []).map((r) => r.tenant_id);
+}
+
+/** Active-blacklist check for a partner (migration 054 table — now enforced). */
+export async function isPartnerBlacklisted(partnerId: string): Promise<boolean> {
+  const sb = getSupabase();
+  const { data, error } = await sb
+    .from("marketplace_blacklist")
+    .select("id")
+    .eq("partner_id", partnerId)
+    .eq("active", true)
+    .maybeSingle();
+  if (error) throw error;
+  return Boolean(data);
+}
+
 // ─── Public sanitisation helpers ─────────────────────────────────────────
 
 /**
@@ -214,20 +341,24 @@ export async function listMarketplacePosts(
   // because the function just drops them via rest-spread.
   const rows = (data as unknown as MarketplacePost[]) || [];
 
-  // KYC transparency — resolve each poster's KYC approval status in ONE
-  // batched query so the feed can render the "KYC Verified" badge without
+  // KYC transparency — resolve each poster's KYC approval status AND
+  // company name in ONE batched query so the feed can render the
+  // "KYC Verified" badge and the poster's company name (colleagues can
+  // see WHO posted — partner_id itself is still stripped) without
   // exposing any KYC document data (only a boolean, never the documents).
   const posterIds = [...new Set(rows.map((r) => r.partner_id).filter(Boolean))];
   const kycByPartner = new Map<string, boolean>();
+  const nameByPartner = new Map<string, string>();
   if (posterIds.length > 0) {
     try {
       const { data: partnerRows, error: partnerErr } = await sb
         .from("partners")
-        .select("id, kyc_status")
+        .select("id, kyc_status, name")
         .in("id", posterIds);
       if (partnerErr) throw partnerErr;
-      for (const p of (partnerRows || []) as { id: string; kyc_status: string | null }[]) {
+      for (const p of (partnerRows || []) as { id: string; kyc_status: string | null; name: string }[]) {
         kycByPartner.set(p.id, p.kyc_status === "approved");
+        nameByPartner.set(p.id, p.name);
       }
     } catch (e) {
       // Fail-open to `false` (badge simply hidden) — never block the feed.
@@ -239,6 +370,7 @@ export async function listMarketplacePosts(
     items: rows.map((r) => ({
       ...sanitisePublicPost(r),
       poster_kyc_verified: kycByPartner.get(r.partner_id) ?? false,
+      poster_name: r.partner_id ? nameByPartner.get(r.partner_id) ?? null : null,
     })),
     total: count ?? 0,
   };
@@ -302,10 +434,33 @@ export async function getMarketplacePost(
   if (viewerPartnerId && viewerPartnerId === post.partner_id) {
     return { ...(post as unknown as Record<string, unknown>), poster_kyc_verified: posterKycVerified };
   }
-  // Non-owner: hide drafts / private posts entirely.
+  // Non-owner, SAME tenant: active (and expired) posts are visible —
+  // including PRIVATE ones reached via the direct link the create form
+  // promises ("Private — only via direct link"). Previously a private
+  // link 404'd for every colleague, which made shared posts look
+  // "invisible to other users in the same tenant".
+  // 'pending' (awaiting approval) and drafts stay owner/admin-only.
   if (post.status !== "active" && post.status !== "expired") return null;
-  if (post.visibility === "private") return null;
-  return { ...sanitisePublicPost(post), poster_kyc_verified: posterKycVerified };
+  // Poster company name — same-tenant colleagues can see WHO posted
+  // (partner_id itself is still stripped from the payload).
+  let posterName: string | null = null;
+  if (post.partner_id) {
+    try {
+      const { data: partnerRow } = await sb
+        .from("partners")
+        .select("name")
+        .eq("id", post.partner_id)
+        .maybeSingle();
+      posterName = (partnerRow as { name?: string } | null)?.name ?? null;
+    } catch {
+      posterName = null;
+    }
+  }
+  return {
+    ...sanitisePublicPost(post),
+    poster_kyc_verified: posterKycVerified,
+    poster_name: posterName,
+  };
 }
 
 /**
@@ -320,6 +475,40 @@ export async function createMarketplacePost(
   data: MarketplacePostCreate,
 ): Promise<MarketplacePost> {
   const sb = getSupabase();
+  // ─── Tenant policy enforcement (migration 099) ────────────────────────
+  // All three knobs are read from the cached settings row; a read error
+  // falls back to the previous global behaviour (fail-safe, never wider).
+  let settings: MarketplaceTenantSettings;
+  try {
+    settings = await getMarketplaceTenantSettings(tenantId);
+  } catch {
+    settings = { ...DEFAULT_MARKETPLACE_TENANT_SETTINGS, tenant_id: tenantId };
+  }
+
+  // Blacklist (migration 054 promised this enforcement; now real).
+  try {
+    if (await isPartnerBlacklisted(partnerId)) {
+      throw new MarketplaceRuleError(
+        "Your marketplace access is restricted by the administrator.",
+      );
+    }
+  } catch (e) {
+    if (e instanceof MarketplaceRuleError) throw e;
+    // Blacklist read failure — fail-open (posting predates the blacklist).
+  }
+
+  // Moderated publishing: 'active' posts land as 'pending' until an
+  // admin approves them. Drafts stay drafts (owner publishes later).
+  const requestedStatus = data.status ?? "active";
+  const effectiveStatus =
+    settings.require_approval && requestedStatus === "active" ? "pending" : requestedStatus;
+
+  // Visibility policy: private may be disallowed; default may be forced.
+  let effectiveVisibility = data.visibility ?? settings.default_visibility;
+  if (!settings.allow_private_posts && effectiveVisibility === "private") {
+    effectiveVisibility = "public";
+  }
+
   const payload = {
     tenant_id: tenantId,
     partner_id: partnerId,
@@ -345,8 +534,8 @@ export async function createMarketplacePost(
     quality_specs: data.quality_specs ?? [],
     payment_terms: data.payment_terms ?? null,
     description: data.description ?? null,
-    status: data.status ?? "active",
-    visibility: data.visibility ?? "public",
+    status: effectiveStatus,
+    visibility: effectiveVisibility,
     expires_at: data.expires_at ?? null,
   };
   const { data: inserted, error } = await sb
@@ -454,23 +643,29 @@ export async function createMarketplaceResponse(
 ): Promise<MarketplaceResponse> {
   const sb = getSupabase();
 
-  // Fetch + validate the post.
+  // Fetch the post + validate the post.
   const { data: post, error: postErr } = await sb
     .from("marketplace_posts")
     .select("id, status, tenant_id, partner_id, expires_at, responses_count")
     .eq("id", data.post_id)
     .maybeSingle();
   if (postErr) throw postErr;
-  if (!post) throw new Error("Post not found.");
-  if (post.tenant_id !== tenantId) throw new Error("Post not found.");
-  if (post.status !== "active") throw new Error("Post is not active.");
+  if (!post) throw new MarketplaceRuleError("Post not found.", 404);
+  if (post.tenant_id !== tenantId) throw new MarketplaceRuleError("Post not found.", 404);
+  if (post.status !== "active")
+    throw new MarketplaceRuleError(
+      "Post is not active.",
+      // 409 — a real state conflict (e.g. the post was flagged/removed),
+      // not a server error. Previously this 500'd into the error audit.
+      409,
+    );
   // Owner cannot respond to their own post.
   if (post.partner_id === partnerId) {
-    throw new Error("Cannot respond to your own post.");
+    throw new MarketplaceRuleError("Cannot respond to your own post.", 400);
   }
   // Expiry check.
   if (post.expires_at && new Date(post.expires_at) < new Date()) {
-    throw new Error("Post has expired.");
+    throw new MarketplaceRuleError("Post has expired.", 409);
   }
 
   // FIX-MARKET-2 / fix #3: cap a single partner to 5 responses per post per
@@ -488,7 +683,10 @@ export async function createMarketplaceResponse(
     .gte("created_at", since24h);
   if (countErr) throw countErr;
   if ((recentCount ?? 0) >= 5) {
-    throw new Error("You have already responded 5 times to this post in the last 24 hours.");
+    throw new MarketplaceRuleError(
+      "You have already responded 5 times to this post in the last 24 hours.",
+      429,
+    );
   }
 
   const payload = {
@@ -969,6 +1167,17 @@ export async function listPublicMarketplacePosts(
     .eq("status", "active")
     .eq("visibility", "public");
 
+  // Tenant opt-out (migration 099): tenants whose admin disabled the
+  // public feed are excluded from this anonymous cross-tenant API.
+  try {
+    const optOut = await listPublicFeedOptOutTenants();
+    if (optOut.length > 0) {
+      q = q.not("tenant_id", "in", `(${optOut.map((id) => `"${id}"`).join(",")})`);
+    }
+  } catch {
+    // Fail-open — the feed predates the opt-out.
+  }
+
   if (filters.post_type) q = q.eq("post_type", filters.post_type);
   if (filters.category) q = q.eq("product_category", filters.category);
   if (filters.country) q = q.eq("delivery_country", filters.country);
@@ -1290,7 +1499,7 @@ export async function createPostReport(
   details?: string,
 ): Promise<{ id: string }> {
   if (!REPORT_REASONS.has(reason)) {
-    throw new Error("Invalid report reason.");
+    throw new MarketplaceRuleError("Invalid report reason.", 400);
   }
   const sb = getSupabase();
   const { data: postRow, error: postErr } = await sb
@@ -1300,7 +1509,7 @@ export async function createPostReport(
     .eq("tenant_id", tenantId)
     .maybeSingle();
   if (postErr) throw postErr;
-  if (!postRow) throw new Error("Post not found.");
+  if (!postRow) throw new MarketplaceRuleError("Post not found.", 404);
 
   const { data, error } = await sb
     .from("marketplace_post_reports")
@@ -1316,9 +1525,129 @@ export async function createPostReport(
     .single();
   if (error) {
     if (/duplicate key|unique constraint/i.test(error.message)) {
-      throw new Error("You already have an open report for this post.");
+      throw new MarketplaceRuleError("You already have an open report for this post.", 409);
     }
     throw error;
   }
   return { id: (data as { id: string }).id };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Admin report queue (migration 098 table, consumed since 099) — the
+// moderation queue for marketplace_post_reports. Tenant admins see
+// their own tenant's reports; super admins see every tenant's.
+// ════════════════════════════════════════════════════════════════════════════
+
+export interface PostReportRow {
+  id: string;
+  tenant_id: string;
+  post_id: string;
+  reporter_partner_id: string;
+  reporter_name: string | null;
+  reason: string;
+  details: string | null;
+  status: string;
+  created_at: string;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  product_name: string | null;
+}
+
+/** Moderation queue — hydrates the reporter + product names (batched). */
+export async function listPostReports(
+  tenantId: string | null,
+  status?: string,
+  limit = 100,
+  offset = 0,
+): Promise<{ items: PostReportRow[]; total: number }> {
+  const sb = getSupabase();
+  let q = sb
+    .from("marketplace_post_reports")
+    .select("*", { count: "exact" })
+    .order("created_at", { ascending: false });
+  if (tenantId) q = q.eq("tenant_id", tenantId);
+  if (status && ["open", "reviewed", "dismissed"].includes(status)) {
+    q = q.eq("status", status);
+  }
+  const { data, error, count } = await q.range(offset, offset + limit - 1);
+  if (error) throw error;
+  const rows = (data as any[]) || [];
+
+  // Batched hydration: reporter names + product names.
+  const partnerIds = Array.from(
+    new Set(rows.map((r) => r.reporter_partner_id).filter(Boolean)),
+  );
+  const namesByPartner = new Map<string, string>();
+  if (partnerIds.length > 0) {
+    const { data: partnerRows } = await sb
+      .from("partners")
+      .select("id, name")
+      .in("id", partnerIds);
+    for (const p of ((partnerRows as { id: string; name: string }[]) || [])) {
+      namesByPartner.set(p.id, p.name);
+    }
+  }
+  const postIds = Array.from(new Set(rows.map((r) => r.post_id).filter(Boolean)));
+  const namesByPost = new Map<string, string>();
+  if (postIds.length > 0) {
+    const { data: postRows } = await sb
+      .from("marketplace_posts")
+      .select("id, product_name")
+      .in("id", postIds);
+    for (const p of ((postRows as { id: string; product_name: string }[]) || [])) {
+      namesByPost.set(p.id, p.product_name);
+    }
+  }
+
+  const items: PostReportRow[] = rows.map((r) => ({
+    ...r,
+    reporter_name: namesByPartner.get(r.reporter_partner_id) ?? null,
+    product_name: namesByPost.get(r.post_id) ?? null,
+  }));
+  return { items, total: count ?? 0 };
+}
+
+/** Mark a report reviewed/dismissed (admin triage). Returns the new row. */
+export async function updatePostReportStatus(
+  reportId: string,
+  status: "reviewed" | "dismissed",
+  reviewedBy: string,
+): Promise<any> {
+  const sb = getSupabase();
+  const { data, error } = await sb
+    .from("marketplace_post_reports")
+    .update({ status, reviewed_at: new Date().toISOString(), reviewed_by: reviewedBy })
+    .eq("id", reportId)
+    .select()
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Categories (migration 054 table, consumed since 099) — the curated
+// taxonomy the admin manages; the create-post form loads it live instead
+// of the hardcoded list.
+// ════════════════════════════════════════════════════════════════════════════
+
+export interface MarketplaceCategory {
+  id: string;
+  name: string;
+  slug: string;
+  parent_id: string | null;
+  sort_order: number;
+  is_featured: boolean;
+  is_active: boolean;
+}
+
+/** Active categories (sorted) — used by the create-post form. */
+export async function listMarketplaceCategories(): Promise<MarketplaceCategory[]> {
+  const sb = getSupabase();
+  const { data, error } = await sb
+    .from("marketplace_categories")
+    .select("id, name, slug, parent_id, sort_order, is_featured, is_active")
+    .eq("is_active", true)
+    .order("sort_order", { ascending: true });
+  if (error) throw error;
+  return (data as MarketplaceCategory[]) || [];
 }

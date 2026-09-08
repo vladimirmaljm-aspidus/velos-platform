@@ -357,6 +357,17 @@ export const PORTAL_CLIENT = {
   PROFILE_UPDATE: "portal.profile_update",
 } as const;
 
+// ─── Marketplace administration (099 — tenant admin + super admin) ─────────
+// Marketplace moderation (posts/reports) and the per-tenant marketplace
+// policy. Tenant admins implicitly hold these via the admin implicit-grant
+// path in can() and are scoped to their OWN tenant by the routes; super
+// admins operate cross-tenant.
+export const MARKETPLACE = {
+  READ: "marketplace.read",
+  MODERATE: "marketplace.moderate",
+  SETTINGS: "marketplace.settings",
+} as const;
+
 // ─── Aggregate every permission constant into a flat list ───────────────────
 export const ALL_PERMISSIONS = [
   ...Object.values(PARTNERS),
@@ -380,6 +391,7 @@ export const ALL_PERMISSIONS = [
   ...Object.values(TRADE_CALCULATOR),
   ...Object.values(ERP),
   ...Object.values(COMMISSIONS),
+  ...Object.values(MARKETPLACE),
   ...Object.values(PORTAL),
   ...Object.values(PORTAL_UPLOADS),
   ...Object.values(LOGISTICS),

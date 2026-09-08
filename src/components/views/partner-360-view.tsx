@@ -49,6 +49,12 @@ import { useApiUrl, useTenantKey } from "@/lib/hooks/use-api-url";
 import { cn } from "@/lib/utils";
 import { downloadPdf } from "@/lib/utils/download";
 import { useT } from "@/lib/i18n/store";
+import {
+  PortalModuleGrid,
+  initModulePermDraft,
+  buildModulePermissionsPayload,
+  type ModulePermDraft,
+} from "@/components/common/portal-module-grid";
 
 // Local KYC status union (pre-existing duplicate KycStatus export collapses
 // the imported symbol — same workaround used in kyc-review-view.tsx).
@@ -1875,6 +1881,11 @@ function PortalTab({
   const [newEmail, setNewEmail] = useState("");
   const [showChangeTier, setShowChangeTier] = useState(false);
   const [nextTier, setNextTier] = useState<string>("");
+  // 099 — per-USER module permission overrides dialog state. The draft is
+  // rebuilt from portalAccess.module_permissions every time the dialog is
+  // opened so a stale draft never survives a cancel.
+  const [showModulePerms, setShowModulePerms] = useState(false);
+  const [modulePermDraft, setModulePermDraft] = useState<ModulePermDraft>({});
 
   // Per-action permission gating. `canAdmin` still guards the whole card,
   // but individual buttons now respect the fine-grained catalog entries so
@@ -1886,6 +1897,16 @@ function PortalTab({
   const canResetPw = useCan("portal.reset_password");
   const canSuspend = useCan("portal.suspend");
   const canRevoke = useCan("portal.revoke");
+  // 099 module permission editor (PUT /api/portal-access/[id]/permissions
+  // is gated on portal.manage server-side).
+  const canModulePerms = useCan("portal.manage");
+
+  // Read-only override counter shown under the legacy permission badges —
+  // lets an admin see at a glance that per-module overrides exist.
+  const modulePerms = portalAccess?.module_permissions;
+  const moduleOverrideCount = modulePerms
+    ? Object.values(modulePerms).filter((v) => typeof v === "boolean").length
+    : 0;
 
   const inviteMut = useMutation({
     mutationFn: async () => {
@@ -2018,6 +2039,36 @@ function PortalTab({
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // 099 — save the per-user module permission overrides. Inherit keys are
+  // absent from the draft (never written); an all-inherit draft sends
+  // module_permissions: null which CLEARS the overrides so the tenant
+  // defaults / legacy booleans apply again. This deliberately does NOT
+  // touch the legacy 8 booleans, tier or status — those keep their own
+  // dedicated actions above.
+  const saveModulePermsMut = useMutation({
+    mutationFn: async () => {
+      if (!portalAccess) throw new Error("No portal access record");
+      const r = await fetch(api(`/api/portal-access/${portalAccess.id}/permissions`), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          module_permissions: buildModulePermissionsPayload(modulePermDraft),
+        }),
+      });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.error || "Save failed");
+      }
+      return r.json();
+    },
+    onSuccess: () => {
+      toast.success(t("portal-modules-saved"));
+      qc.invalidateQueries({ queryKey: ["portal-access", tenantKey, "partner360", partnerId] });
+      setShowModulePerms(false);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   // Create portal access (initial)
   const createMut = useMutation({
     mutationFn: async () => {
@@ -2109,6 +2160,13 @@ function PortalTab({
                     </Badge>
                   ))}
                 </div>
+                {/* 099 — read-only hint that per-module overrides exist on
+                    this row (edited via the "Module permissions" dialog). */}
+                {moduleOverrideCount > 0 && (
+                  <p className="text-xs text-muted-foreground mt-1.5">
+                    {t("portal-module-overrides-count").replace("{n}", String(moduleOverrideCount))}
+                  </p>
+                )}
               </div>
 
               {/* Actions */}
@@ -2142,6 +2200,22 @@ function PortalTab({
                       onClick={() => { setNextTier(portalAccess.tier); setShowChangeTier(true); }}
                     >
                       <Star className="size-4 mr-1.5" /> {t("crm-change-tier")}
+                    </Button>
+                  )}
+                  {/* 099 — per-USER module permission overrides. Disabled on
+                      the same condition the other portal actions use: no
+                      portal_access row → nothing to override. */}
+                  {canModulePerms && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!portalAccess || saveModulePermsMut.isPending}
+                      onClick={() => {
+                        setModulePermDraft(initModulePermDraft(portalAccess.module_permissions));
+                        setShowModulePerms(true);
+                      }}
+                    >
+                      <ShieldCheck className="size-4 mr-1.5" /> {t("portal-module-permissions")}
                     </Button>
                   )}
                   {canResetPw && (
@@ -2270,6 +2344,38 @@ function PortalTab({
             <Button variant="outline" onClick={() => setShowChangeEmail(false)}>{t("cancel")}</Button>
             <Button onClick={() => changeEmailMut.mutate(newEmail)} disabled={changeEmailMut.isPending || !newEmail}>
               {changeEmailMut.isPending ? t("crm-saving-ellipsis") : t("crm-change-email-btn")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 099 — per-USER module permission overrides. Tri-state grid
+          (Inherit / Allow / Deny) grouped by module group; submodules
+          indented under their parent. Inherit keys are omitted from the
+          saved map; an all-inherit draft clears the overrides (null). */}
+      <Dialog open={showModulePerms} onOpenChange={setShowModulePerms}>
+        <DialogContent size="md" className="max-h-[85vh] flex flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border/60">
+            <DialogTitle>{t("portal-module-permissions")} — {partnerName}</DialogTitle>
+            <DialogDescription>{t("portal-module-permissions-desc")}</DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 min-h-0 max-h-[70vh] overflow-y-auto px-6 py-4 custom-scroll">
+            <PortalModuleGrid
+              value={modulePermDraft}
+              onChange={setModulePermDraft}
+              disabled={saveModulePermsMut.isPending}
+            />
+            <p className="text-xs text-muted-foreground mt-4">
+              {t("portal-modules-submodule-note")}
+            </p>
+          </div>
+          <DialogFooter className="shrink-0 border-t border-border/60 px-6 pt-4 pb-4">
+            <Button variant="outline" onClick={() => setShowModulePerms(false)}>{t("cancel")}</Button>
+            <Button
+              onClick={() => saveModulePermsMut.mutate()}
+              disabled={saveModulePermsMut.isPending}
+            >
+              {saveModulePermsMut.isPending ? t("crm-saving-ellipsis") : t("save")}
             </Button>
           </DialogFooter>
         </DialogContent>

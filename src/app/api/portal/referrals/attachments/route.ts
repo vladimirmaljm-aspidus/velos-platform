@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requirePortalModule } from "@/lib/portal/module-permissions";
 import { getStore } from "@/lib/data/store";
 import { audit, sanitizeError, getIp } from "@/lib/api/helpers";
 import { linkReferralAttachments, attachmentsForReferrals, MAX_REFERRAL_ATTACHMENTS } from "@/lib/portal/referral-attachments";
@@ -20,6 +21,9 @@ export async function POST(req: NextRequest) {
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 099 — module permission gate (referrals).
+  const _moduleBlock = await requirePortalModule(access, "referrals");
+  if (_moduleBlock) return _moduleBlock;
   const store = await getStore();
 
   let body: { referral_id?: unknown; attachment_ids?: unknown };
@@ -74,6 +78,9 @@ export async function GET(req: NextRequest) {
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 099 — module permission gate (referrals).
+  const _moduleBlock = await requirePortalModule(access, "referrals");
+  if (_moduleBlock) return _moduleBlock;
   const referralId = new URL(req.url).searchParams.get("referral_id") || "";
   if (!referralId) {
     return NextResponse.json({ error: "referral_id is required." }, { status: 400 });

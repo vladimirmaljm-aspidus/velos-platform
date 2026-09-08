@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requirePortalModule } from "@/lib/portal/module-permissions";
 import { listMembers, getGroup, getGroupRole } from "@/lib/data/marketplace-community-store";
 import { withApm } from "@/lib/monitoring/apm";
 
@@ -22,6 +23,9 @@ async function _get(req: NextRequest, ctx: RouteCtx) {
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // 099 — module permission gate (marketplace.community).
+  const _moduleBlock = await requirePortalModule(access, "marketplace.community");
+  if (_moduleBlock) return _moduleBlock;
   const { id } = await ctx.params;
   try {
     // Gate private groups: only members may view the roster.

@@ -108,7 +108,11 @@ const VALID_TRANSITIONS: Record<DocType, Record<string, string[]>> = {
   // `expired`, `cancelled` are terminal: reviving them would silently
   // undo the cron / owner action that produced them.
   marketplace_post: {
-    draft: ["active"],
+    draft: ["active", "pending"],
+    // 099 — 'pending' = moderated publishing (tenant require_approval).
+    // An admin approves (pending → active) or rejects (pending → closed),
+    // the cron/owner can still close or flag it.
+    pending: ["active", "closed", "expired", "cancelled", "flagged"],
     active: ["closed", "expired", "cancelled", "flagged"],
     closed: [],
     expired: [],

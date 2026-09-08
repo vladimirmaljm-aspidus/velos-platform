@@ -47,3 +47,15 @@ Until that follow-up is done, the migrations are inert — they add safety nets 
 - **`marketplace_post_reports`** — abuse reports for posts (`scam | counterfeit | wrong_category | prohibited | misleading | other`), one OPEN report per `(reporter, post)` enforced by a partial unique index. Reports never auto-change post status — moderation stays admin-only via the existing flagged-status machinery.
 
 Applied to production via the Supabase Management API (`/v1/projects/{ref}/database/query`) — idempotent (`CREATE TABLE IF NOT EXISTS`). RLS intentionally not enabled: the whole marketplace data plane is service-role only (migration 076); tenant/partner scoping is enforced in the API layer like every other `marketplace_*` table.
+
+---
+
+## Migration 099 — marketplace tenant controls + portal module permissions (2026-09-09, applied ✓)
+
+`099_marketplace_tenant_controls.sql` — three parts:
+
+1. **Watchlist/reports type fix** — 098 typed `marketplace_watchlist.tenant_id/partner_id` and `marketplace_post_reports.tenant_id/reporter_partner_id` as `uuid`, but those ids are TEXT cuids → every watchlist call 500'd (`invalid input syntax for type uuid`). Re-typed to `text` + service_role-only RLS (076 posture).
+2. **Marketplace tenant controls** — new `marketplace_tenant_settings` (per-tenant `enabled`, `posting_policy` ladder `all_active|kyc_verified|tier_standard|tier_business|tier_premium|admins_only`, `require_approval`, `public_feed_enabled`, `default_visibility`, `allow_private_posts`); `marketplace_posts.status` CHECK gains `pending` (moderated publishing: pending → active is the admin approval path, enforced by the status-validator graph).
+3. **Portal module permissions** — `portal_access.module_permissions JSONB` (per-user overrides) + `tenant_portal_defaults` (per-tenant defaults). Enforcement: `src/lib/portal/module-permissions.ts` (user override → tenant default → legacy boolean fallback → open default); admin editor writes via `PUT /api/portal-access/[id]/permissions`.
+
+Data fix applied with the migration: the single production post ("Peanut Virginija", left `flagged` after an admin moderation test on 08-21 — the reason same-tenant partners saw an empty feed) was restored to `active` with an audit trail.

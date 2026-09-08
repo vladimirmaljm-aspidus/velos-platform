@@ -13,7 +13,9 @@ export const runtime = "nodejs";
  *   can_view_invoices, can_view_profile, can_view_company_info,
  *   can_submit_rfq, can_download_pdf,
  *   exempt_kyc, exempt_document_upload, exempt_location_share,
- *   tier, status
+ *   tier, status,
+ *   module_permissions?: Record<string, boolean>   // 099 — per-user module
+ *                                                 // overrides (dot-format keys)
  * }
  */
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -61,6 +63,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       if (body[field] !== undefined) {
         update[field] = body[field];
       }
+    }
+
+    // 099 — per-USER module permission overrides. Sanitised to known
+    // module keys only (unknown keys / non-boolean values are dropped;
+    // null clears the overrides → tenant defaults apply again).
+    if (body.module_permissions !== undefined) {
+      const { sanitiseModulePermissions } = await import("@/lib/portal/module-permissions");
+      update.module_permissions = sanitiseModulePermissions(body.module_permissions);
     }
 
     // AUDIT16 — explicit, encrypted portal_email handling (see comment
