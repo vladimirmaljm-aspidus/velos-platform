@@ -22,6 +22,7 @@ import {
   KycSubmission, KycDocument, PortalRfq,
   TenantFeatureFlags,
   Notification,
+  ReferralCommission, ReferralAgreement, ReferralPayoutAccount,
   ErpAccount, FiscalPeriod, ErpJournalEntry, ErpJournalLine,
   ErpCostCenter, ErpBankAccount, ErpBankTransaction, ErpSetting,
   TrialBalance, BalanceSheet, ProfitAndLoss, GeneralLedger,
@@ -1456,6 +1457,21 @@ export class PrismaStore implements Store {
   async deleteCommissionPayout(id: string) { throw unsupported("deleteCommissionPayout", "PrismaStore"); }
   async getCommissionSummaries(tenantId: string) { throw unsupported("getCommissionSummaries", "PrismaStore"); }
   async calculateCommission(agentId: string, dealValue: number, dealProfit: number, dealQuantity: number, dealUnit: string, currency: string) { throw unsupported("calculateCommission", "PrismaStore"); }
+  // ---- Portal referral commissions (migration 097) — Prisma is deprecated,
+  // production runs SupabaseStore; MockStore covers tests/dev parity.
+  async listReferralCommissions(tenantId: string, params?: ListParams & { partner_id?: string; status?: string }) { throw unsupported("listReferralCommissions", "PrismaStore"); }
+  async listReferralCommissionsByPartner(partnerId: string) { throw unsupported("listReferralCommissionsByPartner", "PrismaStore"); }
+  async getReferralCommission(id: string) { throw unsupported("getReferralCommission", "PrismaStore"); }
+  async upsertReferralCommission(c: Partial<ReferralCommission> & { id?: string }) { throw unsupported("upsertReferralCommission", "PrismaStore"); }
+  async deleteReferralCommission(id: string) { throw unsupported("deleteReferralCommission", "PrismaStore"); }
+  async transitionReferralCommission(id: string, action: "confirm" | "approve" | "cancel" | "reopen_documents", patch?: Record<string, unknown>) { throw unsupported("transitionReferralCommission", "PrismaStore"); }
+  async markReferralCommissionPaid(id: string, patch: { payout_reference?: string; paid_amount?: number }) { throw unsupported("markReferralCommissionPaid", "PrismaStore"); }
+  async getReferralAgreementByPartner(tenantId: string, partnerId: string) { throw unsupported("getReferralAgreementByPartner", "PrismaStore"); }
+  async upsertReferralAgreement(a: Partial<ReferralAgreement> & { id?: string }) { throw unsupported("upsertReferralAgreement", "PrismaStore"); }
+  async signReferralAgreement(id: string, sig: { signed_by_name: string; signed_version: string; signed_ip?: string; signed_user_agent?: string; signed_portal_access_id?: string }) { throw unsupported("signReferralAgreement", "PrismaStore"); }
+  async getReferralPayoutAccountByPartner(tenantId: string, partnerId: string) { throw unsupported("getReferralPayoutAccountByPartner", "PrismaStore"); }
+  async upsertReferralPayoutAccount(a: Partial<ReferralPayoutAccount> & { id?: string }) { throw unsupported("upsertReferralPayoutAccount", "PrismaStore"); }
+  async verifyReferralPayoutAccount(id: string, patch: { status: "verified" | "rejected"; verified_by: string }) { throw unsupported("verifyReferralPayoutAccount", "PrismaStore"); }
   async createFxRevaluation(
     tenantId: string,
     revalDate: string,

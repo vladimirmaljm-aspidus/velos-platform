@@ -33,7 +33,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Plus, Search, Users, Pencil, Trash2, Eye, DollarSign,
   CheckCircle2, XCircle, Clock, TrendingUp, Wallet,
-  UserCheck, HandCoins, FileText, Calculator,
+  UserCheck, HandCoins, FileText, Calculator, FileSignature,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
@@ -48,6 +48,8 @@ import type { CommissionAgent, DealCommission, CommissionPayout, CommissionSumma
 import { useApiUrl, useTenantKey } from "@/lib/hooks/use-api-url";
 import { useT } from "@/lib/i18n/store";
 import { PartnerPicker } from "@/components/common/partner-picker";
+// 097 — portal referral commissions (partner-facing referral lifecycle).
+import { ReferralCommissionsTab } from "@/components/commissions/referral-commissions-tab";
 
 const COMMISSION_TYPE_LABEL_KEYS: Record<CommissionType, string> = {
   profit_percent: "fin-commission-type-profit-percent",
@@ -224,7 +226,7 @@ export function CommissionsView() {
 
       {/* ── Tabs ──────────────────────────────────────────────────────── */}
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="flex w-full overflow-x-auto justify-start mb-4 sm:grid sm:grid-cols-3">
+        <TabsList className="flex w-full overflow-x-auto justify-start mb-4 sm:grid sm:grid-cols-4">
           <TabsTrigger value="agents" className="gap-1.5">
             <Users className="size-4" />
             {t("commission-agents")}
@@ -236,6 +238,10 @@ export function CommissionsView() {
           <TabsTrigger value="payouts" className="gap-1.5">
             <Wallet className="size-4" />
             {t("commission-payouts")}
+          </TabsTrigger>
+          <TabsTrigger value="referrals" className="gap-1.5">
+            <FileSignature className="size-4" />
+            {t("refa-tab-title") || "Referrals"}
           </TabsTrigger>
         </TabsList>
 
@@ -281,6 +287,16 @@ export function CommissionsView() {
               qc.invalidateQueries({ queryKey: ["commission-payouts", tenantKey] });
               qc.invalidateQueries({ queryKey: ["commission-summaries", tenantKey] });
               qc.invalidateQueries({ queryKey: ["deal-commissions", tenantKey] });
+            }}
+          />
+        </TabsContent>
+
+        <TabsContent value="referrals">
+          <ReferralCommissionsTab
+            isLoading={false}
+            isError={false}
+            onRefresh={() => {
+              qc.invalidateQueries({ queryKey: ["referral-commissions", tenantKey] });
             }}
           />
         </TabsContent>

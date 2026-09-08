@@ -25,6 +25,7 @@ import {
   Notification,
   NotificationType,
   CommissionAgent, DealCommission, CommissionPayout, CommissionSummary,
+  ReferralCommission, ReferralAgreement, ReferralPayoutAccount,
   ErpAccount, FiscalPeriod, ErpJournalEntry, ErpJournalLine,
   ErpCostCenter, ErpBankAccount, ErpBankTransaction, ErpSetting,
   TrialBalance, TrialBalanceItem, BalanceSheetItem, BalanceSheet, ProfitAndLoss, GeneralLedger, GeneralLedgerEntry,
@@ -3144,6 +3145,8 @@ export class SupabaseStore implements Store {
       "document_shared",
       "portal_access_requested", "portal_access_approved", "portal_invite_sent",
       "portal_message",
+      "referral_commission_created", "referral_commission_confirmed", "referral_commission_approved",
+      "referral_commission_paid", "referral_agreement_activated", "referral_bank_verified",
       // Marketplace (Phase 2) — negotiation rooms + offer notifications
       "marketplace_response_received",
       "marketplace_response_accepted",
@@ -3267,6 +3270,8 @@ export class SupabaseStore implements Store {
       "document_shared",
       "portal_access_requested", "portal_access_approved", "portal_invite_sent",
       "portal_message",
+      "referral_commission_created", "referral_commission_confirmed", "referral_commission_approved",
+      "referral_commission_paid", "referral_agreement_activated", "referral_bank_verified",
       "marketplace_response_received",
       "marketplace_response_accepted",
       "marketplace_response_rejected",
@@ -3312,6 +3317,8 @@ export class SupabaseStore implements Store {
       "document_shared",
       "portal_access_requested", "portal_access_approved", "portal_invite_sent",
       "portal_message",
+      "referral_commission_created", "referral_commission_confirmed", "referral_commission_approved",
+      "referral_commission_paid", "referral_agreement_activated", "referral_bank_verified",
       "marketplace_response_received",
       "marketplace_response_accepted",
       "marketplace_response_rejected",
@@ -3573,6 +3580,122 @@ export class SupabaseStore implements Store {
       case "custom": return agent.commission_rate;
       default: return 0;
     }
+  }
+
+  // ─── Portal referral commissions (migration 097) ─────────────────────────
+  async listReferralCommissions(tenantId: string, params?: ListParams & { partner_id?: string; status?: string }): Promise<ListResult<ReferralCommission>> {
+    let q = this.sb().from("referral_commissions").select("*", { count: "exact" }).eq("tenant_id", tenantId);
+    if (params?.partner_id) q = q.eq("partner_id", params.partner_id);
+    if (params?.status) q = q.eq("status", params.status);
+    if (params?.search) {
+      const s = params.search.replace(/[%,]/g, "");
+      if (s) q = q.or(`referral_company.ilike.%${s}%,product.ilike.%${s}%,ref_number.ilike.%${s}%,referral_contact.ilike.%${s}%`);
+    }
+    q = q.order("created_at", { ascending: false });
+    return paginateQuery<ReferralCommission>(q, params);
+  }
+  async listReferralCommissionsByPartner(partnerId: string): Promise<ReferralCommission[]> {
+    const { data, error } = await this.sb().from("referral_commissions").select("*").eq("partner_id", partnerId).order("created_at", { ascending: false });
+    if (error) throw error;
+    return (data as ReferralCommission[]) || [];
+  }
+  async getReferralCommission(id: string): Promise<ReferralCommission | null> {
+    const { data, error } = await this.sb().from("referral_commissions").select("*").eq("id", id).maybeSingle();
+    if (error) throw error;
+    return (data as ReferralCommission) || null;
+  }
+  async upsertReferralCommission(c: Partial<ReferralCommission> & { id?: string }): Promise<ReferralCommission> {
+    // Never let a caller write signature/lifecycle-stamp columns through the
+    // generic upsert — those belong to the dedicated transition methods.
+    const { status, approved_by, approved_at, paid_at, paid_amount, payout_reference,
+      deal_done, deal_done_at, documents_checked_by, documents_checked_at, ...rest } = c as Record<string, unknown>;
+    return this.smartUpsert<ReferralCommission>("referral_commissions", rest as Partial<ReferralCommission> & { id?: string }, (c as { tenant_id?: string }).tenant_id);
+  }
+  async deleteReferralCommission(id: string): Promise<void> {
+    const { error } = await this.sb().from("referral_commissions").delete().eq("id", id);
+    if (error) throw error;
+  }
+  async transitionReferralCommission(id: string, action: "confirm" | "approve" | "cancel" | "reopen_documents", patch?: Record<string, unknown>): Promise<ReferralCommission> {
+    const now = new Date().toISOString();
+    let fields: Record<string, unknown>;
+    if (action === "confirm") {
+      fields = { status: "confirmed", deal_done: true, deal_done_at: now, updated_at: now };
+    } else if (action === "approve") {
+      fields = { status: "approved", approved_at: now, ...(patch?.approved_by !== undefined ? { approved_by: patch.approved_by } : {}), updated_at: now };
+    } else if (action === "cancel") {
+      fields = { status: "cancelled", updated_at: now };
+    } else {
+      // reopen_documents — admin resets the checklist (e.g. partner must
+      // re-upload a missing/incorrect document).
+      fields = { documents_complete: false, documents_checked_at: null, documents_checked_by: null, updated_at: now };
+    }
+    if (patch?.admin_notes !== undefined) fields.admin_notes = patch.admin_notes;
+    const { data, error } = await this.sb().from("referral_commissions").update(fields).eq("id", id).select().single();
+    if (error) throw error;
+    return data as ReferralCommission;
+  }
+  async markReferralCommissionPaid(id: string, patch: { payout_reference?: string; paid_amount?: number }): Promise<ReferralCommission> {
+    const fields: Record<string, unknown> = { status: "paid", paid_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+    if (patch.payout_reference !== undefined) fields.payout_reference = patch.payout_reference;
+    if (patch.paid_amount !== undefined) fields.paid_amount = patch.paid_amount;
+    const { data, error } = await this.sb().from("referral_commissions").update(fields).eq("id", id).select().single();
+    if (error) throw error;
+    return data as ReferralCommission;
+  }
+  async getReferralAgreementByPartner(tenantId: string, partnerId: string): Promise<ReferralAgreement | null> {
+    const { data, error } = await this.sb().from("referral_agreements").select("*").eq("tenant_id", tenantId).eq("partner_id", partnerId).maybeSingle();
+    if (error) throw error;
+    return (data as ReferralAgreement) || null;
+  }
+  async upsertReferralAgreement(a: Partial<ReferralAgreement> & { id?: string }): Promise<ReferralAgreement> {
+    // Signature block is immutable through the generic upsert — only
+    // signReferralAgreement may stamp it.
+    const { signed_at, signed_by_name, signed_version, signed_ip, signed_user_agent, signed_portal_access_id, ...rest } = a as Record<string, unknown>;
+    return this.smartUpsert<ReferralAgreement>("referral_agreements", rest as Partial<ReferralAgreement> & { id?: string }, (a as { tenant_id?: string }).tenant_id);
+  }
+  async signReferralAgreement(id: string, sig: { signed_by_name: string; signed_version: string; signed_ip?: string; signed_user_agent?: string; signed_portal_access_id?: string }): Promise<ReferralAgreement> {
+    // Guarded UPDATE: only a pending_signature row with an empty signature
+    // block can be signed — a second POST or a draft/terminated row matches
+    // 0 rows and PGRST116 surfaces as a clear error to the route.
+    const { data, error } = await this.sb()
+      .from("referral_agreements")
+      .update({
+        status: "signed",
+        signed_at: new Date().toISOString(),
+        signed_by_name: sig.signed_by_name,
+        signed_version: sig.signed_version,
+        signed_ip: sig.signed_ip || null,
+        signed_user_agent: sig.signed_user_agent || null,
+        signed_portal_access_id: sig.signed_portal_access_id || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id)
+      .eq("status", "pending_signature")
+      .is("signed_at", null)
+      .select()
+      .single();
+    if (error) throw error;
+    return data as ReferralAgreement;
+  }
+  async getReferralPayoutAccountByPartner(tenantId: string, partnerId: string): Promise<ReferralPayoutAccount | null> {
+    const { data, error } = await this.sb().from("referral_payout_accounts").select("*").eq("tenant_id", tenantId).eq("partner_id", partnerId).maybeSingle();
+    if (error) throw error;
+    return (data as ReferralPayoutAccount) || null;
+  }
+  async upsertReferralPayoutAccount(a: Partial<ReferralPayoutAccount> & { id?: string }): Promise<ReferralPayoutAccount> {
+    // Verification stamps belong to verifyReferralPayoutAccount only.
+    const { verified_by, verified_at, ...rest } = a as Record<string, unknown>;
+    return this.smartUpsert<ReferralPayoutAccount>("referral_payout_accounts", rest as Partial<ReferralPayoutAccount> & { id?: string }, (a as { tenant_id?: string }).tenant_id);
+  }
+  async verifyReferralPayoutAccount(id: string, patch: { status: "verified" | "rejected"; verified_by: string }): Promise<ReferralPayoutAccount> {
+    const { data, error } = await this.sb()
+      .from("referral_payout_accounts")
+      .update({ status: patch.status, verified_by: patch.verified_by, verified_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data as ReferralPayoutAccount;
   }
 
   // ─── ERP Accounts ────────────────────────────────────────────────────────

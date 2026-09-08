@@ -1714,6 +1714,17 @@ export type NotificationType =
   // bell so the counterparty finds out without having to refresh the
   // negotiations list.
   | "marketplace_negotiation_cancelled"
+  // 097 — Portal referral commissions lifecycle. Partner-facing types surface
+  // in the portal bell (PORTAL_SAFE_TYPES); admin-facing ones (signed /
+  // bank submitted) broadcast to tenant admins via user_id = NULL.
+  | "referral_commission_created"     // partner: admin recorded a new referral commission for them
+  | "referral_commission_confirmed"   // partner: the referred deal was confirmed as done
+  | "referral_commission_approved"    // partner: commission approved for payout
+  | "referral_commission_paid"        // partner: commission paid out (amount + reference)
+  | "referral_agreement_activated"    // partner: agreement is ready for their signature
+  | "referral_agreement_signed"       // tenant admins: partner signed the agreement
+  | "referral_bank_submitted"         // tenant admins: partner submitted/updated payout bank details
+  | "referral_bank_verified"          // partner: bank details verified by the admin
   // FEAT-1 / Trial approval system — fires when a new tenant self-registers
   // with status="pending_approval". Tied to the pending tenant's tenant_id
   // (the only tenant_id available at signup time — super_admins have
@@ -1854,6 +1865,135 @@ export interface CommissionSummary {
   paid_commission: number;
   pending_commission: number;
   currency: string;
+}
+
+// ─── Portal referral commissions (migration 097) ─────────────────────────
+
+export type ReferralCommissionStatus =
+  | "pending"      // recorded by admin, visible to the partner
+  | "confirmed"    // the referred business was completed (deal done)
+  | "approved"     // commission approved for payout
+  | "paid"         // paid out — terminal
+  | "cancelled";   // terminal
+
+export type ReferralCommissionType = "revenue_percent" | "profit_percent" | "fixed" | "per_unit";
+export type ReferralRefType = "deal" | "offer" | "invoice" | "proforma" | "loi" | "rfq" | "manual";
+
+/**
+ * A single referral commission — the business a registered portal user
+ * brought to the tenant, the commission they earn on it, and its
+ * admin-driven lifecycle (pending → confirmed → approved → paid).
+ * The partner sees the entry read-only in their portal "My Commissions"
+ * section; every transition is performed by a tenant admin.
+ */
+export interface ReferralCommission {
+  id: string;
+  tenant_id: string;
+  partner_id: string; // the referring partner (portal user's company)
+  // The referral — who the partner introduced to us:
+  referral_company: string;
+  referral_contact: string | null;
+  referral_email: string | null;
+  referral_phone: string | null;
+  // The business the commission is tied to:
+  ref_type: ReferralRefType;
+  ref_id: string | null;
+  ref_number: string | null; // e.g. OFF-2026-0014
+  product: string | null; // the goods the deal is about
+  deal_value: number | null;
+  currency: string;
+  // Commission terms for this entry:
+  commission_type: ReferralCommissionType;
+  commission_rate: number | null;
+  commission_amount: number;
+  conditions: string | null;
+  // Lifecycle:
+  status: ReferralCommissionStatus;
+  deal_done: boolean;
+  deal_done_at: string | null;
+  documents_complete: boolean;
+  documents_checked_at: string | null;
+  documents_checked_by: string | null;
+  approved_by: string | null;
+  approved_at: string | null;
+  paid_at: string | null;
+  payout_reference: string | null;
+  paid_amount: number | null;
+  admin_notes: string | null;
+  agreement_version: string | null;
+  // Meta:
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ReferralAgreementStatus =
+  | "draft"              // admin is preparing the terms (not visible to partner)
+  | "pending_signature"  // activated — partner can review & sign in the portal
+  | "signed"             // partner signed (signature block immutable)
+  | "suspended"          // temporarily inactive (admin action)
+  | "terminated";        // ended
+
+/**
+ * The referral + commission agreement between the tenant and a partner.
+ * One row per (tenant, partner). Terms are set by the admin; the partner
+ * signs in the portal (typed full name + explicit consent); the signature
+ * is pinned to the agreement_version it signed (like VELOS-LEGAL-TOS).
+ */
+export interface ReferralAgreement {
+  id: string;
+  tenant_id: string;
+  partner_id: string;
+  commission_type: ReferralCommissionType;
+  commission_rate: number | null;
+  commission_currency: string;
+  conditions: string | null; // custom clauses appended to the standard text
+  agreement_version: string;
+  status: ReferralAgreementStatus;
+  activated_at: string | null;
+  // Signature block (written only by the portal sign route):
+  signed_at: string | null;
+  signed_by_name: string | null;
+  signed_version: string | null;
+  signed_ip: string | null;
+  signed_user_agent: string | null;
+  signed_portal_access_id: string | null;
+  // Meta:
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ReferralPayoutAccountStatus = "submitted" | "verified" | "rejected";
+
+/**
+ * The partner's bank account for commission payouts. The IBAN is stored
+ * encrypted at rest (enc:… field-encryption); a masked variant is kept for
+ * list display and an HMAC for equality lookup.
+ */
+export interface ReferralPayoutAccount {
+  id: string;
+  tenant_id: string;
+  partner_id: string;
+  beneficiary_name: string;
+  bank_name: string | null;
+  iban_enc: string; // ciphertext — NEVER returned raw to the client
+  iban_masked: string; // e.g. "DE89 •••• 3000"
+  iban_hmac: string | null;
+  swift_bic: string | null;
+  account_currency: string | null;
+  country: string | null;
+  additional_instructions: string | null;
+  status: ReferralPayoutAccountStatus;
+  verified_by: string | null;
+  verified_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Admin-facing payout account view — IBAN decrypted server-side. */
+export interface ReferralPayoutAccountView extends Omit<ReferralPayoutAccount, "iban_enc" | "iban_hmac"> {
+  iban: string; // full IBAN (admin/owner only, decrypted server-side)
 }
 
 // ─── ERP / Accounting ────────────────────────────────────────────────────

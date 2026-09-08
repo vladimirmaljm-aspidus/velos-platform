@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
     // attach to a thread/negotiation (not "kyc" — that's a separate route
     // with its own KYC-submission ownership check).
     const rawCategory = (formData.get("category") as string | null) || "general";
-    const ALLOWED_CATEGORIES: PortalUploadCategory[] = ["message", "rfq", "general", "other"];
+    const ALLOWED_CATEGORIES: PortalUploadCategory[] = ["message", "rfq", "general", "other", "commission"];
     if (!ALLOWED_CATEGORIES.includes(rawCategory as PortalUploadCategory)) {
       return NextResponse.json({ error: "Invalid category." }, { status: 400 });
     }
@@ -202,6 +202,7 @@ export async function POST(req: NextRequest) {
       doc_type: docType,
       kyc_submission_id: null,
       message_id: null, // set later by the messages POST route if attached to a portal_message
+      referral_id: null, // 097 — set later by the referral-attachments link route
       filename: file.name,
       storage_bucket: "portal-uploads",
       storage_path: uploadResult.path,

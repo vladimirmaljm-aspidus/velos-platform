@@ -25,6 +25,7 @@ import {
   TenantFeatureFlags,
   Notification,
   CommissionAgent, DealCommission, CommissionPayout, CommissionSummary,
+  ReferralCommission, ReferralAgreement, ReferralPayoutAccount,
   ErpAccount, FiscalPeriod, ErpJournalEntry, ErpJournalLine,
   ErpCostCenter, ErpBankAccount, ErpBankTransaction, ErpSetting,
   TrialBalance, TrialBalanceItem, BalanceSheet, BalanceSheetItem,
@@ -1894,6 +1895,211 @@ export class MockStore implements Store {
       default:
         return 0;
     }
+  }
+
+  // ================================================================
+  // Portal referral commissions (migration 097)
+  // ================================================================
+  async listReferralCommissions(tenantId: string, params?: ListParams & { partner_id?: string; status?: string }): Promise<ListResult<ReferralCommission>> {
+    let items = mock.referralCommissions.filter((c) => c.tenant_id === tenantId);
+    if (params?.partner_id) items = items.filter((c) => c.partner_id === params.partner_id);
+    if (params?.status) items = items.filter((c) => c.status === params.status);
+    if (params?.search) {
+      const s = params.search.toLowerCase();
+      items = items.filter((c) =>
+        (c.referral_company || "").toLowerCase().includes(s) ||
+        (c.product || "").toLowerCase().includes(s) ||
+        (c.ref_number || "").toLowerCase().includes(s) ||
+        (c.referral_contact || "").toLowerCase().includes(s),
+      );
+    }
+    items = [...items].sort((a, b) => b.created_at.localeCompare(a.created_at));
+    const total = items.length;
+    const limit = params?.limit ?? 50;
+    const offset = params?.offset ?? 0;
+    return { items: items.slice(offset, offset + limit), total };
+  }
+  async listReferralCommissionsByPartner(partnerId: string): Promise<ReferralCommission[]> {
+    return [...mock.referralCommissions].filter((c) => c.partner_id === partnerId).sort((a, b) => b.created_at.localeCompare(a.created_at));
+  }
+  async getReferralCommission(id: string): Promise<ReferralCommission | null> {
+    return mock.referralCommissions.find((c) => c.id === id) || null;
+  }
+  async upsertReferralCommission(c: Partial<ReferralCommission> & { id?: string }): Promise<ReferralCommission> {
+    const { status, approved_by, approved_at, paid_at, paid_amount, payout_reference,
+      deal_done, deal_done_at, documents_checked_by, documents_checked_at, ...rest } = c as Record<string, unknown>;
+    const data = rest as Partial<ReferralCommission>;
+    const existing = c.id ? mock.referralCommissions.find((r) => r.id === c.id) : undefined;
+    if (existing) {
+      Object.assign(existing, data, { updated_at: new Date().toISOString() });
+      return existing;
+    }
+    const row: ReferralCommission = {
+      id: mock.nid("rc_"),
+      tenant_id: data.tenant_id || "tenant-1",
+      partner_id: data.partner_id || "",
+      referral_company: String(data.referral_company || "").slice(0, 300),
+      referral_contact: data.referral_contact ?? null,
+      referral_email: data.referral_email ?? null,
+      referral_phone: data.referral_phone ?? null,
+      ref_type: (data.ref_type as ReferralCommission["ref_type"]) || "manual",
+      ref_id: data.ref_id ?? null,
+      ref_number: data.ref_number ?? null,
+      product: data.product ?? null,
+      deal_value: data.deal_value ?? null,
+      currency: data.currency || "USD",
+      commission_type: (data.commission_type as ReferralCommission["commission_type"]) || "revenue_percent",
+      commission_rate: data.commission_rate ?? null,
+      commission_amount: data.commission_amount ?? 0,
+      conditions: data.conditions ?? null,
+      status: "pending",
+      deal_done: false,
+      deal_done_at: null,
+      documents_complete: false,
+      documents_checked_at: null,
+      documents_checked_by: null,
+      approved_by: null,
+      approved_at: null,
+      paid_at: null,
+      payout_reference: null,
+      paid_amount: null,
+      admin_notes: data.admin_notes ?? null,
+      agreement_version: data.agreement_version ?? null,
+      created_by: data.created_by ?? null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    mock.referralCommissions.push(row);
+    return row;
+  }
+  async deleteReferralCommission(id: string): Promise<void> {
+    const i = mock.referralCommissions.findIndex((c) => c.id === id);
+    if (i >= 0) mock.referralCommissions.splice(i, 1);
+  }
+  async transitionReferralCommission(id: string, action: "confirm" | "approve" | "cancel" | "reopen_documents", patch?: Record<string, unknown>): Promise<ReferralCommission> {
+    const row = mock.referralCommissions.find((c) => c.id === id);
+    if (!row) throw new Error("Referral commission not found.");
+    const now = new Date().toISOString();
+    if (action === "confirm") {
+      row.status = "confirmed";
+      row.deal_done = true;
+      row.deal_done_at = now;
+    } else if (action === "approve") {
+      row.status = "approved";
+      row.approved_at = now;
+      if (patch?.approved_by !== undefined) row.approved_by = String(patch.approved_by);
+    } else if (action === "cancel") {
+      row.status = "cancelled";
+    } else {
+      row.documents_complete = false;
+      row.documents_checked_at = null;
+      row.documents_checked_by = null;
+    }
+    if (patch?.admin_notes !== undefined) row.admin_notes = String(patch.admin_notes);
+    row.updated_at = now;
+    return row;
+  }
+  async markReferralCommissionPaid(id: string, patch: { payout_reference?: string; paid_amount?: number }): Promise<ReferralCommission> {
+    const row = mock.referralCommissions.find((c) => c.id === id);
+    if (!row) throw new Error("Referral commission not found.");
+    row.status = "paid";
+    row.paid_at = new Date().toISOString();
+    if (patch.payout_reference !== undefined) row.payout_reference = patch.payout_reference;
+    if (patch.paid_amount !== undefined) row.paid_amount = patch.paid_amount;
+    row.updated_at = new Date().toISOString();
+    return row;
+  }
+  async getReferralAgreementByPartner(tenantId: string, partnerId: string): Promise<ReferralAgreement | null> {
+    return mock.referralAgreements.find((a) => a.tenant_id === tenantId && a.partner_id === partnerId) || null;
+  }
+  async upsertReferralAgreement(a: Partial<ReferralAgreement> & { id?: string }): Promise<ReferralAgreement> {
+    const { signed_at, signed_by_name, signed_version, signed_ip, signed_user_agent, signed_portal_access_id, ...rest } = a as Record<string, unknown>;
+    const data = rest as Partial<ReferralAgreement>;
+    const existing = a.tenant_id && a.partner_id ? mock.referralAgreements.find((r) => r.tenant_id === a.tenant_id && r.partner_id === a.partner_id) : undefined;
+    if (existing) {
+      Object.assign(existing, data, { updated_at: new Date().toISOString() });
+      return existing;
+    }
+    const row: ReferralAgreement = {
+      id: mock.nid("ra_"),
+      tenant_id: data.tenant_id || "tenant-1",
+      partner_id: data.partner_id || "",
+      commission_type: (data.commission_type as ReferralAgreement["commission_type"]) || "revenue_percent",
+      commission_rate: data.commission_rate ?? null,
+      commission_currency: data.commission_currency || "USD",
+      conditions: data.conditions ?? null,
+      agreement_version: data.agreement_version || "RA-1.0",
+      status: (data.status as ReferralAgreement["status"]) || "draft",
+      activated_at: data.activated_at ?? null,
+      signed_at: null,
+      signed_by_name: null,
+      signed_version: null,
+      signed_ip: null,
+      signed_user_agent: null,
+      signed_portal_access_id: null,
+      created_by: data.created_by ?? null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    mock.referralAgreements.push(row);
+    return row;
+  }
+  async signReferralAgreement(id: string, sig: { signed_by_name: string; signed_version: string; signed_ip?: string; signed_user_agent?: string; signed_portal_access_id?: string }): Promise<ReferralAgreement> {
+    const row = mock.referralAgreements.find((a) => a.id === id);
+    if (!row) throw new Error("Referral agreement not found.");
+    if (row.status !== "pending_signature" || row.signed_at) throw new Error("Agreement is not awaiting signature.");
+    row.status = "signed";
+    row.signed_at = new Date().toISOString();
+    row.signed_by_name = sig.signed_by_name;
+    row.signed_version = sig.signed_version;
+    row.signed_ip = sig.signed_ip || null;
+    row.signed_user_agent = sig.signed_user_agent || null;
+    row.signed_portal_access_id = sig.signed_portal_access_id || null;
+    row.updated_at = new Date().toISOString();
+    return row;
+  }
+  async getReferralPayoutAccountByPartner(tenantId: string, partnerId: string): Promise<ReferralPayoutAccount | null> {
+    return mock.referralPayoutAccounts.find((a) => a.tenant_id === tenantId && a.partner_id === partnerId) || null;
+  }
+  async upsertReferralPayoutAccount(a: Partial<ReferralPayoutAccount> & { id?: string }): Promise<ReferralPayoutAccount> {
+    const { verified_by, verified_at, ...rest } = a as Record<string, unknown>;
+    const data = rest as Partial<ReferralPayoutAccount>;
+    const existing = a.tenant_id && a.partner_id ? mock.referralPayoutAccounts.find((r) => r.tenant_id === a.tenant_id && r.partner_id === a.partner_id) : undefined;
+    if (existing) {
+      // Partner edits reset verification.
+      Object.assign(existing, data, { status: "submitted", verified_by: null, verified_at: null, updated_at: new Date().toISOString() });
+      return existing;
+    }
+    const row: ReferralPayoutAccount = {
+      id: mock.nid("rpa_"),
+      tenant_id: data.tenant_id || "tenant-1",
+      partner_id: data.partner_id || "",
+      beneficiary_name: String(data.beneficiary_name || "").slice(0, 200),
+      bank_name: data.bank_name ?? null,
+      iban_enc: data.iban_enc || "",
+      iban_masked: data.iban_masked || "",
+      iban_hmac: data.iban_hmac ?? null,
+      swift_bic: data.swift_bic ?? null,
+      account_currency: data.account_currency ?? null,
+      country: data.country ?? null,
+      additional_instructions: data.additional_instructions ?? null,
+      status: "submitted",
+      verified_by: null,
+      verified_at: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    mock.referralPayoutAccounts.push(row);
+    return row;
+  }
+  async verifyReferralPayoutAccount(id: string, patch: { status: "verified" | "rejected"; verified_by: string }): Promise<ReferralPayoutAccount> {
+    const row = mock.referralPayoutAccounts.find((a) => a.id === id);
+    if (!row) throw new Error("Payout account not found.");
+    row.status = patch.status;
+    row.verified_by = patch.verified_by;
+    row.verified_at = new Date().toISOString();
+    row.updated_at = new Date().toISOString();
+    return row;
   }
 
   // ================================================================

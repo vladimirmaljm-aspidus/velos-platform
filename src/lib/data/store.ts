@@ -18,6 +18,7 @@ import {
   TenantFeatureFlags,
   Notification, NotificationType,
   CommissionAgent, DealCommission, CommissionPayout, CommissionSummary,
+  ReferralCommission, ReferralAgreement, ReferralPayoutAccount,
   ErpAccount, FiscalPeriod, ErpJournalEntry, ErpJournalLine,
   ErpCostCenter, ErpBankAccount, ErpBankTransaction, ErpSetting,
   TrialBalance, BalanceSheet, ProfitAndLoss, GeneralLedger,
@@ -560,6 +561,33 @@ export interface Store {
   // ---- commission summaries ----
   getCommissionSummaries(tenantId: string): Promise<CommissionSummary[]>;
   calculateCommission(agentId: string, dealValue: number, dealProfit: number, dealQuantity: number, dealUnit: string, currency: string): Promise<number>;
+
+  // ---- portal referral commissions (migration 097) ----
+  // Admin list with filters (partner_id, status, search) + pagination.
+  listReferralCommissions(tenantId: string, params?: ListParams & { partner_id?: string; status?: string }): Promise<ListResult<ReferralCommission>>;
+  // Portal list — the partner's own entries only (ordered newest first).
+  listReferralCommissionsByPartner(partnerId: string): Promise<ReferralCommission[]>;
+  getReferralCommission(id: string): Promise<ReferralCommission | null>;
+  // Admin create/update. Lifecycle fields (status timestamps etc.) are set
+  // by the dedicated transition methods below — upsert validates caller data.
+  upsertReferralCommission(c: Partial<ReferralCommission> & { id?: string }): Promise<ReferralCommission>;
+  deleteReferralCommission(id: string): Promise<void>;
+  // State-machine transitions (admin only, guards enforced at the API layer).
+  // confirm → sets status=confirmed, deal_done=true, deal_done_at=now.
+  transitionReferralCommission(id: string, action: "confirm" | "approve" | "cancel" | "reopen_documents", patch?: Record<string, unknown>): Promise<ReferralCommission>;
+  // mark_paid → status=paid + paid_at/payout_reference/paid_amount (terminal).
+  markReferralCommissionPaid(id: string, patch: { payout_reference?: string; paid_amount?: number }): Promise<ReferralCommission>;
+  // Agreement (one row per tenant+partner).
+  getReferralAgreementByPartner(tenantId: string, partnerId: string): Promise<ReferralAgreement | null>;
+  upsertReferralAgreement(a: Partial<ReferralAgreement> & { id?: string }): Promise<ReferralAgreement>;
+  // Partner signature — atomic: only succeeds from status=pending_signature
+  // with an empty signature block; stamps version/IP/UA/access id.
+  signReferralAgreement(id: string, sig: { signed_by_name: string; signed_version: string; signed_ip?: string; signed_user_agent?: string; signed_portal_access_id?: string }): Promise<ReferralAgreement>;
+  // Payout bank account (one row per tenant+partner; IBAN pre-encrypted by
+  // the caller — the store never sees plaintext IBAN).
+  getReferralPayoutAccountByPartner(tenantId: string, partnerId: string): Promise<ReferralPayoutAccount | null>;
+  upsertReferralPayoutAccount(a: Partial<ReferralPayoutAccount> & { id?: string }): Promise<ReferralPayoutAccount>;
+  verifyReferralPayoutAccount(id: string, patch: { status: "verified" | "rejected"; verified_by: string }): Promise<ReferralPayoutAccount>;
 
   // ---- ERP / Accounting ----
   // Chart of Accounts

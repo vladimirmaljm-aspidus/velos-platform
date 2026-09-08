@@ -1,7 +1,7 @@
 import { getSupabase } from "@/lib/supabase/client";
 import { deleteFile } from "@/lib/upload/service";
 
-export type PortalUploadCategory = "kyc" | "rfq" | "message" | "general" | "other";
+export type PortalUploadCategory = "kyc" | "rfq" | "message" | "general" | "other" | "commission";
 
 export interface PortalUpload {
   id: string;
@@ -12,6 +12,9 @@ export interface PortalUpload {
   doc_type: string | null;
   kyc_submission_id: string | null;
   message_id: string | null;
+  // 097 — link to a referral commission entry (documents checklist).
+  // Written server-side only (the link route validates ownership first).
+  referral_id: string | null;
   filename: string;
   storage_bucket: string;
   storage_path: string;

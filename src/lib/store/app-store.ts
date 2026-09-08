@@ -86,6 +86,7 @@ const VIEW_KEYS = [
   "portal-profile",
   "portal-kyc",
   "portal-rfq",
+  "portal-referrals",
   "portal-messages",
   "portal-proformas",
   // BUILD-LOI-PORTAL — Letters of Intent addressed to this partner (the

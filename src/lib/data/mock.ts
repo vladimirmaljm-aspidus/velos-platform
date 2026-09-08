@@ -15,6 +15,7 @@ import {
   TenantFeatureFlags,
   Notification,
   CommissionAgent, DealCommission, CommissionPayout,
+  ReferralCommission, ReferralAgreement, ReferralPayoutAccount,
 } from "@/lib/supabase/types";
 
 // ---- id generator ----
@@ -63,6 +64,9 @@ export const portalAccess: PortalAccess[] = [];
 export const documentTemplates: DocumentTemplate[] = [];
 export const documentVerifications: DocumentVerification[] = [];
 export const templateVersions: TemplateVersion[] = [];
+export const referralCommissions: ReferralCommission[] = [];
+export const referralAgreements: ReferralAgreement[] = [];
+export const referralPayoutAccounts: ReferralPayoutAccount[] = [];
 export const kycSubmissions: KycSubmission[] = [];
 export const portalRfqs: PortalRfq[] = [];
 export const featureFlags: TenantFeatureFlags[] = [];

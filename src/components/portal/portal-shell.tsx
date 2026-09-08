@@ -37,6 +37,7 @@ import {
   ArrowRight,
   WifiOff,
   RefreshCw,
+  HandCoins,
 } from "lucide-react";
 import { useAppStore, ViewKey } from "@/lib/store/app-store";
 import { useT, useI18nStore } from "@/lib/i18n/store";
@@ -90,6 +91,12 @@ const PortalKyc = dynamic(
 );
 const PortalRfq = dynamic(
   () => import("@/components/portal/portal-rfq").then((m) => m.PortalRfq),
+  { ssr: false, loading: () => <ViewSkeleton /> }
+);
+// 097 — referral commissions workspace (per-registered-user commissions,
+// agreement signature, payout bank details).
+const PortalReferrals = dynamic(
+  () => import("@/components/portal/portal-referrals").then((m) => m.PortalReferrals),
   { ssr: false, loading: () => <ViewSkeleton /> }
 );
 const PortalMessages = dynamic(
@@ -199,6 +206,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: "portal-documents", labelKey: "portal-nav-my-documents", icon: FolderOpen, gate: "can_view_documents" },
   { key: "portal-catalog", labelKey: "portal-nav-product-catalog", icon: Package, gate: "can_view_catalog" },
   { key: "portal-rfq", labelKey: "portal-nav-request-quote", icon: ShoppingCart, gate: "can_submit_rfq" },
+  { key: "portal-referrals", labelKey: "portal-nav-referrals", icon: HandCoins },
   { key: "portal-logistics", labelKey: "portal-nav-logistics", icon: Truck },
   { key: "portal-kyc", labelKey: "portal-nav-kyc", icon: ShieldCheck },
   { key: "portal-profile", labelKey: "portal-nav-my-profile", icon: User, gate: "can_view_profile" },
@@ -255,6 +263,7 @@ const VIEW_TITLE_KEYS: Record<string, string> = {
   "portal-documents": "portal-nav-my-documents",
   "portal-catalog": "portal-nav-product-catalog",
   "portal-rfq": "portal-nav-request-quote",
+  "portal-referrals": "portal-nav-referrals",
   "portal-logistics": "portal-nav-logistics",
   "portal-kyc": "portal-nav-kyc",
   "portal-profile": "portal-nav-my-profile",
@@ -932,6 +941,7 @@ export function PortalShell({
               {view === "portal-catalog" && <PortalCatalog />}
               {view === "portal-kyc" && <PortalKyc />}
               {view === "portal-rfq" && <PortalRfq />}
+              {view === "portal-referrals" && <PortalReferrals />}
               {view === "portal-logistics" && <PortalLogistics />}
               {view === "portal-messages" && <PortalMessages />}
               {view === "portal-profile" && <PortalProfile />}
