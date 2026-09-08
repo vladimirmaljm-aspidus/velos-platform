@@ -51,7 +51,7 @@ import {
   Plus, Search, Eye, HandCoins, FileSignature, Landmark, Paperclip,
   CheckCircle2, XCircle, Clock3, CircleDollarSign, BadgeCheck, Loader2,
   Building2, User, Package, Hash, FileText, Wallet, ShieldCheck, TriangleAlert, RefreshCw,
-  Sparkles, Check, ChevronsUpDown, History, Link2, CalendarDays,
+  Sparkles, Check, ChevronsUpDown, History, Link2, CalendarDays, Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -876,6 +876,306 @@ function CreateReferralDialog({ open, onOpenChange, onCreated, api, t }: {
   );
 }
 
+// ─── Edit dialog (audit46 follow-up) ────────────────────────────────────────
+//
+// The PUT route has full patch + diff support, but the detail sheet never
+// called it — the admin could create and transition but not FIX a field.
+// This dialog prefills every editable field from the loaded entry (incl.
+// re-linking the (ref_type, ref_id) entity via the same picker as create)
+// and saves through PUT — every change lands in the audit history with
+// old → new values. Paid entries are read-only (route + UI).
+
+function EditReferralDialog({ open, onOpenChange, d, onChanged, api, t }: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  d: DetailRow;
+  onChanged: () => void;
+  api: (p: string, params?: Record<string, string | number | boolean | undefined>) => string;
+  t: (k: string) => string;
+}) {
+  const tenantKey = useTenantKey();
+  // Prefill happens at MOUNT (the sheet renders this dialog only while open,
+  // keyed by entry id — see the render site) — no effect, no cascading
+  // setState. Closing/reopening naturally re-prefills from fresh data.
+  const [form, setForm] = useState<ReferralForm & { admin_notes: string }>(() => ({
+    referral_company: d.referral_company || "",
+    referral_contact: d.referral_contact || "",
+    referral_email: d.referral_email || "",
+    referral_phone: d.referral_phone || "",
+    product: d.product || "",
+    ref_number: d.ref_number || "",
+    ref_id: d.ref_id || "",
+    deal_value: d.deal_value != null ? String(d.deal_value) : "",
+    currency: d.currency || "USD",
+    commission_type: d.commission_type || "revenue_percent",
+    commission_rate: d.commission_rate != null ? String(d.commission_rate) : "",
+    commission_amount: d.commission_amount != null ? String(d.commission_amount) : "",
+    conditions: d.conditions || "",
+    ref_type: d.ref_type || "manual",
+    admin_notes: d.admin_notes || "",
+  }));
+  const [autoFilled, setAutoFilled] = useState<Record<string, boolean>>({});
+
+  // Partner map for auto-fill on re-link (shared queryKey with PartnerPicker).
+  const partnersQ = useQuery<{ items: Partner[]; total: number }, Error>({
+    queryKey: ["partners", tenantKey, "picker", "500"],
+    queryFn: async () => {
+      const r = await fetch(api("/api/partners", { limit: 500 }));
+      if (!r.ok) throw new Error("Failed to load partners");
+      return r.json();
+    },
+    staleTime: 60_000,
+    enabled: open,
+  });
+  const partnerMap = useMemo(
+    () => new Map((partnersQ.data?.items || []).map((p) => [p.id, p.name])),
+    [partnersQ.data],
+  );
+
+  const pickEntity = (o: RefEntityOption | null) => {
+    if (!o) { setForm((f) => ({ ...f, ref_id: "" })); return; }
+    const partnerName = o.partner_id ? partnerMap.get(o.partner_id) : undefined;
+    setForm((f) => ({
+      ...f,
+      ref_id: o.id,
+      ref_number: o.label,
+      deal_value: o.value != null ? String(o.value) : f.deal_value,
+      currency: o.currency || f.currency,
+      referral_company: partnerName || f.referral_company,
+      product: o.product ?? f.product,
+    }));
+    setAutoFilled({
+      ref_number: true,
+      ...(o.value != null ? { deal_value: true } : {}),
+      ...(o.currency ? { currency: true } : {}),
+      ...(partnerName ? { referral_company: true } : {}),
+      ...(o.product != null ? { product: true } : {}),
+    });
+  };
+
+  const changeRefType = (v: string) => {
+    setForm((f) => (f.ref_type === v ? f : { ...f, ref_type: v, ref_id: "" }));
+    setAutoFilled({});
+  };
+
+  const saveMut = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(api(`/api/referral-commissions/${d.id}`), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          referral_company: form.referral_company,
+          referral_contact: form.referral_contact,
+          referral_email: form.referral_email,
+          referral_phone: form.referral_phone,
+          product: form.product,
+          ref_number: form.ref_number,
+          ref_type: form.ref_type,
+          ref_id: form.ref_id || null,
+          deal_value: form.deal_value ? Number(form.deal_value) : null,
+          currency: form.currency,
+          commission_type: form.commission_type,
+          commission_rate: form.commission_rate ? Number(form.commission_rate) : null,
+          commission_amount: form.commission_amount ? Number(form.commission_amount) : 0,
+          conditions: form.conditions,
+          admin_notes: form.admin_notes,
+        }),
+      });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(body.error || "Save failed");
+      return body;
+    },
+    onSuccess: () => {
+      toast.success(t("refa-edit-saved"));
+      onChanged();
+      onOpenChange(false);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const set = (k: keyof ReferralForm | "admin_notes") => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    setForm((f) => ({ ...f, [k]: e.target.value }));
+    setAutoFilled((a) => (a[k] ? { ...a, [k]: false } : a));
+  };
+
+  const autoCalc = useMemo(() => {
+    if (form.commission_amount.trim() !== "") return null;
+    const dv = form.deal_value.trim() !== "" ? Number(form.deal_value) : null;
+    const rate = form.commission_rate.trim() !== "" ? Number(form.commission_rate) : null;
+    if (dv == null || rate == null || !Number.isFinite(dv) || !Number.isFinite(rate) || dv < 0 || rate < 0) return null;
+    if (form.commission_type === "revenue_percent" || form.commission_type === "profit_percent") {
+      return { amount: Math.round(dv * (rate / 100) * 100) / 100, formula: `${dv.toLocaleString("en-US")} × ${rate.toLocaleString("en-US")}%` };
+    }
+    return { amount: rate, formula: null };
+  }, [form.commission_amount, form.deal_value, form.commission_rate, form.commission_type]);
+
+  const needsEntity = (LINKED_REF_TYPES as readonly string[]).includes(form.ref_type);
+  const valid = form.referral_company.trim().length >= 2;
+  const locked = d.status === "paid";
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><Pencil className="size-5" /> {t("refa-edit-title")}</DialogTitle>
+          <DialogDescription>{t("refa-edit-desc")}</DialogDescription>
+        </DialogHeader>
+
+        {locked && (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400 text-xs p-3 flex items-start gap-2">
+            <TriangleAlert className="size-4 shrink-0 mt-0.5" />
+            <span>{t("refa-edit-paid-locked")}</span>
+          </div>
+        )}
+
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label>{t("refa-f-partner")}</Label>
+            <Input value={d.partner_name} disabled />
+          </div>
+
+          <Separator />
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label className="flex items-center gap-1.5">
+                {t("refa-f-company")} *
+                {autoFilled.referral_company && <AutoFilledBadge label={t("misc-auto-filled")} />}
+              </Label>
+              <Input value={form.referral_company} onChange={set("referral_company")} placeholder={t("refa-f-company-ph")} maxLength={300} disabled={locked} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t("refa-f-contact")}</Label>
+              <Input value={form.referral_contact} onChange={set("referral_contact")} maxLength={200} disabled={locked} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t("refa-f-contact-email")}</Label>
+              <Input type="email" value={form.referral_email} onChange={set("referral_email")} maxLength={200} disabled={locked} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t("refa-f-contact-phone")}</Label>
+              <Input value={form.referral_phone} onChange={set("referral_phone")} maxLength={60} disabled={locked} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t("refa-f-ref-type")}</Label>
+              <Select value={form.ref_type} onValueChange={changeRefType} disabled={locked}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="manual">{t("refa-f-ref-manual")}</SelectItem>
+                  <SelectItem value="deal">{t("refa-f-ref-deal")}</SelectItem>
+                  <SelectItem value="offer">{t("refa-f-ref-offer")}</SelectItem>
+                  <SelectItem value="invoice">{t("refa-f-ref-invoice")}</SelectItem>
+                  <SelectItem value="proforma">{t("refa-f-ref-proforma")}</SelectItem>
+                  <SelectItem value="loi">{t("refa-f-ref-loi")}</SelectItem>
+                  <SelectItem value="rfq">{t("refa-f-ref-rfq")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {needsEntity && (
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label className="flex items-center gap-1.5">
+                  <Link2 className="size-3.5 text-muted-foreground" /> {t("refa-link-picker")}
+                </Label>
+                <RefEntityPicker
+                  kind={form.ref_type as LinkedRefType}
+                  value={form.ref_id}
+                  partnerMap={partnerMap}
+                  onSelect={pickEntity}
+                  api={api}
+                  t={t}
+                />
+                {form.ref_id && (
+                  <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+                    <Sparkles className="size-3 text-amber-500 shrink-0" /> {t("refa-link-autofilled")}
+                  </p>
+                )}
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label className="flex items-center gap-1.5">
+                {t("refa-f-ref-number")}
+                {autoFilled.ref_number && <AutoFilledBadge label={t("misc-auto-filled")} />}
+              </Label>
+              <Input value={form.ref_number} onChange={set("ref_number")} placeholder="OFF-2026-0014" maxLength={100} className="tabular-nums" disabled={locked} />
+            </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label className="flex items-center gap-1.5">
+                {t("refa-f-product")}
+                {autoFilled.product && <AutoFilledBadge label={t("misc-auto-filled")} />}
+              </Label>
+              <Input value={form.product} onChange={set("product")} placeholder={t("refa-f-product-ph")} maxLength={500} disabled={locked} />
+            </div>
+          </div>
+
+          <Separator />
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label className="flex items-center gap-1.5">
+                {t("refa-f-deal-value")}
+                {autoFilled.deal_value && <AutoFilledBadge label={t("misc-auto-filled")} />}
+              </Label>
+              <Input type="number" min="0" step="0.01" value={form.deal_value} onChange={set("deal_value")} className="tabular-nums" disabled={locked} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="flex items-center gap-1.5">
+                {t("refa-f-currency")}
+                {autoFilled.currency && <AutoFilledBadge label={t("misc-auto-filled")} />}
+              </Label>
+              <Input value={form.currency} onChange={set("currency")} maxLength={3} className="uppercase" disabled={locked} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t("refa-f-type")}</Label>
+              <Select value={form.commission_type} onValueChange={(v) => setForm((f) => ({ ...f, commission_type: v }))} disabled={locked}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="revenue_percent">{t("ref-type-revenue_percent")}</SelectItem>
+                  <SelectItem value="profit_percent">{t("ref-type-profit_percent")}</SelectItem>
+                  <SelectItem value="fixed">{t("ref-type-fixed")}</SelectItem>
+                  <SelectItem value="per_unit">{t("ref-type-per_unit")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t("refa-f-rate")}</Label>
+              <Input type="number" min="0" step="0.01" value={form.commission_rate} onChange={set("commission_rate")} className="tabular-nums" placeholder="2.5" disabled={locked} />
+            </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label>{t("refa-f-amount")}</Label>
+              <Input type="number" min="0" step="0.01" value={form.commission_amount} onChange={set("commission_amount")} className="tabular-nums" placeholder={t("refa-f-amount-ph")} disabled={locked} />
+              {autoCalc ? (
+                <p className="text-[11px] text-muted-foreground flex items-center flex-wrap gap-x-1">
+                  <Sparkles className="size-3 text-amber-500 shrink-0" />
+                  {t("refa-autocalc")}:
+                  <span className="font-medium tabular-nums">{fmtMoney(autoCalc.amount, form.currency || "USD")}</span>
+                  {autoCalc.formula && <span className="tabular-nums">({autoCalc.formula})</span>}
+                </p>
+              ) : (
+                <p className="text-[11px] text-muted-foreground">{t("refa-f-amount-hint")}</p>
+              )}
+            </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label>{t("refa-f-conditions")}</Label>
+              <Textarea value={form.conditions} onChange={set("conditions")} rows={3} maxLength={4000} placeholder={t("refa-f-conditions-ph")} disabled={locked} />
+            </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label>{t("refa-f-notes") || "Internal notes"}</Label>
+              <Textarea value={form.admin_notes} onChange={set("admin_notes")} rows={2} maxLength={4000} disabled={locked} />
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>{t("refa-cancel") || "Cancel"}</Button>
+          <Button className="gap-1.5" disabled={locked || !valid || saveMut.isPending} onClick={() => saveMut.mutate()}>
+            {saveMut.isPending ? <Loader2 className="size-4 animate-spin" /> : <Pencil className="size-4" />} {t("refa-edit-save")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Linked-entity picker (46-b) ────────────────────────────────────────────
 
 /**
@@ -1032,6 +1332,7 @@ function ReferralDetailSheet({ id, onClose, onChanged, api, t }: {
   const [payAmount, setPayAmount] = useState("");
   const [cancelOpen, setCancelOpen] = useState(false);
   const [agOpen, setAgOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
 
   const q = useQuery<DetailRow, Error>({
     queryKey: ["referral-commission-detail", id],
@@ -1134,6 +1435,11 @@ function ReferralDetailSheet({ id, onClose, onChanged, api, t }: {
             <div className="rounded-xl border p-4 space-y-3">
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("refa-actions-title")}</p>
               <div className="flex flex-wrap gap-2">
+                {d.status !== "paid" && (
+                  <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setEditOpen(true)}>
+                    <Pencil className="size-4" /> {t("refa-edit-btn")}
+                  </Button>
+                )}
                 {d.status === "pending" && (
                   <Button size="sm" className="gap-1.5" disabled={transitionMut.isPending} onClick={() => transitionMut.mutate("confirm")}>
                     <CheckCircle2 className="size-4" /> {t("refa-confirm-deal")}
@@ -1398,6 +1704,21 @@ function ReferralDetailSheet({ id, onClose, onChanged, api, t }: {
           api={api}
           t={t}
         />
+
+        {/* Edit dialog — every field change lands in the audit history.
+            Rendered ONLY while open (mount = fresh prefill, unmount = reset);
+            keyed by entry id so a data refresh mid-edit can't clobber typing. */}
+        {d && editOpen && (
+          <EditReferralDialog
+            key={d.id}
+            open={editOpen}
+            onOpenChange={setEditOpen}
+            d={d}
+            onChanged={onChanged}
+            api={api}
+            t={t}
+          />
+        )}
       </SheetContent>
     </Sheet>
   );
