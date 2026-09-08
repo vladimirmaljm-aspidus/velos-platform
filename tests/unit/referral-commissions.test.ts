@@ -335,6 +335,10 @@ describe("097 admin — POST /api/referral-commissions", () => {
     const arg = store.upsertReferralCommission.mock.calls[0][0];
     expect(arg.commission_amount).toBe(2500); // auto-calc 100000 × 2.5%
     expect(arg.status).toBeUndefined(); // the store owns lifecycle fields
+    // REGRESSION (product-column drop): sanitizePayload's JOIN_KEYS strips
+    // any key named "product" — referral_commissions has a REAL product
+    // text column. The store must pass it through.
+    expect(arg.product).toBe("Refined Sugar ICUMSA 45");
   });
 });
 

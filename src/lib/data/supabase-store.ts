@@ -303,8 +303,12 @@ export class SupabaseStore implements Store {
     const out: SupaRow = {};
     for (const [k, v] of Object.entries(row)) {
       // Skip known JOIN result keys (even if null — null still triggers
-      // "column does not exist" in PostgREST)
-      if (JOIN_KEYS.has(k)) continue;
+      // "column does not exist" in PostgREST) — UNLESS the value is a
+      // plain string: some JOIN alias names collide with REAL text columns
+      // (referral_commissions.product — the only such table). A string
+      // value can never be a join artifact (joins produce objects/null),
+      // so strings pass through as legitimate column data.
+      if (JOIN_KEYS.has(k) && typeof v !== "string") continue;
       // Skip nested plain objects — they're JOIN results too
       // UNLESS they're known JSONB columns that hold plain objects.
       if (v !== null && typeof v === "object" && !Array.isArray(v)) {
@@ -3609,7 +3613,22 @@ export class SupabaseStore implements Store {
     // generic upsert — those belong to the dedicated transition methods.
     const { status, approved_by, approved_at, paid_at, paid_amount, payout_reference,
       deal_done, deal_done_at, documents_checked_by, documents_checked_at, ...rest } = c as Record<string, unknown>;
-    return this.smartUpsert<ReferralCommission>("referral_commissions", rest as Partial<ReferralCommission> & { id?: string }, (c as { tenant_id?: string }).tenant_id);
+    // Explicit field allowlist (NOT smartUpsert): sanitizePayload strips any
+    // key named "product" as a supposed SELECT-join artifact — but
+    // referral_commissions HAS a real product text column (the only table
+    // that does), so smartUpsert would silently drop it on every save.
+    // Same bug class as the audit22 style_json / audit35 content_json drops.
+    const FIELDS = [
+      "tenant_id", "partner_id", "referral_company", "referral_contact", "referral_email",
+      "referral_phone", "ref_type", "ref_id", "ref_number", "product", "deal_value",
+      "currency", "commission_type", "commission_rate", "commission_amount", "conditions",
+      "documents_complete", "admin_notes", "agreement_version", "created_by",
+    ] as const;
+    const payload: SupaRow = {};
+    for (const f of FIELDS) {
+      if (rest[f] !== undefined) payload[f] = rest[f] === "" ? null : rest[f];
+    }
+    return this.smartUpsert<ReferralCommission>("referral_commissions", payload as Partial<ReferralCommission> & { id?: string }, (c as { tenant_id?: string }).tenant_id);
   }
   async deleteReferralCommission(id: string): Promise<void> {
     const { error } = await this.sb().from("referral_commissions").delete().eq("id", id);

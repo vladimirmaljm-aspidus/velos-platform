@@ -159,6 +159,13 @@ CREATE INDEX IF NOT EXISTS idx_portal_uploads_referral
   ON public.portal_uploads (referral_id)
   WHERE referral_id IS NOT NULL AND deleted_at IS NULL;
 
+--   The category CHECK constraint predates this migration and does not know
+--   the new 'commission' category — extend it (drop + re-add, idempotent:
+--   the re-add matches the exact target definition).
+ALTER TABLE public.portal_uploads DROP CONSTRAINT IF EXISTS portal_uploads_category_check;
+ALTER TABLE public.portal_uploads ADD CONSTRAINT portal_uploads_category_check
+  CHECK (category = ANY (ARRAY['kyc'::text, 'rfq'::text, 'message'::text, 'general'::text, 'other'::text, 'commission'::text]));
+
 -- ─── 5. Row-level security ─────────────────────────────────────────────────
 --   Server-side only: the app talks to Supabase with the service-role key
 --   (bypasses RLS), but RLS still guards direct anon/authenticated access.
