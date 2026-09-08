@@ -457,3 +457,172 @@ describe("097 admin — agreement activate + re-sign version bump", () => {
     expect(arg.status).toBe("pending_signature");
   });
 });
+
+// ── 46-b: GET /api/referral-commissions/[id] — linked-entity enrichment ────
+
+describe("46-b admin — GET /api/referral-commissions/[id] linked_entity", () => {
+  const DEAL_ID = "deal-46";
+
+  function dealFixture(over: Record<string, unknown> = {}) {
+    return {
+      id: DEAL_ID, tenant_id: TENANT, title: "Sugar shipment to Hamburg",
+      partner_id: PARTNER, owner_id: null, stage: "won", value: 100000,
+      currency: "USD", expected_close: "2026-12-01", probability: 90,
+      description: null, lost_reason: null, commission_agent_id: null,
+      buy_cost: 0, quantity: 0, unit: "MT",
+      created_at: "2026-09-07T00:00:00Z", updated_at: "2026-09-07T00:00:00Z",
+      ...over,
+    };
+  }
+
+  async function callGet(store: any) {
+    mockState.adminAuth = adminAuth(store);
+    const { GET } = await import("@/app/api/referral-commissions/[id]/route");
+    return GET(req("/x"), { params: Promise.resolve({ id: "rc-1" }) });
+  }
+
+  it("resolves the linked deal into a live linked_entity card", async () => {
+    const store = makeStore({
+      getReferralCommission: vi.fn(async () => commission({ ref_type: "deal", ref_id: DEAL_ID })),
+      getDeal: vi.fn(async () => dealFixture()),
+      getPartner: vi.fn(async (id: string) => ({ id, tenant_id: TENANT, name: "Mediterra Handels GmbH", contact_email: null })),
+    });
+    const r = await callGet(store);
+    expect(r.status).toBe(200);
+    const body = await r.json();
+    expect(body.linked_entity).toMatchObject({
+      kind: "deal",
+      label: "Sugar shipment to Hamburg",
+      status: "won",
+      partner_name: "Mediterra Handels GmbH",
+      value: 100000,
+      currency: "USD",
+    });
+    // falls back to the live resolver's date fields
+    expect(body.linked_entity.date).toBe("2026-12-01");
+  });
+
+  it("linked_entity is null for a manual entry without ref_id", async () => {
+    const r = await callGet(makeStore()); // fixture: ref_type manual, ref_id null
+    expect(r.status).toBe(200);
+    expect((await r.json()).linked_entity).toBeNull();
+  });
+
+  it("a throwing store getter degrades to linked_entity null (no 500)", async () => {
+    const store = makeStore({
+      getReferralCommission: vi.fn(async () => commission({ ref_type: "deal", ref_id: DEAL_ID })),
+      getDeal: vi.fn(async () => { throw new Error("store unavailable"); }),
+    });
+    const r = await callGet(store);
+    expect(r.status).toBe(200);
+    expect((await r.json()).linked_entity).toBeNull();
+  });
+
+  it("a cross-tenant linked record is NOT resolved", async () => {
+    const store = makeStore({
+      getReferralCommission: vi.fn(async () => commission({ ref_type: "deal", ref_id: DEAL_ID })),
+      getDeal: vi.fn(async () => dealFixture({ tenant_id: "tenant-other" })),
+    });
+    const r = await callGet(store);
+    expect(r.status).toBe(200);
+    expect((await r.json()).linked_entity).toBeNull();
+  });
+});
+
+// ── 46-b: PUT /api/referral-commissions/[id] — ref link + field diff ───────
+
+describe("46-b admin — PUT /api/referral-commissions/[id] ref changes + diff", () => {
+  async function callPut(store: any, body: Record<string, unknown>) {
+    mockState.adminAuth = adminAuth(store);
+    const { PUT } = await import("@/app/api/referral-commissions/[id]/route");
+    return PUT(req("/x", { method: "PUT", body: JSON.stringify(body) }), { params: Promise.resolve({ id: "rc-1" }) });
+  }
+
+  /** details of the LAST audit() call recorded by the mocked helpers module. */
+  async function lastAuditDetails(): Promise<any> {
+    const { audit } = await import("@/lib/api/helpers");
+    const calls = (audit as any).mock.calls;
+    const last = calls[calls.length - 1];
+    return last ? last[6] : undefined; // (store, user, req, action, entityType, entityId, details)
+  }
+
+  it("ref changes are asserted against the linked entity (404 missing / cross-tenant)", async () => {
+    const missing = makeStore({
+      getReferralCommission: vi.fn(async () => commission({ ref_type: "offer" })),
+      getOffer: vi.fn(async () => null),
+    });
+    const r = await callPut(missing, { ref_type: "offer", ref_id: "offer-x" });
+    expect(r.status).toBe(404);
+    expect(missing.getOffer).toHaveBeenCalledWith("offer-x"); // assertRefEntity ran
+    expect(missing.upsertReferralCommission).not.toHaveBeenCalled();
+
+    const cross = makeStore({
+      getReferralCommission: vi.fn(async () => commission({ ref_type: "offer" })),
+      getOffer: vi.fn(async () => ({ id: "offer-x", tenant_id: "tenant-other" })),
+    });
+    expect((await callPut(cross, { ref_type: "offer", ref_id: "offer-x" })).status).toBe(404);
+    expect(cross.upsertReferralCommission).not.toHaveBeenCalled();
+  });
+
+  it("persists a valid ref link and logs the field-level old→new diff", async () => {
+    const store = makeStore({
+      getReferralCommission: vi.fn(async () => commission({ ref_type: "manual", ref_id: null, ref_number: null })),
+      getOffer: vi.fn(async () => ({ id: "offer-46", tenant_id: TENANT, number: "OFF-2026-0014", partner_id: PARTNER, status: "sent" })),
+    });
+    const r = await callPut(store, { ref_type: "offer", ref_id: "offer-46", ref_number: "OFF-2026-0014" });
+    expect(r.status).toBe(200);
+    const arg = store.upsertReferralCommission.mock.calls[0][0];
+    expect(arg.ref_type).toBe("offer");
+    expect(arg.ref_id).toBe("offer-46"); // persisted — a REAL record link now
+    expect(arg.ref_number).toBe("OFF-2026-0014");
+    const details = await lastAuditDetails();
+    expect(details.fields).toContain("ref_id");
+    expect(details.changes).toEqual(expect.arrayContaining([
+      { field: "ref_type", from: "manual", to: "offer" },
+      { field: "ref_id", from: "—", to: "offer-46" },
+      { field: "ref_number", from: "—", to: "OFF-2026-0014" },
+    ]));
+  });
+
+  it("diffs amount 100 → 250; unchanged values produce no changes entry", async () => {
+    const same = makeStore({
+      getReferralCommission: vi.fn(async () => commission({ commission_amount: 250 })),
+    });
+    expect((await callPut(same, { commission_amount: 250 })).status).toBe(200);
+    expect((await lastAuditDetails()).changes).toBeUndefined();
+
+    const changed = makeStore({
+      getReferralCommission: vi.fn(async () => commission({ commission_amount: 100 })),
+    });
+    expect((await callPut(changed, { commission_amount: 250 })).status).toBe(200);
+    expect((await lastAuditDetails()).changes).toEqual([
+      { field: "commission_amount", from: "100", to: "250" },
+    ]);
+  });
+
+  it("renders null → string as — → value in the diff", async () => {
+    const store = makeStore({
+      getReferralCommission: vi.fn(async () => commission({ admin_notes: null })),
+    });
+    expect((await callPut(store, { admin_notes: "Checked by phone" })).status).toBe(200);
+    expect((await lastAuditDetails()).changes).toEqual([
+      { field: "admin_notes", from: "—", to: "Checked by phone" },
+    ]);
+  });
+
+  it("switching ref_type to manual forces ref_id null in the patch", async () => {
+    const store = makeStore({
+      getReferralCommission: vi.fn(async () => commission({ ref_type: "deal", ref_id: "deal-46" })),
+    });
+    const r = await callPut(store, { ref_type: "manual" });
+    expect(r.status).toBe(200);
+    const arg = store.upsertReferralCommission.mock.calls[0][0];
+    expect(arg.ref_type).toBe("manual");
+    expect(arg.ref_id).toBeNull(); // the dangling link was severed
+    const details = await lastAuditDetails();
+    expect(details.changes).toEqual(expect.arrayContaining([
+      { field: "ref_type", from: "deal", to: "manual" },
+      { field: "ref_id", from: "deal-46", to: "—" },
+    ]));
+  });
+});

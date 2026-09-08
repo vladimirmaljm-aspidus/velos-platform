@@ -15,7 +15,7 @@
  * server-side (/transition route) and surfaced here.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -36,6 +36,10 @@ import {
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from "@/components/ui/sheet";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
+} from "@/components/ui/command";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -47,16 +51,20 @@ import {
   Plus, Search, Eye, HandCoins, FileSignature, Landmark, Paperclip,
   CheckCircle2, XCircle, Clock3, CircleDollarSign, BadgeCheck, Loader2,
   Building2, User, Package, Hash, FileText, Wallet, ShieldCheck, TriangleAlert, RefreshCw,
+  Sparkles, Check, ChevronsUpDown, History, Link2, CalendarDays,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/common/empty-state";
 import { QueryError } from "@/components/common/query-error";
-import { fmtMoney, fmtDate } from "@/lib/utils/format";
+import { fmtMoney, fmtDate, fmtDateTime, fmtNumber } from "@/lib/utils/format";
 import { useApiUrl, useTenantKey } from "@/lib/hooks/use-api-url";
+import { useDebounced } from "@/lib/hooks/use-debounced";
 import { useT } from "@/lib/i18n/store";
 import { PartnerPicker } from "@/components/common/partner-picker";
-import type { ReferralCommission } from "@/lib/supabase/types";
+import type {
+  ReferralCommission, Deal, Offer, Invoice, Proforma, LetterOfIntent, PortalRfq, Partner, AuditLog,
+} from "@/lib/supabase/types";
 
 // ─── Types (admin list row = entry + enrichment) ───────────────────────────
 
@@ -74,6 +82,9 @@ interface AdminRow extends ReferralCommission {
 
 interface DetailRow extends AdminRow {
   partner_email: string | null;
+  /** Live linked-entity business card — resolved server-side by the [id]
+   *  GET route (resolveReferralLinkedEntity). Null for manual entries. */
+  linked_entity: LinkedEntity | null;
   agreement: {
     id: string; status: string; commission_type: string; commission_rate: number | null;
     commission_currency: string; conditions: string | null; agreement_version: string;
@@ -96,6 +107,217 @@ const STATUS_META: Record<RefStatus, { key: string; className: string; icon: Rea
   paid: { key: "ref-status-paid", className: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400", icon: BadgeCheck },
   cancelled: { key: "ref-status-cancelled", className: "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400", icon: XCircle },
 };
+
+// ─── 46-b: real entity linkage (shared helpers) ────────────────────────────
+
+/** Live business card behind a (ref_type, ref_id) link — see
+ *  src/lib/api/referral-refs.ts resolveReferralLinkedEntity. */
+interface LinkedEntity {
+  kind: "deal" | "offer" | "invoice" | "proforma" | "loi" | "rfq";
+  label: string;
+  status: string | null;
+  partner_name: string | null;
+  value: number | null;
+  currency: string | null;
+  date: string | null;
+}
+
+/** One audit-log row from GET /api/audit/entity?entity_type=referral_commission. */
+interface HistoryItem extends Pick<AuditLog, "id" | "action" | "username" | "ip" | "created_at"> {
+  details: Record<string, unknown> | null;
+}
+
+interface AuditChange {
+  field: string;
+  from: string;
+  to: string;
+}
+
+const LINKED_REF_TYPES = ["deal", "offer", "invoice", "proforma", "loi", "rfq"] as const;
+type LinkedRefType = (typeof LINKED_REF_TYPES)[number];
+
+/** List endpoint per entity kind (all return { items, total }). */
+const REF_ENDPOINTS: Record<LinkedRefType, string> = {
+  deal: "/api/deals",
+  offer: "/api/offers",
+  invoice: "/api/invoices",
+  proforma: "/api/proformas",
+  loi: "/api/lois",
+  rfq: "/api/portal-rfqs",
+};
+
+/** Normalized picker option — every entity list maps into this one shape. */
+interface RefEntityOption {
+  id: string;
+  /** Deal title / document number. */
+  label: string;
+  /** Subject or product line shown under the label. */
+  sub: string | null;
+  status: string | null;
+  partner_id: string | null;
+  value: number | null;
+  currency: string | null;
+  /** Joined line-item names (offer/proforma/invoice) or product_name
+   *  (LOI/RFQ). Null for deals — that field stays untouched. */
+  product: string | null;
+  date: string | null;
+}
+
+/** First N distinct line-item product names, joined with ", ". */
+function lineItemNames(
+  items: Array<{ product_name?: string | null }> | null | undefined,
+  max = 2,
+): string | null {
+  if (!Array.isArray(items) || items.length === 0) return null;
+  const names = items.map((i) => i?.product_name).filter((n): n is string => !!n);
+  if (names.length === 0) return null;
+  return names.slice(0, max).join(", ");
+}
+
+/** Map a raw row from the entity list endpoint into a picker option. */
+function mapRefOption(kind: LinkedRefType, row: unknown): RefEntityOption {
+  switch (kind) {
+    case "deal": {
+      const d = row as Deal;
+      return {
+        id: d.id, label: d.title || "—", sub: null,
+        status: d.stage ?? null, partner_id: d.partner_id ?? null,
+        value: d.value ?? null, currency: d.currency || null,
+        product: null, // deals carry no line items — leave the form field as-is
+        date: d.expected_close ?? null,
+      };
+    }
+    case "offer": {
+      const o = row as Offer;
+      const total = typeof o.total === "number"
+        ? o.total
+        : (o.items || []).reduce((s, it) => s + (Number(it?.total) || 0), 0);
+      return {
+        id: o.id, label: o.number, sub: o.subject || null,
+        status: o.status ?? null, partner_id: o.partner_id ?? null,
+        value: total, currency: o.currency || null,
+        product: lineItemNames(o.items), date: o.created_at ?? null,
+      };
+    }
+    case "invoice": {
+      const i = row as Invoice;
+      return {
+        id: i.id, label: i.number, sub: i.subject || null,
+        status: i.status ?? null, partner_id: i.partner_id ?? null,
+        value: i.total ?? null, currency: i.currency || null,
+        product: lineItemNames(i.items), date: i.issue_date ?? null,
+      };
+    }
+    case "proforma": {
+      const p = row as Proforma;
+      return {
+        id: p.id, label: p.number, sub: p.subject || null,
+        status: p.status ?? null, partner_id: p.partner_id ?? null,
+        value: p.total ?? null, currency: p.currency || null,
+        product: lineItemNames(p.items), date: p.issue_date ?? null,
+      };
+    }
+    case "loi": {
+      const l = row as LetterOfIntent;
+      return {
+        id: l.id, label: l.number, sub: l.subject || null,
+        status: l.status ?? null, partner_id: l.partner_id ?? null,
+        value: l.total_value ?? null, currency: l.currency || null,
+        product: l.product_name || null, date: l.validity_until ?? null,
+      };
+    }
+    case "rfq": {
+      const r = row as PortalRfq;
+      return {
+        id: r.id, label: r.number || r.product_name, sub: r.product_name || null,
+        status: r.status ?? null, partner_id: r.partner_id ?? null,
+        value: r.target_price ?? null, currency: r.currency || null,
+        product: r.product_name || null, date: r.created_at ?? null,
+      };
+    }
+  }
+}
+
+/** Status → tone for the live linked-entity badge (emerald = terminal-good,
+ *  amber = in progress, rose = terminal-bad, outline for anything unknown). */
+const LINKED_STATUS_TONES: Record<string, Record<string, "good" | "progress" | "bad">> = {
+  deal: { won: "good", lead: "progress", qualified: "progress", proposal: "progress", negotiation: "progress", lost: "bad" },
+  offer: { accepted: "good", draft: "progress", sent: "progress", countered: "progress", rejected: "bad", expired: "bad" },
+  invoice: { paid: "good", draft: "progress", sent: "progress", overdue: "bad", cancelled: "bad" },
+  proforma: { accepted: "good", paid: "good", draft: "progress", sent: "progress", viewed: "progress", expired: "bad", rejected: "bad" },
+  loi: { accepted: "good", draft: "progress", sent: "progress", rejected: "bad", expired: "bad", cancelled: "bad" },
+  rfq: { accepted: "good", pending: "progress", quoted: "progress", declined: "bad", expired: "bad" },
+};
+
+const LINKED_TONE_CLASSES: Record<string, string> = {
+  good: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+  progress: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+  bad: "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400",
+};
+
+function linkedStatusTone(kind: string, status: string): string {
+  return LINKED_TONE_CLASSES[LINKED_STATUS_TONES[kind]?.[status] || ""] || "bg-muted/50 text-muted-foreground";
+}
+
+// History (audit) helpers — action badge label + tone + detail field labels.
+
+function historyActionLabel(action: string, t: (k: string) => string): string {
+  switch (action) {
+    case "referral_commission.create": return t("refa-hist-created");
+    case "referral_commission.update": return t("refa-hist-updated");
+    case "referral_commission.paid": return t("ref-step-paid");
+    case "referral_commission.confirm": return t("ref-step-confirmed");
+    case "referral_commission.approve": return t("ref-step-approved");
+    case "referral_commission.cancel": return t("ref-status-cancelled");
+    case "referral_commission.reopen_documents": return t("refa-docs-reopen");
+    default: return action;
+  }
+}
+
+function historyActionTone(action: string): string {
+  if (action.endsWith(".delete")) return "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400";
+  if (action.endsWith(".create")) return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400";
+  if (action.endsWith(".paid")) return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400";
+  if (action.endsWith(".update")) return "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400";
+  return "border-teal-500/30 bg-teal-500/10 text-teal-700 dark:text-teal-400"; // transitions
+}
+
+/** Diff-field → i18n key for the History change rows. */
+const HISTORY_FIELD_KEYS: Record<string, string> = {
+  referral_company: "refa-hf-company",
+  referral_contact: "refa-hf-contact",
+  referral_email: "refa-hf-email",
+  referral_phone: "refa-hf-phone",
+  product: "refa-hf-product",
+  ref_number: "refa-hf-ref-number",
+  ref_type: "refa-hf-ref-type",
+  ref_id: "refa-hf-ref-id",
+  deal_value: "refa-hf-deal-value",
+  currency: "refa-hf-currency",
+  commission_type: "refa-hf-commission-type",
+  commission_rate: "refa-hf-commission-rate",
+  commission_amount: "refa-hf-commission-amount",
+  conditions: "refa-hf-conditions",
+  admin_notes: "refa-hf-admin-notes",
+  documents_complete: "refa-hf-documents-complete",
+  status: "refa-hf-status",
+  paid_amount: "refa-hf-paid-amount",
+  payout_reference: "refa-hf-payout-reference",
+  deal_done_at: "refa-hf-deal-done-at",
+  paid_at: "refa-hf-paid-at",
+};
+
+function historyFieldLabel(field: string, t: (k: string) => string): string {
+  const key = HISTORY_FIELD_KEYS[field];
+  return key ? t(key) : field.replace(/_/g, " ");
+}
+
+function historyDetailValue(v: unknown): string {
+  if (v === null || v === undefined || v === "") return "—";
+  if (typeof v === "number") return fmtNumber(v);
+  if (typeof v === "boolean") return v ? "true" : "false";
+  return String(v);
+}
 
 // ─── Main tab component ────────────────────────────────────────────────────
 
@@ -358,6 +580,28 @@ function BankMiniBadge({ status, t }: { status: string; t: (k: string) => string
 
 // ─── Create dialog ─────────────────────────────────────────────────────────
 
+/** Blank create form (also the reset target after a successful create). */
+const BLANK_REFERRAL_FORM = {
+  referral_company: "", referral_contact: "", referral_email: "", referral_phone: "",
+  product: "", ref_number: "", ref_id: "", deal_value: "", currency: "USD",
+  commission_type: "revenue_percent", commission_rate: "", commission_amount: "",
+  conditions: "", ref_type: "manual",
+};
+
+type ReferralForm = typeof BLANK_REFERRAL_FORM;
+
+/** Small amber "auto-filled" indicator shown next to labels the linked
+ *  record filled (mirrors trade-calculator-view.tsx's Sparkles badge —
+ *  icon-only, with an sr-only label for screen readers). */
+function AutoFilledBadge({ label }: { label: string }) {
+  return (
+    <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 gap-0.5 shrink-0">
+      <Sparkles className="size-2.5 text-amber-500" />
+      <span className="sr-only">{label}</span>
+    </Badge>
+  );
+}
+
 function CreateReferralDialog({ open, onOpenChange, onCreated, api, t }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -365,13 +609,65 @@ function CreateReferralDialog({ open, onOpenChange, onCreated, api, t }: {
   api: (p: string, params?: Record<string, string | number | boolean | undefined>) => string;
   t: (k: string) => string;
 }) {
+  const tenantKey = useTenantKey();
   const [partnerId, setPartnerId] = useState("");
-  const [form, setForm] = useState({
-    referral_company: "", referral_contact: "", referral_email: "", referral_phone: "",
-    product: "", ref_number: "", deal_value: "", currency: "USD",
-    commission_type: "revenue_percent", commission_rate: "", commission_amount: "",
-    conditions: "", ref_type: "manual",
+  const [form, setForm] = useState<ReferralForm>({ ...BLANK_REFERRAL_FORM });
+  // Which fields were auto-filled from the picked record (badge indicator);
+  // manually editing a field clears its mark — the admin can adjust anything.
+  const [autoFilled, setAutoFilled] = useState<Record<string, boolean>>({});
+
+  // Partner list (limit=500) for partner_id → name mapping when auto-filling
+  // the referred-company field. Same queryKey as PartnerPicker, so the dialog
+  // shares one cached fetch instead of firing a second round-trip.
+  const partnersQ = useQuery<{ items: Partner[]; total: number }, Error>({
+    queryKey: ["partners", tenantKey, "picker", "500"],
+    queryFn: async () => {
+      const r = await fetch(api("/api/partners", { limit: 500 }));
+      if (!r.ok) throw new Error("Failed to load partners");
+      return r.json();
+    },
+    staleTime: 60_000,
+    enabled: open,
   });
+  const partnerMap = useMemo(
+    () => new Map((partnersQ.data?.items || []).map((p) => [p.id, p.name])),
+    [partnersQ.data],
+  );
+
+  // Pick a real record → auto-fill the link + business fields. Everything
+  // stays editable afterwards; the values simply stop diverging from the
+  // record at creation time.
+  const pickEntity = (o: RefEntityOption | null) => {
+    if (!o) {
+      setForm((f) => ({ ...f, ref_id: "" }));
+      setAutoFilled({});
+      return;
+    }
+    const partnerName = o.partner_id ? partnerMap.get(o.partner_id) : undefined;
+    setForm((f) => ({
+      ...f,
+      ref_id: o.id,
+      ref_number: o.label,
+      deal_value: o.value != null ? String(o.value) : f.deal_value,
+      currency: o.currency || f.currency,
+      referral_company: partnerName || f.referral_company,
+      product: o.product ?? f.product,
+    }));
+    setAutoFilled({
+      ref_number: true,
+      ...(o.value != null ? { deal_value: true } : {}),
+      ...(o.currency ? { currency: true } : {}),
+      ...(partnerName ? { referral_company: true } : {}),
+      ...(o.product != null ? { product: true } : {}),
+    });
+  };
+
+  // Switching the ref type severs the old link (a deal id must never be
+  // re-interpreted as an offer id); every other field is kept as typed.
+  const changeRefType = (v: string) => {
+    setForm((f) => (f.ref_type === v ? f : { ...f, ref_type: v, ref_id: "" }));
+    setAutoFilled({});
+  };
 
   const createMut = useMutation({
     mutationFn: async () => {
@@ -381,6 +677,7 @@ function CreateReferralDialog({ open, onOpenChange, onCreated, api, t }: {
         body: JSON.stringify({
           partner_id: partnerId,
           ...form,
+          ref_id: form.ref_id || null,
           deal_value: form.deal_value ? Number(form.deal_value) : null,
           commission_rate: form.commission_rate ? Number(form.commission_rate) : null,
           commission_amount: form.commission_amount ? Number(form.commission_amount) : undefined,
@@ -395,19 +692,34 @@ function CreateReferralDialog({ open, onOpenChange, onCreated, api, t }: {
       onCreated();
       onOpenChange(false);
       setPartnerId("");
-      setForm({
-        referral_company: "", referral_contact: "", referral_email: "", referral_phone: "",
-        product: "", ref_number: "", deal_value: "", currency: "USD",
-        commission_type: "revenue_percent", commission_rate: "", commission_amount: "",
-        conditions: "", ref_type: "manual",
-      });
+      setForm({ ...BLANK_REFERRAL_FORM });
+      setAutoFilled({});
     },
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+  const set = (k: keyof ReferralForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setForm((f) => ({ ...f, [k]: e.target.value }));
+    setAutoFilled((a) => (a[k] ? { ...a, [k]: false } : a));
+  };
 
+  // Live auto-calc preview — mirrors the POST route's auto-calc so the admin
+  // sees exactly what the server will persist when the amount stays empty.
+  const autoCalc = useMemo(() => {
+    if (form.commission_amount.trim() !== "") return null;
+    const dv = form.deal_value.trim() !== "" ? Number(form.deal_value) : null;
+    const rate = form.commission_rate.trim() !== "" ? Number(form.commission_rate) : null;
+    if (dv == null || rate == null || !Number.isFinite(dv) || !Number.isFinite(rate) || dv < 0 || rate < 0) return null;
+    if (form.commission_type === "revenue_percent" || form.commission_type === "profit_percent") {
+      return {
+        amount: Math.round(dv * (rate / 100) * 100) / 100,
+        formula: `${dv.toLocaleString("en-US")} × ${rate.toLocaleString("en-US")}%`,
+      };
+    }
+    return { amount: rate, formula: null }; // fixed / per_unit → the rate IS the amount
+  }, [form.commission_amount, form.deal_value, form.commission_rate, form.commission_type]);
+
+  const needsEntity = (LINKED_REF_TYPES as readonly string[]).includes(form.ref_type);
   const valid = partnerId && form.referral_company.trim().length >= 2;
 
   return (
@@ -428,7 +740,10 @@ function CreateReferralDialog({ open, onOpenChange, onCreated, api, t }: {
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5 sm:col-span-2">
-              <Label>{t("refa-f-company")} *</Label>
+              <Label className="flex items-center gap-1.5">
+                {t("refa-f-company")} *
+                {autoFilled.referral_company && <AutoFilledBadge label={t("misc-auto-filled")} />}
+              </Label>
               <Input value={form.referral_company} onChange={set("referral_company")} placeholder={t("refa-f-company-ph")} maxLength={300} />
             </div>
             <div className="space-y-1.5">
@@ -445,7 +760,7 @@ function CreateReferralDialog({ open, onOpenChange, onCreated, api, t }: {
             </div>
             <div className="space-y-1.5">
               <Label>{t("refa-f-ref-type")}</Label>
-              <Select value={form.ref_type} onValueChange={(v) => setForm((f) => ({ ...f, ref_type: v }))}>
+              <Select value={form.ref_type} onValueChange={changeRefType}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="manual">{t("refa-f-ref-manual")}</SelectItem>
@@ -458,12 +773,40 @@ function CreateReferralDialog({ open, onOpenChange, onCreated, api, t }: {
                 </SelectContent>
               </Select>
             </div>
+            {/* 46-b — real entity linkage: search + pick an actual deal/offer/
+                invoice/proforma/LOI/RFQ; the business fields auto-fill from it. */}
+            {needsEntity && (
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label className="flex items-center gap-1.5">
+                  <Link2 className="size-3.5 text-muted-foreground" /> {t("refa-link-picker")}
+                </Label>
+                <RefEntityPicker
+                  kind={form.ref_type as LinkedRefType}
+                  value={form.ref_id}
+                  partnerMap={partnerMap}
+                  onSelect={pickEntity}
+                  api={api}
+                  t={t}
+                />
+                {form.ref_id && (
+                  <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+                    <Sparkles className="size-3 text-amber-500 shrink-0" /> {t("refa-link-autofilled")}
+                  </p>
+                )}
+              </div>
+            )}
             <div className="space-y-1.5">
-              <Label>{t("refa-f-ref-number")}</Label>
+              <Label className="flex items-center gap-1.5">
+                {t("refa-f-ref-number")}
+                {autoFilled.ref_number && <AutoFilledBadge label={t("misc-auto-filled")} />}
+              </Label>
               <Input value={form.ref_number} onChange={set("ref_number")} placeholder="OFF-2026-0014" maxLength={100} className="tabular-nums" />
             </div>
             <div className="space-y-1.5 sm:col-span-2">
-              <Label>{t("refa-f-product")}</Label>
+              <Label className="flex items-center gap-1.5">
+                {t("refa-f-product")}
+                {autoFilled.product && <AutoFilledBadge label={t("misc-auto-filled")} />}
+              </Label>
               <Input value={form.product} onChange={set("product")} placeholder={t("refa-f-product-ph")} maxLength={500} />
             </div>
           </div>
@@ -472,11 +815,17 @@ function CreateReferralDialog({ open, onOpenChange, onCreated, api, t }: {
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label>{t("refa-f-deal-value")}</Label>
+              <Label className="flex items-center gap-1.5">
+                {t("refa-f-deal-value")}
+                {autoFilled.deal_value && <AutoFilledBadge label={t("misc-auto-filled")} />}
+              </Label>
               <Input type="number" min="0" step="0.01" value={form.deal_value} onChange={set("deal_value")} className="tabular-nums" />
             </div>
             <div className="space-y-1.5">
-              <Label>{t("refa-f-currency")}</Label>
+              <Label className="flex items-center gap-1.5">
+                {t("refa-f-currency")}
+                {autoFilled.currency && <AutoFilledBadge label={t("misc-auto-filled")} />}
+              </Label>
               <Input value={form.currency} onChange={set("currency")} maxLength={3} className="uppercase" />
             </div>
             <div className="space-y-1.5">
@@ -498,7 +847,16 @@ function CreateReferralDialog({ open, onOpenChange, onCreated, api, t }: {
             <div className="space-y-1.5 sm:col-span-2">
               <Label>{t("refa-f-amount")}</Label>
               <Input type="number" min="0" step="0.01" value={form.commission_amount} onChange={set("commission_amount")} className="tabular-nums" placeholder={t("refa-f-amount-ph")} />
-              <p className="text-[11px] text-muted-foreground">{t("refa-f-amount-hint")}</p>
+              {autoCalc ? (
+                <p className="text-[11px] text-muted-foreground flex items-center flex-wrap gap-x-1">
+                  <Sparkles className="size-3 text-amber-500 shrink-0" />
+                  {t("refa-autocalc")}:
+                  <span className="font-medium tabular-nums">{fmtMoney(autoCalc.amount, form.currency || "USD")}</span>
+                  {autoCalc.formula && <span className="tabular-nums">({autoCalc.formula})</span>}
+                </p>
+              ) : (
+                <p className="text-[11px] text-muted-foreground">{t("refa-f-amount-hint")}</p>
+              )}
             </div>
             <div className="space-y-1.5 sm:col-span-2">
               <Label>{t("refa-f-conditions")}</Label>
@@ -515,6 +873,148 @@ function CreateReferralDialog({ open, onOpenChange, onCreated, api, t }: {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ─── Linked-entity picker (46-b) ────────────────────────────────────────────
+
+/**
+ * RefEntityPicker — searchable combobox over the LIVE list of deals / offers
+ * / invoices / proformas / LOIs / RFQs (limit=200; client-side search across
+ * label, subject, product, status and partner name — the same UX
+ * PartnerPicker uses so 50+ rows stay usable). Picking a record hands the
+ * full normalized option to `onSelect`; the parent auto-fills the
+ * commission form from it.
+ */
+function RefEntityPicker({ kind, value, partnerMap, onSelect, api, t }: {
+  kind: LinkedRefType;
+  value: string;
+  partnerMap: Map<string, string>;
+  onSelect: (o: RefEntityOption | null) => void;
+  api: (p: string, params?: Record<string, string | number | boolean | undefined>) => string;
+  t: (k: string) => string;
+}) {
+  const tenantKey = useTenantKey();
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const debounced = useDebounced(search, 200);
+
+  const q = useQuery<{ items: unknown[]; total: number }, Error>({
+    queryKey: ["refa-entity-list", tenantKey, kind, 200],
+    queryFn: async () => {
+      const r = await fetch(api(REF_ENDPOINTS[kind], { limit: 200 }), { cache: "no-store" });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.error || "Failed to load records.");
+      }
+      return r.json();
+    },
+    staleTime: 30_000,
+  });
+
+  const options = useMemo(
+    () => (q.data?.items || []).map((row) => mapRefOption(kind, row)),
+    [q.data, kind],
+  );
+  const selected = options.find((o) => o.id === value) || null;
+
+  const filtered = useMemo(() => {
+    const s = debounced.trim().toLowerCase();
+    if (!s) return options;
+    const ic = (hay: string | null | undefined) => !!hay && hay.toLowerCase().includes(s);
+    return options.filter((o) =>
+      ic(o.label) || ic(o.sub) || ic(o.product) || ic(o.status) ||
+      ic(partnerMap.get(o.partner_id || ""))
+    );
+  }, [options, debounced, partnerMap]);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className={cn("w-full justify-between font-normal h-9 px-3", !selected && "text-muted-foreground")}
+        >
+          {selected ? (
+            <span className="flex items-center gap-1.5 min-w-0">
+              <Link2 className="size-3.5 text-muted-foreground shrink-0" />
+              <span className="truncate text-sm">{selected.label}</span>
+              {selected.status && (
+                <Badge variant="outline" className={cn("text-xs h-4 px-1 shrink-0", linkedStatusTone(kind, selected.status))}>
+                  {selected.status}
+                </Badge>
+              )}
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5">
+              <Search className="size-3.5" />
+              <span className="text-sm">{t("refa-link-picker")}</span>
+            </span>
+          )}
+          <ChevronsUpDown className="size-3.5 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[min(440px,calc(100vw-2rem))] p-0" align="start">
+        <Command shouldFilter={false}>
+          <CommandInput
+            placeholder={t("command-type-to-search")}
+            value={search}
+            onValueChange={setSearch}
+          />
+          <CommandList className="max-h-72 custom-scroll">
+            <CommandEmpty>
+              {q.isLoading || (q.isFetching && !options.length) ? (
+                <span className="flex items-center justify-center gap-1.5">
+                  <Loader2 className="size-3.5 animate-spin" /> {t("loading")}
+                </span>
+              ) : q.isError ? (
+                <span className="text-destructive">{t("load_error")}</span>
+              ) : (
+                <span>{t("no_results")}</span>
+              )}
+            </CommandEmpty>
+            <CommandGroup heading={`${t("refa-f-ref-" + kind)} (${filtered.length})`}>
+              {filtered.map((o) => (
+                <CommandItem
+                  key={o.id}
+                  value={o.id}
+                  onSelect={() => { onSelect(o); setOpen(false); setSearch(""); }}
+                  className="flex items-start gap-2 py-2"
+                >
+                  <Check className={cn("size-4 mt-0.5 shrink-0", value === o.id ? "opacity-100" : "opacity-0")} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium truncate text-sm">{o.label}</span>
+                      {o.status && (
+                        <Badge variant="outline" className={cn("text-xs h-4 px-1 shrink-0", linkedStatusTone(kind, o.status))}>
+                          {o.status}
+                        </Badge>
+                      )}
+                    </div>
+                    {(partnerMap.get(o.partner_id || "") || o.value != null || o.product || o.sub) && (
+                      <div className="text-xs text-muted-foreground flex items-center gap-1.5 mt-0.5 flex-wrap">
+                        {partnerMap.get(o.partner_id || "") && (
+                          <span className="truncate max-w-[160px]">{partnerMap.get(o.partner_id || "")}</span>
+                        )}
+                        {o.value != null && o.currency && (
+                          <span className="tabular-nums">{fmtMoney(o.value, o.currency)}</span>
+                        )}
+                        {(o.product || o.sub) && (
+                          <span className="truncate max-w-[220px]">{o.product || o.sub}</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -696,6 +1196,43 @@ function ReferralDetailSheet({ id, onClose, onChanged, api, t }: {
               } />
             </div>
 
+            {/* ── Linked business (LIVE data from the referenced record) ── */}
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+                <Link2 className="size-3.5" /> {t("refa-link-title")}
+              </p>
+              {d.linked_entity ? (
+                <div className="rounded-lg border p-3 space-y-1.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Badge variant="outline" className="text-[10px] uppercase tracking-wide bg-muted/50">
+                      {t("refa-f-ref-" + d.linked_entity.kind)}
+                    </Badge>
+                    <span className="font-medium text-sm truncate">{d.linked_entity.label}</span>
+                    {d.linked_entity.status && (
+                      <Badge variant="outline" className={cn("text-xs", linkedStatusTone(d.linked_entity.kind, d.linked_entity.status))}>
+                        {d.linked_entity.status}
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                    {d.linked_entity.partner_name && (
+                      <span>{t("refa-f-company")}: <span className="text-foreground font-medium">{d.linked_entity.partner_name}</span></span>
+                    )}
+                    {d.linked_entity.value != null && d.linked_entity.currency && (
+                      <span className="tabular-nums">{t("refa-f-deal-value")}: <span className="text-foreground font-medium">{fmtMoney(d.linked_entity.value, d.linked_entity.currency)}</span></span>
+                    )}
+                    {d.linked_entity.date && (
+                      <span className="flex items-center gap-1">
+                        <CalendarDays className="size-3" /> {fmtDate(d.linked_entity.date)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground border border-dashed rounded-lg p-3">{t("refa-link-none")}</p>
+              )}
+            </div>
+
             {/* Conditions */}
             {d.conditions && (
               <div className="space-y-1.5">
@@ -802,6 +1339,9 @@ function ReferralDetailSheet({ id, onClose, onChanged, api, t }: {
                 <p className="text-xs text-muted-foreground border border-dashed rounded-lg p-3">{t("refa-bank-none")}</p>
               )}
             </div>
+
+            {/* ── History (audit trail for this entry) ── */}
+            <ReferralHistorySection id={d.id} api={api} t={t} />
           </div>
         ) : null}
 
@@ -885,6 +1425,118 @@ function rateSubLabel(d: DetailRow, t: (k: string) => string): string {
   if (d.commission_rate == null) return type;
   const rate = `${d.commission_rate}${d.commission_type.endsWith("_percent") ? "%" : ""}`;
   return `${type} · ${rate}`;
+}
+
+// ─── History section (46-b) ─────────────────────────────────────────────────
+
+/**
+ * ReferralHistorySection — per-entity audit timeline for one referral
+ * commission entry (GET /api/audit/entity?entity_type=referral_commission —
+ * the endpoint is permission-scoped to commissions.read, so admins who
+ * can see the entry can also see its change trail). Renders latest first:
+ * localized action badge, timestamp, username, ip; entries with a
+ * details.changes array show compact "label: from → to" rows (the
+ * field-level diff the PUT route records since 46-b), transition/paid
+ * entries show their details as key: value rows.
+ */
+function ReferralHistorySection({ id, api, t }: {
+  id: string;
+  api: (p: string, params?: Record<string, string | number | boolean | undefined>) => string;
+  t: (k: string) => string;
+}) {
+  const tenantKey = useTenantKey();
+  const q = useQuery<{ total: number; items: HistoryItem[] }, Error>({
+    queryKey: ["referral-commission-history", tenantKey, id],
+    queryFn: async () => {
+      const r = await fetch(api("/api/audit/entity", {
+        entity_type: "referral_commission",
+        entity_id: id,
+        limit: 50,
+      }), { cache: "no-store" });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.error || "Failed to load history.");
+      }
+      return r.json();
+    },
+    enabled: !!id,
+  });
+
+  // The store returns newest-first; sort defensively anyway.
+  const items = useMemo(
+    () => [...(q.data?.items || [])].sort((a, b) => (b.created_at || "").localeCompare(a.created_at || "")),
+    [q.data],
+  );
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+          <History className="size-3.5" /> {t("refa-history")} ({items.length})
+        </p>
+        <Button variant="ghost" size="icon" className="size-7" onClick={() => q.refetch()} title={t("misc-refresh")}>
+          <RefreshCw className={cn("size-3.5", q.isFetching && "animate-spin")} />
+        </Button>
+      </div>
+      {q.isLoading ? (
+        <div className="space-y-2">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-14 w-full" />)}</div>
+      ) : q.isError ? (
+        <p className="text-xs text-destructive border border-dashed rounded-lg p-3">{t("refa-history-failed")}</p>
+      ) : items.length === 0 ? (
+        <p className="text-xs text-muted-foreground border border-dashed rounded-lg p-3">{t("refa-history-empty")}</p>
+      ) : (
+        <div className="max-h-72 overflow-y-auto custom-scroll pr-1 space-y-2">
+          {items.map((h) => <HistoryItemRow key={h.id} h={h} t={t} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One history row — action badge, who/when/ip, then the entry's details. */
+function HistoryItemRow({ h, t }: { h: HistoryItem; t: (k: string) => string }) {
+  const details = h.details || {};
+  const changes = Array.isArray(details.changes) ? (details.changes as AuditChange[]) : null;
+  // Key: value rows for create/transition/paid details (skip the diff
+  // itself, the fields list and raw partner uuids — the meaningful values
+  // stay: status transitions, paid amount, payout reference…).
+  const extra = Object.entries(details).filter(([k, v]) =>
+    k !== "fields" && k !== "changes" && k !== "partner_id" && v !== null && v !== undefined);
+
+  return (
+    <div className="rounded-lg border p-2.5 space-y-1.5">
+      <div className="flex items-center gap-2 flex-wrap">
+        <Badge variant="outline" className={cn("text-xs", historyActionTone(h.action))}>
+          {historyActionLabel(h.action, t)}
+        </Badge>
+        <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">{fmtDateTime(h.created_at)}</span>
+        <span className="text-xs font-medium truncate">{h.username || "—"}</span>
+        {h.ip && <span className="text-[10px] text-muted-foreground/70 font-mono ml-auto hidden sm:inline">{h.ip}</span>}
+      </div>
+      {changes && changes.length > 0 && (
+        <div className="rounded-md bg-muted/40 p-2 space-y-0.5">
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{t("refa-hist-changes")}</p>
+          {changes.map((c) => (
+            <p key={c.field} className="text-xs flex items-baseline flex-wrap gap-x-1">
+              <span className="text-muted-foreground">{historyFieldLabel(c.field, t)}:</span>
+              <span className="line-through text-muted-foreground/70">{String(c.from)}</span>
+              <span className="text-muted-foreground">→</span>
+              <span className="font-medium">{String(c.to)}</span>
+            </p>
+          ))}
+        </div>
+      )}
+      {!changes && extra.length > 0 && (
+        <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs">
+          {extra.map(([k, v]) => (
+            <span key={k} className="text-muted-foreground">
+              {historyFieldLabel(k, t)}: <span className="text-foreground font-medium">{historyDetailValue(v)}</span>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ─── Agreement admin dialog ────────────────────────────────────────────────

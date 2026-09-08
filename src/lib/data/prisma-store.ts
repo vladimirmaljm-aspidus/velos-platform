@@ -959,6 +959,8 @@ export class PrismaStore implements Store {
     if (params?.action) where.action = { contains: params.action };
     if (params?.username) where.username = { contains: params.username };
     if (params?.entity_type) where.entity_type = { contains: params.entity_type };
+    // audit46 — exact match per-entity history (mirror of Supabase .eq).
+    if (params?.entity_id) where.entity_id = params.entity_id;
     if (params?.date_from) where.created_at = { ...(where.created_at || {}), gte: new Date(params.date_from) };
     if (params?.date_to) where.created_at = { ...(where.created_at || {}), lte: new Date(params.date_to) };
     const total = await db.auditLog.count({ where });

@@ -2,35 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, requireAuthOrApiKey, requireAuthOrApiKeyPermission, audit, resolveTenantId, sanitizeError } from "@/lib/api/helpers";
 import { TradeCostLine } from "@/lib/supabase/types";
 import { TRADE_COST_TYPES } from "@/lib/data/reference";
-import { getExchangeRate } from "@/lib/utils/exchange-rates";
 // 31-f — shared numeric-field validation (task brief B-list: the one
 // numeric trade-calc input that previously skipped validation — see the
 // P2-5 / ADMIN-M11 blocks below for the fields that were already covered).
 import { assertNumeric } from "@/lib/api/validate";
+// 46-a — shared trade-calculator math (single source of truth for POST and
+// PUT; the inline copies were extracted byte-for-byte — see the lib header).
+import { normalizeCommissionType, computeTradeTotals } from "@/lib/trade/calculator-math";
 
 export const runtime = "nodejs";
-
-/**
- * Normalize commission type from UI format to backend enum.
- * CRITICAL FIX (audit C-2): UI saves percent_profit/percent_revenue/fixed_per_unit/fixed_total
- * but backend expects profit_percent/revenue_percent/per_unit/fixed.
- * Without normalization, every commission computes to $0.
- */
-function normalizeCommissionType(t: string | null | undefined): string | null {
-  if (!t) return null;
-  const map: Record<string, string> = {
-    percent_profit: "profit_percent",
-    percent_revenue: "revenue_percent",
-    fixed_per_unit: "per_unit",
-    fixed_total: "fixed",
-    // Pass-through already-correct values:
-    profit_percent: "profit_percent",
-    revenue_percent: "revenue_percent",
-    per_unit: "per_unit",
-    fixed: "fixed",
-  };
-  return map[t] || t;
-}
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuthOrApiKey(req);
@@ -53,6 +33,34 @@ export async function GET(req: NextRequest) {
   const search = url.searchParams.get("search") || undefined;
   const result = await auth.store.listTradeCalculations(tenantId, { search });
   return NextResponse.json(result);
+}
+
+/**
+ * 46-a — key facts recorded on the trade_calc.create audit event (the
+ * History panel renders them as the "born as" snapshot of the calc).
+ * Only DEFINED values are included; null/undefined keys are omitted
+ * entirely so the audit row stays compact.
+ */
+function createAuditDetails(created: {
+  name: string;
+  quantity: number;
+  sell_currency: string;
+  total_sell_revenue: number;
+  gross_margin: number;
+  margin_percent: number;
+  commission_agent_id?: string | null;
+  commission_rate?: number | null;
+}): Record<string, unknown> {
+  const details: Record<string, unknown> = {};
+  if (created.name != null) details.name = created.name;
+  if (created.quantity != null) details.quantity = created.quantity;
+  if (created.sell_currency) details.sell_currency = created.sell_currency;
+  if (created.total_sell_revenue != null) details.total_sell_revenue = created.total_sell_revenue;
+  if (created.gross_margin != null) details.gross_margin = created.gross_margin;
+  if (created.margin_percent != null) details.margin_percent = created.margin_percent;
+  if (created.commission_agent_id) details.commission_agent_id = created.commission_agent_id;
+  if (created.commission_rate != null) details.commission_rate = created.commission_rate;
+  return details;
 }
 
 export async function POST(req: NextRequest) {
@@ -215,38 +223,20 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Compute totals from cost lines
-  // NOTE: `qty`, `buyPrice`, `sellPrice` were already validated and coerced
-  // above (P2-5). Reuse them here instead of re-reading body fields.
-  const numContainers = body.num_containers || 1;
-  const buyTotal = buyPrice * qty;
-  // Exchange rate: sell_currency per buy_currency. When currencies differ,
-  // landed cost (in buy currency) must be converted to sell currency before
-  // subtracting from sell revenue to compute margin. Audit T-series.
-  const fxRate = Number(body.exchange_rate) || 1;
-  const currenciesDiffer =
-    !!body.buy_currency && !!body.sell_currency && body.buy_currency !== body.sell_currency;
-  const effectiveFx = currenciesDiffer ? fxRate : 1;
-
-  let landedCost = buyTotal;
-  // Cost lines: each line has its own `currency`. Convert each line's amount
-  // to buy_currency via its `fx_rate` before adding to landedCost. This is the
-  // fix for the silent multi-currency bug (EUR freight was summed as if USD).
-  // The `fx_rate` is snapshotted server-side from the live rate at save time
-  // so historical calcs stay accurate when rates move.
-  const buyCurrency = (body.buy_currency || "USD").toUpperCase();
-  const computedLines: TradeCostLine[] = [];
+  // ── Cost-line validation (ADMIN-M11) ─────────────────────────────────
+  //  - For ALL bases, the value MUST be a finite number — a string,
+  //    null, or NaN flows through the arithmetic as NaN and silently
+  //    zeroes the landed cost (which is the exact NaN-propagation
+  //    bug P2-5 fixed for the top-level inputs but missed here).
+  //  - For `basis === "percent"`, the value MUST be between 0 and
+  //    100. A negative percentage makes no sense (and would invert
+  //    the cost into a credit); > 100 means the line alone is more
+  //    than the entire buy value, which the UI never intends and
+  //    which would silently explode `landedCost` into the sky.
+  // (Validated up-front so the shared math in computeTradeTotals only ever
+  // sees clean numbers; the mutation `line.value = lineValue` matches the
+  // pre-46-a inline loop, which coerced numeric strings in place.)
   for (const line of (body.cost_lines || []) as TradeCostLine[]) {
-    // ADMIN-M11: validate the cost-line value before applying it.
-    //  - For ALL bases, the value MUST be a finite number — a string,
-    //    null, or NaN flows through the arithmetic as NaN and silently
-    //    zeroes the landed cost (which is the exact NaN-propagation
-    //    bug P2-5 fixed for the top-level inputs but missed here).
-    //  - For `basis === "percent"`, the value MUST be between 0 and
-    //    100. A negative percentage makes no sense (and would invert
-    //    the cost into a credit); > 100 means the line alone is more
-    //    than the entire buy value, which the UI never intends and
-    //    which would silently explode `landedCost` into the sky.
     const lineValue = Number(line.value);
     if (!Number.isFinite(lineValue)) {
       return NextResponse.json(
@@ -261,75 +251,48 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
-    let amount = 0;
-    if (line.basis === "unit") amount = line.value * qty;
-    else if (line.basis === "fixed") amount = line.value;
-    else if (line.basis === "per_container") amount = line.value * numContainers;
-    else if (line.basis === "percent") {
-      // percent applies to buyTotal + accumulated costs (CIF value)
-      amount = (landedCost * line.value) / 100;
-    }
-    amount = Math.round(amount * 100) / 100;
-
-    // Resolve line.fx_rate: prefer user-supplied, else snapshot live rate
-    // when line.currency differs from buy_currency. Same currency = 1.
-    const lineCurrency = (line.currency || buyCurrency).toUpperCase();
-    let fxRate: number | undefined = undefined;
-    // CRITICAL FIX (audit P1-15): percent cost lines apply to landedCost,
-    // which is already in buy_currency. The amount is already in
-    // buy_currency — do NOT convert again (was double-converting).
-    if (line.basis === "percent") {
-      fxRate = 1;
-    } else if (lineCurrency === buyCurrency) {
-      fxRate = 1;
-    } else if (typeof line.fx_rate === "number" && line.fx_rate > 0) {
-      // User-supplied (possibly manual) rate — trust it.
-      fxRate = line.fx_rate;
-    } else {
-      // CRITICAL FIX (audit P1-16): when the live rate provider is down,
-      // fail loudly rather than silently falling back to 1 (which would
-      // silently produce wrong totals).
-      const live = await getExchangeRate(lineCurrency, buyCurrency);
-      if (!live || live <= 0) {
-        if (lineCurrency !== buyCurrency) {
-          return NextResponse.json(
-            { error: `Could not fetch exchange rate for ${lineCurrency} → ${buyCurrency}. Please set the rate manually or retry.` },
-            { status: 400 },
-          );
-        }
-        fxRate = 1;
-      } else {
-        fxRate = live;
-      }
-    }
-    const convertedAmount = Math.round(amount * fxRate * 100) / 100;
-
-    landedCost += convertedAmount;
-    computedLines.push({
-      ...line,
-      currency: lineCurrency,
-      amount,
-      fx_rate: fxRate,
-      converted_amount: convertedAmount,
-    });
   }
 
-  const sellTotal = sellPrice * qty;
-  // Convert landed cost (buy currency) → sell currency for the margin math.
-  const landedCostInSellCurrency = landedCost * effectiveFx;
-  const margin = sellTotal - landedCostInSellCurrency;
-  const marginPct = sellTotal > 0 ? (margin / sellTotal) * 100 : 0;
+  // Compute totals from cost lines
+  // NOTE: `qty`, `buyPrice`, `sellPrice` were already validated and coerced
+  // above (P2-5). Reuse them here instead of re-reading body fields.
+  // 46-a: the arithmetic lives in src/lib/trade/calculator-math.ts (shared
+  // with the PUT route — same inputs, byte-identical totals). When a line's
+  // currency differs from the buy currency and no fx_rate is supplied, the
+  // lib fetches the LIVE rate and THROWS when the provider is down (P1-16);
+  // POST maps that error to a 400 with the descriptive message.
+  let totals;
+  try {
+    totals = await computeTradeTotals({
+      quantity: qty,
+      buy_price_per_unit: buyPrice,
+      sell_price_per_unit: sellPrice,
+      buy_currency: body.buy_currency,
+      sell_currency: body.sell_currency,
+      exchange_rate: body.exchange_rate,
+      num_containers: body.num_containers || 1,
+      cost_lines: (body.cost_lines || []) as TradeCostLine[],
+    });
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message || "Failed to compute totals." }, { status: 400 });
+  }
 
-  body.cost_lines = computedLines;
-  body.total_buy_cost = Math.round(buyTotal * 100) / 100;
-  body.total_landed_cost = Math.round(landedCost * 100) / 100;
-  body.total_sell_revenue = Math.round(sellTotal * 100) / 100;
-  body.gross_margin = Math.round(margin * 100) / 100;
-  body.margin_percent = Math.round(marginPct * 100) / 100;
+  body.cost_lines = totals.computedLines;
+  body.total_buy_cost = totals.total_buy_cost;
+  body.total_landed_cost = totals.total_landed_cost;
+  body.total_sell_revenue = totals.total_sell_revenue;
+  body.gross_margin = totals.gross_margin;
+  body.margin_percent = totals.margin_percent;
 
   const created = await auth.store.upsertTradeCalculation(body);
   const auditUser = "user" in auth ? auth.user : { id: auth.apiKeyId, username: auth.apiKeyName, tenant_id: auth.tenantId };
-  await audit(auth.store, auditUser, req, body.id ? "trade_calc.update" : "trade_calc.create", "trade_calculation", created.id, { name: created.name });
+  // 46-a: the create event carries the key business facts (only DEFINED
+  // values — null/undefined keys are omitted entirely) so the History panel
+  // can show what the calculation was born as, not just its name.
+  const auditDetails: Record<string, unknown> = body.id
+    ? { name: created.name }
+    : createAuditDetails(created);
+  await audit(auth.store, auditUser, req, body.id ? "trade_calc.update" : "trade_calc.create", "trade_calculation", created.id, auditDetails);
   return NextResponse.json(created);
   } catch (e: any) {
     console.error("[trade-calculator POST]", e);

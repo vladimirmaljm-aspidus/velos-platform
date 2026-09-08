@@ -41,6 +41,11 @@ export interface ListParams {
   action?: string;
   username?: string;
   entity_type?: string;
+  // Per-entity audit history (audit46): exact-match filter so a detail view
+  // can request "the change history of THIS trade calculation / referral
+  // commission" without scanning the whole tenant log. Honoured by all
+  // three store implementations (Supabase .eq, Prisma where, mock filter).
+  entity_id?: string;
   date_from?: string;
   date_to?: string;
 }

@@ -2,12 +2,45 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, resolveTenantId, audit, sanitizeError } from "@/lib/api/helpers";
 import { decryptField } from "@/lib/crypto/field-encryption";
 import { attachmentsForReferrals } from "@/lib/portal/referral-attachments";
+import { resolveReferralLinkedEntity } from "@/lib/api/referral-refs";
 
 export const runtime = "nodejs";
 
+// Valid ref types — mirrors the POST route's allowlist (kept local: route
+// files must only export handlers + Next config).
+const REF_TYPES = ["deal", "offer", "invoice", "proforma", "loi", "rfq", "manual"] as const;
+
+/** Stringify an audit-diff value: null/undefined/"" → "—", booleans → true/false. */
+function diffValue(v: unknown): string {
+  if (v === null || v === undefined || v === "") return "—";
+  if (typeof v === "boolean") return v ? "true" : "false";
+  return String(v);
+}
+
+/** Compute a field-level [{field, from, to}] diff for every patch field
+ *  that ACTUALLY changed (numbers tolerate 0.01 — cosmetic rounding from
+ *  the client is not a change). Unchanged fields are omitted entirely. */
+function diffPatch(
+  before: Record<string, unknown>,
+  patch: Record<string, unknown>,
+): Array<{ field: string; from: string; to: string }> {
+  const changes: Array<{ field: string; from: string; to: string }> = [];
+  for (const [field, to] of Object.entries(patch)) {
+    const from = before[field];
+    const changed = typeof to === "number" && typeof from === "number"
+      ? Math.abs(to - from) > 0.01
+      : to !== from;
+    if (changed) changes.push({ field, from: diffValue(from), to: diffValue(to) });
+  }
+  return changes;
+}
+
 // GET /api/referral-commissions/[id] — full admin detail: entry + partner +
 // uploaded documents + agreement + payout account (IBAN decrypted for the
-// admin — they need it to execute the transfer).
+// admin — they need it to execute the transfer). 46-b: also a linked_entity
+// block with the LIVE deal/offer/invoice/proforma/LOI/RFQ behind the
+// (ref_type, ref_id) link, so the admin detail sheet shows what the
+// commission is tied to TODAY, not the stale creation snapshot.
 export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
     const auth = await requireAuth(req);
@@ -33,9 +66,15 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
       attachmentsForReferrals(entry.tenant_id, null, [entry.id]),
     ]);
 
+    // 46-b — live linked-entity business card. Resolved against the entry's
+    // own tenant (a super-admin inspecting another tenant sees that tenant's
+    // record); degrades to null when nothing is linked / anything throws.
+    const linked_entity = await resolveReferralLinkedEntity(auth.store, entry.tenant_id, entry);
+
     return NextResponse.json({
       ...entry,
       partner_name: partner?.name || "—",
+      linked_entity,
       partner_email: partner?.contact_email || null,
       attachments: uploadsMap.get(entry.id) || [],
       agreement: agreement
@@ -79,9 +118,13 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
 
 // PUT /api/referral-commissions/[id] — admin edits the editable fields
 // (referral details, product, values, conditions, notes, the documents
-// checklist toggle). Lifecycle status changes go through /transition and
+// checklist toggle — and since 46-b also the (ref_type, ref_id) link to a
+// real deal/offer/invoice/proforma/LOI/RFQ, validated cross-tenant exactly
+// like POST). Lifecycle status changes go through /transition and
 // /mark-paid — the store layer strips status stamps from the generic
-// upsert, so they can't be smuggled through this route.
+// upsert, so they can't be smuggled through this route. Every patch is
+// diffed against the pre-update snapshot and logged field-by-field
+// (old → new) into the audit trail.
 export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
     const auth = await requireAuth(req);
@@ -136,6 +179,48 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
     }
     if (typeof body.conditions === "string") patch.conditions = body.conditions.slice(0, 4000) || null;
     if (typeof body.admin_notes === "string") patch.admin_notes = body.admin_notes.slice(0, 4000) || null;
+
+    // 46-b — the (ref_type, ref_id) link. ref_type: validate ∈ the same set
+    // POST accepts. ref_id: string|null; when non-null AND the effective
+    // type isn't manual, assert the entity exists + belongs to the entry's
+    // tenant (same guard as POST, so a row from another tenant can never be
+    // attached via an edit either). Switching the type to "manual" forces
+    // ref_id null — a manual entry never carries a dangling link.
+    if (body.ref_type !== undefined) {
+      if (typeof body.ref_type !== "string" || !(REF_TYPES as readonly string[]).includes(body.ref_type)) {
+        return NextResponse.json({ error: "Invalid ref_type." }, { status: 400 });
+      }
+      patch.ref_type = body.ref_type;
+    }
+    if (body.ref_id !== undefined) {
+      if (body.ref_id === null) {
+        patch.ref_id = null;
+      } else if (typeof body.ref_id === "string") {
+        patch.ref_id = body.ref_id.trim().slice(0, 100) || null;
+      } else {
+        return NextResponse.json({ error: "Invalid ref_id." }, { status: 400 });
+      }
+    }
+    const effectiveType = (patch.ref_type as string | undefined) ?? existing.ref_type;
+    if (effectiveType === "manual") {
+      // Manual entry: the link is severed even when the client didn't send
+      // ref_id explicitly (type switch alone must clear it).
+      patch.ref_id = null;
+    } else {
+      // Type switched to a DIFFERENT entity kind without a new ref_id in
+      // the same request — the old id points at the wrong table, so sever
+      // it (the admin UI clears ref_id on every type switch; this makes the
+      // route safe for raw API callers too).
+      if (patch.ref_type !== undefined && patch.ref_type !== existing.ref_type && patch.ref_id === undefined) {
+        patch.ref_id = null;
+      }
+      if (patch.ref_id) {
+        const { assertRefEntity } = await import("@/lib/api/referral-refs");
+        const refErr = await assertRefEntity(auth.store, existing.tenant_id, effectiveType, patch.ref_id as string);
+        if (refErr) return refErr;
+      }
+    }
+
     // Documents checklist toggle (admin confirms "all documents are in").
     if (body.documents_complete === true || body.documents_complete === false) {
       patch.documents_complete = body.documents_complete;
@@ -144,7 +229,16 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
     }
 
     const updated = await auth.store.upsertReferralCommission({ id, tenant_id: existing.tenant_id, ...patch } as never);
-    await audit(auth.store, auth.user, req, "referral_commission.update", "referral_commission", id, { fields: Object.keys(patch) });
+
+    // 46-b — field-level edit history: snapshot was taken above (existing);
+    // compute [{field, from, to}] for every patch field that actually
+    // changed (numbers tolerate 0.01) and stamp it into the audit details so
+    // the History panel can show "amount: 100 → 250" instead of just names.
+    const changes = diffPatch(existing as unknown as Record<string, unknown>, patch);
+    await audit(auth.store, auth.user, req, "referral_commission.update", "referral_commission", id, {
+      fields: Object.keys(patch),
+      changes: changes.length ? changes : undefined,
+    });
     return NextResponse.json(updated);
   } catch (error: any) {
     return NextResponse.json({ error: sanitizeError(error) }, { status: 500 });

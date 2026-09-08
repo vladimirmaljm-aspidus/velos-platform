@@ -1040,6 +1040,8 @@ export class SupabaseStore implements Store {
     if (params?.action) q = q.ilike("action", `%${params.action}%`);
     if (params?.username) q = q.ilike("username", `%${params.username}%`);
     if (params?.entity_type) q = q.ilike("entity_type", `%${params.entity_type}%`);
+    // audit46 — exact match (ids are UUIDs, never contain ilike wildcards).
+    if (params?.entity_id) q = q.eq("entity_id", params.entity_id);
     if (params?.date_from) q = q.gte("created_at", params.date_from);
     if (params?.date_to) q = q.lte("created_at", params.date_to);
     q = q.order("created_at", { ascending: false });

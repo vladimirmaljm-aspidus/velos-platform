@@ -481,6 +481,10 @@ export class MockStore implements Store {
       const e = params.entity_type.toLowerCase();
       items = items.filter((x) => (x.entity_type || "").toLowerCase().includes(e));
     }
+    // audit46 — exact-match per-entity history (mirror of the Supabase .eq).
+    if (params?.entity_id) {
+      items = items.filter((x) => x.entity_id === params.entity_id);
+    }
     if (params?.date_from) {
       const t = new Date(params.date_from).getTime();
       if (!isNaN(t)) items = items.filter((x) => new Date(x.created_at).getTime() >= t);

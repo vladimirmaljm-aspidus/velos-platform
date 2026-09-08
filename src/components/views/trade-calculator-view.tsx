@@ -34,7 +34,7 @@ import {
   Plus, Pencil, Trash2, Eye, Calculator, X, TrendingUp, TrendingDown,
   DollarSign, Ship, Container, ArrowLeftRight, Sparkles, Loader2, Building2,
   MapPin, Lightbulb, FileText, ChevronDown, Landmark, Percent, RefreshCw,
-  Truck, Plane, Train, Anchor, FileCheck, Send, Gauge,
+  Truck, Plane, Train, Anchor, FileCheck, Send, Gauge, History,
 } from "lucide-react";
 import { PortAutocomplete } from "@/components/ui/port-autocomplete";
 import { UnitSelect } from "@/components/common/unit-select";
@@ -43,7 +43,7 @@ import { PartnerPicker } from "@/components/common/partner-picker";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
 import { EmptyState } from "@/components/common/empty-state";
-import { fmtMoney, fmtDate, fmtNumber } from "@/lib/utils/format";
+import { fmtMoney, fmtDate, fmtDateTime, fmtNumber } from "@/lib/utils/format";
 import {
   TradeCalculation, TradeCostLine, SupplierOffer, Partner,
   Product, CommissionAgent,
@@ -604,6 +604,92 @@ export function TradeCalculatorView() {
   );
 }
 
+// ─── 46-a: History (audit trail) helpers ─────────────────────────────
+
+/** One audit-log row from GET /api/audit/entity?entity_type=trade_calculation
+ *  (the endpoint is permission-scoped to trade-calculator.read, so anyone
+ *  who can open this detail sheet can also see its change trail). */
+interface CalcHistoryItem {
+  id: string;
+  action: string;
+  username: string | null;
+  ip: string | null;
+  created_at: string;
+  details: Record<string, unknown> | null;
+}
+
+/** Field-level change recorded by the PUT route (diffTradeCalculation). */
+interface CalcAuditChange {
+  field: string;
+  from: string;
+  to: string;
+}
+
+/** Diff/detail field (DB property name) → i18n key. Covers both the
+ *  `changes[].field` values emitted by diffTradeCalculation and the
+ *  key facts recorded on trade_calc.create events. t() falls back to
+ *  the English translation, then the raw key — unknown fields degrade
+ *  gracefully instead of showing a bare key. */
+const CALC_HISTORY_FIELD_KEYS: Record<string, string> = {
+  name: "misc-tch-f-name",
+  product_id: "misc-tch-f-product",
+  supplier_id: "misc-tch-f-supplier",
+  buyer_id: "misc-tch-f-buyer",
+  quantity: "misc-tch-f-quantity",
+  unit: "misc-tch-f-unit",
+  num_containers: "misc-tch-f-containers",
+  buy_price_per_unit: "misc-tch-f-buy-price",
+  sell_price_per_unit: "misc-tch-f-sell-price",
+  buy_currency: "misc-tch-f-buy-currency",
+  sell_currency: "misc-tch-f-sell-currency",
+  exchange_rate: "misc-tch-f-exchange-rate",
+  commission_agent_id: "misc-tch-f-commission-agent",
+  commission_type: "misc-tch-f-commission-type",
+  commission_rate: "misc-tch-f-commission-rate",
+  cost_lines: "misc-tch-f-cost-lines",
+  total_buy_cost: "misc-tch-f-total-buy",
+  total_landed_cost: "misc-tch-f-total-landed",
+  total_sell_revenue: "misc-tch-f-total-revenue",
+  gross_margin: "misc-tch-f-gross-margin",
+  margin_percent: "misc-tch-f-margin-pct",
+};
+
+function calcHistoryFieldLabel(field: string, t: (k: string) => string): string {
+  const key = CALC_HISTORY_FIELD_KEYS[field];
+  return key ? t(key) : field;
+}
+
+/** Localized label for a history action badge (create / update / delete —
+ *  any other action falls back to its raw code). */
+function calcHistoryActionLabel(action: string, t: (k: string) => string): string {
+  switch (action) {
+    case "trade_calc.create": return t("misc-tch-created");
+    case "trade_calc.update": return t("misc-tch-updated");
+    case "trade_calc.delete": return t("misc-tch-deleted");
+    default: return action;
+  }
+}
+
+/** Action badge tone — mirrors the audit-view.tsx actionColor conventions
+ *  (create=emerald, update=amber, delete=red/destructive, other=teal). */
+function calcHistoryActionTone(action: string): string {
+  if (action.endsWith(".delete")) return "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400";
+  if (action.endsWith(".create")) return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400";
+  if (action.endsWith(".update")) return "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400";
+  return "border-teal-500/30 bg-teal-500/10 text-teal-700 dark:text-teal-400";
+}
+
+/** Render one change value: cost-line counts get the localized "lines"
+ *  suffix ("3 lines" → "4 lines"); uuid-like ids are truncated so one
+ *  long reference doesn't wreck the compact row layout. */
+function calcHistoryValue(field: string, v: string, t: (k: string) => string): string {
+  if (field === "cost_lines") return `${v} ${t("misc-tch-lines-suffix")}`;
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)) {
+    return `${v.slice(0, 8)}…`;
+  }
+  return v;
+}
+
 // ---- Detail panel ----
 function CalcDetail({
   calc, product, offer, supplier, buyer,
@@ -615,6 +701,7 @@ function CalcDetail({
   buyer?: Partner;
 }) {
   const t = useT();
+  const [historyOpen, setHistoryOpen] = useState(false);
   const marginPositive = calc.gross_margin >= 0;
   const displayCurrency = calc.sell_currency || calc.buy_currency || "USD";
   const lines = (calc.cost_lines || []);
@@ -660,6 +747,17 @@ function CalcDetail({
             {containerName(calc.container_type)} × {calc.num_containers}
           </Badge>
         )}
+        {/* 46-a — per-entity audit trail (field-level edit history) */}
+        <Button
+          variant="outline"
+          size="sm"
+          className="ml-auto h-8 gap-1.5 px-3"
+          onClick={() => setHistoryOpen(true)}
+          title={t("misc-tch-history")}
+          aria-label={t("misc-tch-history")}
+        >
+          <History className="size-3.5" /> {t("misc-tch-history")}
+        </Button>
       </div>
 
       {/* Summary grid */}
@@ -790,6 +888,133 @@ function CalcDetail({
       <div className="pt-3 border-t">
         <p className="text-xs text-muted-foreground">{t("misc-created-prefix").replace("${date}", fmtDate(calc.created_at))}</p>
       </div>
+
+      {/* 46-a — audit trail dialog (see CalcHistoryDialog below) */}
+      <CalcHistoryDialog calc={calc} open={historyOpen} onOpenChange={setHistoryOpen} />
+    </div>
+  );
+}
+
+// ---- History dialog (46-a) ----
+
+/**
+ * CalcHistoryDialog — the change-history timeline for ONE saved trade
+ * calculation (latest first). Data: GET /api/audit/entity?entity_type=
+ * trade_calculation&entity_id=<id> — the permission-mapped endpoint built
+ * by the parallel audit46 work (trade-calculator.read). Every row shows the
+ * localized action badge, timestamp, username and ip; trade_calc.update
+ * entries carry the field-level [{field, from, to}] diff the PUT route
+ * records since 46-a ("Cost lines — 3 lines → 4 lines"), and create entries
+ * show the key facts recorded at birth. Shadcn Dialog = keyboard accessible
+ * (Esc / focus trap) by default.
+ */
+function CalcHistoryDialog({ calc, open, onOpenChange }: {
+  calc: TradeCalculation;
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+}) {
+  const api = useApiUrl();
+  const tenantKey = useTenantKey();
+  const t = useT();
+
+  const q = useQuery<{ total: number; items: CalcHistoryItem[] }, Error>({
+    queryKey: ["trade-calc-history", tenantKey, calc.id],
+    queryFn: async () => {
+      const r = await fetch(
+        api(`/api/audit/entity?entity_type=trade_calculation&entity_id=${calc.id}`),
+        { cache: "no-store" },
+      );
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.error || "Failed to load history.");
+      }
+      return r.json();
+    },
+    enabled: open && !!calc.id,
+  });
+
+  // The store returns newest-first; sort defensively anyway (latest first).
+  const items = useMemo(
+    () => [...(q.data?.items || [])].sort((a, b) => (b.created_at || "").localeCompare(a.created_at || "")),
+    [q.data],
+  );
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <History className="size-4" /> {t("misc-tch-history")}
+          </DialogTitle>
+          <DialogDescription className="truncate">{calc.name}</DialogDescription>
+        </DialogHeader>
+        {q.isLoading ? (
+          <div className="space-y-2">
+            {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-16 w-full" />)}
+          </div>
+        ) : q.isError ? (
+          <p className="text-xs text-destructive border border-dashed rounded-lg p-3">
+            {t("misc-tch-load-failed")}
+          </p>
+        ) : items.length === 0 ? (
+          <p className="text-xs text-muted-foreground border border-dashed rounded-lg p-3">
+            {t("misc-tch-history-empty")}
+          </p>
+        ) : (
+          <div className="max-h-[60vh] overflow-y-auto custom-scroll pr-1 space-y-2">
+            {items.map((h) => <CalcHistoryRow key={h.id} h={h} t={t} />)}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** One history row — action badge, who/when/ip, then the entry's details:
+ *  update → the field-level from → to list; create → the key facts; anything
+ *  without recorded details → a muted note (pre-46-a events logged only
+ *  {name}, and delete events log no details at all). */
+function CalcHistoryRow({ h, t }: { h: CalcHistoryItem; t: (k: string) => string }) {
+  const details = h.details || {};
+  const changes = Array.isArray(details.changes) ? (details.changes as CalcAuditChange[]) : null;
+  // Key facts recorded on create events (name, quantity, sell_currency, …).
+  const facts = Object.entries(details).filter(
+    ([k, v]) => k !== "changes" && CALC_HISTORY_FIELD_KEYS[k] !== undefined && v !== null && v !== undefined,
+  );
+
+  return (
+    <div className="rounded-lg border p-2.5 space-y-1.5">
+      <div className="flex items-center gap-2 flex-wrap">
+        <Badge variant="outline" className={`text-xs ${calcHistoryActionTone(h.action)}`}>
+          {calcHistoryActionLabel(h.action, t)}
+        </Badge>
+        <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">{fmtDateTime(h.created_at)}</span>
+        <span className="text-xs font-medium truncate">{h.username || "—"}</span>
+        {h.ip && <span className="text-[10px] text-muted-foreground/70 font-mono ml-auto hidden sm:inline">{h.ip}</span>}
+      </div>
+      {changes && changes.length > 0 ? (
+        <div className="rounded-md bg-muted/40 p-2 space-y-0.5">
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{t("misc-tch-changes")}</p>
+          {changes.map((c) => (
+            <p key={c.field} className="text-xs flex items-baseline flex-wrap gap-x-1 tabular-nums">
+              <span className="text-muted-foreground">{calcHistoryFieldLabel(c.field, t)} —</span>
+              <span className="line-through text-muted-foreground/70">{calcHistoryValue(c.field, c.from, t)}</span>
+              <span className="text-muted-foreground">→</span>
+              <span className="font-medium">{calcHistoryValue(c.field, c.to, t)}</span>
+            </p>
+          ))}
+        </div>
+      ) : h.action === "trade_calc.create" && facts.length > 0 ? (
+        <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs tabular-nums">
+          {facts.map(([k, v]) => (
+            <span key={k} className="text-muted-foreground">
+              {calcHistoryFieldLabel(k, t)}: <span className="text-foreground font-medium">{calcHistoryValue(k, String(v), t)}</span>
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="text-[10px] text-muted-foreground italic">{t("misc-tch-no-details")}</p>
+      )}
     </div>
   );
 }
