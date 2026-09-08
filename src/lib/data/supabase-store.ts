@@ -3619,6 +3619,7 @@ export class SupabaseStore implements Store {
     // that does), so smartUpsert would silently drop it on every save.
     // Same bug class as the audit22 style_json / audit35 content_json drops.
     const FIELDS = [
+      "id",
       "tenant_id", "partner_id", "referral_company", "referral_contact", "referral_email",
       "referral_phone", "ref_type", "ref_id", "ref_number", "product", "deal_value",
       "currency", "commission_type", "commission_rate", "commission_amount", "conditions",
