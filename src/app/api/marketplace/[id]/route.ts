@@ -9,6 +9,7 @@ import {
   deleteMarketplacePost,
   getMarketplaceTenantSettings,
   validateAuctionParams,
+  listMarketplaceCategories,
 } from "@/lib/data/marketplace-store";
 import { getSupabase } from "@/lib/supabase/client";
 import { sanitizeFields } from "@/lib/security/sanitize-input";
@@ -154,9 +155,35 @@ async function _put(req: NextRequest, ctx: { params: Promise<{ id: string }> }) 
     body.target_price = p;
   }
 
+  // 100 — product_category is a CONTROLLED taxonomy value (see the POST
+  // route's note): validate against the active taxonomy instead of
+  // HTML-escaping it — escaping "Food & Beverage" into "Food &amp;
+  // Beverage" breaks feed filters, saved-search alerts and intelligence
+  // aggregation grouping, which all compare the raw taxonomy name.
+  if (typeof body.product_category === "string") {
+    const trimmed = body.product_category.trim();
+    if (trimmed === "") {
+      body.product_category = null;
+    } else {
+      let taxonomy: string[] | null = null;
+      try {
+        const cats = await listMarketplaceCategories();
+        taxonomy = cats.map((c) => c.name);
+      } catch {
+        taxonomy = null; // fail-open: store the trimmed value as-is
+      }
+      if (taxonomy && !taxonomy.includes(trimmed)) {
+        return NextResponse.json(
+          { error: `Unknown category "${trimmed}". Pick one from the category list.` },
+          { status: 400 },
+        );
+      }
+      body.product_category = trimmed;
+    }
+  }
+
   body = sanitizeFields(body, [
     "product_name",
-    "product_category",
     "product_subcategory",
     "delivery_location",
     "delivery_country",

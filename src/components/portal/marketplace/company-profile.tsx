@@ -31,6 +31,7 @@ import {
   MessageSquare,
   ExternalLink,
   Send,
+  Info,
 } from "lucide-react";
 import { useT } from "@/lib/i18n/store";
 import { toast } from "sonner";
@@ -64,6 +65,9 @@ interface PublicProfile {
   rating_average: number;
   rating_count: number;
   viewer_follows?: boolean;
+  /** 100 — set when the partner has no marketplace_company_profiles row and
+   * the API synthesised a minimal presence page from the partners table. */
+  synthetic?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -278,6 +282,14 @@ export function CompanyProfile({ partnerId }: { partnerId: string }) {
 
   return (
     <div className="space-y-6">
+      {/* 100 — synthetic-profile hint: the partner is real and active in the
+       * tenant but hasn't published their marketplace profile yet. */}
+      {profile.synthetic && (
+        <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
+          <Info className="h-4 w-4 mt-0.5 shrink-0" />
+          <span>{t("marketplace-profile-synthetic-hint")}</span>
+        </div>
+      )}
       {/* Hero card */}
       <Card>
         <CardContent className="p-6 space-y-5">

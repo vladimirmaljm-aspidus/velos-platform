@@ -1268,6 +1268,7 @@ export const PORTAL: Record<Locale, Record<string, string>> = {
     // ── Phase 3: company profiles / reviews / follow ───────────────────
     "marketplace-company-not-found": "Company profile not found or no longer available.",
     "marketplace-unknown-company": "Unknown company",
+    "marketplace-profile-synthetic-hint": "This company is active in your tenant's marketplace but hasn't published a detailed company profile yet. The activity figures below are live.",
     "marketplace-established-in": "Est. {year}",
     "marketplace-employees": "employees",
     "marketplace-website": "Website",

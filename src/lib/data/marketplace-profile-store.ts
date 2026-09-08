@@ -80,7 +80,88 @@ export async function getCompanyProfile(
     .eq("tenant_id", tenantId)
     .maybeSingle();
   if (error) throw error;
-  if (!data) return null;
+
+  // ────────────────────────────────────────────────────────────────────────
+  // Task 100 — partner-presence fallback. Most partners have never written
+  // a marketplace_company_profiles row (it is created lazily via the
+  // self-service editor). Returning null here 404'd the route and rendered
+  // a BLANK company page — yet the poster byline / feed cards link every
+  // partner id to /portal/marketplace/company/[partnerId]. Instead of a
+  // dead page, synthesise a minimal profile from the partners row when the
+  // partner EXISTS in the caller's tenant (a cross-tenant partner id must
+  // still 404 — the tenant scoping above remains the data boundary).
+  // Counters are computed from live marketplace tables so the page stays
+  // honest (an Aspidus partner with 1 active post shows "1", not "0").
+  // ────────────────────────────────────────────────────────────────────────
+  if (!data) {
+    const { data: partnerRow } = await sb
+      .from("partners")
+      .select("id, tenant_id, created_at, updated_at")
+      .eq("id", partnerId)
+      .maybeSingle();
+    if (!partnerRow || partnerRow.tenant_id !== tenantId) {
+      return null; // unknown or cross-tenant partner — genuine 404
+    }
+    const nowIso = new Date().toISOString();
+    // Count the partner's live marketplace activity (best-effort: a lookup
+    // failure must not kill the page — counters fall back to 0).
+    let totalPosts = 0;
+    let totalResponses = 0;
+    try {
+      const [postCount, responseCount] = await Promise.all([
+        sb
+          .from("marketplace_posts")
+          .select("id", { count: "exact", head: true })
+          .eq("partner_id", partnerId)
+          .eq("tenant_id", tenantId)
+          .eq("status", "active"),
+        sb
+          .from("marketplace_responses")
+          .select("id", { count: "exact", head: true })
+          .eq("partner_id", partnerId)
+          .eq("tenant_id", tenantId),
+      ]);
+      totalPosts = postCount.count ?? 0;
+      totalResponses = responseCount.count ?? 0;
+    } catch {
+      // fail-open to zeros
+    }
+    const synthetic: Record<string, unknown> = {
+      id: `synthetic:${partnerId}`,
+      partner_id: partnerId,
+      company_description: null,
+      year_established: null,
+      number_of_employees: null,
+      website: null,
+      linkedin_url: null,
+      certifications: null,
+      export_markets: null,
+      main_products: null,
+      verification_level: "none",
+      verified_at: null,
+      verified_by: null,
+      total_posts: totalPosts,
+      total_responses: totalResponses,
+      successful_deals: 0,
+      rating_average: 0,
+      rating_count: 0,
+      synthetic: true, // UI hint: partner hasn't published their profile yet
+      created_at: partnerRow.created_at ?? nowIso,
+      updated_at: partnerRow.updated_at ?? nowIso,
+    };
+    if (viewerPartnerId && viewerPartnerId !== partnerId) {
+      const { data: followRow } = await sb
+        .from("marketplace_follows")
+        .select("id")
+        .eq("follower_partner_id", viewerPartnerId)
+        .eq("followed_partner_id", partnerId)
+        .maybeSingle();
+      synthetic.viewer_follows = Boolean(followRow);
+    } else {
+      synthetic.viewer_follows = false;
+    }
+    return synthetic;
+  }
   const profile = sanitisePublicProfile(data as CompanyProfile);
 
   // Best-effort: does the viewer follow this company?

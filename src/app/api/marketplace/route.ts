@@ -3,7 +3,7 @@ import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 import { requireMarketplacePoster, requireMarketplaceEnabled } from "@/lib/portal/marketplace-gate";
 import { requirePortalModule } from "@/lib/portal/module-permissions";
 import { validateStatusTransition } from "@/lib/api/status-validator";
-import { listMarketplacePosts, createMarketplacePost, MarketplaceRuleError, validateAuctionParams } from "@/lib/data/marketplace-store";
+import { listMarketplacePosts, createMarketplacePost, MarketplaceRuleError, validateAuctionParams, listMarketplaceCategories } from "@/lib/data/marketplace-store";
 import { sanitizeFields } from "@/lib/security/sanitize-input";
 import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
@@ -188,10 +188,38 @@ async function _post(req: NextRequest) {
     return NextResponse.json({ error: "Invalid visibility." }, { status: 400 });
   }
 
+  // 100 — product_category is a CONTROLLED taxonomy value (from
+  // marketplace_categories — "Food & Beverage" legitimately contains `&`),
+  // NOT free text. HTML-escaping it corrupts the value so feed filters,
+  // saved-search alert matching and intelligence aggregations (which all
+  // compare the raw taxonomy name) silently miss. Validate against the
+  // active taxonomy instead of sanitising; fail-open when the lookup
+  // itself errors (the taxonomy table must not become a posting outage).
+  if (typeof body.product_category === "string") {
+    const trimmed = body.product_category.trim();
+    if (trimmed === "") {
+      body.product_category = null;
+    } else {
+      let taxonomy: string[] | null = null;
+      try {
+        const cats = await listMarketplaceCategories();
+        taxonomy = cats.map((c) => c.name);
+      } catch {
+        taxonomy = null; // fail-open: store the trimmed value as-is
+      }
+      if (taxonomy && !taxonomy.includes(trimmed)) {
+        return NextResponse.json(
+          { error: `Unknown category "${trimmed}". Pick one from the category list.` },
+          { status: 400 },
+        );
+      }
+      body.product_category = trimmed;
+    }
+  }
+
   // XSS prevention on free-text fields.
   body = sanitizeFields(body, [
     "product_name",
-    "product_category",
     "product_subcategory",
     "delivery_location",
     "delivery_country",
