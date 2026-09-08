@@ -103,6 +103,8 @@ import {
   getTimeRemaining,
   type NegotiationDisplayStatus,
 } from "@/lib/marketplace/negotiation-status";
+import { useMarketplacePermissions } from "@/lib/portal/use-marketplace-permissions";
+import { CommunicationLockedCard } from "./communication-locked";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Shared types + helpers
@@ -437,6 +439,11 @@ export function NegotiationRoom({ negotiationId }: { negotiationId: string }) {
   const isExpired = status === "expired";
   const isAccepted = status === "accepted";
   const isRejected = status === "rejected";
+
+  // Marketplace communication policy — locked clients can READ the room but
+  // cannot send messages / offers (server returns 403 via the gate).
+  const { canCommunicate, blockReason } = useMarketplacePermissions();
+  const commLocked = !canCommunicate && !!blockReason;
   // Disable the input + offer form when the negotiation is in a terminal
   // state — no new messages can be sent on an expired / accepted / rejected
   // negotiation.
@@ -664,8 +671,8 @@ export function NegotiationRoom({ negotiationId }: { negotiationId: string }) {
       {/* Input area — disabled when the negotiation is terminal */}
       <Card>
         <CardContent className="p-4 space-y-3">
-          {/* Offer form (collapsible) */}
-          {showOfferForm && !inputDisabled && (
+          {/* Offer form (collapsible) — hidden for communication-locked clients */}
+          {showOfferForm && !inputDisabled && !commLocked && (
             <div className="rounded-md border bg-muted/20 p-3 space-y-3">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
@@ -748,8 +755,12 @@ export function NegotiationRoom({ negotiationId }: { negotiationId: string }) {
             </div>
           )}
 
-          {/* Action row: offer / upload / text input + send */}
-          {!inputDisabled && (
+          {/* Action row: offer / upload / text input + send.
+              Communication-locked clients (tier < Standard or KYC not yet
+              approved) see the locked-card explainer instead. */}
+          {!inputDisabled && commLocked && blockReason ? (
+            <CommunicationLockedCard reason={blockReason} context="negotiate" />
+          ) : !inputDisabled && (
             <div className="flex items-center gap-2 flex-wrap">
               <Button
                 size="sm"
@@ -778,7 +789,7 @@ export function NegotiationRoom({ negotiationId }: { negotiationId: string }) {
             </p>
           )}
 
-          {!inputDisabled && (
+          {!inputDisabled && !commLocked && (
             <div className="flex items-end gap-2">
               <Textarea
                 value={textMsg}

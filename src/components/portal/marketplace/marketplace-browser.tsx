@@ -11,6 +11,9 @@ import { MarketplaceCreatePost } from "./marketplace-create-post";
 import { MarketplaceMyPosts } from "./marketplace-my-posts";
 import { MarketplaceResponses } from "./marketplace-responses";
 import { MarketplacePostDetail } from "./marketplace-post-detail";
+import { MarketplaceDisclaimerBanner } from "./marketplace-disclaimer";
+import { CommunicationLockedCard } from "./communication-locked";
+import { useMarketplacePermissions } from "@/lib/portal/use-marketplace-permissions";
 
 /**
  * MarketplaceBrowser — the portal-shell view that ties together the
@@ -37,16 +40,19 @@ export function MarketplaceBrowser() {
   const sp = useSearchParams();
   const [tab, setTab] = useState<"browse" | "my-posts" | "responses">("browse");
   const [createOpen, setCreateOpen] = useState(false);
+  const { canCommunicate, blockReason } = useMarketplacePermissions();
 
   // Auto-open the create dialog when arriving via `?create=1` (e.g. the
-  // "+ Create post" button in MarketplaceMyPosts redirects here).
+  // "+ Create post" button in MarketplaceMyPosts redirects here) — but
+  // never for clients whose tier/KYC blocks communication; they get the
+  // locked card instead of a form the API would reject.
   useEffect(() => {
-    if (sp?.get("create") === "1") {
+    if (sp?.get("create") === "1" && canCommunicate) {
 // eslint-disable-next-line react-hooks/set-state-in-effect
       setCreateOpen(true);
       setTab("browse");
     }
-  }, [sp]);
+  }, [sp, canCommunicate]);
 
   // If a post id is selected, render the detail view (regardless of tab).
   if (selectedId) {
@@ -64,6 +70,14 @@ export function MarketplaceBrowser() {
           {t("marketplace-subtitle")}
         </p>
       </div>
+
+      {/* Compliance notice — always visible, never dismissible. */}
+      <MarketplaceDisclaimerBanner />
+
+      {/* Communication gate — read-only clients see WHY they can't act. */}
+      {!canCommunicate && blockReason && (
+        <CommunicationLockedCard reason={blockReason} context="browser" />
+      )}
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
         <TabsList>

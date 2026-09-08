@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
-import { requireKycApproved } from "@/lib/portal/kyc-gate";
+import { requireMarketplaceCommunicator } from "@/lib/portal/marketplace-gate";
 import { validateStatusTransition } from "@/lib/api/status-validator";
 import {
   getMarketplacePost,
@@ -63,7 +63,7 @@ async function _put(req: NextRequest, ctx: { params: Promise<{ id: string }> }) 
   // Combined with the missing transition graph (Fix 3 below), an
   // unverified partner could otherwise revive an expired/closed/flagged
   // post by setting status="active". Mirrors the gate on the POST route.
-  const _kycBlock = await requireKycApproved(access);
+  const _kycBlock = await requireMarketplaceCommunicator(access);
   if (_kycBlock) return _kycBlock;
   const { id } = await ctx.params;
 

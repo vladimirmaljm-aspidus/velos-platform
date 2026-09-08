@@ -42,6 +42,7 @@ async function _get(_req: NextRequest, ctx: { params: Promise<{ partnerId: strin
       country?: string | null;
       city?: string | null;
       website?: string | null;
+      kyc_status?: string | null;
     } | null = null;
     try {
       const store = await getStore();
@@ -52,6 +53,7 @@ async function _get(_req: NextRequest, ctx: { params: Promise<{ partnerId: strin
           country: p.country,
           city: p.city,
           website: p.website,
+          kyc_status: (p as { kyc_status?: string | null }).kyc_status ?? null,
         };
       }
     } catch (e) {
@@ -79,6 +81,10 @@ async function _get(_req: NextRequest, ctx: { params: Promise<{ partnerId: strin
     return NextResponse.json({
       profile,
       partner,
+      // KYC transparency — a single boolean the marketplace UI renders as
+      // the "KYC Verified — documents checked" badge. Never any document
+      // data, only the approval state.
+      kyc_verified: partner?.kyc_status === "approved",
       can_review: canReview,
       viewer_is_self: viewerIsSelf,
     });

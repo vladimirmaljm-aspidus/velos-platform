@@ -285,6 +285,7 @@ export function PortalShell({
   const t = useT();
   const portalAccess = useAppStore((s) => s.portalAccess) as PortalAccess | null;
   const setPortalAccess = useAppStore((s) => s.setPortalAccess);
+  const setPartnerKycStatus = useAppStore((s) => s.setPartnerKycStatus);
   const setAppMode = useAppStore((s) => s.setAppMode);
   const view = useAppStore((s) => s.view);
   const setView = useAppStore((s) => s.setView);
@@ -480,14 +481,20 @@ export function PortalShell({
     fetch("/api/portal/profile")
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        if (mounted && data?.partner) setPartner(data.partner);
+        if (mounted && data?.partner) {
+          setPartner(data.partner);
+          // Mirror the KYC status into the zustand store so marketplace
+          // components (useMarketplacePermissions) can gate communication
+          // features without refetching the profile.
+          setPartnerKycStatus((data.partner?.kyc_status as string | undefined) ?? null);
+        }
         if (mounted) setProfileLoading(false);
       })
       .catch(() => mounted && setProfileLoading(false));
     return () => {
       mounted = false;
     };
-  }, [portalAccess?.id]);
+  }, [portalAccess?.id, setPartnerKycStatus]);
 
   // ─── Restore client's saved locale preference ───────────────────────────
   // Each portal client can have their own language. On mount, if the

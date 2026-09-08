@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requireMarketplaceCommunicator } from "@/lib/portal/marketplace-gate";
 import { updateMarketplaceResponseStatus } from "@/lib/data/marketplace-store";
 import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
@@ -21,6 +22,9 @@ async function _put(
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // Marketplace communication policy — Standard tier + approved KYC.
+  const _commBlock = await requireMarketplaceCommunicator(access);
+  if (_commBlock) return _commBlock;
   const { id, responseId } = await ctx.params;
 
   let body;

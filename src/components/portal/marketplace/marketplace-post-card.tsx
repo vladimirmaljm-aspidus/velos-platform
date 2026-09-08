@@ -20,6 +20,8 @@ import { getCountry } from "@/lib/data/geo/countries";
 import { cn } from "@/lib/utils";
 import type { MarketplacePostType } from "@/lib/supabase/marketplace-types";
 import { RiskBadge } from "./risk-badge";
+import { KycVerifiedIconOnly } from "./kyc-verified-badge";
+import { WatchlistStarButton } from "./marketplace-actions";
 
 export interface MarketplacePostCardData {
   id: string;
@@ -37,6 +39,8 @@ export interface MarketplacePostCardData {
   delivery_country: string | null;
   is_verified: boolean;
   verification_level: string;
+  /** True when the poster's KYC is fully approved (API: poster_kyc_verified). */
+  poster_kyc_verified?: boolean;
   views_count: number;
   responses_count: number;
   expires_at: string | null;
@@ -164,21 +168,32 @@ export function MarketplacePostCard({
       <CardContent className="p-5 space-y-4">
         {/* ── Top row: type badge + verified/risk badge ───────────────── */}
         <div className="flex items-start justify-between gap-2">
-          <Badge className={cn("gap-1.5 font-semibold", meta.badge)}>
-            <TypeIcon className="size-3.5" />
-            {t(meta.labelKey)}
-          </Badge>
-          {post.is_verified ? (
-            <Badge
-              variant="outline"
-              className="gap-1 border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-              title={t(`marketplace-verification-${post.verification_level}`)}
-            >
-              <CheckCircle2 className="size-3.5" />
-              {t("marketplace-card-verified")}
+          <div className="flex min-w-0 items-center gap-1.5">
+            <Badge className={cn("gap-1.5 font-semibold", meta.badge)}>
+              <TypeIcon className="size-3.5" />
+              {t(meta.labelKey)}
             </Badge>
+            {/* KYC-verified trust signal (icon-only, tooltip) — mirrors the
+                detail-view badge; emerald check only when approved. */}
+            <KycVerifiedIconOnly verified={post.poster_kyc_verified} />
+          </div>
+          {post.is_verified ? (
+            <div className="flex items-center gap-1">
+              <WatchlistStarButton postId={post.id} />
+              <Badge
+                variant="outline"
+                className="gap-1 border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                title={t(`marketplace-verification-${post.verification_level}`)}
+              >
+                <CheckCircle2 className="size-3.5" />
+                {t("marketplace-card-verified")}
+              </Badge>
+            </div>
           ) : (
-            <RiskBadge postId={post.id} compact />
+            <div className="flex items-center gap-1">
+              <WatchlistStarButton postId={post.id} />
+              <RiskBadge postId={post.id} compact />
+            </div>
           )}
         </div>
 

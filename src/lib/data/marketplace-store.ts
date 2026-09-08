@@ -139,7 +139,10 @@ export async function listMarketplacePosts(
     "target_price, price_max, currency, price_type, delivery_location, " +
     "delivery_country, incoterm, origin_country, is_verified, " +
     "verification_level, views_count, responses_count, expires_at, " +
-    "created_at, updated_at";
+    "created_at, updated_at, partner_id";
+    // NOTE: `partner_id` is selected ONLY so the KYC-verification lookup
+    // below can batch-resolve `poster_kyc_verified`; sanitisePublicPost()
+    // strips it from every returned row, so it never reaches the client.
   let q = sb
     .from("marketplace_posts")
     .select(PUBLIC_POST_COLUMNS, { count: "exact" })
@@ -210,8 +213,33 @@ export async function listMarketplacePosts(
   // explicit list) — they'll be `undefined` at runtime, which is fine
   // because the function just drops them via rest-spread.
   const rows = (data as unknown as MarketplacePost[]) || [];
+
+  // KYC transparency — resolve each poster's KYC approval status in ONE
+  // batched query so the feed can render the "KYC Verified" badge without
+  // exposing any KYC document data (only a boolean, never the documents).
+  const posterIds = [...new Set(rows.map((r) => r.partner_id).filter(Boolean))];
+  const kycByPartner = new Map<string, boolean>();
+  if (posterIds.length > 0) {
+    try {
+      const { data: partnerRows, error: partnerErr } = await sb
+        .from("partners")
+        .select("id, kyc_status")
+        .in("id", posterIds);
+      if (partnerErr) throw partnerErr;
+      for (const p of (partnerRows || []) as { id: string; kyc_status: string | null }[]) {
+        kycByPartner.set(p.id, p.kyc_status === "approved");
+      }
+    } catch (e) {
+      // Fail-open to `false` (badge simply hidden) — never block the feed.
+      console.error("[marketplace] poster KYC lookup failed:", e);
+    }
+  }
+
   return {
-    items: rows.map(sanitisePublicPost),
+    items: rows.map((r) => ({
+      ...sanitisePublicPost(r),
+      poster_kyc_verified: kycByPartner.get(r.partner_id) ?? false,
+    })),
     total: count ?? 0,
   };
 }
@@ -252,14 +280,32 @@ export async function getMarketplacePost(
       if (e) console.error("[marketplace] view-count increment failed:", e);
     });
 
+  // KYC transparency — resolve the poster's KYC approval once and attach
+  // it to BOTH the owner and public shapes. Only a boolean is exposed;
+  // no KYC document data ever leaves the database.
+  let posterKycVerified = false;
+  if (post.partner_id) {
+    try {
+      const { data: partnerRow } = await sb
+        .from("partners")
+        .select("kyc_status")
+        .eq("id", post.partner_id)
+        .maybeSingle();
+      posterKycVerified =
+        (partnerRow as { kyc_status?: string | null } | null)?.kyc_status === "approved";
+    } catch (e) {
+      console.error("[marketplace] poster KYC lookup failed:", e);
+    }
+  }
+
   // Owner sees the full row.
   if (viewerPartnerId && viewerPartnerId === post.partner_id) {
-    return post as unknown as Record<string, unknown>;
+    return { ...(post as unknown as Record<string, unknown>), poster_kyc_verified: posterKycVerified };
   }
   // Non-owner: hide drafts / private posts entirely.
   if (post.status !== "active" && post.status !== "expired") return null;
   if (post.visibility === "private") return null;
-  return sanitisePublicPost(post);
+  return { ...sanitisePublicPost(post), poster_kyc_verified: posterKycVerified };
 }
 
 /**
@@ -1087,4 +1133,192 @@ export async function getPublicMarketplacePost(
 
   const [hydrated] = await hydratePublicPostItems([post]);
   return hydrated;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Watchlist (migration 098) — bookmark/favourite posts per portal partner.
+// A personal, read-only feature: every tier may use it (no communication).
+// ════════════════════════════════════════════════════════════════════════════
+
+/** All post ids on the caller's watchlist (tenant-scoped, newest first). */
+export async function listWatchlistIds(
+  tenantId: string,
+  partnerId: string,
+): Promise<string[]> {
+  const sb = getSupabase();
+  const { data, error } = await sb
+    .from("marketplace_watchlist")
+    .select("post_id")
+    .eq("tenant_id", tenantId)
+    .eq("partner_id", partnerId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return ((data as { post_id: string }[]) || []).map((r) => r.post_id);
+}
+
+/**
+ * Toggle a post on the caller's watchlist. Returns the NEW state:
+ * true = now on the watchlist, false = removed. Idempotent — racing
+ * toggles degrade to "one row exists / zero rows exist".
+ */
+export async function toggleWatchlist(
+  tenantId: string,
+  partnerId: string,
+  postId: string,
+): Promise<boolean> {
+  const sb = getSupabase();
+  // The post must exist in the caller's tenant (also validates the id).
+  const { data: postRow, error: postErr } = await sb
+    .from("marketplace_posts")
+    .select("id")
+    .eq("id", postId)
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+  if (postErr) throw postErr;
+  if (!postRow) throw new Error("Post not found.");
+
+  const { data: existing } = await sb
+    .from("marketplace_watchlist")
+    .select("id")
+    .eq("partner_id", partnerId)
+    .eq("post_id", postId)
+    .maybeSingle();
+
+  if (existing) {
+    const { error: delErr } = await sb
+      .from("marketplace_watchlist")
+      .delete()
+      .eq("id", (existing as { id: string }).id);
+    if (delErr) throw delErr;
+    return false;
+  }
+
+  const { error: insErr } = await sb
+    .from("marketplace_watchlist")
+    .insert({ tenant_id: tenantId, partner_id: partnerId, post_id: postId });
+  // Race-safe: a concurrent insert with the same (partner, post) unique key
+  // lands here — treat as "now on the watchlist".
+  if (insErr && !/duplicate key|unique constraint/i.test(insErr.message)) throw insErr;
+  return true;
+}
+
+/**
+ * Hydrated feed of the caller's watchlist — the same public post shape as
+ * listMarketplacePosts (incl. poster_kyc_verified), restricted to the
+ * posts the partner starred, newest starred first.
+ */
+export async function listWatchlistPosts(
+  tenantId: string,
+  partnerId: string,
+  limit = 24,
+  offset = 0,
+): Promise<{ items: Record<string, unknown>[]; total: number }> {
+  const sb = getSupabase();
+  const ids = await listWatchlistIds(tenantId, partnerId);
+  if (ids.length === 0) return { items: [], total: 0 };
+
+  const { data, error, count } = await sb
+    .from("marketplace_posts")
+    .select(
+      "id, post_type, product_name, product_category, quantity, unit, " +
+        "target_price, price_max, currency, price_type, delivery_location, " +
+        "delivery_country, incoterm, origin_country, is_verified, " +
+        "verification_level, views_count, responses_count, expires_at, " +
+        "created_at, updated_at, partner_id",
+      { count: "exact" },
+    )
+    .in("id", ids)
+    .eq("tenant_id", tenantId)
+    .eq("status", "active")
+    .eq("visibility", "public")
+    .order("created_at", { ascending: false })
+    .range(offset, offset + Math.min(Math.max(limit, 1), 100) - 1);
+  if (error) throw error;
+
+  const rows = (data as unknown as MarketplacePost[]) || [];
+
+  const posterIds = [...new Set(rows.map((r) => r.partner_id).filter(Boolean))];
+  const kycByPartner = new Map<string, boolean>();
+  if (posterIds.length > 0) {
+    try {
+      const { data: partnerRows } = await sb
+        .from("partners")
+        .select("id, kyc_status")
+        .in("id", posterIds);
+      for (const p of ((partnerRows as { id: string; kyc_status: string | null }[]) || [])) {
+        kycByPartner.set(p.id, p.kyc_status === "approved");
+      }
+    } catch (e) {
+      console.error("[marketplace] watchlist poster KYC lookup failed:", e);
+    }
+  }
+
+  return {
+    items: rows.map((r) => ({
+      ...sanitisePublicPost(r),
+      poster_kyc_verified: kycByPartner.get(r.partner_id) ?? false,
+    })),
+    total: count ?? 0,
+  };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Post reports (migration 098) — abuse / miscategorisation reporting.
+// ════════════════════════════════════════════════════════════════════════════
+
+const REPORT_REASONS = new Set([
+  "scam",
+  "counterfeit",
+  "wrong_category",
+  "prohibited",
+  "misleading",
+  "other",
+]);
+
+/**
+ * Record an abuse report for a post. One OPEN report per (reporter, post) —
+ * enforced by a partial unique index; a second open report from the same
+ * reporter surfaces as an error the route converts to 409.
+ * A report never changes the post status by itself — moderation stays
+ * admin-only (existing flagged-status machinery).
+ */
+export async function createPostReport(
+  tenantId: string,
+  reporterPartnerId: string,
+  postId: string,
+  reason: string,
+  details?: string,
+): Promise<{ id: string }> {
+  if (!REPORT_REASONS.has(reason)) {
+    throw new Error("Invalid report reason.");
+  }
+  const sb = getSupabase();
+  const { data: postRow, error: postErr } = await sb
+    .from("marketplace_posts")
+    .select("id")
+    .eq("id", postId)
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+  if (postErr) throw postErr;
+  if (!postRow) throw new Error("Post not found.");
+
+  const { data, error } = await sb
+    .from("marketplace_post_reports")
+    .insert({
+      tenant_id: tenantId,
+      post_id: postId,
+      reporter_partner_id: reporterPartnerId,
+      reason,
+      details: details ? String(details).slice(0, 2000) : null,
+      status: "open",
+    })
+    .select("id")
+    .single();
+  if (error) {
+    if (/duplicate key|unique constraint/i.test(error.message)) {
+      throw new Error("You already have an open report for this post.");
+    }
+    throw error;
+  }
+  return { id: (data as { id: string }).id };
 }

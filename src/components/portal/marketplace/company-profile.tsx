@@ -37,6 +37,7 @@ import { toast } from "sonner";
 import { fmtDateTime, fmtRelative } from "@/lib/utils/format";
 import { COUNTRIES } from "@/lib/data/reference";
 import { VerificationBadge } from "./verification-badge";
+import { KycVerifiedBadge } from "./kyc-verified-badge";
 import { RatingStars } from "./rating-stars";
 import { ESGRating } from "./esg-rating";
 import { SustainabilityCerts } from "./sustainability-certs";
@@ -92,6 +93,8 @@ interface ProfileResponse {
   partner: PublicPartner | null;
   can_review: boolean;
   viewer_is_self?: boolean;
+  /** True when the company's KYC review is fully approved (boolean only). */
+  kyc_verified?: boolean;
 }
 
 /**
@@ -249,6 +252,8 @@ export function CompanyProfile({ partnerId }: { partnerId: string }) {
   }
 
   const { profile, partner, can_review } = profileQ.data;
+  // KYC transparency — the API exposes a single boolean (never documents).
+  const kycVerified = Boolean(profileQ.data.kyc_verified);
   // `viewer_is_self` is the canonical "the viewer IS the company itself"
   // signal — the company can add/delete their own sustainability certs
   // and create carbon offsets only when this is true. The check is done
@@ -312,6 +317,7 @@ export function CompanyProfile({ partnerId }: { partnerId: string }) {
               </div>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
+              <KycVerifiedBadge verified={kycVerified} size="md" />
               <VerificationBadge level={profile.verification_level} size="md" />
             </div>
           </div>

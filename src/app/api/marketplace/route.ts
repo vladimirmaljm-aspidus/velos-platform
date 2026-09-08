@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
-import { requireKycApproved } from "@/lib/portal/kyc-gate";
+import { requireMarketplaceCommunicator } from "@/lib/portal/marketplace-gate";
 import { validateStatusTransition } from "@/lib/api/status-validator";
 import { listMarketplacePosts, createMarketplacePost } from "@/lib/data/marketplace-store";
 import { sanitizeFields } from "@/lib/security/sanitize-input";
@@ -77,7 +77,7 @@ async function _post(req: NextRequest) {
   // buy/sell/auction/contract posts. requireKycApproved returns null
   // when allowed; a 403/503 NextResponse when blocked (503 = fail-closed
   // on transient DB errors).
-  const _kycBlock = await requireKycApproved(access);
+  const _kycBlock = await requireMarketplaceCommunicator(access);
   if (_kycBlock) return _kycBlock;
 
   let body;

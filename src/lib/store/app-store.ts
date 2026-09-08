@@ -153,6 +153,15 @@ interface AppState {
   // Portal mode — separate from CRM admin
   portalAccess: any | null;
   setPortalAccess: (a: any | null) => void;
+  /**
+   * The portal partner's KYC status ("not_submitted" | "pending" |
+   * "approved" | "rejected"), mirrored from GET /api/portal/profile by
+   * PortalShell. Marketplace components read this (via
+   * useMarketplacePermissions) to gate communication features client-side
+   * — the server-side marketplace-gate is always the real safety net.
+   */
+  partnerKycStatus: string | null;
+  setPartnerKycStatus: (s: string | null) => void;
   appMode: "crm" | "portal";
   setAppMode: (m: "crm" | "portal") => void;
 
@@ -234,6 +243,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   portalAccess: null,
   setPortalAccess: (a) => set({ portalAccess: a }),
+  partnerKycStatus: null,
+  setPartnerKycStatus: (s) => set({ partnerKycStatus: s }),
   appMode: "crm",
   // BUILD-LOI-PORTAL audit (deep-link bug): switching app-mode used to
   // UNCONDITIONALLY reset the view (portal → "portal-dashboard"). That

@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Plus, Search, SearchX, FilterX, ChevronDown } from "lucide-react";
+import { Loader2, Plus, Search, SearchX, FilterX, ChevronDown, Star } from "lucide-react";
 import { useT } from "@/lib/i18n/store";
 import { useAppStore } from "@/lib/store/app-store";
 import {
@@ -22,6 +22,7 @@ import {
 import { HowItWorks } from "./how-it-works";
 import { COUNTRIES, PRODUCT_CATEGORIES } from "@/lib/data/reference";
 import { cn } from "@/lib/utils";
+import { useWatchlist } from "./marketplace-actions";
 
 interface ListResponse {
   items: MarketplacePostCardData[];
@@ -56,6 +57,9 @@ export function MarketplaceList({ onCreateClick }: { onCreateClick?: () => void 
   const [country, setCountry] = useState<string>("all");
   const [sort, setSort] = useState<string>("recent");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  // Watchlist-only mode — shows just the posts the client starred.
+  const [watchlistOnly, setWatchlistOnly] = useState(false);
+  const watchlist = useWatchlist();
 
   // Debounce search.
   useMemo(() => {
@@ -99,17 +103,20 @@ export function MarketplaceList({ onCreateClick }: { onCreateClick?: () => void 
   // embeds the filter values so a filter change resets the page list to
   // just page 0 (no manual page-state reset needed).
   const infiniteQ = useInfiniteQuery<ListResponse>({
-    queryKey: ["marketplace-list", type, category, country, sort, debouncedSearch],
+    queryKey: ["marketplace-list", type, category, country, sort, debouncedSearch, watchlistOnly],
     queryFn: async ({ pageParam }) => {
       // pageParam is typed as `unknown` from TanStack Query's default
       // generic — we know it's a number because initialPageParam + the
       // return of getNextPageParam below are both numbers. Cast for the
       // URLSearchParams construction.
       const pageIdx = Number(pageParam) || 0;
-      const r = await fetch(`/api/marketplace?${buildQuery(pageIdx)}`);
+      const r = watchlistOnly
+        ? await fetch(`/api/marketplace/watchlist?hydrate=1&limit=${PAGE_SIZE}&offset=${pageIdx * PAGE_SIZE}`)
+        : await fetch(`/api/marketplace?${buildQuery(pageIdx)}`);
       if (!r.ok) throw new Error("failed");
       return r.json();
     },
+    enabled: !watchlistOnly || watchlist.ids.length > 0 || watchlist.loading,
     initialPageParam: 0,
     getNextPageParam: (lastPage, allPages) => {
       const fetched = allPages.reduce((sum, p) => sum + (p.items?.length ?? 0), 0);
@@ -147,6 +154,7 @@ export function MarketplaceList({ onCreateClick }: { onCreateClick?: () => void 
     setCountry("all");
     setSort("recent");
     setDebouncedSearch("");
+    setWatchlistOnly(false);
   }
 
   const hasActiveFilters =
@@ -249,6 +257,20 @@ export function MarketplaceList({ onCreateClick }: { onCreateClick?: () => void 
                 <SelectItem value="ending_soon">{t("marketplace-sort-ending-soon")}</SelectItem>
               </SelectContent>
             </Select>
+            {/* Watchlist toggle — personal bookmarks, every tier. */}
+            <Button
+              type="button"
+              variant="outline"
+              aria-pressed={watchlistOnly}
+              className={cn(
+                "gap-1.5 w-full sm:w-auto",
+                watchlistOnly && "border-amber-500/60 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+              )}
+              onClick={() => setWatchlistOnly((v) => !v)}
+            >
+              <Star className={cn("h-4 w-4", watchlistOnly && "fill-current text-amber-500")} />
+              {t("marketplace-watchlist")}
+            </Button>
           </div>
         </div>
       </div>

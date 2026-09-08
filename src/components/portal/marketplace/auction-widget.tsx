@@ -20,7 +20,10 @@ import {
   Trophy,
   History,
   AlertCircle,
+  Info,
 } from "lucide-react";
+import { useMarketplacePermissions } from "@/lib/portal/use-marketplace-permissions";
+import { CommunicationLockedCard } from "./communication-locked";
 import { useT } from "@/lib/i18n/store";
 import { toast } from "sonner";
 import { fmtMoney, fmtDateTime, fmtRelative } from "@/lib/utils/format";
@@ -186,6 +189,13 @@ export function AuctionWidget({ postId, post }: AuctionWidgetProps) {
 
   const canBid = isActive && !hasBidInSealed;
 
+  // Marketplace communication policy — bidding is a communication act:
+  // Standard tier + approved KYC required (mirrors the server gate that
+  // now protects POST /api/marketplace/[id]/bids).
+  const { canCommunicate, blockReason } = useMarketplacePermissions();
+  const bidLocked = !canCommunicate && !!blockReason;
+  const canBidFinal = canBid && canCommunicate;
+
   // ─── Render ─────────────────────────────────────────────────────────
   return (
     <Card>
@@ -232,7 +242,10 @@ export function AuctionWidget({ postId, post }: AuctionWidgetProps) {
         )}
 
         {/* Bid input */}
-        {isActive && (
+        {isActive && bidLocked && blockReason && (
+          <CommunicationLockedCard reason={blockReason} context="bid" />
+        )}
+        {isActive && !bidLocked && (
           <div className="space-y-2">
             {suggestedBid !== null && (
               <p className="text-xs text-muted-foreground">
@@ -246,18 +259,22 @@ export function AuctionWidget({ postId, post }: AuctionWidgetProps) {
                 placeholder={suggestedBid ? String(suggestedBid) : ""}
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                disabled={!canBid || placeBid.isPending}
+                disabled={!canBidFinal || placeBid.isPending}
                 className="w-full sm:flex-1"
               />
               <Button
                 onClick={() => placeBid.mutate()}
-                disabled={!canBid || !amount || placeBid.isPending}
+                disabled={!canBidFinal || !amount || placeBid.isPending}
                 className="w-full sm:w-auto"
               >
                 {placeBid.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <TrendingUp className="h-4 w-4 mr-1" />}
                 {t("marketplace-auction-place-bid")}
               </Button>
             </div>
+            <p className="text-[11px] leading-relaxed text-muted-foreground flex items-start gap-1.5">
+              <Info className="h-3 w-3 mt-0.5 shrink-0" aria-hidden="true" />
+              {t("marketplace-dd-form-note")}
+            </p>
             {hasBidInSealed && (
               <p className="text-xs text-muted-foreground flex items-center gap-1">
                 <AlertCircle className="h-3 w-3" />

@@ -36,3 +36,14 @@ The migrations add the **DB-layer** fixes, but the application code still uses t
 | `src/lib/data/supabase-store.ts:2027-2065` (`autoJournalFromInvoice`) | `sb.rpc('auto_journal_from_invoice', { ... })` |
 
 Until that follow-up is done, the migrations are inert — they add safety nets that the app does not yet use.
+
+---
+
+## Migration 098 — marketplace_watchlist_reports (2026-09-08, applied ✓)
+
+`098_marketplace_watchlist_reports.sql` adds two tables backing new marketplace features:
+
+- **`marketplace_watchlist`** — per-partner bookmarked posts (unique `(partner_id, post_id)`, cascade on post delete). Powers the star button + "Watchlist" feed filter in the portal marketplace.
+- **`marketplace_post_reports`** — abuse reports for posts (`scam | counterfeit | wrong_category | prohibited | misleading | other`), one OPEN report per `(reporter, post)` enforced by a partial unique index. Reports never auto-change post status — moderation stays admin-only via the existing flagged-status machinery.
+
+Applied to production via the Supabase Management API (`/v1/projects/{ref}/database/query`) — idempotent (`CREATE TABLE IF NOT EXISTS`). RLS intentionally not enabled: the whole marketplace data plane is service-role only (migration 076); tenant/partner scoping is enforced in the API layer like every other `marketplace_*` table.

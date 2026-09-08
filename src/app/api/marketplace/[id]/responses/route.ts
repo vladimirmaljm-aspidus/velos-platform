@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
-import { requireKycApproved } from "@/lib/portal/kyc-gate";
+import { requireMarketplaceCommunicator } from "@/lib/portal/marketplace-gate";
 import {
   listMarketplaceResponses,
   createMarketplaceResponse,
@@ -68,7 +68,7 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
   // client with unapproved KYC must not be able to create marketplace
   // responses (browse GET stays open). requireKycApproved returns null
   // when allowed; a 403/503 NextResponse when blocked.
-  const _kycBlock = await requireKycApproved(access);
+  const _kycBlock = await requireMarketplaceCommunicator(access);
   if (_kycBlock) return _kycBlock;
   const { id } = await ctx.params;
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requireMarketplaceCommunicator } from "@/lib/portal/marketplace-gate";
 import {
   addNegotiationMessage,
   listNegotiationMessages,
@@ -50,6 +51,9 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // Marketplace communication policy — Standard tier + approved KYC.
+  const _commBlock = await requireMarketplaceCommunicator(access);
+  if (_commBlock) return _commBlock;
   const { id } = await ctx.params;
 
   // 8b-10: per-portal-access rate limit (20 msgs/min). See import comment.

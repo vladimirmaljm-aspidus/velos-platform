@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPortalSessionAccess } from "@/lib/auth/portal-session";
+import { requireMarketplaceCommunicator } from "@/lib/portal/marketplace-gate";
 import { listBids, placeBid, getCurrentHighestBid, processAuctionEnd } from "@/lib/data/marketplace-auction-store";
 import { getSupabase } from "@/lib/supabase/client";
 import { audit, sanitizeError } from "@/lib/api/helpers";
@@ -131,6 +132,11 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
   if (!access) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // SECURITY FIX — bids were previously session-auth only (no KYC / tier
+  // gate). Placing a bid is a marketplace communication act and now goes
+  // through the same Standard-tier + approved-KYC gate as responses.
+  const _commBlock = await requireMarketplaceCommunicator(access);
+  if (_commBlock) return _commBlock;
   const { id } = await ctx.params;
 
   // 8d-7: per-partner+post rate limit on bid placement. 10/min is well

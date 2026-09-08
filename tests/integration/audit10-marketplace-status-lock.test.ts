@@ -224,7 +224,13 @@ describe("POST /api/marketplace/negotiations/[id]/messages (8c-11 status lock)",
     mockSanitizeAttachmentUrl.mockReturnValue(null);
     // Success-path stubs.
     mockAddNegotiationMessage.mockResolvedValue(makeMessage());
-    mockGetStore.mockResolvedValue({} as any);
+    // The marketplace communication gate (requireMarketplaceCommunicator)
+    // resolves the partner's KYC status through the store — the default
+    // store stub now includes an APPROVED partner so the tests below keep
+    // exercising the status-lock logic (not the KYC gate).
+    mockGetStore.mockResolvedValue({
+      getPartner: async () => ({ id: PARTNER_A, kyc_status: "approved" }),
+    } as any);
   });
 
   // ── 1. status="pending" → 200 (message inserted) ─────────────────────

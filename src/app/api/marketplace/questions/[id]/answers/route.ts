@@ -4,7 +4,7 @@ import { getPortalSessionAccess } from "@/lib/auth/portal-session";
 // a portal client whose KYC is `rejected` / `suspended` could still create
 // shipments / sign trade documents / post community content — binding
 // commitments that affect counterparty's downstream flows.
-import { requireKycApproved } from "@/lib/portal/kyc-gate";
+import { requireMarketplaceCommunicator } from "@/lib/portal/marketplace-gate";
 import { createAnswer, listAnswers } from "@/lib/data/marketplace-community-store";
 import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
@@ -49,7 +49,7 @@ async function _post(req: NextRequest, ctx: RouteCtx) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
   // 8c-2: KYC gate — defence-in-depth, mirror top-level marketplace POST.
-  const _kycBlock = await requireKycApproved(access);
+  const _kycBlock = await requireMarketplaceCommunicator(access);
   if (_kycBlock) return _kycBlock;
   const { id } = await ctx.params;
 

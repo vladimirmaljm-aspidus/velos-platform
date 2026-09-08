@@ -57,6 +57,8 @@ import {
   Mail,
   ChevronDown,
   ChevronUp,
+  Info,
+  LockKeyhole,
 } from "lucide-react";
 import { useT } from "@/lib/i18n/store";
 import { useAppStore } from "@/lib/store/app-store";
@@ -81,6 +83,11 @@ import { CustomsCalculator } from "./customs-calculator";
 import { ContainerCalculator } from "./container-calculator";
 import { CarbonFootprint } from "./carbon-footprint";
 import { MarketplacePostCard, type MarketplacePostCardData } from "./marketplace-post-card";
+import { KycVerifiedBadge } from "./kyc-verified-badge";
+import { CommunicationLockedCard } from "./communication-locked";
+import { useMarketplacePermissions } from "@/lib/portal/use-marketplace-permissions";
+import { SafetyCompliancePanel } from "./marketplace-disclaimer";
+import { WatchlistStarButton, SharePostButton, ReportPostDialog } from "./marketplace-actions";
 
 interface PostDetail {
   id: string;
@@ -109,6 +116,8 @@ interface PostDetail {
   visibility: string;
   is_verified: boolean;
   verification_level: string;
+  /** True when the poster's KYC is fully approved (API-exposed boolean). */
+  poster_kyc_verified?: boolean;
   views_count: number;
   responses_count: number;
   expires_at: string | null;
@@ -147,6 +156,7 @@ export function MarketplacePostDetail({ postId }: { postId: string }) {
   const t = useT();
   const setSelectedId = useAppStore((s) => s.setSelectedId);
   const qc = useQueryClient();
+  const { canCommunicate, blockReason } = useMarketplacePermissions();
 
   const [showResponseForm, setShowResponseForm] = useState(false);
   const [response, setResponse] = useState({
@@ -168,6 +178,9 @@ export function MarketplacePostDetail({ postId }: { postId: string }) {
   const [newQuestion, setNewQuestion] = useState("");
   const [expandedQuestions, setExpandedQuestions] = useState<Set<string>>(new Set());
   const [answerDrafts, setAnswerDrafts] = useState<Record<string, string>>({});
+
+  // Safety & due-diligence panel visibility.
+  const [safetyOpen, setSafetyOpen] = useState(false);
 
   const q = useQuery<{ post: PostDetail }>({
     queryKey: ["marketplace-post", postId],
@@ -404,12 +417,17 @@ export function MarketplacePostDetail({ postId }: { postId: string }) {
 
   return (
     <div className="space-y-6 pb-24 lg:pb-6">
-      {/* Back button + breadcrumb */}
+      {/* Back button + breadcrumb + post actions */}
       <div className="flex items-center justify-between gap-2">
         <Button variant="ghost" size="sm" onClick={() => setSelectedId(null)} className="gap-1">
           <ArrowLeft className="h-4 w-4" />
           {t("marketplace-back-to-list")}
         </Button>
+        <div className="flex items-center gap-1">
+          <WatchlistStarButton postId={postId} size="md" />
+          <SharePostButton postId={postId} />
+          <ReportPostDialog postId={postId} />
+        </div>
         {category && (
           <nav className="text-xs text-muted-foreground hidden sm:flex items-center gap-1.5">
             <span>{t("marketplace-title")}</span>
@@ -440,6 +458,9 @@ export function MarketplacePostDetail({ postId }: { postId: string }) {
                     {t(`marketplace-verification-${post.verification_level}`)}
                   </Badge>
                 )}
+                {/* KYC trust signal — always rendered so buyers can see both
+                    verified AND unverified posters at a glance. */}
+                <KycVerifiedBadge verified={post.poster_kyc_verified} size="sm" hideWhenUnverified />
                 <Badge variant="outline" className="text-xs">
                   {t(`marketplace-status-${post.status}`) || post.status}
                 </Badge>
@@ -668,6 +689,12 @@ export function MarketplacePostDetail({ postId }: { postId: string }) {
                     {t(`marketplace-verification-${post.verification_level}`)}
                   </Badge>
                 )}
+                {/* KYC document check — independent of the admin badge above. */}
+                <KycVerifiedBadge
+                  verified={post.poster_kyc_verified}
+                  size="md"
+                  className="w-full justify-center"
+                />
                 <p className="text-xs text-muted-foreground leading-relaxed border-t border-border/40 pt-3">
                   {t("marketplace-detail-contact-hint")}
                 </p>
@@ -699,6 +726,12 @@ export function MarketplacePostDetail({ postId }: { postId: string }) {
                     : t("marketplace-detail-respond-cta")}
                 </p>
               </div>
+              {/* Communication policy — locked clients get the explainer card
+                  instead of a form the API would reject with 403. */}
+              {!canCommunicate && blockReason ? (
+                <CommunicationLockedCard reason={blockReason} context="respond" />
+              ) : (
+              <>
               <Button
                 className="w-full gap-1.5 smooth hover:shadow-soft-md"
                 size="lg"
@@ -713,6 +746,14 @@ export function MarketplacePostDetail({ postId }: { postId: string }) {
                   </>
                 )}
               </Button>
+              {showResponseForm && (
+                <p className="text-[11px] leading-relaxed text-muted-foreground flex items-start gap-1.5">
+                  <Info className="h-3 w-3 mt-0.5 shrink-0" aria-hidden="true" />
+                  {t("marketplace-dd-form-note")}
+                </p>
+              )}
+              </>
+              )}
             </CardContent>
 
             {showResponseForm && (
@@ -821,8 +862,25 @@ export function MarketplacePostDetail({ postId }: { postId: string }) {
         toggleQuestion={toggleQuestion}
         answerDrafts={answerDrafts}
         setAnswerDrafts={setAnswerDrafts}
+        canCommunicate={canCommunicate}
+        blockReason={blockReason}
         t={t}
       />
+
+      {/* ─── Safety & due-diligence quick access ──────────────────────── */}
+      <div className="flex justify-center">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="text-xs text-muted-foreground"
+          onClick={() => setSafetyOpen(true)}
+        >
+          <ShieldCheck className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+          {t("marketplace-dd-open-safety")}
+        </Button>
+      </div>
+      <SafetyCompliancePanel open={safetyOpen} onOpenChange={setSafetyOpen} />
 
       {/* ─── Related posts ─────────────────────────────────────────────── */}
       <Card className="border-border/60">
@@ -961,6 +1019,8 @@ function PostQACard({
   toggleQuestion,
   answerDrafts,
   setAnswerDrafts,
+  canCommunicate,
+  blockReason,
   t,
 }: {
   postId: string;
@@ -972,6 +1032,8 @@ function PostQACard({
   toggleQuestion: (id: string) => void;
   answerDrafts: Record<string, string>;
   setAnswerDrafts: (next: Record<string, string> | ((prev: Record<string, string>) => Record<string, string>)) => void;
+  canCommunicate: boolean;
+  blockReason: "tier" | "kyc" | null;
   t: (k: string) => string;
 }) {
   const qc = useQueryClient();
@@ -1018,28 +1080,36 @@ function PostQACard({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Ask a question */}
+        {/* Ask a question — gated by the marketplace communication policy. */}
         <div className="space-y-2">
-          <Label htmlFor="qa-new">{t("marketplace-detail-qa-ask-label")}</Label>
-          <div className="flex flex-col sm:flex-row gap-2">
-            <Textarea
-              id="qa-new"
-              rows={2}
-              value={newQuestion}
-              onChange={(e) => setNewQuestion(e.target.value)}
-              placeholder={t("marketplace-detail-qa-ask-placeholder")}
-              className="flex-1"
-            />
-            <Button
-              type="button"
-              onClick={() => askMut.mutate()}
-              disabled={askMut.isPending || newQuestion.trim().length < 3}
-              className="gap-1.5 sm:self-end"
-            >
-              {askMut.isPending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-              {t("marketplace-detail-qa-submit")}
-            </Button>
-          </div>
+          {canCommunicate ? (
+            <>
+              <Label htmlFor="qa-new">{t("marketplace-detail-qa-ask-label")}</Label>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <Textarea
+                  id="qa-new"
+                  rows={2}
+                  value={newQuestion}
+                  onChange={(e) => setNewQuestion(e.target.value)}
+                  placeholder={t("marketplace-detail-qa-ask-placeholder")}
+                  className="flex-1"
+                />
+                <Button
+                  type="button"
+                  onClick={() => askMut.mutate()}
+                  disabled={askMut.isPending || newQuestion.trim().length < 3}
+                  className="gap-1.5 sm:self-end"
+                >
+                  {askMut.isPending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+                  {t("marketplace-detail-qa-submit")}
+                </Button>
+              </div>
+            </>
+          ) : (
+            blockReason && (
+              <CommunicationLockedCard reason={blockReason} context="qa" />
+            )
+          )}
         </div>
 
         <Separator />
@@ -1071,6 +1141,8 @@ function PostQACard({
                 }
                 onAnswer={() => answerMut.mutate(q.id)}
                 answering={answerMut.isPending && answerMut.variables === q.id}
+                canCommunicate={canCommunicate}
+                blockReason={blockReason}
                 t={t}
               />
             ))}
@@ -1089,6 +1161,8 @@ function PostQAQuestionItem({
   setAnswerDraft,
   onAnswer,
   answering,
+  canCommunicate,
+  blockReason,
   t,
 }: {
   question: PostQAQuestion;
@@ -1098,6 +1172,8 @@ function PostQAQuestionItem({
   setAnswerDraft: (v: string) => void;
   onAnswer: () => void;
   answering: boolean;
+  canCommunicate: boolean;
+  blockReason: "tier" | "kyc" | null;
   t: (k: string) => string;
 }) {
   return (
@@ -1137,6 +1213,8 @@ function PostQAQuestionItem({
           setAnswerDraft={setAnswerDraft}
           onAnswer={onAnswer}
           answering={answering}
+          canCommunicate={canCommunicate}
+          blockReason={blockReason}
           t={t}
         />
       )}
@@ -1150,6 +1228,8 @@ function PostQAAnswers({
   setAnswerDraft,
   onAnswer,
   answering,
+  canCommunicate,
+  blockReason,
   t,
 }: {
   question: PostQAQuestion;
@@ -1157,6 +1237,8 @@ function PostQAAnswers({
   setAnswerDraft: (v: string) => void;
   onAnswer: () => void;
   answering: boolean;
+  canCommunicate: boolean;
+  blockReason: "tier" | "kyc" | null;
   t: (k: string) => string;
 }) {
   const answersQ = useQuery<{ items: PostQAAnswer[] }>({
@@ -1202,26 +1284,39 @@ function PostQAAnswers({
         </div>
       )}
       <div className="space-y-2">
-        <Label htmlFor={`ans-${question.id}`} className="text-xs">
-          {t("marketplace-detail-qa-answer-label")}
-        </Label>
-        <Textarea
-          id={`ans-${question.id}`}
-          rows={2}
-          value={answerDraft}
-          onChange={(e) => setAnswerDraft(e.target.value)}
-          placeholder={t("marketplace-detail-qa-answer-placeholder")}
-        />
-        <Button
-          type="button"
-          size="sm"
-          onClick={onAnswer}
-          disabled={answering || answerDraft.trim().length < 1}
-          className="gap-1.5"
-        >
-          {answering ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
-          {t("marketplace-detail-qa-answer-submit")}
-        </Button>
+        {canCommunicate ? (
+          <>
+            <Label htmlFor={`ans-${question.id}`} className="text-xs">
+              {t("marketplace-detail-qa-answer-label")}
+            </Label>
+            <Textarea
+              id={`ans-${question.id}`}
+              rows={2}
+              value={answerDraft}
+              onChange={(e) => setAnswerDraft(e.target.value)}
+              placeholder={t("marketplace-detail-qa-answer-placeholder")}
+            />
+            <Button
+              type="button"
+              size="sm"
+              onClick={onAnswer}
+              disabled={answering || answerDraft.trim().length < 1}
+              className="gap-1.5"
+            >
+              {answering ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
+              {t("marketplace-detail-qa-answer-submit")}
+            </Button>
+          </>
+        ) : (
+          blockReason && (
+            <p className="text-xs text-muted-foreground flex items-center gap-1.5 pt-1">
+              <LockKeyhole className="h-3 w-3" aria-hidden="true" />
+              {blockReason === "tier"
+                ? t("marketplace-locked-tier-body-qa")
+                : t("marketplace-locked-kyc-body-qa")}
+            </p>
+          )
+        )}
       </div>
     </div>
   );
