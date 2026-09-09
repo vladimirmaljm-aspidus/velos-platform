@@ -56,6 +56,7 @@ import {
 import { toast } from "sonner";
 import { initials } from "@/lib/utils/format";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { InstallAppMenuItem } from "@/components/pwa/install-app";
 import { TenantContextSwitcher } from "@/components/layout/tenant-context-switcher";
 import { useSearchStore } from "@/components/layout/global-search";
 import { useTheme } from "next-themes";
@@ -917,6 +918,8 @@ export function Topbar() {
               <ShieldCheck className="size-4 mr-2.5 text-muted-foreground" />
               {t(locale, "security")}
             </DropdownMenuItem>
+            {/* 101 — install the platform as a desktop/phone app (PWA). */}
+            <InstallAppMenuItem />
 
             {/* API Docs — SUPER-ADMIN only.
                 This is the only entry point in the SPA to the /api-docs

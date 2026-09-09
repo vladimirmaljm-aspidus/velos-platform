@@ -5,11 +5,14 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
-import { FolderOpen, Download, Trash2, Search, RefreshCw, ChevronLeft, Building2, FileText, Image, FileArchive, File, ShieldAlert, User } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { FolderOpen, Download, Trash2, Search, RefreshCw, ChevronLeft, Building2, FileText, Image, FileArchive, File, ShieldAlert, User, Pencil, Undo2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
 import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
@@ -78,6 +81,10 @@ export function PortalUploadsView() {
   const [includeDeleted, setIncludeDeleted] = React.useState(false);
   const [toDelete, setToDelete] = React.useState<PortalUpload | null>(null);
   const [hardDelete, setHardDelete] = React.useState(false);
+  const [toEdit, setToEdit] = React.useState<PortalUpload | null>(null);
+  const [editFilename, setEditFilename] = React.useState("");
+  const [editCategory, setEditCategory] = React.useState<string>("general");
+  const [editDescription, setEditDescription] = React.useState("");
 
   // Load partner names for pretty display
   const partnersQ = useQuery({
@@ -129,6 +136,58 @@ export function PortalUploadsView() {
     },
     onError: (e: Error) => toast.error(e.message),
   });
+
+  // 101 — admin metadata edit (filename / category / description).
+  const editMut = useMutation({
+    mutationFn: async (vars: { id: string; filename: string; category: string; description: string }) => {
+      const r = await fetch(api(`/api/portal-uploads/${vars.id}`), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filename: vars.filename,
+          category: vars.category,
+          description: vars.description.trim() ? vars.description : null,
+        }),
+      });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.error || t("misc-uploads-toast-edit-failed"));
+      }
+      return r.json();
+    },
+    onSuccess: () => {
+      toast.success(t("misc-uploads-toast-edit-saved"));
+      qc.invalidateQueries({ queryKey: ["portal-uploads-summary", tenantKey] });
+      qc.invalidateQueries({ queryKey: ["portal-uploads-detail"] });
+      setToEdit(null);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // 101 — undo a soft-delete (admin restore).
+  const restoreMut = useMutation({
+    mutationFn: async (id: string) => {
+      const r = await fetch(api(`/api/portal-uploads/${id}/restore`), { method: "POST" });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.error || t("misc-uploads-toast-restore-failed"));
+      }
+      return r.json();
+    },
+    onSuccess: () => {
+      toast.success(t("misc-uploads-toast-restored"));
+      qc.invalidateQueries({ queryKey: ["portal-uploads-summary", tenantKey] });
+      qc.invalidateQueries({ queryKey: ["portal-uploads-detail"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const openEdit = (f: PortalUpload) => {
+    setToEdit(f);
+    setEditFilename(f.filename);
+    setEditCategory(f.category);
+    setEditDescription(f.description || "");
+  };
 
   const partners = summaryQ.data?.partners || [];
   const totalFiles = partners.reduce((a, b) => a + b.total, 0);
@@ -296,15 +355,44 @@ export function PortalUploadsView() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
-                          {!isDeleted && (
-                            <a
-                              href={api(`/api/portal-uploads/${f.id}/download`)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 text-xs text-primary hover:underline px-2 py-1 rounded hover:bg-primary/5"
+                          {isDeleted ? (
+                            /* 101 — restore a soft-deleted file. */
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="size-8 text-emerald-600 hover:text-emerald-700"
+                              onClick={() => restoreMut.mutate(f.id)}
+                              title={t("misc-uploads-restore-title")}
+                              disabled={restoreMut.isPending}
                             >
-                              <Download className="size-3.5" /> {t("download")}
-                            </a>
+                              {restoreMut.isPending && restoreMut.variables === f.id ? (
+                                <Loader2 className="size-4 animate-spin" />
+                              ) : (
+                                <Undo2 className="size-4" />
+                              )}
+                            </Button>
+                          ) : (
+                            <>
+                              <a
+                                href={api(`/api/portal-uploads/${f.id}/download`)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-xs text-primary hover:underline px-2 py-1 rounded hover:bg-primary/5"
+                              >
+                                <Download className="size-3.5" /> {t("download")}
+                              </a>
+                              {/* 101 — admin edit (rename / recategorise / fix
+                                  description) for bad old uploads. */}
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="size-8"
+                                onClick={() => openEdit(f)}
+                                title={t("misc-uploads-edit-title")}
+                              >
+                                <Pencil className="size-4" />
+                              </Button>
+                            </>
                           )}
                           <Button size="icon" variant="ghost" className="size-8 text-destructive" onClick={() => { setToDelete(f); setHardDelete(isDeleted); }} title={isDeleted ? t("misc-permanently-delete-title") : t("delete")}>
                             <Trash2 className="size-4" />
@@ -319,6 +407,76 @@ export function PortalUploadsView() {
           </div>
         </CardContent>
       </Card>
+
+      {/* 101 — admin edit dialog: filename / category / description. */}
+      <Dialog open={!!toEdit} onOpenChange={(o) => !o && setToEdit(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="size-4 text-primary" />
+              {t("misc-uploads-edit-title")}
+            </DialogTitle>
+            <DialogDescription>{t("misc-uploads-edit-desc")}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-1">
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-filename">{t("misc-uploads-edit-filename")}</Label>
+              <Input
+                id="edit-filename"
+                value={editFilename}
+                onChange={(e) => setEditFilename(e.target.value)}
+                maxLength={200}
+              />
+              <p className="text-xs text-muted-foreground">{t("misc-uploads-edit-filename-hint")}</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t("misc-uploads-edit-category")}</Label>
+              <Select value={editCategory} onValueChange={setEditCategory}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="kyc">{t("misc-cat-kyc")}</SelectItem>
+                  <SelectItem value="rfq">{t("misc-cat-rfq")}</SelectItem>
+                  <SelectItem value="message">{t("misc-cat-message")}</SelectItem>
+                  <SelectItem value="general">{t("misc-cat-general")}</SelectItem>
+                  <SelectItem value="other">{t("misc-cat-other")}</SelectItem>
+                  <SelectItem value="commission">{t("misc-cat-commission")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-description">{t("misc-uploads-edit-description")}</Label>
+              <Textarea
+                id="edit-description"
+                rows={3}
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                maxLength={500}
+                placeholder={t("misc-uploads-edit-description-placeholder")}
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setToEdit(null)}>
+              {t("common-label-cancel")}
+            </Button>
+            <Button
+              onClick={() =>
+                toEdit &&
+                editMut.mutate({
+                  id: toEdit.id,
+                  filename: editFilename,
+                  category: editCategory,
+                  description: editDescription,
+                })
+              }
+              disabled={editMut.isPending || !editFilename.trim()}
+            >
+              {editMut.isPending && <Loader2 className="size-4 mr-1.5 animate-spin" />}
+              {t("save")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={!!toDelete} onOpenChange={(o) => !o && setToDelete(null)}>
         <AlertDialogContent>

@@ -206,6 +206,10 @@ export const PORTAL_UPLOADS = {
   READ: "portal-uploads.read",
   DOWNLOAD: "portal-uploads.download",
   DELETE: "portal-uploads.delete",
+  // 101 — admin edit/restore of uploaded document metadata (the admin
+  // “tidy up bad old uploads” capability). Tenant admins hold this via
+  // the admin implicit grant; super admins via the bypass.
+  UPDATE: "portal-uploads.update",
 } as const;
 
 // ─── Logistics (freight quote requests submitted through the portal) ────────
@@ -366,6 +370,10 @@ export const MARKETPLACE = {
   READ: "marketplace.read",
   MODERATE: "marketplace.moderate",
   SETTINGS: "marketplace.settings",
+  // 101 — admin control over marketplace trade documents (list/edit
+  // status/delete bad generated docs, marketplace-wide, tenant-scoped
+  // for tenant admins).
+  DOCUMENTS: "marketplace.documents",
 } as const;
 
 // ─── Aggregate every permission constant into a flat list ───────────────────

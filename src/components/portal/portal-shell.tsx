@@ -49,6 +49,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { InstallAppHeaderButton, InstallAppMenuItem } from "@/components/pwa/install-app";
 import { initials, fmtRelative } from "@/lib/utils/format";
 import { toast } from "sonner";
 import type { PortalAccess, PortalTier, Partner, Notification } from "@/lib/supabase/types";
@@ -877,6 +878,10 @@ export function PortalShell({
                   {partnerName}
                 </span>
               </div>
+              {/* 101 — PWA install button (Chrome/Edge/Android one-tap;
+                  iOS opens the Add-to-Home-Screen guide). Hidden when
+                  already installed or unsupported. */}
+              <InstallAppHeaderButton />
               {/* Theme toggle — light/dark mode */}
               <ThemeToggle />
               {/* Language selector — per-client locale preference */}
@@ -953,6 +958,8 @@ export function PortalShell({
                       <ShieldCheck className="size-4 text-muted-foreground" />
                       {t("portal-shell-manage-kyc")}
                     </DropdownMenuItem>
+                    {/* 101 — install the platform as a desktop/phone app. */}
+                    <InstallAppMenuItem />
                   </div>
                   <div className="border-t border-border/60 p-1.5">
                     <DropdownMenuItem

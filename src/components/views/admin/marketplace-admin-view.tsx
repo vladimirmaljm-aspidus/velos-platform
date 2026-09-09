@@ -58,6 +58,7 @@ import {
   BarChart3, RefreshCw, Eye, Flag, Trash2, Sparkles, CheckCircle2,
   XCircle, ShieldCheck, ShieldAlert, Loader2, Search, Plus,
   MessageSquare, Users, TrendingUp, Activity, Gavel, SlidersHorizontal,
+  FileText, Pencil, FileSignature, ExternalLink,
 } from "lucide-react";
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
@@ -210,6 +211,9 @@ export function MarketplaceAdminView() {
           {/* 2-e — post-report triage queue (both roles; tenant admins
               only see their own tenant's reports). */}
           <TabTrigger value="reports"        icon={Gavel}             label={t("admin-marketplace-tab-reports")} />
+          {/* 101 — trade-document registry: admin edit/delete of bad
+              generated marketplace docs (both roles, tenant-scoped). */}
+          <TabTrigger value="documents"      icon={FileText}          label={t("admin-marketplace-tab-documents")} />
           {/* 2-e — per-tenant marketplace policy knobs (super admin grid,
               tenant admin single card for their own tenant). */}
           <TabTrigger value="tenant-settings" icon={SlidersHorizontal} label={t("admin-marketplace-tab-settings")} />
@@ -224,6 +228,7 @@ export function MarketplaceAdminView() {
         {!isTenantAdmin && <TabsContent value="blacklist"   className="mt-0"><BlacklistTab /></TabsContent>}
         {!isTenantAdmin && <TabsContent value="stats"       className="mt-0"><StatsTab /></TabsContent>}
         <TabsContent value="reports"        className="mt-0"><ReportsTab /></TabsContent>
+        <TabsContent value="documents"      className="mt-0"><DocumentsTab /></TabsContent>
         <TabsContent value="tenant-settings" className="mt-0"><TenantSettingsTab isSuper={isSuper} /></TabsContent>
       </Tabs>
     </div>
@@ -2961,6 +2966,412 @@ function ReportsTab() {
           </div>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 101 — DocumentsTab: the admin trade-document registry.
+//
+// Admins (super admin cross-tenant, tenant admin own-tenant) get full
+// control over the documents generated/exchanged through the marketplace
+// deal rooms: fix a wrong status, correct the reference number, or remove
+// a bad document outright. Signed documents are protected by a ?force=1
+// confirmation step (the action is audited either way).
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface AdminTradeDoc {
+  id: string;
+  tenant_id: string;
+  tenant_name?: string | null;
+  partner_id: string;
+  partner_name?: string | null;
+  post_id: string | null;
+  negotiation_id: string | null;
+  document_type: string;
+  status: string;
+  document_data: Record<string, unknown> | null;
+  digital_signature: string | null;
+  reference_number: string | null;
+  created_at: string;
+}
+
+const TRADE_DOC_STATUS_KEYS: Record<string, string> = {
+  draft: "marketplace-document-status-draft",
+  generated: "marketplace-document-status-generated",
+  sent: "marketplace-document-status-sent",
+  signed: "marketplace-document-status-signed",
+  rejected: "marketplace-document-status-rejected",
+};
+
+const TRADE_DOC_STATUS_VARIANT: Record<string, "default" | "secondary" | "outline" | "destructive"> = {
+  draft: "secondary",
+  generated: "outline",
+  sent: "default",
+  signed: "default",
+  rejected: "destructive",
+};
+
+const TRADE_DOC_TYPE_KEYS: Record<string, string> = {
+  commercial_invoice: "marketplace-document-type-commercial-invoice",
+  packing_list: "marketplace-document-type-packing-list",
+  certificate_of_origin: "marketplace-document-type-certificate-of-origin",
+  bill_of_lading: "marketplace-document-type-bill-of-lading",
+  shipping_manifest: "marketplace-document-type-shipping-manifest",
+  inspection_certificate: "marketplace-document-type-inspection-certificate",
+  insurance_certificate: "marketplace-document-type-insurance-certificate",
+  export_declaration: "marketplace-document-type-export-declaration",
+  customs_declaration: "marketplace-document-type-customs-declaration",
+  letter_of_credit_draft: "marketplace-document-type-letter-of-credit-draft",
+  proforma_invoice: "marketplace-document-type-proforma-invoice",
+  weight_certificate: "marketplace-document-type-weight-certificate",
+};
+
+function tradeDocTitle(d: AdminTradeDoc): string {
+  const data = d.document_data || {};
+  for (const k of ["title", "document_title", "name"]) {
+    const v = data[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return d.document_type.replace(/_/g, " ");
+}
+
+function DocumentsTab() {
+  const t = useT();
+  const qc = useQueryClient();
+  const [statusFilter, setStatusFilter] = React.useState<string>("all");
+  const [typeFilter, setTypeFilter] = React.useState<string>("all");
+  const [search, setSearch] = React.useState("");
+  const [toEdit, setToEdit] = React.useState<AdminTradeDoc | null>(null);
+  const [editStatus, setEditStatus] = React.useState<string>("draft");
+  const [editRef, setEditRef] = React.useState("");
+  const [toDelete, setToDelete] = React.useState<AdminTradeDoc | null>(null);
+  const [forceSigned, setForceSigned] = React.useState(false);
+
+  const docsQ = useQuery<{ items: AdminTradeDoc[]; total: number }>({
+    queryKey: ["admin-marketplace-documents", statusFilter, typeFilter, search],
+    queryFn: async () => {
+      const params = new URLSearchParams({ limit: "200" });
+      if (statusFilter !== "all") params.set("status", statusFilter);
+      if (typeFilter !== "all") params.set("document_type", typeFilter);
+      if (search.trim()) params.set("search", search.trim());
+      const r = await fetch(`/api/admin/marketplace/documents?${params}`);
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({ error: r.statusText }));
+        throw new Error(e.error || "Failed to load documents.");
+      }
+      return r.json();
+    },
+  });
+
+  const editMut = useMutation({
+    mutationFn: async (vars: { id: string; status: string; reference: string; force: boolean }) => {
+      const r = await fetch(`/api/admin/marketplace/documents/${vars.id}${vars.force ? "?force=1" : ""}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: vars.status,
+          reference_number: vars.reference.trim() ? vars.reference.trim() : null,
+        }),
+      });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({ error: r.statusText }));
+        throw new Error(e.error || "Update failed.");
+      }
+      return r.json();
+    },
+    onSuccess: () => {
+      toast.success(t("admin-marketplace-docs-toast-updated"));
+      qc.invalidateQueries({ queryKey: ["admin-marketplace-documents"] });
+      setToEdit(null);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const delMut = useMutation({
+    mutationFn: async (vars: { id: string; force: boolean }) => {
+      const r = await fetch(`/api/admin/marketplace/documents/${vars.id}${vars.force ? "?force=1" : ""}`, {
+        method: "DELETE",
+      });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({ error: r.statusText }));
+        throw new Error(e.error || "Delete failed.");
+      }
+      return r.json();
+    },
+    onSuccess: () => {
+      toast.success(t("admin-marketplace-docs-toast-deleted"));
+      qc.invalidateQueries({ queryKey: ["admin-marketplace-documents"] });
+      setToDelete(null);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const openEdit = (d: AdminTradeDoc) => {
+    setToEdit(d);
+    setEditStatus(d.status);
+    setEditRef(d.reference_number || "");
+    setForceSigned(false);
+  };
+
+  const docs = docsQ.data?.items ?? [];
+  const signedCount = docs.filter((d) => d.digital_signature).length;
+
+  return (
+    <div className="space-y-3">
+      {/* Filters */}
+      <Card>
+        <CardContent className="p-3 flex flex-wrap items-center gap-2">
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[150px]"><SelectValue placeholder={t("pf-ma-filter-status")} /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t("all")}</SelectItem>
+              {Object.keys(TRADE_DOC_STATUS_KEYS).map((s) => (
+                <SelectItem key={s} value={s}>{t(TRADE_DOC_STATUS_KEYS[s])}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={typeFilter} onValueChange={setTypeFilter}>
+            <SelectTrigger className="w-[190px]"><SelectValue placeholder={t("admin-marketplace-docs-type-filter")} /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t("all")}</SelectItem>
+              {Object.keys(TRADE_DOC_TYPE_KEYS).map((ty) => (
+                <SelectItem key={ty} value={ty}>{t(TRADE_DOC_TYPE_KEYS[ty])}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <div className="relative flex-1 min-w-[180px] max-w-xs">
+            <Search className="absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
+            <Input
+              placeholder={t("admin-marketplace-docs-search-placeholder")}
+              className="pl-8"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <span className="text-xs text-muted-foreground tabular-nums ml-auto">
+            {docs.length} · {t("admin-marketplace-docs-signed-count").replace("{n}", String(signedCount))}
+          </span>
+          <Button size="sm" variant="outline" onClick={() => docsQ.refetch()} disabled={docsQ.isFetching}>
+            <RefreshCw className={`size-3.5 mr-1 ${docsQ.isFetching ? "animate-spin" : ""}`} />
+            {t("refresh")}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Registry table */}
+      <Card>
+        <CardContent className="pt-3">
+          <div className="border rounded-lg overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("admin-marketplace-docs-col-document")}</TableHead>
+                  <TableHead>{t("admin-marketplace-docs-col-issuer")}</TableHead>
+                  <TableHead>{t("admin-marketplace-docs-col-status")}</TableHead>
+                  <TableHead>{t("admin-marketplace-docs-col-created")}</TableHead>
+                  <TableHead className="text-right">{t("actions")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {docsQ.isLoading && (
+                  <TableRow><TableCell colSpan={5} className="text-center py-6 text-muted-foreground">{t("loading")}</TableCell></TableRow>
+                )}
+                {!docsQ.isLoading && docs.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                      <FileText className="size-5 mx-auto mb-2 opacity-40" />
+                      {t("admin-marketplace-docs-empty")}
+                    </TableCell>
+                  </TableRow>
+                )}
+                {docs.map((d) => {
+                  const signed = !!d.digital_signature;
+                  return (
+                    <TableRow key={d.id}>
+                      <TableCell>
+                        <div className="flex items-start gap-2 min-w-0">
+                          <div className="size-8 rounded-md bg-muted flex items-center justify-center shrink-0">
+                            <FileText className="size-4 text-muted-foreground" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium truncate max-w-[260px]">{tradeDocTitle(d)}</p>
+                            <p className="text-xs text-muted-foreground truncate max-w-[260px]">
+                              {t(TRADE_DOC_TYPE_KEYS[d.document_type] || "") || d.document_type.replace(/_/g, " ")}
+                              {d.reference_number ? ` · ${d.reference_number}` : ""}
+                            </p>
+                            {d.post_id && (
+                              <p className="text-[11px] text-muted-foreground/70">post {d.post_id.slice(0, 8)}…</p>
+                            )}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <p className="text-sm truncate max-w-[160px]">{d.partner_name || d.partner_id.slice(0, 8)}</p>
+                        {d.tenant_name && (
+                          <p className="text-[11px] text-muted-foreground truncate max-w-[160px]">{d.tenant_name}</p>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col items-start gap-1">
+                          <Badge variant={TRADE_DOC_STATUS_VARIANT[d.status] || "secondary"}>
+                            {t(TRADE_DOC_STATUS_KEYS[d.status] || "") || d.status}
+                          </Badge>
+                          {signed && (
+                            <Badge variant="outline" className="gap-1 text-[10px] h-5 px-1.5">
+                              <FileSignature className="size-3 text-primary" />
+                              {t("admin-marketplace-docs-signed-badge")}
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground whitespace-nowrap" title={formatDate(d.created_at)}>
+                        {fmtRelative(d.created_at)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="size-8"
+                            onClick={() => openEdit(d)}
+                            title={t("admin-marketplace-docs-edit-title")}
+                          >
+                            <Pencil className="size-4" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="size-8 text-destructive"
+                            onClick={() => { setToDelete(d); setForceSigned(false); }}
+                            title={t("delete")}
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+          <p className="text-xs text-muted-foreground mt-3 flex items-center gap-1.5">
+            <ShieldCheck className="size-3.5 text-primary shrink-0" />
+            {t("admin-marketplace-docs-footer-note")}
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* Edit dialog — status + reference number */}
+      <Dialog open={!!toEdit} onOpenChange={(o) => !o && setToEdit(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="size-4 text-primary" />
+              {t("admin-marketplace-docs-edit-title")}
+            </DialogTitle>
+            <DialogDescription>
+              {toEdit ? tradeDocTitle(toEdit) : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-1">
+            <div className="space-y-1.5">
+              <Label>{t("admin-marketplace-docs-edit-status")}</Label>
+              <Select value={editStatus} onValueChange={setEditStatus}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {Object.keys(TRADE_DOC_STATUS_KEYS).map((s) => (
+                    <SelectItem key={s} value={s}>{t(TRADE_DOC_STATUS_KEYS[s])}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-doc-ref">{t("admin-marketplace-docs-edit-ref")}</Label>
+              <Input
+                id="edit-doc-ref"
+                value={editRef}
+                onChange={(e) => setEditRef(e.target.value)}
+                maxLength={64}
+                placeholder="INV-2026-001"
+              />
+            </div>
+            {toEdit?.digital_signature && editStatus !== toEdit.status && (
+              <div className="rounded-lg border border-amber-500/40 bg-amber-50/50 dark:bg-amber-500/10 p-3 text-xs space-y-2">
+                <p className="flex items-center gap-1.5 font-medium text-amber-700 dark:text-amber-400">
+                  <FileSignature className="size-4" />
+                  {t("admin-marketplace-docs-signed-notice")}
+                </p>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={forceSigned}
+                    onChange={(e) => setForceSigned(e.target.checked)}
+                    className="accent-amber-600"
+                  />
+                  {t("admin-marketplace-docs-signed-confirm")}
+                </label>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setToEdit(null)}>{t("common-label-cancel")}</Button>
+            <Button
+              onClick={() => toEdit && editMut.mutate({ id: toEdit.id, status: editStatus, reference: editRef, force: forceSigned })}
+              disabled={editMut.isPending || (!!toEdit?.digital_signature && toEdit.status !== editStatus && !forceSigned)}
+            >
+              {editMut.isPending && <Loader2 className="size-4 mr-1.5 animate-spin" />}
+              {t("save")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirm */}
+      <Dialog open={!!toDelete} onOpenChange={(o) => !o && setToDelete(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Trash2 className="size-5 text-destructive" />
+              {t("admin-marketplace-docs-delete-title")}
+            </DialogTitle>
+            <DialogDescription>
+              {toDelete ? `${tradeDocTitle(toDelete)}${toDelete.reference_number ? ` · ${toDelete.reference_number}` : ""}` : ""}
+              <br />
+              {t("admin-marketplace-docs-delete-desc")}
+            </DialogDescription>
+          </DialogHeader>
+          {toDelete?.digital_signature && (
+            <div className="rounded-lg border border-amber-500/40 bg-amber-50/50 dark:bg-amber-500/10 p-3 text-xs space-y-2">
+              <p className="flex items-center gap-1.5 font-medium text-amber-700 dark:text-amber-400">
+                <FileSignature className="size-4" />
+                {t("admin-marketplace-docs-signed-notice")}
+              </p>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={forceSigned}
+                  onChange={(e) => setForceSigned(e.target.checked)}
+                  className="accent-amber-600"
+                />
+                {t("admin-marketplace-docs-signed-confirm")}
+              </label>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setToDelete(null)}>{t("common-label-cancel")}</Button>
+            <Button
+              variant="destructive"
+              onClick={() => toDelete && delMut.mutate({ id: toDelete.id, force: forceSigned })}
+              disabled={delMut.isPending || (!!toDelete?.digital_signature && !forceSigned)}
+            >
+              {delMut.isPending && <Loader2 className="size-4 mr-1.5 animate-spin" />}
+              {t("delete")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

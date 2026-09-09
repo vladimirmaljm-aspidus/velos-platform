@@ -71,6 +71,56 @@ export async function softDeletePortalUpload(id: string, tenantId: string, delet
     .eq("id", id).eq("tenant_id", tenantId).is("deleted_at", null);
 }
 
+/** 101 — admin edit of a client-uploaded document's metadata.
+ *
+ * Admins (tenant admin within their tenant, super admin anywhere — the
+ * scoping is resolved by the API route before calling this) can fix a
+ * bad filename, move the file to the right category, or correct the
+ * description. The underlying storage object is untouched — only the
+ * portal_uploads metadata row changes (renaming the display name does
+ * NOT break the storage_path lookup).
+ *
+ * Returns the updated row, or null when the id does not exist in the
+ * given tenant. Guarded: only non-deleted rows can be edited (edit a
+ * live row, or restore it first — restores are a separate action).
+ */
+export async function updatePortalUpload(
+  id: string,
+  tenantId: string,
+  patch: { filename?: string; category?: PortalUploadCategory; description?: string | null },
+): Promise<PortalUpload | null> {
+  const sb = getSupabase();
+  const { data, error } = await sb
+    .from("portal_uploads")
+    .update({
+      ...(patch.filename !== undefined ? { filename: patch.filename } : {}),
+      ...(patch.category !== undefined ? { category: patch.category } : {}),
+      ...(patch.description !== undefined ? { description: patch.description } : {}),
+    })
+    .eq("id", id)
+    .eq("tenant_id", tenantId)
+    .is("deleted_at", null)
+    .select()
+    .maybeSingle();
+  if (error) throw error;
+  return (data as PortalUpload) || null;
+}
+
+/** 101 — undo a soft-delete (admin restore). */
+export async function restorePortalUpload(id: string, tenantId: string): Promise<PortalUpload | null> {
+  const sb = getSupabase();
+  const { data, error } = await sb
+    .from("portal_uploads")
+    .update({ deleted_at: null, deleted_by: null })
+    .eq("id", id)
+    .eq("tenant_id", tenantId)
+    .not("deleted_at", "is", null)
+    .select()
+    .maybeSingle();
+  if (error) throw error;
+  return (data as PortalUpload) || null;
+}
+
 /** Hard delete: removes the row AND the storage object. Requires prior soft-delete or admin override. */
 export async function hardDeletePortalUpload(id: string, tenantId: string): Promise<void> {
   const upload = await getPortalUpload(id, tenantId);
