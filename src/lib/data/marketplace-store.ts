@@ -1052,10 +1052,18 @@ export async function withdrawMarketplaceResponse(
   if (r.partner_id !== callerPartnerId) {
     throw new MarketplaceRuleError("Only the responder can withdraw their own offer.", 403);
   }
+  // E2E-102: withdrawing an already-withdrawn offer is a REJECTION, not a
+  // no-op. The generic status-validator treats same-status transitions as
+  // always-valid (idempotent accept/reject), but a repeat withdraw would
+  // re-decrement the post's responses_count and re-notify the owner — so
+  // this is the one same-status path that must throw instead.
+  if (r.status === "withdrawn") {
+    throw new MarketplaceRuleError("This offer has already been withdrawn.", 409);
+  }
   // Validate the transition BEFORE the UPDATE (sent/viewed/countered →
   // withdrawn; terminal states throw with the allowed-transitions message).
   const currentStatus = r.status;
-  if (currentStatus && currentStatus !== "withdrawn") {
+  if (currentStatus) {
     const t = validateStatusTransition("marketplace_response", currentStatus, "withdrawn");
     if (!t.valid) {
       throw new MarketplaceRuleError(
