@@ -1722,6 +1722,11 @@ export type NotificationType =
   // bell so the counterparty finds out without having to refresh the
   // negotiations list.
   | "marketplace_negotiation_cancelled"
+  // 102 (workflow-audit) — completes the price-offer notification loop:
+  | "marketplace_response_countered"  // responder's offer was countered by the post owner — review new terms
+  | "marketplace_negotiation_opened"  // counterparty opened a negotiation room with you
+  | "marketplace_negotiation_accepted" // both parties accepted — deal complete, contacts unlocked
+  | "marketplace_response_withdrawn"  // responder pulled their offer — no longer actionable for the owner
   // 097 — Portal referral commissions lifecycle. Partner-facing types surface
   // in the portal bell (PORTAL_SAFE_TYPES); admin-facing ones (signed /
   // bank submitted) broadcast to tenant admins via user_id = NULL.

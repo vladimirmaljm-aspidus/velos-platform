@@ -201,12 +201,13 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
       const sb = getSupabase();
       const { data: negRow } = await sb
         .from("marketplace_negotiations")
-        .select("id, partner_id_a, partner_id_b, contact_revealed")
+        .select("id, post_id, partner_id_a, partner_id_b, contact_revealed")
         .eq("id", id)
         .maybeSingle();
       const n = negRow as
         | {
             id: string;
+            post_id?: string | null;
             partner_id_a: string;
             partner_id_b: string;
             contact_revealed?: boolean;
@@ -247,6 +248,19 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
         //     an 'accept' message. We check whether the other party
         //     has previously sent an 'accept' message in this same
         //     negotiation. If yes, flip contact_revealed = true.
+        //
+        //     102 (workflow-audit GAP 5): the handshake previously ONLY
+        //     flipped contact_revealed and inserted a null system message
+        //     (an empty chat bubble — GAP 4). It never flipped the
+        //     negotiation's `status` to "accepted" — the row stayed
+        //     "active" forever, so the DB lifecycle, the admin stats and
+        //     the cancel-route gate (which checks status === "accepted")
+        //     all disagreed with the UI. Now, on the second accept:
+        //       • status → "accepted" (authoritative lifecycle flip)
+        //       • contact_revealed → true
+        //       • a REAL system message announces the deal in-thread
+        //       • BOTH parties get a "deal complete" notification
+        //       • marketplace.negotiation_accepted webhook fires
         if (body.message_type === "accept" && !n.contact_revealed) {
           const { count } = await sb
             .from("marketplace_messages")
@@ -255,18 +269,20 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
             .eq("sender_partner_id", otherPartnerId)
             .eq("message_type", "accept");
           if ((count ?? 0) > 0) {
-            // Both parties have sent an 'accept' → reveal contacts.
+            // Both parties have sent an 'accept' → the deal is complete.
+            const acceptedAt = new Date().toISOString();
             await sb
               .from("marketplace_negotiations")
-              .update({ contact_revealed: true })
+              .update({ contact_revealed: true, status: "accepted" })
               .eq("id", id);
-            // Insert a system message announcing the contact reveal so
-            // the chat thread surfaces the state change in-line.
+            // Insert a system message announcing the deal completion —
+            // with REAL text. 102 (GAP 4): this used to insert
+            // `message: null`, rendering as an empty centered bubble.
             try {
               await sb.from("marketplace_messages").insert({
                 negotiation_id: id,
                 sender_partner_id: access.partner_id,
-                message: null,
+                message: "Deal accepted by both parties — contact details are now unlocked in the Contact info card. This negotiation is concluded; coordinate next steps (contract, shipment, payment) via the revealed contacts.",
                 message_type: "system",
                 offer_data: null,
                 attachment_url: null,
@@ -275,6 +291,64 @@ async function _post(req: NextRequest, ctx: { params: Promise<{ id: string }> })
               console.error(
                 "[marketplace.messages.create] system-insert failed:",
                 sysErr,
+              );
+            }
+            // 102 (GAP 5): notify BOTH parties that the deal is complete.
+            // The sender of this second accept already knows (they just
+            // clicked), but the OTHER party's accept happened earlier —
+            // they need the confirmation that the handshake completed.
+            // Fire-and-forget, deduped per negotiation.
+            try {
+              if (otherPartnerId && otherPartnerId !== access.partner_id) {
+                await notify({
+                  tenantId: access.tenant_id,
+                  partnerId: otherPartnerId,
+                  type: "marketplace_negotiation_accepted",
+                  title: "Deal complete",
+                  message: "Both parties accepted — the negotiation is complete and contact details are unlocked.",
+                  entityType: "marketplace_negotiation",
+                  entityId: id,
+                  actionUrl: `/portal/marketplace/negotiations/${id}`,
+                  actionLabel: "Open room",
+                  dedupKey: `marketplace_negotiation:${id}:accepted`,
+                  dedupWindowMs: 5 * 60 * 1000,
+                });
+              }
+              await notify({
+                tenantId: access.tenant_id,
+                partnerId: access.partner_id,
+                type: "marketplace_negotiation_accepted",
+                title: "Deal complete",
+                message: "Both parties accepted — the negotiation is complete and contact details are unlocked.",
+                entityType: "marketplace_negotiation",
+                entityId: id,
+                actionUrl: `/portal/marketplace/negotiations/${id}`,
+                actionLabel: "Open room",
+                dedupKey: `marketplace_negotiation:${id}:accepted`,
+                dedupWindowMs: 5 * 60 * 1000,
+              });
+            } catch (dealNotifyErr) {
+              console.error(
+                "[marketplace.messages.create] deal-complete notify failed:",
+                dealNotifyErr,
+              );
+            }
+            // 102 (GAP 5): fire the marketplace.negotiation_accepted
+            // webhook so downstream automation (contract creation,
+            // shipment booking) can react to a COMPLETED negotiation,
+            // not just an accepted single response.
+            try {
+              const store = await getStore();
+              void triggerWebhooks(store, access.tenant_id, "marketplace.negotiation_accepted", "marketplace_negotiation", id, {
+                id,
+                post_id: n?.post_id ?? null,
+                accepted_at: acceptedAt,
+                contact_revealed: true,
+              }).catch(() => {});
+            } catch (hookErr) {
+              console.error(
+                "[marketplace.messages.create] accepted-webhook failed:",
+                hookErr,
               );
             }
           }

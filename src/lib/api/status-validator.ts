@@ -133,12 +133,15 @@ const VALID_TRANSITIONS: Record<DocType, Record<string, string[]>> = {
   // open — the owner can counter again or accept/reject the latest
   // counter). accepted / rejected / expired are terminal.
   marketplace_response: {
-    sent: ["viewed", "accepted", "rejected", "countered", "expired"],
-    viewed: ["accepted", "rejected", "countered", "expired"],
-    countered: ["accepted", "rejected", "countered", "expired"],
+    sent: ["viewed", "accepted", "rejected", "countered", "expired", "withdrawn"],
+    viewed: ["accepted", "rejected", "countered", "expired", "withdrawn"],
+    countered: ["accepted", "rejected", "countered", "expired", "withdrawn"],
     accepted: [],
     rejected: [],
     expired: [],
+    // 102 (workflow-audit GAP 6): withdrawn is terminal — the responder
+    // pulled their offer; a new offer must be sent instead of reviving.
+    withdrawn: [],
   },
   // BUILD-LOI — Letters of Intent (LOI) state machine. Mirrors the lifecycle
   // the admin UI documents: a tenant admin drafts an LOI, emails it to the

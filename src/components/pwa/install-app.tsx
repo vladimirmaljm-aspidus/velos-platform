@@ -79,9 +79,15 @@ function useInstallPrompt() {
   React.useEffect(() => {
     // The manifest must be processed before the browser will offer
     // beforeinstallprompt — on a cold load that can race with hydration.
-    setInstalled(detectStandalone());
-    setIos(detectIOS());
-    setReady(true);
+    // Deferred to a rAF callback: synchronous setState inside the effect
+    // can cascade renders during hydration (and trips the
+    // react-hooks/set-state-in-effect lint rule); one frame later is
+    // imperceptible to the user and hydration-safe.
+    const raf = requestAnimationFrame(() => {
+      setInstalled(detectStandalone());
+      setIos(detectIOS());
+      setReady(true);
+    });
 
     const onPrompt = (e: Event) => {
       e.preventDefault();
@@ -102,6 +108,7 @@ function useInstallPrompt() {
     mq?.addEventListener?.("change", onModeChange);
 
     return () => {
+      cancelAnimationFrame(raf);
       window.removeEventListener("beforeinstallprompt", onPrompt);
       window.removeEventListener("appinstalled", onInstalled);
       mq?.removeEventListener?.("change", onModeChange);

@@ -6714,6 +6714,12 @@ export const PORTAL: Record<string, string> = {
   "marketplace-response-status-rejected": "辞退済み",
   "marketplace-response-status-expired": "期限切れ",
   "marketplace-response-status-countered": "カウンター提示済み",
+  // 102 (workflow-audit GAP 6) — responder withdraws their own offer.
+  "marketplace-response-status-withdrawn": "取下済み",
+  "marketplace-withdraw": "取り下げる",
+  "marketplace-withdraw-desc": "投稿者が決定する前にこのオファーを取り下げます。この操作は取り消せません — オファーは投稿者の確認キューから外れ、投稿者に通知されます。その後、新しいオファーを送信できます。",
+  "marketplace-withdraw-confirm": "オファーを取り下げる",
+  "marketplace-withdraw-success": "オファーを取り下げました。",
   "marketplace-counter": "カウンター",
   "marketplace-view-post": "投稿を見る",
   "marketplace-accept": "承諾",

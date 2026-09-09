@@ -133,7 +133,12 @@ export type MarketplaceResponseStatus =
   | "accepted"
   | "rejected"
   | "expired"
-  | "countered";
+  | "countered"
+  // 102 (workflow-audit GAP 6): the responder withdraws their own offer
+  // before the owner decides. Terminal — a withdrawn offer cannot be
+  // revived (send a new offer instead). Allowed from sent / viewed /
+  // countered (the open states).
+  | "withdrawn";
 
 export interface MarketplaceResponse {
   id: string;

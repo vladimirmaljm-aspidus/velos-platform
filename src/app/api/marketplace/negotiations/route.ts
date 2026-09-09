@@ -5,6 +5,12 @@ import { listNegotiations, createNegotiation } from "@/lib/data/marketplace-stor
 import { getSupabase } from "@/lib/supabase/client";
 import { audit, sanitizeError } from "@/lib/api/helpers";
 import { getStore } from "@/lib/data/store";
+// 102 (workflow-audit GAP 3): notify the counterparty when a negotiation
+// room is opened. Previously the route audit-logged but never notified —
+// the other party only found out when the FIRST message arrived (the
+// messages route does notify). A room opened without a follow-up message
+// was completely invisible to the counterparty.
+import { notify } from "@/lib/notif/helper";
 import { withApm } from "@/lib/monitoring/apm";
 
 export const runtime = "nodejs";
@@ -149,6 +155,32 @@ async function _post(req: NextRequest) {
       );
     } catch (e) {
       console.error("[marketplace.negotiations.create] audit failed:", e);
+    }
+    // 102 (workflow-audit GAP 3): fire-and-forget notification to the
+    // OTHER party (partner_id_b from the caller's perspective). Without
+    // this, a room created by the owner right after countering an offer
+    // (the GAP-2 auto-create flow) would sit unopened — the counterparty
+    // had no signal that a room even existed until a message landed.
+    // Deduped per (partner, negotiation) so a re-create attempt within
+    // 5 minutes can't double-notify.
+    try {
+      if (partnerIdB && partnerIdB !== access.partner_id) {
+        await notify({
+          tenantId: access.tenant_id,
+          partnerId: partnerIdB,
+          type: "marketplace_negotiation_opened",
+          title: "Negotiation room opened",
+          message: "A negotiation room was opened with you on a marketplace listing. Open it to review and respond.",
+          entityType: "marketplace_negotiation",
+          entityId: created.id,
+          actionUrl: `/portal/marketplace/negotiations/${created.id}`,
+          actionLabel: "Open room",
+          dedupKey: `marketplace_negotiation:${created.id}:opened`,
+          dedupWindowMs: 5 * 60 * 1000,
+        });
+      }
+    } catch (e) {
+      console.error("[marketplace.negotiations.create] notify failed:", e);
     }
     return NextResponse.json(created);
   } catch (e: any) {

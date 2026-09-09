@@ -1520,6 +1520,13 @@ export class MockStore implements Store {
       "marketplace_response_accepted",
       "marketplace_response_rejected",
       "marketplace_message_received",
+      // 102 (workflow-audit) — marketplace loop completion + the 8c-5
+      // cancelled type that was previously missing from the allowlist.
+      "marketplace_negotiation_cancelled",
+      "marketplace_response_countered",
+      "marketplace_negotiation_opened",
+      "marketplace_negotiation_accepted",
+      "marketplace_response_withdrawn",
     ]);
     // 2b2-F3 — push the limit into the query (mock: slice the in-memory list).
     const effectiveLimit = Math.min(Math.max(limit ?? 200, 1), 200);
@@ -1613,6 +1620,13 @@ export class MockStore implements Store {
       "marketplace_response_accepted",
       "marketplace_response_rejected",
       "marketplace_message_received",
+      // 102 (workflow-audit) — marketplace loop completion + the 8c-5
+      // cancelled type that was previously missing from the allowlist.
+      "marketplace_negotiation_cancelled",
+      "marketplace_response_countered",
+      "marketplace_negotiation_opened",
+      "marketplace_negotiation_accepted",
+      "marketplace_response_withdrawn",
     ]);
     let updated = 0;
     mock.notifications.forEach((n) => {

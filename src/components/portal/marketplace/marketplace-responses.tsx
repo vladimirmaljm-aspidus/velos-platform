@@ -25,7 +25,7 @@ import {
   TabsTrigger,
   TabsContent,
 } from "@/components/ui/tabs";
-import { Loader2, Inbox, Send, Check, X, ArrowLeftRight, MessageSquare } from "lucide-react";
+import { Loader2, Inbox, Send, Check, X, ArrowLeftRight, MessageSquare, Ban } from "lucide-react";
 import { useT } from "@/lib/i18n/store";
 import { useAppStore } from "@/lib/store/app-store";
 import { toast } from "sonner";
@@ -67,6 +67,8 @@ const STATUS_LABEL_KEY: Record<string, string> = {
   rejected: "marketplace-response-status-rejected",
   expired: "marketplace-response-status-expired",
   countered: "marketplace-response-status-countered",
+  // 102 (workflow-audit GAP 6) — responder pulled their own offer.
+  withdrawn: "marketplace-response-status-withdrawn",
 };
 
 const STATUS_CLASS: Record<string, string> = {
@@ -76,6 +78,9 @@ const STATUS_CLASS: Record<string, string> = {
   rejected: "border-transparent bg-rose-500/15 text-rose-700 dark:text-rose-400",
   expired: "border-transparent bg-muted text-muted-foreground",
   countered: "border-transparent bg-amber-500/15 text-amber-700 dark:text-amber-400",
+  // 102 — withdrawn: muted strikethrough-adjacent look (the offer was
+  // pulled by its author; no longer actionable for either side).
+  withdrawn: "border-transparent bg-muted text-muted-foreground line-through",
 };
 
 export function MarketplaceResponses() {
@@ -139,17 +144,28 @@ export function MarketplaceResponses() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  // ── 2-b — counter-offer on a received response. Two steps, matching the
+  // ── 2-b — counter-offer on a received response. Three steps, matching the
   // REAL API contract (the PUT route accepts exactly { status }; the
   // response row has no counter-terms columns):
   //   1. PUT /{postId}/responses/{responseId} with { status: "countered" }
   //      — the store's state machine allows sent / viewed / countered →
-  //      countered (accepted / rejected / expired are terminal).
-  //   2. Best-effort: deliver the revised terms into the negotiation room
-  //      for this post as a counter_offer message (the system of record
-  //      for offer terms — the same message shape the room's own
-  //      counter-offer form posts). When no room exists yet the response
-  //      is still marked countered; the toast tells the user to open a room.
+  //      countered (accepted / rejected / expired are terminal). The PUT
+  //      returns the FULL updated row including the responder's
+  //      partner_id — exactly what we need for owner-side room creation.
+  //   2. Resolve the negotiation room for this post; when none exists,
+  //      CREATE one (102 / workflow-audit GAP 2). Previously the counter
+  //      terms typed into this dialog were silently DISCARDED when no
+  //      room existed — the user got a "no room" warning and the
+  //      responder was never notified (they only saw status→countered
+  //      if they re-opened My responses). Now the room is auto-created
+  //      with the responder's partner_id from the PUT response, the
+  //      responder gets a "room opened" notification (GAP 3 fix, server
+  //      side) + a "your offer was countered" notification (GAP 1 fix),
+  //      and the counter terms land in the thread as a counter_offer
+  //      message — the full loop works first try.
+  //   3. Deliver the revised terms into the room as a counter_offer
+  //      message (the system of record for offer terms — the same
+  //      message shape the room's own counter-offer form posts).
   const counterMut = useMutation({
     mutationFn: async (r: ResponseRow) => {
       const put = await fetch(`/api/marketplace/${r.post_id}/responses/${r.id}`, {
@@ -161,8 +177,32 @@ export function MarketplaceResponses() {
         const e = await put.json().catch(() => ({}));
         throw new Error(e.error || "Failed.");
       }
-      const room = (negsQ.data?.items ?? []).find((n) => n.post_id === r.post_id);
-      if (!room) return { roomId: null as string | null };
+      // Full updated row — carries the responder's partner_id, which the
+      // sanitised received list strips. Needed for owner-side room creation.
+      const updated = (await put.json()) as { partner_id?: string };
+      let roomId = (negsQ.data?.items ?? []).find((n) => n.post_id === r.post_id)?.id ?? null;
+      if (!roomId) {
+        // 102 (GAP 2): auto-create the room instead of dropping the terms.
+        // Owner-side creation requires partner_id_b (the responder) — the
+        // route verifies they actually responded to this post.
+        const create = await fetch("/api/marketplace/negotiations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            post_id: r.post_id,
+            response_id: r.id,
+            ...(updated.partner_id ? { partner_id_b: updated.partner_id } : {}),
+          }),
+        });
+        if (create.ok) {
+          const created = await create.json();
+          roomId = (created as { id?: string }).id ?? null;
+        }
+        // A failed create (e.g. network hiccup) falls through with
+        // roomId === null — the response is still countered and the
+        // toast tells the user to open the room manually (legacy path).
+      }
+      if (!roomId) return { roomId: null as string | null };
       const offerData: Record<string, unknown> = {};
       if (counterForm.quantity.trim()) offerData.quantity = Number(counterForm.quantity);
       if (counterForm.unit_price.trim()) {
@@ -170,7 +210,7 @@ export function MarketplaceResponses() {
         offerData.price = Number(counterForm.unit_price);
       }
       if (r.currency) offerData.currency = r.currency;
-      const msg = await fetch(`/api/marketplace/negotiations/${room.id}/messages`, {
+      const msg = await fetch(`/api/marketplace/negotiations/${roomId}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -184,7 +224,7 @@ export function MarketplaceResponses() {
         // terms can be re-sent manually from inside the room.
         return { roomId: null as string | null };
       }
-      return { roomId: room.id };
+      return { roomId };
     },
     onSuccess: (data) => {
       setCounterTarget(null);
@@ -247,6 +287,32 @@ export function MarketplaceResponses() {
       message: "",
     });
   }
+
+  // 102 (workflow-audit GAP 6) — the responder withdraws their own offer.
+  // Allowed while the offer is still open (sent / viewed / countered);
+  // terminal states (accepted / rejected / expired / withdrawn) are
+  // server-enforced too — the button is only rendered for open states.
+  // A confirm dialog prevents misclicks (the action is irreversible —
+  // a new offer must be sent instead of reviving this one).
+  const [withdrawTarget, setWithdrawTarget] = useState<ResponseRow | null>(null);
+  const withdrawMut = useMutation({
+    mutationFn: async (r: ResponseRow) => {
+      const res = await fetch(`/api/marketplace/${r.post_id}/responses/${r.id}/withdraw`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        throw new Error(e.error || "Failed.");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      setWithdrawTarget(null);
+      qc.invalidateQueries({ queryKey: ["marketplace-my-responses"] });
+      toast.success(t("marketplace-withdraw-success"));
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   const sent = q.data?.sent ?? [];
   const received = q.data?.received ?? [];
@@ -334,6 +400,21 @@ export function MarketplaceResponses() {
                     {t("marketplace-reject")}
                   </Button>
                 </>
+              )}
+              {/* 102 (GAP 6) — withdraw: the RESPONDER (a SENT row) pulls
+                  their own offer while it's still open. Irreversible —
+                  the confirm dialog guards misclicks. */}
+              {!isReceived &&
+                (r.status === "sent" || r.status === "viewed" || r.status === "countered") && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-muted-foreground/30 text-muted-foreground hover:bg-muted"
+                  onClick={() => setWithdrawTarget(r)}
+                >
+                  <Ban className="h-3.5 w-3.5 mr-1" />
+                  {t("marketplace-withdraw")}
+                </Button>
               )}
             </div>
           </div>
@@ -518,6 +599,55 @@ export function MarketplaceResponses() {
                 ? <Loader2 className="size-4 animate-spin" />
                 : <ArrowLeftRight className="size-4" />}
               {t("marketplace-counter-offer-submit")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── 102 (GAP 6) — Withdraw-offer confirmation dialog ────────────── */}
+      <Dialog open={!!withdrawTarget} onOpenChange={(o) => { if (!o && !withdrawMut.isPending) setWithdrawTarget(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Ban className="size-5 text-muted-foreground" />
+              {t("marketplace-withdraw")}
+            </DialogTitle>
+            <DialogDescription>
+              {t("marketplace-withdraw-desc")}
+            </DialogDescription>
+          </DialogHeader>
+          {withdrawTarget && (
+            <div className="rounded-md border bg-muted/40 p-3 text-sm space-y-1">
+              <div className="flex justify-between gap-2">
+                <span className="text-muted-foreground">{t("marketplace-quantity")}</span>
+                <span className="font-medium">{withdrawTarget.quantity ? withdrawTarget.quantity.toLocaleString() : "—"}</span>
+              </div>
+              <div className="flex justify-between gap-2">
+                <span className="text-muted-foreground">{t("marketplace-unit-price")}</span>
+                <span className="font-medium">
+                  {withdrawTarget.unit_price != null ? fmtMoney(withdrawTarget.unit_price, withdrawTarget.currency) : "—"}
+                </span>
+              </div>
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setWithdrawTarget(null)}
+              disabled={withdrawMut.isPending}
+            >
+              {t("portal-action-cancel")}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="border-rose-500/40 text-rose-700 hover:bg-rose-500/10 dark:text-rose-400"
+              onClick={() => withdrawTarget && withdrawMut.mutate(withdrawTarget)}
+              disabled={withdrawMut.isPending}
+            >
+              {withdrawMut.isPending ? <Loader2 className="size-4 animate-spin" /> : <Ban className="size-4" />}
+              {t("marketplace-withdraw-confirm")}
             </Button>
           </DialogFooter>
         </DialogContent>

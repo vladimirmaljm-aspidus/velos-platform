@@ -55,3 +55,26 @@ describe("validateStatusTransition", () => {
     expect(validateStatusTransition("offer", "sent", "draft")).toEqual({ valid: true });
   });
 });
+
+// ── 102 (workflow-audit GAP 6) — marketplace response withdrawal ──────────
+describe("marketplace_response withdrawal transitions (102)", () => {
+  it("allows the responder to withdraw an open offer", () => {
+    expect(validateStatusTransition("marketplace_response", "sent", "withdrawn").valid).toBe(true);
+    expect(validateStatusTransition("marketplace_response", "viewed", "withdrawn").valid).toBe(true);
+    expect(validateStatusTransition("marketplace_response", "countered", "withdrawn").valid).toBe(true);
+  });
+
+  it("blocks withdrawal after the owner decided (terminal states)", () => {
+    expect(validateStatusTransition("marketplace_response", "accepted", "withdrawn").valid).toBe(false);
+    expect(validateStatusTransition("marketplace_response", "rejected", "withdrawn").valid).toBe(false);
+    expect(validateStatusTransition("marketplace_response", "expired", "withdrawn").valid).toBe(false);
+  });
+
+  it("withdrawn is terminal — a withdrawn offer cannot be revived", () => {
+    expect(validateStatusTransition("marketplace_response", "withdrawn", "accepted").valid).toBe(false);
+    expect(validateStatusTransition("marketplace_response", "withdrawn", "countered").valid).toBe(false);
+    expect(validateStatusTransition("marketplace_response", "withdrawn", "sent").valid).toBe(false);
+    // no-op stays valid
+    expect(validateStatusTransition("marketplace_response", "withdrawn", "withdrawn").valid).toBe(true);
+  });
+});

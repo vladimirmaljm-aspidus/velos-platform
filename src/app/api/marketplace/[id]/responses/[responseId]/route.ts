@@ -86,27 +86,42 @@ async function _put(
       console.error("[marketplace.response.put] audit failed:", e);
     }
 
-    // Notify the responder that their offer was accepted / rejected
-    // (Phase 2). The caller is the post owner; `updated.partner_id` is
-    // the responder (the original response author). Fire-and-forget.
+    // Notify the responder that their offer was accepted / rejected /
+    // countered (Phase 2 + 102). The caller is the post owner;
+    // `updated.partner_id` is the responder (the original response
+    // author). Fire-and-forget.
+    //
+    // 102 (workflow-audit GAP 1): a counter-offer previously fired NO
+    // notification — the responder whose price was countered only found
+    // out when they happened to reopen "My responses". A counter is the
+    // single most time-sensitive moment in the price-negotiation loop
+    // (the ball is now in the responder's court); it now notifies with
+    // the same accept/reject pattern, pointing at the response thread.
     try {
       const responderPartnerId = updated?.partner_id;
       if (responderPartnerId && responderPartnerId !== access.partner_id) {
         const isAccept = status === "accepted";
         const isReject = status === "rejected";
-        if (isAccept || isReject) {
+        const isCounter = status === "countered";
+        if (isAccept || isReject || isCounter) {
           await notify({
             tenantId: access.tenant_id,
             partnerId: responderPartnerId,
             type: isAccept
               ? "marketplace_response_accepted"
-              : "marketplace_response_rejected",
+              : isReject
+                ? "marketplace_response_rejected"
+                : "marketplace_response_countered",
             title: isAccept
               ? "Your offer was accepted"
-              : "Your offer was rejected",
+              : isReject
+                ? "Your offer was rejected"
+                : "Your offer was countered",
             message: isAccept
               ? "The post owner accepted your marketplace offer."
-              : "The post owner rejected your marketplace offer.",
+              : isReject
+                ? "The post owner rejected your marketplace offer."
+                : "The post owner sent a counter-offer on your marketplace offer — review the new terms and respond.",
             entityType: "marketplace_post",
             entityId: id,
             actionUrl: `/portal/marketplace/${id}`,

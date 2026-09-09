@@ -6714,6 +6714,12 @@ export const PORTAL: Record<string, string> = {
   "marketplace-response-status-rejected": "Απορρίφθηκε",
   "marketplace-response-status-expired": "Έληξε",
   "marketplace-response-status-countered": "Με αντιπροσφορά",
+  // 102 (workflow-audit GAP 6) — responder withdraws their own offer.
+  "marketplace-response-status-withdrawn": "Ανακλήθηκε",
+  "marketplace-withdraw": "Ανάκληση",
+  "marketplace-withdraw-desc": "Ανακαλέστε αυτή την προσφορά πριν αποφασίσει ο δημιουργός της αγγελίας. Η ενέργεια είναι μη αναστρέψιμη — η προσφορά αφαιρείται από την ουρά ελέγχου του δημιουργού και εκείνος ειδοποιείται. Μετά μπορείτε να στείλετε νέα προσφορά.",
+  "marketplace-withdraw-confirm": "Ανάκληση προσφοράς",
+  "marketplace-withdraw-success": "Η προσφορά ανακλήθηκε.",
   "marketplace-counter": "Αντιπροσφορά",
   "marketplace-view-post": "Προβολή ανάρτησης",
   "marketplace-accept": "Αποδοχή",

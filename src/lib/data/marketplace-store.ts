@@ -1007,6 +1007,90 @@ export async function updateMarketplaceResponseStatus(
   return updated as MarketplaceResponse;
 }
 
+/**
+ * 102 (workflow-audit GAP 6): the RESPONDER withdraws their own offer.
+ *
+ * The inverse of updateMarketplaceResponseStatus — ownership is the
+ * response AUTHOR (the partner who sent it), not the post owner. A
+ * responder who typo'd a price or whose situation changed can pull the
+ * offer out of the owner's queue before a decision, instead of letting a
+ * wrong offer sit in "sent" forever (the only prior remedy was sending
+ * up to 5 corrections per day, which left the stale ones confusing the
+ * owner).
+ *
+ * Transition rules (status-validator): sent / viewed / countered →
+ * withdrawn. accepted / rejected / expired / withdrawn are terminal —
+ * once the owner decided, the responder cannot retroactively withdraw.
+ *
+ * CAS-guarded like the owner-side update: the row is only flipped when
+ * the status is still the previously-read value, so a concurrent
+ * owner accept racing the withdrawal cannot both win.
+ *
+ * On success the post's responses_count is decremented (a withdrawn
+ * offer is no longer a live response on the post).
+ */
+export async function withdrawMarketplaceResponse(
+  responseId: string,
+  tenantId: string,
+  callerPartnerId: string,
+): Promise<MarketplaceResponse> {
+  const sb = getSupabase();
+
+  const { data: row, error: fetchErr } = await sb
+    .from("marketplace_responses")
+    .select("*, post:marketplace_posts!inner(id, partner_id, tenant_id, responses_count)")
+    .eq("id", responseId)
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+  if (fetchErr) throw fetchErr;
+  if (!row) throw new MarketplaceRuleError("Response not found.", 404);
+
+  const r = row as MarketplaceResponse & {
+    post: { id: string; partner_id: string; tenant_id: string; responses_count: number } | null;
+  };
+  // Ownership: the caller must be the response AUTHOR.
+  if (r.partner_id !== callerPartnerId) {
+    throw new MarketplaceRuleError("Only the responder can withdraw their own offer.", 403);
+  }
+  // Validate the transition BEFORE the UPDATE (sent/viewed/countered →
+  // withdrawn; terminal states throw with the allowed-transitions message).
+  const currentStatus = r.status;
+  if (currentStatus && currentStatus !== "withdrawn") {
+    const t = validateStatusTransition("marketplace_response", currentStatus, "withdrawn");
+    if (!t.valid) {
+      throw new MarketplaceRuleError(
+        t.error || "This offer can no longer be withdrawn.",
+        409,
+      );
+    }
+  }
+  // CAS guard — only flip when the status is still what we just read.
+  const { data: updated, error } = await sb
+    .from("marketplace_responses")
+    .update({ status: "withdrawn" as MarketplaceResponseStatus })
+    .eq("id", responseId)
+    .eq("status", currentStatus)
+    .select()
+    .maybeSingle();
+  if (error) throw error;
+  if (!updated) {
+    throw new MarketplaceRuleError("Response status changed; please reload and retry.", 409);
+  }
+
+  // Decrement the post's responses_count (fire-and-forget, floor at 0).
+  if (r.post) {
+    void sb
+      .from("marketplace_posts")
+      .update({ responses_count: Math.max(0, (r.post.responses_count || 0) - 1) })
+      .eq("id", r.post.id)
+      .then(({ error: e }) => {
+        if (e) console.error("[marketplace] responses_count decrement failed:", e);
+      });
+  }
+
+  return updated as MarketplaceResponse;
+}
+
 // ─── My posts / responses / received ─────────────────────────────────────
 
 /**

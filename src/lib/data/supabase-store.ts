@@ -3162,6 +3162,17 @@ export class SupabaseStore implements Store {
       "marketplace_response_accepted",
       "marketplace_response_rejected",
       "marketplace_message_received",
+      // 102 (workflow-audit) — completes the marketplace notification loop:
+      // counter-offer, room opened, deal complete, offer withdrawn. Also
+      // adds 8c-5's marketplace_negotiation_cancelled, which was previously
+      // MISSING from this allowlist — the cancel route created the
+      // notification but the portal bell filtered it out, so the
+      // counterparty never actually saw it.
+      "marketplace_negotiation_cancelled",
+      "marketplace_response_countered",
+      "marketplace_negotiation_opened",
+      "marketplace_negotiation_accepted",
+      "marketplace_response_withdrawn",
     ];
     // 2b2-F3 — push the limit into the DB query (was: fetch all + slice in JS).
     // Default cap 200 is a safety net for the dashboard 60s poll + the
@@ -3289,6 +3300,17 @@ export class SupabaseStore implements Store {
       "marketplace_response_accepted",
       "marketplace_response_rejected",
       "marketplace_message_received",
+      // 102 (workflow-audit) — completes the marketplace notification loop:
+      // counter-offer, room opened, deal complete, offer withdrawn. Also
+      // adds 8c-5's marketplace_negotiation_cancelled, which was previously
+      // MISSING from this allowlist — the cancel route created the
+      // notification but the portal bell filtered it out, so the
+      // counterparty never actually saw it.
+      "marketplace_negotiation_cancelled",
+      "marketplace_response_countered",
+      "marketplace_negotiation_opened",
+      "marketplace_negotiation_accepted",
+      "marketplace_response_withdrawn",
     ];
     const { data, error } = await this.sb()
       .from("notifications")
@@ -3336,6 +3358,17 @@ export class SupabaseStore implements Store {
       "marketplace_response_accepted",
       "marketplace_response_rejected",
       "marketplace_message_received",
+      // 102 (workflow-audit) — completes the marketplace notification loop:
+      // counter-offer, room opened, deal complete, offer withdrawn. Also
+      // adds 8c-5's marketplace_negotiation_cancelled, which was previously
+      // MISSING from this allowlist — the cancel route created the
+      // notification but the portal bell filtered it out, so the
+      // counterparty never actually saw it.
+      "marketplace_negotiation_cancelled",
+      "marketplace_response_countered",
+      "marketplace_negotiation_opened",
+      "marketplace_negotiation_accepted",
+      "marketplace_response_withdrawn",
     ];
     const { count, error } = await this.sb()
       .from("notifications")

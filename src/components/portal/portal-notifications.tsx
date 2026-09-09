@@ -61,18 +61,37 @@ function portalViewForUrl(url: string, type: NotificationType): ViewKey | null {
 
 /** Map notification type to a visual category */
 function getNotifCategory(type: NotificationType): "info" | "warning" | "success" | "error" {
-  if (type.startsWith("kyc_rejected") || type === "invoice_overdue" || type === "low_stock_alert" || type === "marketplace_response_rejected") return "error";
-  if (type.startsWith("kyc_submitted") || type === "rfq_received" || type === "task_due_soon" || type === "marketplace_response_received") return "warning";
+  if (
+    type.startsWith("kyc_rejected") ||
+    type === "invoice_overdue" ||
+    type === "low_stock_alert" ||
+    type === "marketplace_response_rejected" ||
+    // 102 — the negotiation was killed by the counterparty.
+    type === "marketplace_negotiation_cancelled"
+  ) return "error";
+  if (
+    type.startsWith("kyc_submitted") ||
+    type === "rfq_received" ||
+    type === "task_due_soon" ||
+    type === "marketplace_response_received" ||
+    // 102 — a counter-offer / a new room both demand the recipient's
+    // attention ("your turn" moments in the deal loop).
+    type === "marketplace_response_countered" ||
+    type === "marketplace_negotiation_opened"
+  ) return "warning";
   if (
     type.startsWith("kyc_approved") ||
     type === "invoice_paid" ||
     type === "offer_accepted" ||
     type === "rfq_quoted" ||
     type === "portal_access_approved" ||
-    type === "marketplace_response_accepted"
+    type === "marketplace_response_accepted" ||
+    // 102 — both parties accepted: the deal is complete.
+    type === "marketplace_negotiation_accepted"
   )
     return "success";
-  // marketplace_message_received + everything else → info
+  // marketplace_message_received / marketplace_response_withdrawn (FYI
+  // events) + everything else → info
   return "info";
 }
 

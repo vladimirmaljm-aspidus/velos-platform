@@ -6771,6 +6771,12 @@ export const PORTAL: Record<string, string> = {
   "marketplace-response-status-rejected": "Recusada",
   "marketplace-response-status-expired": "Expirada",
   "marketplace-response-status-countered": "Com contra-proposta",
+  // 102 (workflow-audit GAP 6) — responder withdraws their own offer.
+  "marketplace-response-status-withdrawn": "Retirada",
+  "marketplace-withdraw": "Retirar",
+  "marketplace-withdraw-desc": "Retire esta proposta antes de o autor do anúncio decidir. Esta ação é irreversível — a proposta sai da fila de análise do autor e ele é notificado. Depois pode enviar uma nova proposta.",
+  "marketplace-withdraw-confirm": "Retirar proposta",
+  "marketplace-withdraw-success": "Proposta retirada.",
   "marketplace-counter": "Contra-proposta",
   "marketplace-view-post": "Ver anúncio",
   "marketplace-accept": "Aceitar",

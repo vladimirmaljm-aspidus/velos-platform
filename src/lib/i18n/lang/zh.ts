@@ -6714,6 +6714,12 @@ export const PORTAL: Record<string, string> = {
   "marketplace-response-status-rejected": "已拒绝",
   "marketplace-response-status-expired": "已过期",
   "marketplace-response-status-countered": "已还价",
+  // 102 (workflow-audit GAP 6) — responder withdraws their own offer.
+  "marketplace-response-status-withdrawn": "已撤回",
+  "marketplace-withdraw": "撤回",
+  "marketplace-withdraw-desc": "在发布方决定之前撤回此报价。此操作不可撤销——报价将从发布方的审核队列中移除，并通知对方。之后您可以重新发送新报价。",
+  "marketplace-withdraw-confirm": "撤回报价",
+  "marketplace-withdraw-success": "报价已撤回。",
   "marketplace-counter": "还价",
   "marketplace-view-post": "查看帖子",
   "marketplace-accept": "接受",

@@ -6714,6 +6714,12 @@ export const PORTAL: Record<string, string> = {
   "marketplace-response-status-rejected": "مرفوض",
   "marketplace-response-status-expired": "منتهي الصلاحية",
   "marketplace-response-status-countered": "ورد عليه عرض مقابل",
+  // 102 (workflow-audit GAP 6) — responder withdraws their own offer.
+  "marketplace-response-status-withdrawn": "مسحوبة",
+  "marketplace-withdraw": "سحب",
+  "marketplace-withdraw-desc": "اسحب هذا العرض قبل أن يقرر صاحب الإعلان. هذا الإجراء لا يمكن التراجع عنه — يُزال العرض من قائمة مراجعة صاحب الإعلار ويتم إخطاره. يمكنك بعد ذلك إرسال عرض جديد.",
+  "marketplace-withdraw-confirm": "سحب العرض",
+  "marketplace-withdraw-success": "تم سحب العرض.",
   "marketplace-counter": "عرض مقابل",
   "marketplace-view-post": "عرض المنشور",
   "marketplace-accept": "قبول",
