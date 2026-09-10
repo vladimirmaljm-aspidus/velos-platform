@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuthOrApiKey, resolveTenantId, hasPermission, audit, sanitizeError, type AuthContext, type ApiKeyAuthContext, getAuthUser } from "@/lib/api/helpers";
 import { validateStatusTransition } from "@/lib/api/status-validator";
 import { triggerWebhooks } from "@/lib/webhooks/deliver";
+import { summarizeBulkFailures, enrichAuditDetails, recordBulkFailures } from "@/lib/api/bulk-error-capture";
 
 export const runtime = "nodejs";
 
@@ -235,6 +236,15 @@ export async function POST(req: NextRequest) {
 
     // Single audit entry for the bulk operation — per-row audit entries
     // would balloon the audit log size by 100x for a typical bulk send.
+    // audit47: when rows failed, the per-row reasons are aggregated into the
+    // audit details AND recorded into error_logs (see recordBulkFailures) —
+    // a "200 with 0/72 success" must never again be invisible to the audit
+    // trail (root cause of the 2026-09-06 13×0/72 invisible failures).
+    const summary = summarizeBulkFailures(results);
+    const details = enrichAuditDetails(
+      { action, count: ids.length, successCount: succeededIds.length },
+      summary,
+    );
     await audit(
       auth.store,
       getAuthUser(auth),
@@ -242,8 +252,19 @@ export async function POST(req: NextRequest) {
       `offers.bulk_${action}`,
       "offers",
       succeededIds.join(","),
-      { action, count: ids.length, successCount: succeededIds.length },
+      details,
     );
+    await recordBulkFailures({
+      entity: "offers",
+      action,
+      results,
+      summary,
+      attemptedCount: ids.length,
+      succeededCount: succeededIds.length,
+      user: getAuthUser(auth),
+      tenantId: tid,
+      req,
+    });
 
     return NextResponse.json({
       results,

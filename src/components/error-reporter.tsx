@@ -223,7 +223,13 @@ export function reportError(err: unknown, context?: Record<string, unknown>): vo
 // Wrapping window.fetch ONCE covers all 378 fetch call-sites without
 // touching any of them:
 //   • only same-origin /api/... URLs are inspected
-//   • only status >= 500 counts (4xx are user errors, not app bugs)
+//   • status >= 500 → level 'error' (app bugs)
+//   • status 401 on NON-auth endpoints → level 'warning' (audit47: a session
+//     dying mid-use — "Session expired." on a mutation like /api/offers/bulk
+//     — was previously invisible: the mutation caught it, toasted it, and
+//     the audit never saw it. The auth surface (/api/auth/*, /api/portal/*)
+//     is EXEMPT because a 401 there is the NORMAL logged-out/login flow,
+//     not an incident.)
 //   • /api/client-errors itself is EXEMPT (a failing report POST must
 //     never become another report — the loop this file exists to prevent)
 //   • the ORIGINAL Response object is returned untouched — the body is
@@ -232,6 +238,13 @@ export function reportError(err: unknown, context?: Record<string, unknown>): vo
 //   • the reporter's own send() calls go through this wrapper too, but
 //     its endpoint is exempt and its failures are swallowed in send()
 let fetchPatched = false;
+
+/** Auth-surface prefixes: a 401 from these is the normal login/logout flow. */
+const AUTH_401_EXEMPT_PREFIXES = ["/api/auth/", "/api/portal/", "/api/client-errors"];
+
+function is401Exempt(path: string): boolean {
+  return AUTH_401_EXEMPT_PREFIXES.some((p) => path.startsWith(p));
+}
 
 function patchFetchForApi5xx(): void {
   try {
@@ -247,9 +260,6 @@ function patchFetchForApi5xx(): void {
       const response = await originalFetch(input, init);
 
       try {
-        // Cheap gate first: only 5xx proceed to the (heavier) URL check.
-        if (response.status < 500) return response;
-
         // Resolve the request path (input may be a string, URL, Request).
         let path = "";
         try {
@@ -263,6 +273,11 @@ function patchFetchForApi5xx(): void {
         }
         // Same-origin /api/ paths only — and never our own endpoint.
         if (!path.startsWith("/api/") || path === ENDPOINT) return response;
+
+        // Cheap gate: only the statuses we care about proceed further.
+        const is5xx = response.status >= 500;
+        const isSessionLoss = response.status === 401 && !is401Exempt(path);
+        if (!is5xx && !isSessionLoss) return response;
 
         const method =
           (init?.method || (input instanceof Request ? input.method : "GET") || "GET")
@@ -286,6 +301,28 @@ function patchFetchForApi5xx(): void {
           }
         } catch {
           // Body unreadable (stream already consumed elsewhere) — leave null.
+        }
+
+        if (isSessionLoss) {
+          // audit47 — "session died mid-use" signal. Warning level: a single
+          // 401 after idle expiry is expected; a recurring fingerprint with a
+          // growing occurrence_count is the "clients log themselves out"
+          // incident signature an admin needs to see.
+          report(
+            {
+              message: serverMessage || `401 ${method} ${path}`,
+              stack: null,
+              extra: {},
+            },
+            "warning",
+            {
+              type: "api_401_session_lost",
+              status: 401,
+              method,
+              path,
+            },
+          );
+          return response;
         }
 
         report(

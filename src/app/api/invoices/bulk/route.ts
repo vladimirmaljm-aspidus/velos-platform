@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuthOrApiKey, resolveTenantId, hasPermission, audit, sanitizeError, type AuthContext, type ApiKeyAuthContext, getAuthUser } from "@/lib/api/helpers";
 import { validateStatusTransition } from "@/lib/api/status-validator";
 import { triggerWebhooks } from "@/lib/webhooks/deliver";
+import { summarizeBulkFailures, enrichAuditDetails, recordBulkFailures } from "@/lib/api/bulk-error-capture";
 
 export const runtime = "nodejs";
 
@@ -174,6 +175,9 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // audit47: aggregate failure reasons into the audit details + record a
+    // row in error_logs when rows failed — same rationale as offers/bulk.
+    const summary = summarizeBulkFailures(results);
     await audit(
       auth.store,
       getAuthUser(auth),
@@ -181,8 +185,19 @@ export async function POST(req: NextRequest) {
       `invoices.bulk_${action}`,
       "invoices",
       succeededIds.join(","),
-      { action, count: ids.length, successCount: succeededIds.length },
+      enrichAuditDetails({ action, count: ids.length, successCount: succeededIds.length }, summary),
     );
+    await recordBulkFailures({
+      entity: "invoices",
+      action,
+      results,
+      summary,
+      attemptedCount: ids.length,
+      succeededCount: succeededIds.length,
+      user: getAuthUser(auth),
+      tenantId: tid,
+      req,
+    });
 
     return NextResponse.json({
       results,
