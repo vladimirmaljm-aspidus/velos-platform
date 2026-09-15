@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuthOrApiKey, hasPermission, audit, sanitizeError } from "@/lib/api/helpers";
 import { validateStatusTransition } from "@/lib/api/status-validator";
 import { recomputeDocTotals } from "@/lib/utils/doc-totals";
+// migration 105 — per-document display options sanitizer.
+import { sanitizeDisplayOptions } from "@/lib/utils/document-display";
 
 export const runtime = "nodejs";
 
@@ -69,6 +71,8 @@ function whitelistInvoiceFields(
     "service_start",
     "service_end",
     "service_location",
+    // ── Per-document display options (migration 105) ──
+    "display_options",
   ]);
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(body)) {
@@ -260,6 +264,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     // and surface as an opaque 500.
     if (safeBody.nature != null && safeBody.nature !== "goods" && safeBody.nature !== "services") {
       return NextResponse.json({ error: "nature must be 'goods' or 'services'." }, { status: 400 });
+    }
+    // Migration 105: shape-validate the display options after the
+    // whitelist (drops unknown keys / wrong types — never a jsonb 500).
+    if (safeBody.display_options !== undefined) {
+      safeBody.display_options = sanitizeDisplayOptions(safeBody.display_options);
     }
     const updated = await auth.store.upsertInvoice({ ...safeBody, id, tenant_id: existing.tenant_id });
 

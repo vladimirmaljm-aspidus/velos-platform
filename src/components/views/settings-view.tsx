@@ -22,9 +22,11 @@ import { PageHeader } from "@/components/common/page-header";
 import { MemorandumStudio } from "@/components/common/memorandum-studio";
 import { ModuleInfoTooltip } from "@/components/common/module-info-tooltip";
 
-import { ShieldAlert, Building2, ShieldCheck, Mail, Upload, Loader2, UserCog, X, ImageIcon, Send, CheckCircle2, XCircle, Zap, AlertTriangle, Globe, Info, FileText, Palette, QrCode, Save, Bell, DollarSign, MessageSquare, Store, Clock, UserPlus, ArrowLeftRight, TrendingUp, CloudSun, Ship, Anchor, MapPin, ClipboardList } from "lucide-react";
+import { ShieldAlert, Building2, ShieldCheck, Mail, Upload, Loader2, UserCog, X, ImageIcon, Send, CheckCircle2, XCircle, Zap, AlertTriangle, Globe, Info, FileText, Palette, QrCode, Save, Bell, DollarSign, MessageSquare, Store, Clock, UserPlus, ArrowLeftRight, TrendingUp, CloudSun, Ship, Anchor, MapPin, ClipboardList, Landmark, Plus, Trash2 } from "lucide-react";
 import { useAppStore, isAdmin } from "@/lib/store/app-store";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+// migration 105 — the canonical bank-account shape + parser.
+import { parseTenantBankAccounts, type TenantBankAccount } from "@/lib/utils/bank-accounts";
 import {
   PortalModuleGrid,
   initModulePermDraft,
@@ -421,6 +423,7 @@ function CompanyTab() {
   }
 
   return (
+    <div className="space-y-6">
     <Card className="border-border/60 shadow-soft rounded-xl">
       <CardHeader>
         <CardTitle className="flex items-center gap-2"><Building2 className="size-5" /> {t("admin-settings-company-title")}</CardTitle>
@@ -493,6 +496,179 @@ function CompanyTab() {
         <div className="mt-4 flex justify-end">
           <Button onClick={() => save(value)} disabled={saving}>
             {saving ? t("admin-saving") : t("save")}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+
+    {/* ── Company bank accounts (migration 105) ── the JSON array rendered
+        on offer / proforma / invoice PDFs. The account holder (naziv
+        korisnika računa) leads every block on the documents. */}
+    <BankAccountsCard />
+    </div>
+  );
+}
+
+/** Tenant bank accounts editor (migration 105) — GET/PUT /api/bank-accounts.
+ *  Every account: holder · bank name · account no/IBAN · SWIFT · currency ·
+ *  optional bank address. Rendered on document PDFs as aligned label/value
+ *  rows; the holder falls back to the company legal name when empty. */
+function BankAccountsCard() {
+  const t = useT();
+  const api = useApiUrl();
+  const queryClient = useQueryClient();
+  const [accounts, setAccounts] = useState<TenantBankAccount[]>([]);
+
+  const load = useQuery({
+    queryKey: ["bank-accounts"],
+    queryFn: async () => {
+      const r = await fetch(api("/api/bank-accounts"));
+      if (!r.ok) throw new Error("failed");
+      const data = await r.json();
+      return parseTenantBankAccounts((data as any).accounts ?? null);
+    },
+  });
+
+  // Mirror the loaded list into local editable state once.
+  useEffect(() => {
+    if (load.data) {
+// eslint-disable-next-line react-hooks/set-state-in-effect
+      setAccounts(load.data);
+    }
+  }, [load.data]);
+
+  const save = useMutation({
+    mutationFn: async (list: TenantBankAccount[]) => {
+      const r = await fetch(api("/api/bank-accounts"), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accounts: list }),
+      });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.error || "failed");
+      }
+      return r.json();
+    },
+    onSuccess: () => {
+      toast.success(t("adm-bank-saved"));
+      void queryClient.invalidateQueries({ queryKey: ["bank-accounts"] });
+    },
+    onError: () => toast.error(t("adm-bank-save-failed")),
+  });
+
+  const setAcct = (idx: number, patch: Partial<TenantBankAccount>) => {
+    setAccounts((prev) => prev.map((a, i) => (i === idx ? { ...a, ...patch } : a)));
+  };
+  const addAcct = () => {
+    setAccounts((prev) => [...prev, { bankName: "", accountHolder: "", accountNumber: "", swiftCode: "", currency: "" }]);
+  };
+  const removeAcct = (idx: number) => {
+    setAccounts((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  if (load.isLoading) {
+    return (
+      <Card className="border-border/60 shadow-soft rounded-xl">
+        <CardContent className="p-6 space-y-3">
+          {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="border-border/60 shadow-soft rounded-xl">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2"><Landmark className="size-5" /> {t("adm-bank-accounts-title")}</CardTitle>
+        <CardDescription>{t("adm-bank-accounts-desc")}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {accounts.length === 0 && (
+          <div className="rounded-md border border-dashed border-border/60 p-3 text-sm text-muted-foreground">
+            {t("adm-bank-empty")}
+          </div>
+        )}
+        {accounts.map((acct, idx) => (
+          <div key={idx} className="rounded-lg border border-border/70 bg-card p-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-muted-foreground">#{idx + 1}</span>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="size-8 text-destructive"
+                onClick={() => removeAcct(idx)}
+                aria-label={t("adm-bank-remove")}
+                title={t("adm-bank-remove")}
+              >
+                <Trash2 className="size-4" />
+              </Button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">{t("adm-bank-holder")}</Label>
+                <Input
+                  className="h-9"
+                  value={acct.accountHolder || ""}
+                  onChange={(e) => setAcct(idx, { accountHolder: e.target.value })}
+                  placeholder={t("adm-bank-holder-ph")}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">{t("adm-bank-name-label")}</Label>
+                <Input
+                  className="h-9"
+                  value={acct.bankName || ""}
+                  onChange={(e) => setAcct(idx, { bankName: e.target.value })}
+                  placeholder="Emirates NBD"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">{t("adm-bank-number")}</Label>
+                <Input
+                  className="h-9 font-mono"
+                  value={acct.accountNumber || ""}
+                  onChange={(e) => setAcct(idx, { accountNumber: e.target.value })}
+                  placeholder="AE49 0500 0000 0019 3565 09"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">{t("adm-bank-swift")}</Label>
+                <Input
+                  className="h-9 font-mono"
+                  value={acct.swiftCode || ""}
+                  onChange={(e) => setAcct(idx, { swiftCode: e.target.value })}
+                  placeholder="ABDIAEAD"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">{t("adm-bank-currency")}</Label>
+                <Input
+                  className="h-9"
+                  value={acct.currency || ""}
+                  onChange={(e) => setAcct(idx, { currency: e.target.value.toUpperCase().slice(0, 8) })}
+                  placeholder="AED"
+                />
+              </div>
+              <div className="space-y-1.5 md:col-span-2">
+                <Label className="text-xs">{t("adm-bank-address")}</Label>
+                <Input
+                  className="h-9"
+                  value={acct.bankAddress || ""}
+                  onChange={(e) => setAcct(idx, { bankAddress: e.target.value })}
+                  placeholder={t("adm-bank-address-ph")}
+                />
+              </div>
+            </div>
+          </div>
+        ))}
+        <div className="flex items-center justify-between">
+          <Button type="button" variant="outline" size="sm" onClick={addAcct}>
+            <Plus className="size-4 mr-1" /> {t("adm-bank-add")}
+          </Button>
+          <Button onClick={() => save.mutate(accounts)} disabled={save.isPending}>
+            {save.isPending ? t("admin-saving") : t("save")}
           </Button>
         </div>
       </CardContent>

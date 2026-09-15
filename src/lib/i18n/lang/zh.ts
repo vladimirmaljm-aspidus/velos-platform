@@ -2007,6 +2007,36 @@ export const FINANCE: Record<string, string> = {
   "fin-service-lines": "服务明细",
   "fin-linked-offer-nature-hint": "关联报价决定单据类型",
   "fin-service-doc-note": "服务单据",
+
+  // ── Per-document display options (migration 105) ──
+  "fin-display-options": "PDF显示选项",
+  "fin-display-options-hint": "选择此单据显示的内容 — 随单据一起保存",
+  "fin-display-title-label": "单据标题",
+  "fin-display-title-ph": "留空使用默认标题",
+  "fin-display-vat-label": "增值税显示",
+  "fin-display-vat-auto": "自动 — 实际金额",
+  "fin-display-vat-amount": "显示金额（含0）",
+  "fin-display-vat-reverse": "反向征收说明",
+  "fin-display-vat-custom": "自定义备注",
+  "fin-display-vat-hidden": "隐藏增值税行",
+  "fin-display-vat-note-label": "自定义增值税备注",
+  "fin-display-vat-note-ph": "例如：零税率供应 — 不收取增值税",
+  "fin-display-period-label": "服务期间",
+  "fin-display-period-auto": "自动 — 有日期时显示",
+  "fin-display-period-show": "始终显示",
+  "fin-display-period-hide": "隐藏",
+  "fin-display-location-label": "服务地点单元格",
+  "fin-display-payment-label": "付款条件单元格",
+  "fin-display-qty-label": "数量列",
+  "fin-display-notice-label": "法律声明",
+  "fin-display-notice-text-label": "自定义声明文本",
+  "fin-display-notice-ph": "替换默认法律声明",
+  "fin-display-words-label": "大写金额",
+  "fin-display-bank-label": "银行信息",
+  "fin-display-signatures-label": "签名栏",
+  "fin-display-group-doc": "单据",
+  "fin-display-group-svc": "服务字段",
+  "fin-display-group-sec": "板块",
 };
 
 export const LOGISTICS: Record<string, string> = {
@@ -3812,6 +3842,23 @@ export const ADMINISTRATION: Record<string, string> = {
     "admin-marketplace-toast-approved": "公告已批准并发布。",
     "admin-marketplace-toast-report-dismissed": "举报已驳回。",
     "admin-marketplace-toast-report-reviewed": "举报已标记为已处理。",
+
+  // ── Company bank accounts editor (migration 105) ──
+  "adm-bank-accounts-title": "公司银行账户",
+  "adm-bank-accounts-desc": "显示在报价、形式发票和发票上的付款信息 — 每个区块以账户持有人开头。",
+  "adm-bank-add": "添加账户",
+  "adm-bank-holder": "账户持有人",
+  "adm-bank-holder-ph": "例如 ASPIDUS DMCC（默认为公司名称）",
+  "adm-bank-name-label": "银行名称",
+  "adm-bank-number": "账号 / IBAN",
+  "adm-bank-swift": "SWIFT / BIC",
+  "adm-bank-currency": "币种",
+  "adm-bank-address": "银行地址（可选）",
+  "adm-bank-address-ph": "显示在单据上的分行地址",
+  "adm-bank-remove": "移除",
+  "adm-bank-saved": "银行账户已保存",
+  "adm-bank-save-failed": "无法保存银行账户",
+  "adm-bank-empty": "暂无银行账户 — 添加客户可付款的账户。",
 };
 
 export const PLATFORM: Record<string, string> = {

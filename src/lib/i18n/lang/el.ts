@@ -2007,6 +2007,36 @@ export const FINANCE: Record<string, string> = {
   "fin-service-lines": "Γραμμές υπηρεσιών",
   "fin-linked-offer-nature-hint": "Η συνδεδεμένη προσφορά ορίζει τον τύπο του εγγράφου",
   "fin-service-doc-note": "Έγγραφο υπηρεσιών",
+
+  // ── Per-document display options (migration 105) ──
+  "fin-display-options": "Επιλογές εμφάνισης PDF",
+  "fin-display-options-hint": "Επιλέξτε τι εμφανίζει αυτό το έγγραφο — αποθηκεύεται μαζί του",
+  "fin-display-title-label": "Τίτλος εγγράφου",
+  "fin-display-title-ph": "Αφήστε κενό για τον προεπιλεγμένο τίτλο",
+  "fin-display-vat-label": "Εμφάνιση ΦΠΑ",
+  "fin-display-vat-auto": "Αυτόματο — πραγματικό ποσό",
+  "fin-display-vat-amount": "Εμφάνιση ποσού (και 0)",
+  "fin-display-vat-reverse": "Σημείωση αντεστραμμένης επιβολής",
+  "fin-display-vat-custom": "Προσαρμοσμένη σημείωση",
+  "fin-display-vat-hidden": "Απόκρυψη γραμμής ΦΠΑ",
+  "fin-display-vat-note-label": "Προσαρμοσμένη σημείωση ΦΠΑ",
+  "fin-display-vat-note-ph": "π.χ. Μηδενικός συντελεστής — δεν επιβάλλεται ΦΠΑ",
+  "fin-display-period-label": "Περίοδος υπηρεσίας",
+  "fin-display-period-auto": "Αυτόματο — εμφάνιση όταν υπάρχουν ημερομηνίες",
+  "fin-display-period-show": "Πάντα εμφάνιση",
+  "fin-display-period-hide": "Απόκρυψη",
+  "fin-display-location-label": "Κελί τόπου παροχής",
+  "fin-display-payment-label": "Κελί όρων πληρωμής",
+  "fin-display-qty-label": "Στήλη ποσότητας",
+  "fin-display-notice-label": "Νομική σημείωση",
+  "fin-display-notice-text-label": "Προσαρμοσμένο κείμενο σημείωσης",
+  "fin-display-notice-ph": "Αντικαθιστά την προεπιλεγμένη νομική σημείωση",
+  "fin-display-words-label": "Ποσό με λέξεις",
+  "fin-display-bank-label": "Τραπεζικά στοιχεία",
+  "fin-display-signatures-label": "Τμήμα υπογραφών",
+  "fin-display-group-doc": "Έγγραφο",
+  "fin-display-group-svc": "Πεδία υπηρεσίας",
+  "fin-display-group-sec": "Ενότητες",
 };
 
 export const LOGISTICS: Record<string, string> = {
@@ -3812,6 +3842,23 @@ export const ADMINISTRATION: Record<string, string> = {
     "admin-marketplace-toast-approved": "Η ανάρτηση εγκρίθηκε και δημοσιεύτηκε.",
     "admin-marketplace-toast-report-dismissed": "Η αναφορά απορρίφθηκε.",
     "admin-marketplace-toast-report-reviewed": "Η αναφορά σημάνθηκε ως ελεγμένη.",
+
+  // ── Company bank accounts editor (migration 105) ──
+  "adm-bank-accounts-title": "Τραπεζικοί λογαριασμοί εταιρείας",
+  "adm-bank-accounts-desc": "Στοιχεία πληρωμής σε προσφορές, προφορμα και τιμολόγια — ο κάτοχος του λογαριασμού προηγείται σε κάθε μπλοκ.",
+  "adm-bank-add": "Προσθήκη λογαριασμού",
+  "adm-bank-holder": "Κάτοχος λογαριασμού",
+  "adm-bank-holder-ph": "π.χ. ASPIDUS DMCC (προεπιλογή η επωνυμία της εταιρείας)",
+  "adm-bank-name-label": "Όνομα τράπεζας",
+  "adm-bank-number": "Αριθμός λογαριασμού / IBAN",
+  "adm-bank-swift": "SWIFT / BIC",
+  "adm-bank-currency": "Νόμισμα",
+  "adm-bank-address": "Διεύθυνση τράπεζας (προαιρετικό)",
+  "adm-bank-address-ph": "Διεύθυνση υποκαταστήματος που εμφανίζεται στο έγγραφο",
+  "adm-bank-remove": "Αφαίρεση",
+  "adm-bank-saved": "Οι τραπεζικοί λογαριασμοί αποθηκεύτηκαν",
+  "adm-bank-save-failed": "Αποτυχία αποθήκευσης τραπεζικών λογαριασμών",
+  "adm-bank-empty": "Δεν υπάρχουν τραπεζικοί λογαριασμοί — προσθέστε τους λογαριασμούς στους οποίους μπορούν να πληρώσουν οι πελάτες.",
 };
 
 export const PLATFORM: Record<string, string> = {

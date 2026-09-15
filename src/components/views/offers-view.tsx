@@ -57,6 +57,7 @@ import { Offer, OfferLineItem, OfferStatus, Partner, Product, Deal, DocumentRevi
 import { CURRENCIES, OFFER_STATUSES, PAYMENT_TERMS_LOCAL, INCOTERM_CODES } from "@/lib/data/reference";
 import { UnitSelect } from "@/components/common/unit-select";
 import { NatureSwitch, NatureBadge } from "@/components/common/nature-switch";
+import { DocumentDisplayOptions } from "@/components/common/document-display-options";
 import { convertUnitPrice, describeConversion } from "@/lib/utils/unit-conversion";
 import { CountrySelect } from "@/components/common/country-select";
 import { OfferTextBuilder } from "@/components/common/offer-text-builder";
@@ -2014,6 +2015,7 @@ function OfferFormDialog({
           origin_country: null,
           inspection: null,
           certificate: null,
+          display_options: null,
           items: [],
         });
         setMoreDetailsOpen(false);
@@ -2039,6 +2041,11 @@ function OfferFormDialog({
 
   function set<K extends keyof Offer>(k: K, v: Offer[K]) {
     setForm((f) => ({ ...f, [k]: v }));
+  }
+
+  // migration 105 — per-document PDF display options writer.
+  function setDisplayOptions(opts: Offer["display_options"]) {
+    setForm((f) => ({ ...f, display_options: opts }));
   }
 
   /** Setter for the extra form-only fields (origin_country, inspection,
@@ -2685,6 +2692,16 @@ function OfferFormDialog({
               </div>
             )}
 
+          </div>
+
+          {/* ─── Per-document PDF display options (migration 105) ─── */}
+          <div className="mt-4">
+            <DocumentDisplayOptions
+              value={form.display_options ?? null}
+              onChange={setDisplayOptions}
+              nature={isServices ? "services" : "goods"}
+              defaultTitle={isServices ? "Offer" : "Offer"}
+            />
           </div>
 
           {/* ─── Trade Terms / Service Details Section ─── */}

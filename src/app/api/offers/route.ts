@@ -7,6 +7,8 @@ import { withApm } from "@/lib/monitoring/apm";
 import { redactOfferFields } from "@/lib/api/redact";
 // FIX-ALL-2 / Fix 6 — XSS prevention on free-text fields.
 import { sanitizeFields } from "@/lib/security/sanitize-input";
+// migration 105 — per-document display options sanitizer.
+import { sanitizeDisplayOptions } from "@/lib/utils/document-display";
 import { recomputeDocTotals } from "@/lib/utils/doc-totals";
 
 export const runtime = "nodejs";
@@ -90,6 +92,12 @@ async function _post(req: NextRequest) {
     // the DB write — a bogus value would violate the column CHECK constraint.
     if (body.nature != null && body.nature !== "goods" && body.nature !== "services") {
       return NextResponse.json({ error: "nature must be 'goods' or 'services'." }, { status: 400 });
+    }
+
+    // Migration 105: sanitize display_options (shape-validated — unknown
+    // keys/wrong types are dropped, never a 500 from the jsonb column).
+    if (body.display_options !== undefined) {
+      body.display_options = sanitizeDisplayOptions(body.display_options);
     }
 
   // FIX-ALL-2 / Fix 7 — validation BEFORE DB write. Audit Part D found

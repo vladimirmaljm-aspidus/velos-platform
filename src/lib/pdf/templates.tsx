@@ -3,9 +3,12 @@ import { Document, Page, Text, View, StyleSheet, Image, Font } from "@react-pdf/
 import type { Offer, Invoice, Proforma, LetterOfIntent, OfferLineItem, Partner, Tenant, MemorandumSettings, TenantSeal, DocumentTemplate, TenantLetterhead } from "@/lib/supabase/types";
 import { docNature } from "@/lib/supabase/types";
 import { substitutePlaceholders, hasPagePlaceholders, normalizeSegment, type ContentSegment, type PlaceholderData } from "@/lib/utils/content-config";
-import { parseStyleConfig, type TemplateStyleConfig } from "@/lib/utils/style-config";
+import { parseStyleConfig, DEFAULT_PERIOD_COLUMN_WIDTH, type TemplateStyleConfig } from "@/lib/utils/style-config";
 import { templateSegments, readTemplateLayout, type TemplateFieldLayout } from "@/lib/pdf/doc-template";
 import { normalizeBlocks, htmlToRuns, type DocBlock, type BlocksContent, type RichRun } from "@/lib/utils/doc-blocks";
+// migration 105 — per-document display options (VAT presentation, optional
+// service period, custom title, notice/bank/signature switches).
+import { parseDisplayOptions } from "@/lib/utils/document-display";
 
 // ── Shared helpers (audit12 dedup) ─────────────────────────────────────────
 // mmToPoints, mapFont, boldVariant, lightenHex, fmtMoney, amountInWords,
@@ -358,11 +361,14 @@ export function buildPdfDocument({
   const flexQuantity = colFlex("quantity", 1.1);
   const flexUnitPrice = colFlex("unitPrice", 1);
   const flexTotal = colFlex("total", 1.1);
-  // migration 103 (goods vs services): the services line-items table swaps
-  // HS Code + Origin for a single "Period" column. Follows the same
-  // style_json columnWidths pattern so Template Studio can override it; only
-  // the services branch below consumes it — the goods table is unchanged.
-  const flexPeriod = colFlex("period", 1.1);
+  // migration 103/105 (OVERLAP FIX): the services line-items table swaps
+  // HS Code + Origin for a single "Period" column at a PERCENT width
+  // (23.5% default — style-config.ts) exactly like every other column.
+  // The original code passed a RAW flex (1.1/1.45) here, which mixed with
+  // the percent-derived ratios of the other columns and made Period eat
+  // ~65% of the table — Rate/Total got squeezed until their texts overlapped
+  // (the "texts and numbers overlapping" bug on services documents).
+  const flexPeriod = colFlex("period", DEFAULT_PERIOD_COLUMN_WIDTH / 100);
   const numericAlign = st.table.numericAlign;
 
   // ── audit23: custom watermark (style_json.watermark) ────────────────
@@ -731,12 +737,40 @@ export function buildPdfDocument({
       fontSize: 8.5,
       fontFamily: headingFontFamily,
       color: "#333",
-      marginBottom: 1,
+      marginBottom: 2,
     },
     bankAccountDetails: {
       fontSize: 8,
       color: "#555",
       lineHeight: 1.4,
+    },
+    // migration 105 — bank account card: aligned label/value rows so the
+    // details read as a tidy two-column table (Account Holder / Bank /
+    // IBAN / SWIFT / Address / Currency) instead of a crammed one-liner.
+    bankDetailTable: {
+      borderWidth: 0.5,
+      borderColor: tableBorderColor,
+      borderRadius: 3,
+      overflow: "hidden",
+    },
+    bankDetailRow: { flexDirection: "row", borderBottomWidth: 0.25, borderBottomColor: tableBorderColor },
+    bankDetailLabel: {
+      width: "34%",
+      fontSize: 7,
+      color: "#777",
+      paddingVertical: 2.5,
+      paddingHorizontal: 6,
+      textTransform: "uppercase",
+      fontFamily: headingFontFamily,
+      borderRightWidth: 0.25,
+      borderRightColor: tableBorderColor,
+    },
+    bankDetailValue: {
+      flex: 1,
+      fontSize: 8,
+      color: "#333",
+      paddingVertical: 2.5,
+      paddingHorizontal: 6,
     },
 
     // ── Authorized Signatures ─────────────────────────────────────────
@@ -808,17 +842,25 @@ export function buildPdfDocument({
   // the exact trade-document look. LOI carries no nature column and stays
   // on the goods path by construction.
   const nature = docNature(doc as any);
-  // Services documents get "Service *" titles so the reader immediately
-  // sees this is NOT a goods/trade document (no HS codes, no shipping).
-  // LOI is exempt — it has no nature field and keeps "LETTER OF INTENT".
-  const servicesDocTitle: Record<"offer" | "invoice" | "proforma", string> = {
-    offer: "Service Offer",
-    invoice: "Service Invoice",
-    proforma: "Service Proforma Invoice",
-  };
-  const docTitle = nature === "services" && docType !== "loi"
-    ? servicesDocTitle[docType]
+  // ── Per-document display options (migration 105) ─────────────────────
+  // Parsed defensively (never throws — a malformed column renders with
+  // the built-in defaults). Every option below has a default that keeps
+  // the legacy output byte-stable for rows with display_options = NULL.
+  const dOpts = parseDisplayOptions((doc as any).display_options);
+  // Custom title override — the issuer's own wording wins ("Tax Invoice",
+  // "Fee Note"…). Otherwise the canonical title per doc type; services
+  // documents use the PLAIN titles ("Invoice", not "Commercial Invoice" —
+  // the latter is customs/trade terminology; same for Offer / Proforma).
+  // NO "Service *" prefix anywhere (user feedback on migration 103: the
+  // nature badge in the app + the Service Details grid already carry it).
+  const defaultDocTitle =
+    nature === "services" && docType === "invoice" ? "Invoice"
+    : nature === "services" && docType === "proforma" ? "Proforma Invoice"
+    : nature === "services" && docType === "offer" ? "Offer"
     : docTitleMap[docType];
+  const docTitle = dOpts.custom_title && dOpts.custom_title.trim()
+    ? dOpts.custom_title.trim()
+    : defaultDocTitle;
 
   // ── Pull trade / shipping fields off the doc ───────────────────────
   // Offer carries these typed; invoice/proforma may carry them via the
@@ -902,6 +944,56 @@ export function buildPdfDocument({
   const servicePeriod: string =
     fmtServicePeriod(svc.service_start || itemPeriodFrom, svc.service_end || itemPeriodTo) ?? "—";
   const serviceLocation: string = svc.service_location || "—";
+
+  // ── Migration 105: services visibility resolution ────────────────────
+  // Not every service has a time period — the Period column + Service
+  // Period cell default to "auto" (show ONLY when the doc or any line
+  // carries dates); "show" forces them on, "hide" forces them off. The
+  // same resolution governs both the Service Details cell and the Period
+  // column so they can never disagree.
+  const hasPeriodData = Boolean(
+    svc.service_start || svc.service_end || itemPeriodFrom || itemPeriodTo,
+  );
+  const periodVisible =
+    dOpts.show_period === "hide" ? false
+    : dOpts.show_period === "show" ? true
+    : hasPeriodData;
+  const serviceLocationVisible = dOpts.show_service_location !== false;
+  const paymentCellVisible = dOpts.show_payment_terms !== false;
+  // Quantity column: "hide" removes it (fixed-fee services where
+  // "1 unit × rate" is noise); anything else keeps the goods-like default.
+  const quantityVisible = dOpts.show_quantity !== "hide";
+
+  // ── Migration 105: VAT row resolution ────────────────────────────────
+  // "auto" (default) is FACTUAL: the amount when tax_total is a number
+  // (0.00 included — a zero-rated sale is a fact), NO row when null.
+  // The reverse-charge legend is an EXPLICIT opt-in ("reverse_charge") —
+  // it is a legally-weighty statement the issuer must choose, never one
+  // the renderer infers from a zero (user feedback on migration 103:
+  // tax_total = 0 auto-printed "Reverse charge — VAT settled by recipient"
+  // on invoices where that was simply wrong).
+  //   vatRow = { label, value } | null — rendered under the totals table.
+  const vatMode = dOpts.vat_mode ?? "auto";
+  const taxTotal: number | null = (doc as any).tax_total;
+  const vatRow: { label: string; value: string } | null = (() => {
+    if (vatMode === "hidden") return null;
+    if (vatMode === "reverse_charge") {
+      return { label: docType === "offer" ? "Tax / VAT:" : "VAT:", value: "Reverse charge — VAT settled by recipient" };
+    }
+    if (vatMode === "custom") {
+      const note = (dOpts.vat_custom_note || "").trim();
+      return note ? { label: docType === "offer" ? "Tax / VAT:" : "VAT:", value: note } : null;
+    }
+    // "amount" (forced) and "auto" (default): the factual amount.
+    if (typeof taxTotal === "number") {
+      return { label: docType === "offer" ? "Tax / VAT:" : "VAT:", value: fmtMoney(taxTotal, currency) };
+    }
+    if (vatMode === "amount") {
+      // Forced amount on a null tax_total — render 0.00 rather than nothing.
+      return { label: docType === "offer" ? "Tax / VAT:" : "VAT:", value: fmtMoney(0, currency) };
+    }
+    return null; // auto + unknown tax → no row (the audit20 fix, kept).
+  })();
 
   // ── Bank accounts (modern JSON array on tenant) ─────────────────────
   // The DB column is typed as `string | null` (jsonb), but in practice it
@@ -996,8 +1088,11 @@ export function buildPdfDocument({
   // invoice isn't a "commercial invoice" (customs terminology) and a services
   // proforma isn't issued "for customs/bank purposes". The services offer
   // keeps the goods offer notice (validity wording is nature-agnostic).
-  const docNotice =
-    nature === "services" && docType === "invoice"
+  // migration 105: the issuer's custom_notice wins over every default —
+  // the disclaimer is editable per document.
+  const docNotice = dOpts.custom_notice && dOpts.custom_notice.trim()
+    ? dOpts.custom_notice.trim()
+    : nature === "services" && docType === "invoice"
       ? "This is a computer-generated service invoice and is valid without signature."
       : nature === "services" && docType === "proforma"
       ? "This proforma invoice is issued for services rendered and is not a tax invoice."
@@ -1369,76 +1464,61 @@ export function buildPdfDocument({
         key: "trade_terms",
         y: layoutYOf("trade_terms"),
         node: (<>
-        {nature === "services" ? (<>
+        {nature === "services" ? (() => {
+          // Migration 105: every Service Details cell is individually
+          // optional (period / place / payment). No visible cells → the
+          // whole section disappears instead of rendering an empty box.
+          const svcCells: Array<{ key: string; label: string; value: string }> = [];
+          if (periodVisible) svcCells.push({ key: "period", label: "Service Period", value: servicePeriod });
+          if (serviceLocationVisible) svcCells.push({ key: "location", label: "Place of Service", value: serviceLocation });
+          if (paymentCellVisible) svcCells.push({ key: "payment", label: "Payment", value: paymentTerms });
+          if (svcCells.length === 0) return null;
+          return (<>
         <Text style={styles.sectionHeader}>Service Details</Text>
         <View style={styles.tradeTerms} wrap={false}>
           <View style={styles.tradeTermsRow}>
-            <View style={styles.tradeTermsCell}>
-              <Text style={styles.tradeTermsLabel}>Service Period</Text>
-              {/* Doc-level service_start/end, falling back to the earliest
-                  from / latest to across line items — "—" when neither
-                  carries dates. */}
-              <Text style={styles.tradeTermsValue}>{servicePeriod}</Text>
-            </View>
-            <View style={styles.tradeTermsCell}>
-              <Text style={styles.tradeTermsLabel}>Place of Service</Text>
-              <Text style={styles.tradeTermsValue}>{serviceLocation}</Text>
-            </View>
-            <View style={styles.tradeTermsCellLast}>
-              <Text style={styles.tradeTermsLabel}>Payment</Text>
-              <Text style={styles.tradeTermsValue}>{paymentTerms}</Text>
-            </View>
+            {svcCells.map((c, i) => (
+              <View key={c.key} style={i === svcCells.length - 1 ? styles.tradeTermsCellLast : styles.tradeTermsCell}>
+                <Text style={styles.tradeTermsLabel}>{c.label}</Text>
+                <Text style={styles.tradeTermsValue}>{c.value}</Text>
+              </View>
+            ))}
           </View>
         </View>
-        </>) : (<>
+          </>);
+        })() : (() => {
+          // Migration 105: the goods Trade Terms grid is now cell-driven —
+          // hiding the Payment cell reflows the remaining cells into clean
+          // 3-per-row chunks instead of leaving a hole in the grid.
+          const goodsCells: Array<{ key: string; label: string; value: string }> = [
+            { key: "incoterm", label: "Incoterm", value: incoterm },
+            { key: "origin", label: "Origin", value: originCountry === "—" ? "—" : (originCountry.startsWith("Multiple") ? originCountry : countryName(originCountry)) },
+            ...(paymentCellVisible ? [{ key: "payment" as const, label: "Payment", value: paymentTerms }] : []),
+            { key: "pol", label: "POL", value: pol },
+            { key: "pod", label: "POD", value: pod },
+            { key: "lead", label: "Lead Time", value: leadTime },
+            { key: "packaging", label: "Packaging", value: packaging },
+            { key: "vessel", label: "Vessel", value: vessel },
+            { key: "container", label: "Container", value: containerNo },
+          ];
+          const rows: Array<typeof goodsCells> = [];
+          for (let i = 0; i < goodsCells.length; i += 3) rows.push(goodsCells.slice(i, i + 3));
+          return (<>
         <Text style={styles.sectionHeader}>Trade Terms</Text>
         <View style={styles.tradeTerms} wrap={false}>
-          <View style={styles.tradeTermsRow}>
-            <View style={styles.tradeTermsCell}>
-              <Text style={styles.tradeTermsLabel}>Incoterm</Text>
-              {/* 2g-F18 fix (round 4): only the incoterm code here — POL has its own cell below. */}
-              <Text style={styles.tradeTermsValue}>{incoterm}</Text>
-            </View>
-            <View style={styles.tradeTermsCell}>
-              <Text style={styles.tradeTermsLabel}>Origin</Text>
-              {/* 2g-F19 fix (round 4): common origin (or "Multiple") instead of first-item-only. */}
-              <Text style={styles.tradeTermsValue}>{originCountry === "—" ? "—" : (originCountry.startsWith("Multiple") ? originCountry : countryName(originCountry))}</Text>
-            </View>
-            <View style={styles.tradeTermsCellLast}>
-              <Text style={styles.tradeTermsLabel}>Payment</Text>
-              <Text style={styles.tradeTermsValue}>{paymentTerms}</Text>
-            </View>
+          {rows.map((row, ri) => (
+          <View key={ri} style={styles.tradeTermsRow}>
+            {row.map((c, ci) => (
+              <View key={c.key} style={ci === row.length - 1 ? styles.tradeTermsCellLast : styles.tradeTermsCell}>
+                <Text style={styles.tradeTermsLabel}>{c.label}</Text>
+                <Text style={styles.tradeTermsValue}>{c.value}</Text>
+              </View>
+            ))}
           </View>
-          <View style={styles.tradeTermsRow}>
-            <View style={styles.tradeTermsCell}>
-              <Text style={styles.tradeTermsLabel}>POL</Text>
-              <Text style={styles.tradeTermsValue}>{pol}</Text>
-            </View>
-            <View style={styles.tradeTermsCell}>
-              <Text style={styles.tradeTermsLabel}>POD</Text>
-              <Text style={styles.tradeTermsValue}>{pod}</Text>
-            </View>
-            <View style={styles.tradeTermsCellLast}>
-              <Text style={styles.tradeTermsLabel}>Lead Time</Text>
-              <Text style={styles.tradeTermsValue}>{leadTime}</Text>
-            </View>
-          </View>
-          <View style={styles.tradeTermsRow}>
-            <View style={styles.tradeTermsCell}>
-              <Text style={styles.tradeTermsLabel}>Packaging</Text>
-              <Text style={styles.tradeTermsValue}>{packaging}</Text>
-            </View>
-            <View style={styles.tradeTermsCell}>
-              <Text style={styles.tradeTermsLabel}>Vessel</Text>
-              <Text style={styles.tradeTermsValue}>{vessel}</Text>
-            </View>
-            <View style={styles.tradeTermsCellLast}>
-              <Text style={styles.tradeTermsLabel}>Container</Text>
-              <Text style={styles.tradeTermsValue}>{containerNo}</Text>
-            </View>
-          </View>
+          ))}
         </View>
-        </>)}
+          </>);
+        })()}
         </>),
       });
     }
@@ -1457,13 +1537,26 @@ export function buildPdfDocument({
         {nature === "services" ? (<>
         <Text style={styles.sectionHeader}>Service Lines</Text>
         <View style={styles.table}>
+          {/* Migration 105: the column list is DYNAMIC — Period and Quantity
+              are per-document optional (not every service has a time period;
+              fixed-fee services don't need "1 unit × rate"). The header and
+              the rows below both derive from this list, so they can never
+              disagree. */}
+          {(() => {
+            const svcCols: Array<{ key: string; flex: number; header: string; numeric?: boolean }> = [
+              { key: "num", flex: flexRowNum, header: "#" },
+              { key: "desc", flex: flexDescription, header: "Description" },
+              ...(periodVisible ? [{ key: "period", flex: flexPeriod, header: "Period" }] : []),
+              ...(quantityVisible ? [{ key: "qty", flex: flexQuantity, header: "Quantity", numeric: true }] : []),
+              { key: "rate", flex: flexUnitPrice, header: "Rate", numeric: true },
+              { key: "total", flex: flexTotal, header: "Total", numeric: true },
+            ];
+            return (
+              <>
           <View style={styles.tableHeader} fixed>
-            <Text style={[styles.th, { flex: flexRowNum }]}>#</Text>
-            <Text style={[styles.th, { flex: flexDescription }]}>Description</Text>
-            <Text style={[styles.th, { flex: flexPeriod }]}>Period</Text>
-            <Text style={[styles.th, { flex: flexQuantity }]}>Quantity</Text>
-            <Text style={[styles.th, { flex: flexUnitPrice, textAlign: numericAlign }]}>Rate</Text>
-            <Text style={[styles.th, { flex: flexTotal, textAlign: numericAlign }]}>Total</Text>
+                {svcCols.map((c) => (
+                  <Text key={c.key} style={[styles.th, { flex: c.flex, ...(c.numeric ? { textAlign: numericAlign } : {}) }]}>{c.header}</Text>
+                ))}
           </View>
           {items.map((item, i) => {
             // Same tax-EXCLUSIVE total as the goods table (2g-F7): qty ×
@@ -1474,31 +1567,63 @@ export function buildPdfDocument({
             // Per-line period; a line without its own dates falls back to
             // the document-level period (the Service Details cell value).
             const linePeriod = fmtServicePeriod(item.service_period_from, item.service_period_to) ?? servicePeriod;
+            /* OVERLAP FIX (user feedback on migration 103): every cell is a
+             * View carrying the flex, with the Text INSIDE. When a Text
+             * carries flex directly, @react-pdf/renderer computes the flex
+             * basis from the FULL unwrapped text width — a long period
+             * ("06 Aug 2026 – 31 Aug 2026") or description then pushes into
+             * the neighbouring columns and texts/numbers overlap. A View
+             * gets a correct proportional box and the inner Text wraps
+             * within it. The goods table (short cells) is untouched. */
+            const cell = (key: string, children: React.ReactNode) => {
+              const c = svcCols.find((x) => x.key === key)!;
+              return (
+                <View key={key} style={{ flex: c.flex, paddingHorizontal: 4 }}>
+                  {children}
+                </View>
+              );
+            };
             return (
               <View
                 key={i}
                 style={[styles.tableRow, ...(tableStripe && i % 2 === 1 ? [styles.tableRowEven] : [])]}
               >
-                <Text style={[styles.td, { flex: flexRowNum }]}>{i + 1}</Text>
+                {cell("num", <Text style={styles.td}>{i + 1}</Text>)}
                 {/* Services: free-text detail lives in the description —
                     SKU/Brand sub-lines are goods-only and stay off. */}
-                <Text style={[styles.td, { flex: flexDescription }]}>
-                  {item.product_name}
-                  {item.description ? `\n${item.description}` : ""}
-                </Text>
-                <Text style={[styles.td, { flex: flexPeriod }]}>{linePeriod}</Text>
-                <Text style={[styles.td, { flex: flexQuantity, textAlign: numericAlign }]}>
-                  {fmtQty(item.quantity)} {item.unit || "unit"}
-                </Text>
-                <Text style={[styles.td, { flex: flexUnitPrice, textAlign: numericAlign }]}>
-                  {fmtMoney(item.unit_price, currency)}
-                </Text>
-                <Text style={[styles.td, { flex: flexTotal, textAlign: numericAlign, fontFamily: headingFontFamily }]}>
-                  {fmtMoney(lineNet, currency)}
-                </Text>
+                {cell("desc",
+                  <Text style={styles.td}>
+                    {item.product_name}
+                    {item.description ? `\n${item.description}` : ""}
+                  </Text>,
+                )}
+                {periodVisible ? cell("period",
+                  /* Two-line period (from / – to) — a single line "06 Aug
+                   * 2026 – 31 Aug 2026" is ~115pt and would force the
+                   * period column to dominate the row. */
+                  <Text style={styles.td}>{linePeriod.replace(" – ", "\n– ")}</Text>,
+                ) : null}
+                {quantityVisible ? cell("qty",
+                  <Text style={[styles.td, { textAlign: numericAlign }]}>
+                    {fmtQty(item.quantity)} {item.unit || "unit"}
+                  </Text>,
+                ) : null}
+                {cell("rate",
+                  <Text style={[styles.td, { textAlign: numericAlign }]}>
+                    {fmtMoney(item.unit_price, currency)}
+                  </Text>,
+                )}
+                {cell("total",
+                  <Text style={[styles.td, { textAlign: numericAlign, fontFamily: headingFontFamily }]}>
+                    {fmtMoney(lineNet, currency)}
+                  </Text>,
+                )}
               </View>
             );
           })}
+              </>
+            );
+          })()}
         </View>
         </>) : (<>
         <Text style={styles.sectionHeader}>Line Items</Text>
@@ -1617,33 +1742,37 @@ export function buildPdfDocument({
               <Text style={styles.totalValue}>-{fmtMoney((doc as any).discount_total, currency)}</Text>
             </View>
           )}
-          {(doc as any).tax_total > 0 ? (
-            <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>{docType === "offer" ? "Tax / VAT:" : "VAT:"}</Text>
-              <Text style={styles.totalValue}>{fmtMoney((doc as any).tax_total, currency)}</Text>
-            </View>
-          ) : (doc as any).tax_total === 0 ? (
-            /* 2g-F11: when tax_total is EXPLICITLY 0 on a commercial
-               invoice/proforma/offer, this is a reverse-charge (B2B
-               cross-border) scenario. Tax authorities require the "Reverse
-               charge" legend — omitting it makes the document look like a
-               tax-exempt consumer sale.
-               audit20 fix: the legend used to print when tax_total was
-               null/undefined too (unknown ≠ zero) — a missing tax field
-               asserted a legally-weighty statement the issuer never made.
-               Unknown tax now renders NO VAT row at all. */
-            <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>VAT:</Text>
-              <Text style={styles.totalValue}>Reverse charge — VAT settled by recipient</Text>
-            </View>
-          ) : null}
+          {/* Migration 105: the VAT row is fully issuer-controlled (see the
+              vatRow resolution above). "auto" (default) is factual — the
+              amount when tax_total is a number (0.00 included), no row when
+              null. The reverse-charge legend ONLY appears when explicitly
+              chosen (previously tax_total = 0 auto-printed it — a legally
+              weighted statement the issuer never made). Long values (the
+              legend, custom notes) render as a wrapped right-aligned line so
+              they can never overlap the label or overflow the totals box. */}
+          {vatRow && (
+            vatRow.value.length > 22 ? (
+              <View style={styles.totalRow} wrap={false}>
+                <Text style={[styles.totalValue, { flex: 1, textAlign: "right" }]}>
+                  <Text style={styles.totalLabel}>{vatRow.label} </Text>
+                  {vatRow.value}
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.totalRow}>
+                <Text style={styles.totalLabel}>{vatRow.label}</Text>
+                <Text style={styles.totalValue}>{vatRow.value}</Text>
+              </View>
+            )
+          )}
           <View style={styles.grandTotal}>
             <Text style={styles.grandTotalLabel}>GRAND TOTAL:</Text>
             <Text style={styles.grandTotalValue}>{fmtMoney((doc as any).total, currency)}</Text>
           </View>
           {/* audit27: amount-in-words has its own eye-toggle — hiding it
-              no longer removes the whole totals table. */}
-          {!layoutHidden("amount_in_words") && (
+              no longer removes the whole totals table.
+              migration 105: + per-document switch (show_amount_words). */}
+          {!layoutHidden("amount_in_words") && dOpts.show_amount_words !== false && (
           <View style={styles.amountInWords}>
             <Text style={styles.amountInWordsLabel}>Amount in Words</Text>
             <Text style={styles.amountInWordsValue}>{amountInWords((doc as any).total, currency)}</Text>
@@ -1674,7 +1803,9 @@ export function buildPdfDocument({
     }
 
     // ── 8. Bank details ──
-    if (!layoutHidden("bank_details") && (bankAccountsList.length > 0 || bankDetails ||
+    // migration 105: + per-document switch (show_bank_details). The
+    // Template Studio layout toggle stays the tenant-wide default.
+    if (!layoutHidden("bank_details") && dOpts.show_bank_details !== false && (bankAccountsList.length > 0 || bankDetails ||
       (!bankDetails && (tenant?.bank_name || tenant?.bank_iban || tenant?.bank_swift)))) {
       bodySections.push({
         key: "bank_details",
@@ -1684,48 +1815,89 @@ export function buildPdfDocument({
             <Text style={styles.sectionHeader} wrap={false}>Bank Details</Text>
 
             {/* If document has a specific bank_details override (user selected
-                one account in the form), show ONLY that — not all accounts. */}
+                one account in the form), show ONLY that — not all accounts.
+                Rendered line-per-line so the issuer's own layout survives. */}
             {bankDetails ? (
               <View style={styles.bankList}>
-                <View style={styles.bankAccountRow} wrap={false}>
-                  <Text style={styles.bankAccountDetails}>{bankDetails}</Text>
-                </View>
-              </View>
-            ) : bankAccountsList.length > 0 ? (
-              /* Modern: render every tenant account as its own row. */
-              <View style={styles.bankList}>
-                {bankAccountsList.map((acct: any, i: number) => (
+                {bankDetails.split("\n").map((line) => line.trim()).filter(Boolean).map((line, i) => (
                   <View key={i} style={styles.bankAccountRow} wrap={false}>
-                    <Text style={styles.bankAccountName}>
-                      {acct.bankName || acct.bank_name || "Bank"}
-                      {acct.currency ? ` (${acct.currency})` : ""}
-                    </Text>
-                    <Text style={styles.bankAccountDetails}>
-                      Account: {acct.accountNumber || acct.account_number || "—"}
-                      {"   "}
-                      SWIFT: {acct.swiftCode || acct.swift_code || "—"}
-                    </Text>
+                    <Text style={i === 0 ? styles.bankAccountName : styles.bankAccountDetails}>{line}</Text>
                   </View>
                 ))}
               </View>
-            ) : (
-              /* Legacy: tenant has only single-bank fields. */
+            ) : bankAccountsList.length > 0 ? (
+              /* Modern (migration 105 redesign): every account renders as a
+                 clean labelled card — the ACCOUNT HOLDER (naziv korisnika
+                 računa) is the first, boldest row (falls back to the
+                 company's legal name), then Bank / IBAN-or-Account No /
+                 SWIFT / bank address as aligned label-value rows. Previously
+                 "Account: X   SWIFT: Y" was crammed onto one line with no
+                 holder at all. */
               <View style={styles.bankList}>
-                {tenant?.bank_name && (
-                  <View style={styles.bankAccountRow} wrap={false}>
-                    <Text style={styles.bankAccountName}>{tenant.bank_name}</Text>
+                {bankAccountsList.map((acct: any, i: number) => {
+                  const acctHolder = (acct.accountHolder || acct.account_holder || acct.holder || tenant?.legal_name || tenant?.name || "").trim();
+                  const bankName = acct.bankName || acct.bank_name || "Bank";
+                  const acctNo = acct.accountNumber || acct.account_number || "";
+                  const iban = acct.iban && acct.iban !== acctNo ? acct.iban : "";
+                  const swift = acct.swiftCode || acct.swift_code || "";
+                  const acctCurrency = acct.currency || "";
+                  const bankAddress = (acct.bankAddress || acct.bank_address || "").trim();
+                  const looksIban = /^[A-Z]{2}\d{2}[A-Z0-9]{10,}$/i.test((iban || acctNo).replace(/\s+/g, ""));
+                  const rows: Array<{ label: string; value: string }> = [];
+                  if (acctHolder) rows.push({ label: "Account Holder", value: acctHolder });
+                  rows.push({ label: "Bank", value: bankName });
+                  if (acctNo) rows.push({ label: looksIban && !iban ? "IBAN" : "Account Number", value: acctNo });
+                  if (iban) rows.push({ label: "IBAN", value: iban });
+                  if (swift) rows.push({ label: "SWIFT / BIC", value: swift });
+                  if (bankAddress) rows.push({ label: "Bank Address", value: bankAddress });
+                  if (acctCurrency) rows.push({ label: "Currency", value: acctCurrency });
+                  return (
+                    <View key={i} style={styles.bankAccountRow} wrap={false}>
+                      <Text style={styles.bankAccountName}>
+                        {bankName}{acctCurrency ? ` (${acctCurrency})` : ""}
+                      </Text>
+                      <View style={styles.bankDetailTable}>
+                        {rows.map((r, j) => (
+                          <View key={j} style={styles.bankDetailRow}>
+                            <Text style={styles.bankDetailLabel}>{r.label}</Text>
+                            <Text style={[styles.bankDetailValue, j === 0 ? { fontFamily: headingFontFamily } : {}]}>{r.value}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            ) : (
+              /* Legacy: tenant has only single-bank fields — same labelled
+                 layout, holder first. */
+              <View style={styles.bankList}>
+                <View style={styles.bankAccountRow} wrap={false}>
+                  <View style={styles.bankDetailTable}>
+                    <View style={styles.bankDetailRow}>
+                      <Text style={styles.bankDetailLabel}>Account Holder</Text>
+                      <Text style={[styles.bankDetailValue, { fontFamily: headingFontFamily }]}>{tenant?.legal_name || tenant?.name || "—"}</Text>
+                    </View>
+                    {tenant?.bank_name && (
+                      <View style={styles.bankDetailRow}>
+                        <Text style={styles.bankDetailLabel}>Bank</Text>
+                        <Text style={styles.bankDetailValue}>{tenant.bank_name}</Text>
+                      </View>
+                    )}
+                    {tenant?.bank_iban && (
+                      <View style={styles.bankDetailRow}>
+                        <Text style={styles.bankDetailLabel}>IBAN</Text>
+                        <Text style={styles.bankDetailValue}>{tenant.bank_iban}</Text>
+                      </View>
+                    )}
+                    {tenant?.bank_swift && (
+                      <View style={styles.bankDetailRow}>
+                        <Text style={styles.bankDetailLabel}>SWIFT / BIC</Text>
+                        <Text style={styles.bankDetailValue}>{tenant.bank_swift}</Text>
+                      </View>
+                    )}
                   </View>
-                )}
-                {tenant?.bank_iban && (
-                  <View style={styles.bankAccountRow} wrap={false}>
-                    <Text style={styles.bankAccountDetails}>IBAN: {tenant.bank_iban}</Text>
-                  </View>
-                )}
-                {tenant?.bank_swift && (
-                  <View style={styles.bankAccountRow} wrap={false}>
-                    <Text style={styles.bankAccountDetails}>SWIFT/BIC: {tenant.bank_swift}</Text>
-                  </View>
-                )}
+                </View>
               </View>
             )}
           </View>
@@ -1866,7 +2038,9 @@ export function buildPdfDocument({
   }
 
   // ── 9. Authorized signatures + company seal ──
-  if (!layoutHidden("signatures")) {
+  // migration 105: + per-document switch (show_signatures). The Template
+  // Studio layout toggle stays the tenant-wide default.
+  if (!layoutHidden("signatures") && dOpts.show_signatures !== false) {
     bodySections.push({
       key: "signatures",
       y: layoutYOf("signatures"),
@@ -2498,8 +2672,10 @@ export function buildPdfDocument({
             the same text (it repeats on every page — the legal line is
             covered without the body duplicate).
             audit35: skipped in blocks mode — the author owns the body and
-            the starter skeleton ships the notice as a quote block. */}
-        {!footerCoversNotice && !contentBlocks && (
+            the starter skeleton ships the notice as a quote block.
+            migration 105: + per-document switch (show_notice) and the
+            custom_notice text override (resolved into docNotice). */}
+        {!footerCoversNotice && !contentBlocks && dOpts.show_notice !== false && (
         <View style={styles.noticeBox} wrap={false}>
           <Text style={styles.noticeText}>{docNotice}</Text>
         </View>

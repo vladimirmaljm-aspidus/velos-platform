@@ -301,6 +301,11 @@ export class SupabaseStore implements Store {
       // 095). Same class of bug: without this entry every template save
       // silently dropped the authored blocks.
       "content_json",
+      // migration 105 — per-document display options (offers / proformas /
+      // invoices). Plain-object JSONB: without this entry sanitizePayload
+      // would strip it on every save and the VAT/period/title options would
+      // silently vanish.
+      "display_options",
     ]);
     const out: SupaRow = {};
     for (const [k, v] of Object.entries(row)) {

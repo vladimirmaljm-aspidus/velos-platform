@@ -23,6 +23,14 @@ export interface TenantBankAccount {
   currency?: string;
   holder?: string;
   account_holder?: string;
+  // migration 105 — the account holder (naziv korisnika računa) shown as
+  // the first row of the PDF's Bank Details card. `holder` above stays for
+  // legacy rows; editors now write accountHolder (camelCase, matching
+  // bankName/swiftCode).
+  accountHolder?: string;
+  /** Optional bank branch address — rendered as a "Bank Address" row. */
+  bankAddress?: string;
+  bank_address?: string;
 }
 
 /**
@@ -47,18 +55,22 @@ export function parseTenantBankAccounts(
 /**
  * Format a single bank account as the multi-line string saved into the
  * offer's `bank_details` column. The PDF renders this verbatim.
+ * migration 105: the account holder leads (naziv korisnika računa) and the
+ * bank address (when present) closes.
  */
 export function formatBankDetailsForOffer(acct: TenantBankAccount): string {
   const bankName = acct.bankName || acct.bank_name || "";
   const accountNumber = acct.accountNumber || acct.account_number || acct.iban || "";
   const swift = acct.swiftCode || acct.swift_code || "";
-  const holder = acct.holder || acct.account_holder || "";
+  const holder = acct.accountHolder || acct.holder || acct.account_holder || "";
   const currency = acct.currency || "";
+  const bankAddress = acct.bankAddress || acct.bank_address || "";
   const lines: string[] = [];
   if (bankName) lines.push(bankName);
   if (holder) lines.push(`Account holder: ${holder}`);
   if (accountNumber) lines.push(`Account: ${accountNumber}`);
   if (swift) lines.push(`SWIFT: ${swift}`);
   if (currency) lines.push(`Currency: ${currency}`);
+  if (bankAddress) lines.push(`Bank address: ${bankAddress}`);
   return lines.join("\n");
 }

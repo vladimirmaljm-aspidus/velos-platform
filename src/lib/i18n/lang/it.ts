@@ -2007,6 +2007,36 @@ export const FINANCE: Record<string, string> = {
   "fin-service-lines": "Righe di servizio",
   "fin-linked-offer-nature-hint": "L'offerta collegata imposta il tipo di documento",
   "fin-service-doc-note": "Documento di servizi",
+
+  // ── Per-document display options (migration 105) ──
+  "fin-display-options": "Opzioni di visualizzazione PDF",
+  "fin-display-options-hint": "Scegli cosa mostra questo documento — salvato con il documento",
+  "fin-display-title-label": "Titolo del documento",
+  "fin-display-title-ph": "Lascia vuoto per il titolo predefinito",
+  "fin-display-vat-label": "Visualizzazione IVA",
+  "fin-display-vat-auto": "Auto — importo effettivo",
+  "fin-display-vat-amount": "Mostra importo (anche 0)",
+  "fin-display-vat-reverse": "Nota inversione",
+  "fin-display-vat-custom": "Nota personalizzata",
+  "fin-display-vat-hidden": "Nascondi riga IVA",
+  "fin-display-vat-note-label": "Nota IVA personalizzata",
+  "fin-display-vat-note-ph": "es. Fornitura a zero aliquota — IVA non addebitata",
+  "fin-display-period-label": "Periodo di servizio",
+  "fin-display-period-auto": "Auto — mostra se sono presenti date",
+  "fin-display-period-show": "Mostra sempre",
+  "fin-display-period-hide": "Nascondi",
+  "fin-display-location-label": "Cella luogo di servizio",
+  "fin-display-payment-label": "Cella condizioni di pagamento",
+  "fin-display-qty-label": "Colonna quantità",
+  "fin-display-notice-label": "Nota legale",
+  "fin-display-notice-text-label": "Testo nota personalizzata",
+  "fin-display-notice-ph": "Sostituisce la nota legale predefinita",
+  "fin-display-words-label": "Importo in lettere",
+  "fin-display-bank-label": "Dati bancari",
+  "fin-display-signatures-label": "Blocco firme",
+  "fin-display-group-doc": "Documento",
+  "fin-display-group-svc": "Campi servizio",
+  "fin-display-group-sec": "Sezioni",
 };
 
 export const LOGISTICS: Record<string, string> = {
@@ -3812,6 +3842,23 @@ export const ADMINISTRATION: Record<string, string> = {
     "admin-marketplace-toast-approved": "Annuncio approvato e pubblicato.",
     "admin-marketplace-toast-report-dismissed": "Segnalazione respinta.",
     "admin-marketplace-toast-report-reviewed": "Segnalazione segnata come esaminata.",
+
+  // ── Company bank accounts editor (migration 105) ──
+  "adm-bank-accounts-title": "Conti bancari aziendali",
+  "adm-bank-accounts-desc": "Dati di pagamento su offerte, proforma e fatture — l'intestatario del conto apre ogni blocco.",
+  "adm-bank-add": "Aggiungi conto",
+  "adm-bank-holder": "Intestatario del conto",
+  "adm-bank-holder-ph": "es. ASPIDUS DMCC (predefinito il nome della società)",
+  "adm-bank-name-label": "Nome della banca",
+  "adm-bank-number": "Numero di conto / IBAN",
+  "adm-bank-swift": "SWIFT / BIC",
+  "adm-bank-currency": "Valuta",
+  "adm-bank-address": "Indirizzo della banca (facoltativo)",
+  "adm-bank-address-ph": "Indirizzo della filiale mostrato sul documento",
+  "adm-bank-remove": "Rimuovi",
+  "adm-bank-saved": "Conti bancari salvati",
+  "adm-bank-save-failed": "Impossibile salvare i conti bancari",
+  "adm-bank-empty": "Nessun conto bancario — aggiungi i conti su cui i clienti possono pagare.",
 };
 
 export const PLATFORM: Record<string, string> = {

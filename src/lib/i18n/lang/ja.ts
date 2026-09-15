@@ -2007,6 +2007,36 @@ export const FINANCE: Record<string, string> = {
   "fin-service-lines": "サービス明細",
   "fin-linked-offer-nature-hint": "リンクされた見積書が書類タイプを設定します",
   "fin-service-doc-note": "サービス書類",
+
+  // ── Per-document display options (migration 105) ──
+  "fin-display-options": "PDF表示オプション",
+  "fin-display-options-hint": "この書類に表示する内容を選択 — 書類と一緒に保存されます",
+  "fin-display-title-label": "書類タイトル",
+  "fin-display-title-ph": "空欄でデフォルトのタイトルを使用",
+  "fin-display-vat-label": "消費税表示",
+  "fin-display-vat-auto": "自動 — 実際の金額",
+  "fin-display-vat-amount": "金額を表示（0も）",
+  "fin-display-vat-reverse": "リバースチャージ注記",
+  "fin-display-vat-custom": "カスタム注記",
+  "fin-display-vat-hidden": "消費税行を非表示",
+  "fin-display-vat-note-label": "カスタム消費税注記",
+  "fin-display-vat-note-ph": "例：軽減対象外 — 消費税は請求されません",
+  "fin-display-period-label": "サービス期間",
+  "fin-display-period-auto": "自動 — 日付があれば表示",
+  "fin-display-period-show": "常に表示",
+  "fin-display-period-hide": "非表示",
+  "fin-display-location-label": "サービス提供場所セル",
+  "fin-display-payment-label": "支払条件セル",
+  "fin-display-qty-label": "数量列",
+  "fin-display-notice-label": "法的注記",
+  "fin-display-notice-text-label": "カスタム注記テキスト",
+  "fin-display-notice-ph": "デフォルトの法的注記を置き換えます",
+  "fin-display-words-label": "金額の文字表記",
+  "fin-display-bank-label": "銀行情報",
+  "fin-display-signatures-label": "署名欄",
+  "fin-display-group-doc": "書類",
+  "fin-display-group-svc": "サービス項目",
+  "fin-display-group-sec": "セクション",
 };
 
 export const LOGISTICS: Record<string, string> = {
@@ -3812,6 +3842,23 @@ export const ADMINISTRATION: Record<string, string> = {
     "admin-marketplace-toast-approved": "投稿を承認して公開しました。",
     "admin-marketplace-toast-report-dismissed": "通報を却下しました。",
     "admin-marketplace-toast-report-reviewed": "通報を確認済みとしてマークしました。",
+
+  // ── Company bank accounts editor (migration 105) ──
+  "adm-bank-accounts-title": "会社の銀行口座",
+  "adm-bank-accounts-desc": "見積書・プロフォーマ・請求書に表示される支払情報 — 各ブロックの先頭は口座名義人です。",
+  "adm-bank-add": "口座を追加",
+  "adm-bank-holder": "口座名義人",
+  "adm-bank-holder-ph": "例：ASPIDUS DMCC（デフォルトは会社名）",
+  "adm-bank-name-label": "銀行名",
+  "adm-bank-number": "口座番号 / IBAN",
+  "adm-bank-swift": "SWIFT / BIC",
+  "adm-bank-currency": "通貨",
+  "adm-bank-address": "銀行住所（任意）",
+  "adm-bank-address-ph": "書類に表示される支店住所",
+  "adm-bank-remove": "削除",
+  "adm-bank-saved": "銀行口座を保存しました",
+  "adm-bank-save-failed": "銀行口座を保存できませんでした",
+  "adm-bank-empty": "銀行口座がまだありません — 顧客が支払える口座を追加してください。",
 };
 
 export const PLATFORM: Record<string, string> = {

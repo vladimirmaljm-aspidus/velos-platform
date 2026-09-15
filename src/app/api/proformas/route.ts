@@ -5,6 +5,8 @@ import { getSupabase } from "@/lib/supabase/client";
 // with offers POST). Proforma PDFs render subject/notes/payment_terms via
 // dangerouslySetInnerHTML, so escape <, >, ", ' here.
 import { sanitizeFields } from "@/lib/security/sanitize-input";
+// migration 105 — per-document display options sanitizer.
+import { sanitizeDisplayOptions } from "@/lib/utils/document-display";
 import { recomputeDocTotals } from "@/lib/utils/doc-totals";
 
 export const runtime = "nodejs";
@@ -86,6 +88,12 @@ export async function POST(req: NextRequest) {
     // the DB write — a bogus value would violate the column CHECK constraint.
     if (body.nature != null && body.nature !== "goods" && body.nature !== "services") {
       return NextResponse.json({ error: "nature must be 'goods' or 'services'." }, { status: 400 });
+    }
+
+    // Migration 105: sanitize display_options (shape-validated — unknown
+    // keys/wrong types are dropped, never a 500 from the jsonb column).
+    if (body.display_options !== undefined) {
+      body.display_options = sanitizeDisplayOptions(body.display_options);
     }
 
     // FIX-PRODUCTS-DOCS / Fix 4 (b) — required-fields check. partner_id

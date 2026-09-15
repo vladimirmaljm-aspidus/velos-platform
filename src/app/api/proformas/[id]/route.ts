@@ -6,6 +6,8 @@ import { validateStatusTransition } from "@/lib/api/status-validator";
 // FIX-PRODUCTS-DOCS / Fix 2 — XSS prevention on free-text fields (parity
 // with offers PUT) + mass-assignment whitelist mirroring whitelistInvoiceFields.
 import { sanitizeFields } from "@/lib/security/sanitize-input";
+// migration 105 — per-document display options sanitizer.
+import { sanitizeDisplayOptions } from "@/lib/utils/document-display";
 import { recomputeDocTotals } from "@/lib/utils/doc-totals";
 
 export const runtime = "nodejs";
@@ -62,6 +64,8 @@ function whitelistProformaFields(
     "service_start",
     "service_end",
     "service_location",
+    // ── Per-document display options (migration 105) ──
+    "display_options",
   ]);
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(body)) {
@@ -143,6 +147,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     // the DB write — a bogus value would violate the column CHECK constraint.
     if (body.nature != null && body.nature !== "goods" && body.nature !== "services") {
       return NextResponse.json({ error: "nature must be 'goods' or 'services'." }, { status: 400 });
+    }
+    // Migration 105: sanitize display_options before the whitelist.
+    if (body.display_options !== undefined) {
+      body.display_options = sanitizeDisplayOptions(body.display_options);
     }
     // FIX-PRODUCTS-DOCS / Fix 2 — XSS prevention on free-text fields
     // (parity with offers PUT). Proforma PDFs render subject/notes/terms

@@ -187,6 +187,9 @@ export async function POST(req: NextRequest) {
       service_start: offerAny.service_start ?? null,
       service_end: offerAny.service_end ?? null,
       service_location: offerAny.service_location ?? null,
+      // migration 105 — carry the per-document display options (VAT
+      // presentation, optional period, custom title…) through the chain.
+      display_options: offerAny.display_options ?? null,
     };
 
     // 7. Enforce monthly_documents quota (parity with POST /api/invoices)

@@ -2007,6 +2007,36 @@ export const FINANCE: Record<string, string> = {
   "fin-service-lines": "بنود الخدمة",
   "fin-linked-offer-nature-hint": "العرض المرتبط يحدد نوع المستند",
   "fin-service-doc-note": "مستند خدمات",
+
+  // ── Per-document display options (migration 105) ──
+  "fin-display-options": "خيارات عرض PDF",
+  "fin-display-options-hint": "اختر ما يعرضه هذا المستند — يُحفظ مع المستند",
+  "fin-display-title-label": "عنوان المستند",
+  "fin-display-title-ph": "اتركه فارغًا للعنوان الافتراضي",
+  "fin-display-vat-label": "عرض ضريبة القيمة المضافة",
+  "fin-display-vat-auto": "تلقائي — المبلغ الفعلي",
+  "fin-display-vat-amount": "عرض المبلغ (حتى 0)",
+  "fin-display-vat-reverse": "ملاحظة الاحتساب العكسي",
+  "fin-display-vat-custom": "ملاحظة مخصصة",
+  "fin-display-vat-hidden": "إخفاء سطر ضريبة القيمة المضافة",
+  "fin-display-vat-note-label": "ملاحظة ضريبة مخصصة",
+  "fin-display-vat-note-ph": "مثال: توريد بصفر النسبة — لا تُفرض ضريبة",
+  "fin-display-period-label": "فترة الخدمة",
+  "fin-display-period-auto": "تلقائي — يُعرض عند وجود تواريخ",
+  "fin-display-period-show": "عرض دائمًا",
+  "fin-display-period-hide": "إخفاء",
+  "fin-display-location-label": "خلية مكان الخدمة",
+  "fin-display-payment-label": "خلية شروط الدفع",
+  "fin-display-qty-label": "عمود الكمية",
+  "fin-display-notice-label": "إشعار قانوني",
+  "fin-display-notice-text-label": "نص الإشعار المخصص",
+  "fin-display-notice-ph": "يستبدل الإشعار القانوني الافتراضي",
+  "fin-display-words-label": "المبلغ بالكلمات",
+  "fin-display-bank-label": "بيانات البنك",
+  "fin-display-signatures-label": "قسم التوقيعات",
+  "fin-display-group-doc": "المستند",
+  "fin-display-group-svc": "حقول الخدمة",
+  "fin-display-group-sec": "الأقسام",
 };
 
 export const LOGISTICS: Record<string, string> = {
@@ -3812,6 +3842,23 @@ export const ADMINISTRATION: Record<string, string> = {
     "admin-marketplace-toast-approved": "تمت الموافقة على الإعلان ونُشر.",
     "admin-marketplace-toast-report-dismissed": "تم رفض البلاغ.",
     "admin-marketplace-toast-report-reviewed": "تم وضع علامة تمت المراجعة على البلاغ.",
+
+  // ── Company bank accounts editor (migration 105) ──
+  "adm-bank-accounts-title": "الحسابات البنكية للشركة",
+  "adm-bank-accounts-desc": "بيانات الدفع المعروضة في العروض والفواتير المبدئية والفواتير — يتصدر كل قسم صاحب الحساب.",
+  "adm-bank-add": "إضافة حساب",
+  "adm-bank-holder": "صاحب الحساب",
+  "adm-bank-holder-ph": "مثال ASPIDUS DMCC (افتراضيًا اسم الشركة)",
+  "adm-bank-name-label": "اسم البنك",
+  "adm-bank-number": "رقم الحساب / IBAN",
+  "adm-bank-swift": "SWIFT / BIC",
+  "adm-bank-currency": "العملة",
+  "adm-bank-address": "عنوان البنك (اختياري)",
+  "adm-bank-address-ph": "عنوان الفرع المعروض على المستند",
+  "adm-bank-remove": "إزالة",
+  "adm-bank-saved": "تم حفظ الحسابات البنكية",
+  "adm-bank-save-failed": "تعذّر حفظ الحسابات البنكية",
+  "adm-bank-empty": "لا توجد حسابات بنكية بعد — أضف الحسابات التي يمكن للعملاء الدفع إليها.",
 };
 
 export const PLATFORM: Record<string, string> = {

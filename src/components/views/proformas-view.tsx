@@ -45,6 +45,7 @@ import { Proforma, ProformaStatus, OfferLineItem, Offer, Partner, Product, docNa
 import { CURRENCIES, OFFER_STATUSES, PAYMENT_TERMS_LOCAL } from "@/lib/data/reference";
 import { UnitSelect } from "@/components/common/unit-select";
 import { NatureSwitch, NatureBadge } from "@/components/common/nature-switch";
+import { DocumentDisplayOptions } from "@/components/common/document-display-options";
 import { ProductPicker } from "@/components/common/product-picker";
 import { PartnerPicker } from "@/components/common/partner-picker";
 import { convertUnitPrice, describeConversion } from "@/lib/utils/unit-conversion";
@@ -1167,6 +1168,7 @@ function ProformaFormDialog({
         status: "draft",
         subject: "",
         nature: "goods",
+        display_options: null,
         items: [],
       });
 
@@ -1185,6 +1187,11 @@ function ProformaFormDialog({
 
   function set<K extends keyof Proforma>(k: K, v: Proforma[K]) {
     setForm((f) => ({ ...f, [k]: v }));
+  }
+
+  // migration 105 — per-document PDF display options writer.
+  function setDisplayOptions(opts: Proforma["display_options"]) {
+    setForm((f) => ({ ...f, display_options: opts }));
   }
 
   function setItem(idx: number, patch: Partial<OfferLineItem>) {
@@ -1525,6 +1532,16 @@ function ProformaFormDialog({
                 </div>
               </div>
             )}
+
+            {/* ─── Per-document PDF display options (migration 105) ─── */}
+            <div className="mt-4">
+              <DocumentDisplayOptions
+                value={form.display_options ?? null}
+                onChange={setDisplayOptions}
+                nature={isServices ? "services" : "goods"}
+                defaultTitle={isServices ? "Proforma Invoice" : "Proforma Invoice"}
+              />
+            </div>
 
             {/* ─── Line Items (collapsible, open by default for new) ─── */}
             <Collapsible open={itemsOpen} onOpenChange={setItemsOpen}>

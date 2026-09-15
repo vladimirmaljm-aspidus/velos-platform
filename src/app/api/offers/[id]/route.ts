@@ -6,6 +6,8 @@ import { requireAuthOrApiKey, hasPermission, resolveTenantId, audit, sanitizeErr
 import { redactOfferFields } from "@/lib/api/redact";
 // FIX-ALL-2 / Fix 6 — XSS prevention on free-text fields (parity with offers/route.ts POST).
 import { sanitizeFields } from "@/lib/security/sanitize-input";
+// migration 105 — per-document display options sanitizer.
+import { sanitizeDisplayOptions } from "@/lib/utils/document-display";
 import { validateStatusTransition } from "@/lib/api/status-validator";
 import { triggerWebhooks } from "@/lib/webhooks/deliver";
 import { notifyOfferUpdate } from "@/lib/realtime/notify";
@@ -73,6 +75,8 @@ function whitelistOfferFields(
     "service_start",
     "service_end",
     "service_location",
+    // ── Per-document display options (migration 105) ──
+    "display_options",
     "delivery_address",
     "delivery_city",
     "delivery_country",
@@ -190,6 +194,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     // the DB write — a bogus value would violate the column CHECK constraint.
     if (body.nature != null && body.nature !== "goods" && body.nature !== "services") {
       return NextResponse.json({ error: "nature must be 'goods' or 'services'." }, { status: 400 });
+    }
+    // Migration 105: sanitize display_options before the whitelist.
+    if (body.display_options !== undefined) {
+      body.display_options = sanitizeDisplayOptions(body.display_options);
     }
     // FIX-ALL-2 / Fix 6 — XSS prevention on free-text fields (parity with POST).
     const sanitizedBody = sanitizeFields(body, [

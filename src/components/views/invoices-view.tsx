@@ -50,6 +50,8 @@ import { Invoice, InvoiceStatus, OfferLineItem, Offer, Partner, Product, docNatu
 import { CURRENCIES, INVOICE_STATUSES, PAYMENT_TERMS_LOCAL } from "@/lib/data/reference";
 import { UnitSelect } from "@/components/common/unit-select";
 import { NatureSwitch, NatureBadge } from "@/components/common/nature-switch";
+import { DocumentDisplayOptions } from "@/components/common/document-display-options";
+import type { DocumentDisplayOptions as DocumentDisplayOptionsType } from "@/lib/supabase/types";
 import { ProductPicker } from "@/components/common/product-picker";
 import { PartnerPicker } from "@/components/common/partner-picker";
 import { convertUnitPrice, describeConversion } from "@/lib/utils/unit-conversion";
@@ -1537,6 +1539,15 @@ function InvoiceFormDialog({
   // refresh / route change with unsaved invoice edits prompts the user.
   const [isDirty, setIsDirty] = useState(false);
 
+  // migration 105 — per-document PDF display options (VAT presentation,
+  // optional service period, custom title, section switches). null = the
+  // built-in defaults; the DocumentDisplayOptions component writes patches
+  // through here (setForm + dirty flag).
+  const setDisplayOptions = useCallback((opts: DocumentDisplayOptionsType | null) => {
+    setForm((f) => ({ ...f, display_options: opts }));
+    setIsDirty(true);
+  }, []);
+
   // Collapsible section states
   const isEditing = !!invoice;
   const [lineItemsOpen, setLineItemsOpen] = useState(true);
@@ -1592,6 +1603,7 @@ function InvoiceFormDialog({
           nature: "goods",
           items: [],
           payment_terms: "net30",
+          display_options: null,
         });
         // When creating new, line items open, notes closed
         setLineItemsOpen(true);
@@ -1735,6 +1747,9 @@ function InvoiceFormDialog({
         service_start: offer.service_start ?? null,
         service_end: offer.service_end ?? null,
         service_location: offer.service_location ?? null,
+        // migration 105 — the offer's display options (VAT presentation,
+        // period visibility, custom title…) carry into the invoice.
+        display_options: (offer as any).display_options ?? null,
       }));
 
       // Also trigger partner auto-fill for bank details
@@ -2030,6 +2045,19 @@ function InvoiceFormDialog({
               </Select>
             </div>
 
+            {/* Subject — migration 105: ALWAYS visible (create + edit). It
+                renders as the document's subtitle under the title on the PDF,
+                so the issuer must be able to see and change it directly —
+                previously it hid in the edit-only "More details" section. */}
+            <div className="space-y-1.5 md:col-span-2">
+              <Label>{t("fin-subject")}</Label>
+              <Input
+                value={form.subject || ""}
+                onChange={(e) => set("subject", e.target.value)}
+                placeholder={t("fin-subject-placeholder")}
+              />
+            </div>
+
             <div className="space-y-1.5">
               <Label className="flex items-center gap-1.5">
                 {t("fin-payment-terms")}
@@ -2163,6 +2191,16 @@ function InvoiceFormDialog({
               </div>
             </div>
           )}
+
+          {/* ── Per-document PDF display options (migration 105) ── */}
+          <div className="mt-4">
+            <DocumentDisplayOptions
+              value={form.display_options ?? null}
+              onChange={setDisplayOptions}
+              nature={isServices ? "services" : "goods"}
+              defaultTitle={isServices ? "Invoice" : "Commercial Invoice"}
+            />
+          </div>
 
           {/* ── Line Items section (collapsible) ── */}
           <Collapsible open={lineItemsOpen} onOpenChange={setLineItemsOpen} className="border-t pt-2 mt-1">
@@ -2526,14 +2564,8 @@ function InvoiceFormDialog({
               </CollapsibleTrigger>
               <CollapsibleContent>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pb-2">
-                  <div className="md:col-span-2 space-y-1.5">
-                    <Label>{t("fin-subject")}</Label>
-                    <Input
-                      value={form.subject || ""}
-                      onChange={(e) => set("subject", e.target.value)}
-                      placeholder={t("fin-subject-placeholder")}
-                    />
-                  </div>
+                  {/* Subject moved to the essentials grid (migration 105) —
+                      it renders on the PDF as the document subtitle. */}
 
                   <div className="space-y-1.5">
                     <Label>{t("fin-issue-date")}</Label>

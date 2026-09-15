@@ -8,6 +8,9 @@ import { withApm } from "@/lib/monitoring/apm";
 // dangerouslySetInnerHTML, so escape <, >, ", ' here.
 import { sanitizeFields } from "@/lib/security/sanitize-input";
 import { recomputeDocTotals } from "@/lib/utils/doc-totals";
+// migration 105 — per-document display options (VAT presentation, optional
+// service period, custom title, notice/bank/signature switches).
+import { sanitizeDisplayOptions } from "@/lib/utils/document-display";
 
 export const runtime = "nodejs";
 
@@ -89,6 +92,12 @@ async function _post(req: NextRequest) {
     // constraint and surface as an opaque 500 from the upsert.
     if (body.nature != null && body.nature !== "goods" && body.nature !== "services") {
       return NextResponse.json({ error: "nature must be 'goods' or 'services'." }, { status: 400 });
+    }
+
+    // Migration 105: sanitize display_options (shape-validated — unknown
+    // keys/wrong types are dropped, never a 500 from the jsonb column).
+    if (body.display_options !== undefined) {
+      body.display_options = sanitizeDisplayOptions(body.display_options);
     }
 
     // FIX-PRODUCTS-DOCS / Fix 4 (b) — required-fields check. partner_id

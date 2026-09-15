@@ -225,6 +225,9 @@ export async function POST(req: NextRequest) {
       service_start: pAny.service_start ?? null,
       service_end: pAny.service_end ?? null,
       service_location: pAny.service_location ?? null,
+      // migration 105 — carry the per-document display options (VAT
+      // presentation, optional period, custom title…) through the chain.
+      display_options: pAny.display_options ?? null,
       notes: `Auto-generated from proforma: ${proforma.number}${
         proforma.notes ? `. ${proforma.notes}` : ""
       }`,

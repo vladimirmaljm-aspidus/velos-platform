@@ -217,6 +217,19 @@ export function docNature(doc: { nature?: DocumentNature | string | null } | nul
   return doc?.nature === "services" ? "services" : "goods";
 }
 
+// ---------- Per-document display options (migration 105) ----------
+// What the generated PDF shows and what it hides for ONE document — the
+// issuer's choice at create/edit time (the Template Studio stays the
+// tenant-wide default). Re-exported here so views/APIs import types from
+// the single supabase/types entry point they already use.
+import type { DocumentDisplayOptions as _DocumentDisplayOptions } from "@/lib/utils/document-display";
+export type {
+  DocumentDisplayOptions,
+  VatDisplayMode,
+  TriStateVisibility,
+} from "@/lib/utils/document-display";
+type DocumentDisplayOptions = _DocumentDisplayOptions;
+
 export interface OfferLineItem {
   product_id: string;
   product_name: string;
@@ -266,6 +279,11 @@ export interface Offer {
   sent_at: string | null;
   responded_at: string | null;
   items: OfferLineItem[];
+  // ── Per-document display options (migration 105) ──
+  /** What the PDF shows/hides for THIS offer (VAT presentation, optional
+   *  service period, custom title, notice/bank/signature switches).
+   *  Null = built-in defaults. Shape + validation: document-display.ts. */
+  display_options?: DocumentDisplayOptions | null;
   // Trade / import fields
   offer_no: string | null;
   // ── Document nature (migration 103 — goods vs services documents) ──
@@ -591,6 +609,8 @@ export interface Invoice {
   service_start?: string | null;
   service_end?: string | null;
   service_location?: string | null;
+  // ── Per-document display options (migration 105) ──
+  display_options?: DocumentDisplayOptions | null;
   // ── Trade / shipping fields (F-FINAL / P1) ───────────────────────────
   // These columns exist on the live `invoices` table (migration 007 +
   // supabase-schema-full.sql) but were missing from this interface —
@@ -668,6 +688,8 @@ export interface Proforma {
   service_start?: string | null;
   service_end?: string | null;
   service_location?: string | null;
+  // ── Per-document display options (migration 105) ──
+  display_options?: DocumentDisplayOptions | null;
   // ── Trade / shipping fields (F-FINAL / P1) ───────────────────────────
   // Parity with Invoice — same 9 fields, same nullability. The PDF
   // template reads these off the doc object via `as any` casts; typing

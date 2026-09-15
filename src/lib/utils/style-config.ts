@@ -148,6 +148,14 @@ export const DEFAULT_TABLE_COLUMN_WIDTHS: Record<string, number> = {
   quantity: 13, unitPrice: 12, total: 13,
 };
 
+/** Services-table-only Period column — a PERCENT width exactly like the
+ *  goods columns above, but kept OUT of DEFAULT_TABLE_COLUMN_WIDTHS so the
+ *  7-column goods set keeps summing to exactly 100% (adding it to the map
+ *  would make parseStyleConfig renormalize EVERY goods table narrower).
+ *  Consumed by the services branch of the PDF line-items table; a template
+ *  may override it via style_json.table.columnWidths.period. */
+export const DEFAULT_PERIOD_COLUMN_WIDTH = 23.5;
+
 /** The subset of columns the Template Studio table editor exposes in order. */
 export const TABLE_COLUMN_KEYS = [
   "rowNum", "description", "hsCode", "origin", "quantity", "unitPrice", "total",
@@ -230,12 +238,18 @@ function parseColumnWidths(v: unknown): Record<string, number> {
       const n = num(src[key], 3, 60, out[key]);
       out[key] = n;
     }
+    // Services-only Period column — read separately (it is NOT part of the
+    // goods 7-column sum, so it must never join the renormalize below).
+    const p = num((src as Record<string, unknown>).period, 3, 60, NaN);
+    if (Number.isFinite(p)) out.period = p;
   }
-  // Renormalize to ~100 total so a fat-fingered set still lays out.
-  const total = Object.values(out).reduce((a, b) => a + b, 0);
+  // Renormalize the GOODS column set to ~100 so a fat-fingered set still
+  // lays out (period deliberately excluded — see above).
+  const goodsKeys = Object.keys(DEFAULT_TABLE_COLUMN_WIDTHS);
+  const total = goodsKeys.reduce((a, k) => a + (out[k] ?? 0), 0);
   if (total > 0 && Math.abs(total - 100) > 0.5) {
     const k = 100 / total;
-    for (const key of Object.keys(out)) out[key] = Math.round(out[key] * k * 10) / 10;
+    for (const key of goodsKeys) out[key] = Math.round(out[key] * k * 10) / 10;
   }
   return out;
 }

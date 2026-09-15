@@ -1,0 +1,41 @@
+-- 105_document_display_options.sql
+-- Feature: Per-document display options (what the PDF shows and what it hides).
+--
+-- Business context (user feedback round on migration 103):
+--   • "Reverse charge — VAT settled by recipient" was printed automatically
+--     whenever tax_total = 0 — a legally-weighty statement the issuer never
+--     chose. VAT presentation must be an explicit per-document choice:
+--     auto (factual amount only) / show amount / reverse-charge legend /
+--     custom note / hidden.
+--   • Services documents must be titled "Invoice" / "Offer" /
+--     "Proforma Invoice" (nature is already visible as a badge in the app);
+--     the issuer can also override the title entirely (custom_title).
+--   • Not every service has a time period — the Period column and the
+--     Service Period cell must be hideable (tri-state: auto = show only
+--     when dates exist / always show / hide).
+--   • Bank details block, legal notice, amount-in-words and signatures
+--     need per-document on/off switches (the Template Studio controls the
+--     tenant-wide defaults; these are the per-document overrides).
+--
+-- Shape (validated in src/lib/utils/document-display.ts):
+--   {
+--     "vat_mode": "auto" | "amount" | "reverse_charge" | "custom" | "hidden",
+--     "vat_custom_note": "…",
+--     "show_period": "auto" | "show" | "hide",     -- services nature
+--     "show_service_location": true | false,       -- services nature
+--     "show_payment_terms": true | false,
+--     "show_quantity": "auto" | "show" | "hide",   -- services nature
+--     "custom_title": "…",
+--     "show_notice": true | false,
+--     "custom_notice": "…",
+--     "show_amount_words": true | false,
+--     "show_bank_details": true | false,
+--     "show_signatures": true | false
+--   }
+--
+-- NULL = document uses the built-in defaults (zero behaviour change for
+-- every legacy row — see the PDF renderer for the exact defaults).
+
+ALTER TABLE public.offers    ADD COLUMN IF NOT EXISTS display_options jsonb DEFAULT NULL;
+ALTER TABLE public.proformas ADD COLUMN IF NOT EXISTS display_options jsonb DEFAULT NULL;
+ALTER TABLE public.invoices  ADD COLUMN IF NOT EXISTS display_options jsonb DEFAULT NULL;
