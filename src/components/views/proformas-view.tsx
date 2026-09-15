@@ -31,7 +31,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import {
   Plus, Search, Pencil, Trash2, Eye, X, Calendar, Send, CheckCircle2, Clock, Download, FileCheck, Wallet, AlertCircle,
-  Sparkles, Loader2, Building2, MapPin, Hash, Mail, Phone, ArrowRight, ArrowLeftRight, ChevronDown, FileText, History,
+  Sparkles, Loader2, Building2, MapPin, Hash, Mail, Phone, ArrowRight, ArrowLeftRight, ChevronDown, FileText, History, Wrench,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
@@ -41,9 +41,10 @@ import { EmptyState } from "@/components/common/empty-state";
 import { QueryError } from "@/components/common/query-error";
 import { KpiCard } from "@/components/common/kpi-card";
 import { fmtMoney, fmtDate, fmtDateTime, fmtNumber } from "@/lib/utils/format";
-import { Proforma, ProformaStatus, OfferLineItem, Offer, Partner, Product } from "@/lib/supabase/types";
+import { Proforma, ProformaStatus, OfferLineItem, Offer, Partner, Product, docNature } from "@/lib/supabase/types";
 import { CURRENCIES, OFFER_STATUSES, PAYMENT_TERMS_LOCAL } from "@/lib/data/reference";
 import { UnitSelect } from "@/components/common/unit-select";
+import { NatureSwitch, NatureBadge } from "@/components/common/nature-switch";
 import { ProductPicker } from "@/components/common/product-picker";
 import { PartnerPicker } from "@/components/common/partner-picker";
 import { convertUnitPrice, describeConversion } from "@/lib/utils/unit-conversion";
@@ -131,6 +132,9 @@ export function ProformasView() {
   const debouncedSearch = useDebounced(search, 300);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [partnerFilter, setPartnerFilter] = useState<string>("all");
+  // Migration 103 (goods vs services): document-nature filter — mirrors the
+  // status filter and is passed to GET /api/proformas as ?nature=.
+  const [natureFilter, setNatureFilter] = useState<string>("all");
   const [editing, setEditing] = useState<Proforma | null>(null);
   const [showForm, setShowForm] = useState(false);
   useNewShortcut(() => { setEditing(null); setShowForm(true); });
@@ -141,15 +145,16 @@ export function ProformasView() {
   const [page, setPage] = useState(0);
   const { pageSize: PAGE_SIZE, setPageSize, options: pageSizeOptions } = usePageSize("proformas", 20);
 // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { setPage(0); }, [PAGE_SIZE, debouncedSearch, statusFilter, partnerFilter]);
+  useEffect(() => { setPage(0); }, [PAGE_SIZE, debouncedSearch, statusFilter, partnerFilter, natureFilter]);
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ["proformas", tenantKey, debouncedSearch, statusFilter, partnerFilter, page, PAGE_SIZE],
+    queryKey: ["proformas", tenantKey, debouncedSearch, statusFilter, partnerFilter, natureFilter, page, PAGE_SIZE],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (debouncedSearch) params.set("search", debouncedSearch);
       if (statusFilter !== "all") params.set("status", statusFilter);
       if (partnerFilter !== "all") params.set("partner_id", partnerFilter);
+      if (natureFilter !== "all") params.set("nature", natureFilter);
       params.set("limit", String(PAGE_SIZE));
       params.set("offset", String(page * PAGE_SIZE));
       const r = await fetch(api(`/api/proformas?${params}`));
@@ -391,6 +396,16 @@ export function ProformasView() {
               <SelectItem value="rejected">{t("fin-status-rejected")}</SelectItem>
             </SelectContent>
           </Select>
+          <Select value={natureFilter} onValueChange={setNatureFilter}>
+            <SelectTrigger className="w-full md:w-36" aria-label={t("fin-nature-filter")}>
+              <SelectValue placeholder={t("fin-nature-filter")} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t("fin-nature-all")}</SelectItem>
+              <SelectItem value="goods">{t("fin-nature-goods")}</SelectItem>
+              <SelectItem value="services">{t("fin-nature-services")}</SelectItem>
+            </SelectContent>
+          </Select>
           <PartnerPicker
             value={partnerFilter === "all" ? "" : partnerFilter}
             allowClear
@@ -439,7 +454,12 @@ export function ProformasView() {
                     const expired = isExpired(p);
                     return (
                       <TableRow key={p.id} className="cursor-pointer hover:bg-muted/50" onClick={() => setDetailId(p.id)}>
-                        <TableCell className="font-mono text-xs">{p.number}</TableCell>
+                        <TableCell className="font-mono text-xs">
+                          <div className="flex items-center gap-1.5">
+                            {p.number}
+                            <NatureBadge nature={p.nature} />
+                          </div>
+                        </TableCell>
                         <TableCell className="hidden md:table-cell">
                           <div className="font-medium truncate max-w-[200px]">{p.subject || "—"}</div>
                         </TableCell>
@@ -655,6 +675,7 @@ function ProformaDetail({
       <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
         <div className="flex flex-wrap items-center gap-2">
           <StatusBadge status={proforma.status} />
+          <NatureBadge nature={proforma.nature} />
           <span className="text-sm text-muted-foreground">{partnerName}</span>
         </div>
         <div className="flex items-center gap-2">
@@ -723,6 +744,35 @@ function ProformaDetail({
         </div>
       </div>
 
+      {/* Services nature (migration 103) — overall service period + place
+          of service. Rendered only for service documents that carry at
+          least one of the service fields. */}
+      {docNature(proforma) === "services" && (proforma.service_start || proforma.service_end || proforma.service_location) && (
+        <div className="rounded-md border p-3 mb-4 bg-muted/30 space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+            <Wrench className="size-3" /> {t("fin-service-doc-note")}
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+            {(proforma.service_start || proforma.service_end) && (
+              <div>
+                <p className="text-xs text-muted-foreground">{t("fin-service-period")}</p>
+                <p className="font-medium">
+                  {proforma.service_start ? fmtDate(proforma.service_start) : "—"}
+                  {" – "}
+                  {proforma.service_end ? fmtDate(proforma.service_end) : "—"}
+                </p>
+              </div>
+            )}
+            {proforma.service_location && (
+              <div>
+                <p className="text-xs text-muted-foreground">{t("fin-service-location")}</p>
+                <p className="font-medium">{proforma.service_location}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Line items table */}
       <div className="rounded-md border overflow-hidden mb-4">
         <div className="overflow-x-auto">
@@ -750,6 +800,13 @@ function ProformaDetail({
               <TableRow key={i}>
                 <TableCell>
                   <div className="font-medium">{it.product_name || "—"}</div>
+                  {/* Per-line service period (services nature only — usually
+                      null on goods lines, so this stays invisible there). */}
+                  {(it.service_period_from || it.service_period_to) && (
+                    <div className="text-xs text-muted-foreground">
+                      {t("fin-service-line-period")}: {it.service_period_from ? fmtDate(it.service_period_from) : "—"} – {it.service_period_to ? fmtDate(it.service_period_to) : "—"}
+                    </div>
+                  )}
                   <div className="text-xs text-muted-foreground sm:hidden">{it.sku || "—"}</div>
                 </TableCell>
                 <TableCell className="hidden sm:table-cell font-mono text-xs">{it.sku || "—"}</TableCell>
@@ -1004,6 +1061,7 @@ function CreateFromOfferDialog({
                       <div className="flex items-center gap-2 mb-1">
                         <span className="font-mono text-xs">{o.number}</span>
                         <Badge variant="outline" className="text-xs">{o.status}</Badge>
+                        <NatureBadge nature={o.nature} />
                       </div>
                       <p className="font-medium text-sm truncate">{o.subject || "—"}</p>
                       <p className="text-xs text-muted-foreground mt-0.5">
@@ -1056,6 +1114,12 @@ function ProformaFormDialog({
   const formRef = useRef(form);
   useEffect(() => { formRef.current = form; }, [form]);
 
+  // Migration 103 (goods vs services): drives the whole form layout.
+  // Services swaps the product-picker rows for free-text service lines
+  // (per-line period, time-based units) and shows the Service Details
+  // section. Switching nature never wipes data — fields just show/hide.
+  const isServices = (form.nature || "goods") === "services";
+
   const [saving, setSaving] = useState(false);
   const [partnerContext, setPartnerContext] = useState<PartnerContext | null>(null);
   const [loadingPartner, setLoadingPartner] = useState(false);
@@ -1102,6 +1166,7 @@ function ProformaFormDialog({
         notes: "",
         status: "draft",
         subject: "",
+        nature: "goods",
         items: [],
       });
 
@@ -1204,7 +1269,10 @@ function ProformaFormDialog({
     setForm((f) => ({
       ...f,
       items: [...(f.items || []), {
-        product_id: "", product_name: "", sku: "", unit: "pcs",
+        product_id: "", product_name: "", sku: "",
+        // Services documents bill time — default new lines to "hour";
+        // goods documents keep the classic piece unit.
+        unit: (f.nature || "goods") === "services" ? "hour" : "pcs",
         quantity: 1, unit_price: 0, discount: 0, tax_rate: 20, total: 0,
       }],
     }));
@@ -1310,6 +1378,18 @@ function ProformaFormDialog({
         <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
           <div className="space-y-4">
 
+            {/* ─── Document nature (migration 103 — goods vs services) ─── */}
+            <div className="space-y-1.5">
+              <Label>{t("fin-nature-label")}</Label>
+              <NatureSwitch
+                value={form.nature || "goods"}
+                onChange={(n) => set("nature", n)}
+              />
+              {isServices && (
+                <p className="text-xs text-muted-foreground">{t("fin-nature-hint-services")}</p>
+              )}
+            </div>
+
             {/* ─── Essential section (always visible) ─── */}
             <div className="space-y-3">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1408,11 +1488,49 @@ function ProformaFormDialog({
               )}
             </div>
 
+            {/* ─── Service Details (services nature only — migration 103) ─── */}
+            {isServices && (
+              <div className="border rounded-lg p-4 space-y-3 bg-muted/30">
+                <h3 className="text-sm font-semibold flex items-center gap-2">
+                  <Wrench className="h-4 w-4" /> {t("fin-service-details")}
+                  <span className="text-xs font-normal text-muted-foreground">{t("fin-service-period-hint")}</span>
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="space-y-1.5">
+                    <Label>{t("fin-service-period-from")}</Label>
+                    {/* Plain YYYY-MM-DD strings — the columns are TEXT, not
+                        timestamps, so no toISOString here. */}
+                    <Input
+                      type="date"
+                      value={form.service_start ? form.service_start.slice(0, 10) : ""}
+                      onChange={(e) => set("service_start", e.target.value || null)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>{t("fin-service-period-to")}</Label>
+                    <Input
+                      type="date"
+                      value={form.service_end ? form.service_end.slice(0, 10) : ""}
+                      onChange={(e) => set("service_end", e.target.value || null)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>{t("fin-service-location")}</Label>
+                    <Input
+                      value={form.service_location || ""}
+                      onChange={(e) => set("service_location", e.target.value || null)}
+                      placeholder={t("fin-service-location-ph")}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* ─── Line Items (collapsible, open by default for new) ─── */}
             <Collapsible open={itemsOpen} onOpenChange={setItemsOpen}>
               <CollapsibleTrigger className="flex items-center gap-2 w-full group">
                 <ChevronDown className={`size-4 transition-transform ${itemsOpen ? "" : "-rotate-90"}`} />
-                <span className="text-sm font-semibold">{t("fin-line-items")}</span>
+                <span className="text-sm font-semibold">{isServices ? t("fin-service-lines") : t("fin-line-items")}</span>
                 {(form.items || []).length > 0 && (
                   <Badge variant="secondary" className="text-xs">{(form.items || []).length}</Badge>
                 )}
@@ -1465,7 +1583,11 @@ function ProformaFormDialog({
                   </div>
 
                   <div className="flex items-center justify-between">
-                    <p className="text-xs text-muted-foreground">{t("fin-add-products-hint")}</p>
+                    {/* Goods-only hint — a services document has no product
+                        catalog to pick from, so hide it in services mode. */}
+                    {!isServices && (
+                      <p className="text-xs text-muted-foreground">{t("fin-add-products-hint")}</p>
+                    )}
                     <Button type="button" size="sm" variant="outline" onClick={addItem}>
                       <Plus className="size-4 mr-1" /> {t("fin-add-item")}
                     </Button>
@@ -1479,6 +1601,104 @@ function ProformaFormDialog({
                     <div className="space-y-2 max-h-72 overflow-y-auto custom-scroll pr-1">
                       {(form.items || []).map((it, idx) => (
                         <div key={idx} className="rounded-md border p-2.5 grid grid-cols-12 gap-1.5 items-end">
+                          {isServices ? (
+                            <>
+                              {/* ── Services line (migration 103): free-text service
+                                  name + description + per-line period + time-based
+                                  unit — no product picker, no HS/origin fields. ── */}
+                              <div className="col-span-12 sm:col-span-3 space-y-1">
+                                <Label className="text-xs">{t("fin-service-name")}</Label>
+                                <Input
+                                  className="h-9"
+                                  placeholder={t("fin-service-name-ph")}
+                                  value={it.product_name || ""}
+                                  onChange={(e) => setItem(idx, { product_name: e.target.value })}
+                                />
+                              </div>
+                              <div className="col-span-12 sm:col-span-3 space-y-1">
+                                <Label className="text-xs">{t("fin-service-desc")}</Label>
+                                <Input
+                                  className="h-9"
+                                  placeholder={t("fin-service-desc-ph")}
+                                  value={it.description || ""}
+                                  onChange={(e) => setItem(idx, { description: e.target.value })}
+                                />
+                              </div>
+                              <div className="col-span-12 sm:col-span-4 space-y-1">
+                                <Label className="text-xs">
+                                  {t("fin-service-line-period")}{" "}
+                                  <span className="text-muted-foreground">({t("fin-service-line-period-ph")})</span>
+                                </Label>
+                                <div className="grid grid-cols-2 gap-1.5">
+                                  {/* Plain YYYY-MM-DD strings (text columns). */}
+                                  <Input
+                                    type="date"
+                                    className="h-9 px-2"
+                                    value={it.service_period_from ? it.service_period_from.slice(0, 10) : ""}
+                                    onChange={(e) => setItem(idx, { service_period_from: e.target.value || null })}
+                                    aria-label={t("fin-service-period-from")}
+                                  />
+                                  <Input
+                                    type="date"
+                                    className="h-9 px-2"
+                                    value={it.service_period_to ? it.service_period_to.slice(0, 10) : ""}
+                                    onChange={(e) => setItem(idx, { service_period_to: e.target.value || null })}
+                                    aria-label={t("fin-service-period-to")}
+                                  />
+                                </div>
+                              </div>
+                              <div className="col-span-4 sm:col-span-1 space-y-1">
+                                <Label className="text-xs">{t("fin-qty-time")}</Label>
+                                <Input
+                                  type="number"
+                                  className="h-9"
+                                  value={it.quantity}
+                                  onChange={(e) => setItem(idx, { quantity: Number(e.target.value) })}
+                                />
+                              </div>
+                              <div className="col-span-4 sm:col-span-1 space-y-1">
+                                <Label className="text-xs">{t("fin-unit")}</Label>
+                                <UnitSelect
+                                  value={it.unit || ""}
+                                  onChange={(v) => handleUnitChange(idx, v)}
+                                  placeholder="hour"
+                                />
+                              </div>
+                              <div className="col-span-4 sm:col-span-1 space-y-1">
+                                <Label className="text-xs">{t("fin-rate")}</Label>
+                                <Input
+                                  type="number"
+                                  className="h-9"
+                                  value={it.unit_price}
+                                  onChange={(e) => setItem(idx, { unit_price: Number(e.target.value) })}
+                                />
+                              </div>
+                              <div className="col-span-8 sm:col-span-1 space-y-1">
+                                <Label className="text-xs">{t("fin-vat-percent")}</Label>
+                                <Input
+                                  type="number"
+                                  className="h-9"
+                                  value={it.tax_rate}
+                                  onChange={(e) => setItem(idx, { tax_rate: Number(e.target.value) })}
+                                />
+                              </div>
+                              <div className="col-span-4 sm:col-span-1 flex justify-end">
+                                <Button
+                                  type="button"
+                                  size="icon"
+                                  variant="ghost"
+                                  className="size-9 text-destructive"
+                                  onClick={() => removeItem(idx)}
+                                  title={t("fin-remove-item-title")}
+                                  aria-label={t("fin-remove-item-title")}
+                                >
+                                  <X className="size-4" aria-hidden="true" />
+                                </Button>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              {/* ── Goods line — classic trade layout (unchanged) ── */}
                           <div className="col-span-12 sm:col-span-4 space-y-1">
                             <Label className="text-xs">{t("fin-line-description")}</Label>
                             <ProductPicker
@@ -1570,6 +1790,9 @@ function ProformaFormDialog({
                               <X className="size-4" aria-hidden="true" />
                             </Button>
                           </div>
+                            </>
+                          )}
+                          {/* Line total — shared by both natures */}
                           <div className="col-span-12 text-right text-xs text-muted-foreground -mt-1">
                             {t("fin-line-total")} <span className="tabular font-medium text-foreground">{fmtMoney(lineTotal(it), form.currency || "EUR")}</span>
                           </div>

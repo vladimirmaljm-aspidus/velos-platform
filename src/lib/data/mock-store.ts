@@ -320,6 +320,7 @@ export class MockStore implements Store {
     if (params?.search) items = items.filter((o) => matchesSearch(`${o.number} ${o.subject}`, params.search));
     if (params?.filters?.partner_id) items = items.filter((o) => o.partner_id === params.filters!.partner_id);
     if (params?.filters?.status) items = items.filter((o) => o.status === params.filters!.status);
+    if (params?.filters?.nature) items = items.filter((o) => (o.nature || "goods") === params.filters!.nature);
     return paginate(items, params);
   }
   async getOffer(id: string): Promise<Offer | null> {
@@ -652,6 +653,7 @@ export class MockStore implements Store {
     if (params?.search) items = items.filter((i) => matchesSearch(`${i.number} ${i.subject}`, params.search));
     if (params?.filters?.partner_id) items = items.filter((i) => i.partner_id === params.filters!.partner_id);
     if (params?.filters?.status) items = items.filter((i) => i.status === params.filters!.status);
+    if (params?.filters?.nature) items = items.filter((i) => (i.nature || "goods") === params.filters!.nature);
     return paginate(items, params);
   }
   async getInvoice(id: string): Promise<Invoice | null> {
@@ -710,6 +712,7 @@ export class MockStore implements Store {
     if (params?.search) items = items.filter((i) => matchesSearch(`${i.number} ${i.subject}`, params.search));
     if (params?.filters?.partner_id) items = items.filter((i) => i.partner_id === params.filters!.partner_id);
     if (params?.filters?.status) items = items.filter((i) => i.status === params.filters!.status);
+    if (params?.filters?.nature) items = items.filter((i) => (i.nature || "goods") === params.filters!.nature);
     return paginate(items, params);
   }
   async getProforma(id: string): Promise<Proforma | null> {

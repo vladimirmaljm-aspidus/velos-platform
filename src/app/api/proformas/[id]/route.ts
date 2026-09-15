@@ -57,6 +57,11 @@ function whitelistProformaFields(
     "discount_total",
     "tax_total",
     "total",
+    // ── Document nature (migration 103 — goods vs services) ──
+    "nature",
+    "service_start",
+    "service_end",
+    "service_location",
   ]);
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(body)) {
@@ -134,11 +139,16 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         );
       }
     }
+    // Migration 103 (goods vs services): validate the nature enum before
+    // the DB write — a bogus value would violate the column CHECK constraint.
+    if (body.nature != null && body.nature !== "goods" && body.nature !== "services") {
+      return NextResponse.json({ error: "nature must be 'goods' or 'services'." }, { status: 400 });
+    }
     // FIX-PRODUCTS-DOCS / Fix 2 — XSS prevention on free-text fields
     // (parity with offers PUT). Proforma PDFs render subject/notes/terms
     // via dangerouslySetInnerHTML, so escape <, >, ", ' here.
     const sanitizedBody = sanitizeFields(body, [
-      "subject", "notes", "terms", "payment_terms", "bank_details",
+      "subject", "notes", "terms", "payment_terms", "bank_details", "service_location",
     ]);
     if (Array.isArray(sanitizedBody.items)) {
       sanitizedBody.items = sanitizedBody.items.map((it: any) => sanitizeFields(it, [

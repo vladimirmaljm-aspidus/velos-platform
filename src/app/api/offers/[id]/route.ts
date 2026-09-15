@@ -66,6 +66,13 @@ function whitelistOfferFields(
     "owner_id",
     "incoterm",
     "selling_price",
+    // Migration 103 (goods vs services) — PUT parity with POST: without these
+    // the offer form's nature switch + service fields are silently stripped
+    // on every edit-save (same allowlist extension invoices PUT already has).
+    "nature",
+    "service_start",
+    "service_end",
+    "service_location",
     "delivery_address",
     "delivery_city",
     "delivery_country",
@@ -179,6 +186,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         return NextResponse.json({ error: "Partner not found." }, { status: 404 });
       }
     }
+    // Migration 103 (goods vs services): validate the nature enum before
+    // the DB write — a bogus value would violate the column CHECK constraint.
+    if (body.nature != null && body.nature !== "goods" && body.nature !== "services") {
+      return NextResponse.json({ error: "nature must be 'goods' or 'services'." }, { status: 400 });
+    }
     // FIX-ALL-2 / Fix 6 — XSS prevention on free-text fields (parity with POST).
     const sanitizedBody = sanitizeFields(body, [
       "subject",
@@ -194,6 +206,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       "delivery_terms",
       "valid_until_note",
       "shipping_terms",
+      "service_location",
     ]);
     if (Array.isArray(sanitizedBody.items)) {
       sanitizedBody.items = sanitizedBody.items.map((it: any) => sanitizeFields(it, [

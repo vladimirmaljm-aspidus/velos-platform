@@ -219,6 +219,12 @@ export async function POST(req: NextRequest) {
       exchange_rate: pAny.exchange_rate ?? null,
       exchange_rate_date: pAny.exchange_rate_date ?? null,
       exchange_rate_note: pAny.exchange_rate_note ?? null,
+      // Migration 103 (goods vs services): the invoice inherits the
+      // proforma's nature + service details.
+      nature: pAny.nature ?? "goods",
+      service_start: pAny.service_start ?? null,
+      service_end: pAny.service_end ?? null,
+      service_location: pAny.service_location ?? null,
       notes: `Auto-generated from proforma: ${proforma.number}${
         proforma.notes ? `. ${proforma.notes}` : ""
       }`,

@@ -29,9 +29,11 @@ async function _get(req: NextRequest) {
     const search = url.searchParams.get("search") || undefined;
     const partner_id = url.searchParams.get("partner_id") || undefined;
     const status = url.searchParams.get("status") || undefined;
+    // Migration 103 (goods vs services): list filter from the toolbar.
+    const nature = url.searchParams.get("nature") || undefined;
     const limit = url.searchParams.get("limit") ? Math.min(Number(url.searchParams.get("limit")), 500) : undefined;
     const offset = url.searchParams.get("offset") ? Number(url.searchParams.get("offset")) : undefined;
-    const result = await auth.store.listOffers(tid!, { search, limit, offset, filters: { partner_id, status } });
+    const result = await auth.store.listOffers(tid!, { search, limit, offset, filters: { partner_id, status, nature } });
     // Defense-in-depth: even though SupabaseStore filters by tenant_id,
     // this post-filter provides an extra safety layer. Do NOT remove.
     const shouldFilter = "apiKeyId" in auth || !auth.isSuperAdmin;
@@ -82,6 +84,12 @@ async function _post(req: NextRequest) {
       body = await req.json();
     } catch {
       return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+    }
+
+    // Migration 103 (goods vs services): validate the nature enum before
+    // the DB write — a bogus value would violate the column CHECK constraint.
+    if (body.nature != null && body.nature !== "goods" && body.nature !== "services") {
+      return NextResponse.json({ error: "nature must be 'goods' or 'services'." }, { status: 400 });
     }
 
   // FIX-ALL-2 / Fix 7 — validation BEFORE DB write. Audit Part D found
@@ -151,6 +159,7 @@ async function _post(req: NextRequest) {
     "delivery_terms",
     "valid_until_note",
     "shipping_terms",
+    "service_location",
   ]);
   if (Array.isArray(body.items)) {
     body.items = body.items.map((it: any) => sanitizeFields(it, [

@@ -64,6 +64,11 @@ function whitelistInvoiceFields(
     "exchange_rate",
     "exchange_rate_date",
     "exchange_rate_note",
+    // ── Document nature (migration 103 — goods vs services) ──
+    "nature",
+    "service_start",
+    "service_end",
+    "service_location",
   ]);
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(body)) {
@@ -250,6 +255,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     // cannot forge the payment/approval/verification audit trail by
     // sending those keys in the PUT body.
     const safeBody = whitelistInvoiceFields(body);
+    // Migration 103 (goods vs services): validate the nature enum after the
+    // whitelist — a bogus value would violate the column CHECK constraint
+    // and surface as an opaque 500.
+    if (safeBody.nature != null && safeBody.nature !== "goods" && safeBody.nature !== "services") {
+      return NextResponse.json({ error: "nature must be 'goods' or 'services'." }, { status: 400 });
+    }
     const updated = await auth.store.upsertInvoice({ ...safeBody, id, tenant_id: existing.tenant_id });
 
     // CRITICAL FIX (audit I-1/I-2): when an invoice is cancelled, reverse

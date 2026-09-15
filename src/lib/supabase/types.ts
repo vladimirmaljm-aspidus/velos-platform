@@ -204,6 +204,19 @@ export interface Deal {
   updated_at: string;
 }
 
+// ---------- Document nature (migration 103 — goods vs services) ----------
+// Every commercial document (offer / proforma / invoice) is either a GOODS
+// document (trade flow: HS codes, origin, incoterms, POL/POD, vessel,
+// container, packaging) or a SERVICES document (service period, time-based
+// quantities, place of service — no HS / origin / shipping data).
+// Legacy rows have nature='goods' by DB default; null reads as "goods".
+export type DocumentNature = "goods" | "services";
+
+/** Normalize any row's nature value to the union (null/undefined → goods). */
+export function docNature(doc: { nature?: DocumentNature | string | null } | null | undefined): DocumentNature {
+  return doc?.nature === "services" ? "services" : "goods";
+}
+
 export interface OfferLineItem {
   product_id: string;
   product_name: string;
@@ -225,6 +238,12 @@ export interface OfferLineItem {
   /** Per-line buy cost (per unit) used for margin display. Optional —
    *  legacy line items created before this field will not have it. */
   cost?: number | null;
+  // ── Services-nature line fields (feature: goods vs services documents) ──
+  /** When the parent document has nature="services", each line may carry
+   *  its own service period (ISO date string). Empty = the line inherits
+   *  the document-level service_start / service_end. */
+  service_period_from?: string | null;
+  service_period_to?: string | null;
 }
 
 export interface Offer {
@@ -249,6 +268,19 @@ export interface Offer {
   items: OfferLineItem[];
   // Trade / import fields
   offer_no: string | null;
+  // ── Document nature (migration 103 — goods vs services documents) ──
+  /** "goods" (default — trade documents with HS codes / incoterms /
+   *  shipping terms) or "services" (service documents: period, time-based
+   *  quantities, place of service — no HS / origin / shipping fields).
+   *  Nullable for legacy client code paths; every reader treats null as
+   *  "goods". */
+  nature?: DocumentNature | null;
+  /** Services nature: overall service period start (ISO date string). */
+  service_start?: string | null;
+  /** Services nature: overall service period end (ISO date string). */
+  service_end?: string | null;
+  /** Services nature: where the service is / was provided. */
+  service_location?: string | null;
   bank_details: string | null;
   pol: string | null;
   pod: string | null;
@@ -554,6 +586,11 @@ export interface Invoice {
   paid_at: string | null;
   notes: string | null;
   items: OfferLineItem[];
+  // ── Document nature (migration 103 — goods vs services documents) ──
+  nature?: DocumentNature | null;
+  service_start?: string | null;
+  service_end?: string | null;
+  service_location?: string | null;
   // ── Trade / shipping fields (F-FINAL / P1) ───────────────────────────
   // These columns exist on the live `invoices` table (migration 007 +
   // supabase-schema-full.sql) but were missing from this interface —
@@ -626,6 +663,11 @@ export interface Proforma {
   paid_at: string | null;
   notes: string | null;
   items: OfferLineItem[];
+  // ── Document nature (migration 103 — goods vs services documents) ──
+  nature?: DocumentNature | null;
+  service_start?: string | null;
+  service_end?: string | null;
+  service_location?: string | null;
   // ── Trade / shipping fields (F-FINAL / P1) ───────────────────────────
   // Parity with Invoice — same 9 fields, same nullability. The PDF
   // template reads these off the doc object via `as any` casts; typing

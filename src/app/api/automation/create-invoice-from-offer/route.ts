@@ -180,6 +180,13 @@ export async function POST(req: NextRequest) {
       exchange_rate: offerAny.exchange_rate ?? null,
       exchange_rate_date: offerAny.exchange_rate_date ?? null,
       exchange_rate_note: offerAny.exchange_rate_note ?? null,
+      // Migration 103 (goods vs services): the invoice inherits the offer's
+      // nature + service details so a services offer never degrades into a
+      // goods-styled invoice (and vice versa).
+      nature: offerAny.nature ?? "goods",
+      service_start: offerAny.service_start ?? null,
+      service_end: offerAny.service_end ?? null,
+      service_location: offerAny.service_location ?? null,
     };
 
     // 7. Enforce monthly_documents quota (parity with POST /api/invoices)

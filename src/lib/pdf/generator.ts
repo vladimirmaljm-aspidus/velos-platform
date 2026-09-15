@@ -6,6 +6,7 @@ import { resolveDocumentTemplate, buildPlaceholderData } from "./doc-template";
 import { getStore } from "@/lib/data/store";
 import { getSupabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import type { Offer, Invoice, Proforma, LetterOfIntent, Partner, Tenant, MemorandumSettings, TenantSeal, DocumentTemplate, DocumentVerification, TenantLetterhead } from "@/lib/supabase/types";
+import { docNature } from "@/lib/supabase/types";
 // P0-3 / Feature 2: partner PII (contact_email, phone, tax_id, vat_number)
 // is stored encrypted (enc: prefix). The PDF generator fetches the partner
 // via store.getPartner which returns the raw row — so tax_id shows as
@@ -464,7 +465,15 @@ export async function generatePdf(opts: GeneratePdfOptions): Promise<GeneratePdf
   // LOI doesn't have a `total` field — it has `total_value` (quantity × unit_price).
   // For the document register metadata we normalise to a single `total` value
   // so the audit-trail JSON is consistent across doc types.
-  const docTitleLabel = opts.docType === "offer" ? "Offer" : opts.docType === "invoice" ? "Invoice" : opts.docType === "proforma" ? "Proforma" : "Letter of Intent";
+  // migration 103 (goods vs services): the register/PDF-meta label follows the
+  // document's nature — a services invoice registers as "Service Invoice", a
+  // services offer as "Service Offer", etc. LOI carries no nature and keeps
+  // its label. Null nature reads as "goods" (docNature), so legacy rows are
+  // unaffected.
+  const nature = docNature(doc as any);
+  const docTitleLabel = nature === "services" && opts.docType !== "loi"
+    ? `Service ${opts.docType === "offer" ? "Offer" : opts.docType === "invoice" ? "Invoice" : "Proforma"}`
+    : opts.docType === "offer" ? "Offer" : opts.docType === "invoice" ? "Invoice" : opts.docType === "proforma" ? "Proforma" : "Letter of Intent";
   const pdfMeta = {
     title: `${docTitleLabel} ${doc.number} — ${tenant?.name || "VELOS"}`,
     author: tenant?.name || "VELOS CRM",

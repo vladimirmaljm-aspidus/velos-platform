@@ -53,7 +53,7 @@ const AREA_FACTORS: Record<string, number> = {
   acre: 4046.86,
 };
 
-type Category = "weight" | "volume" | "length" | "area" | "count" | "other";
+type Category = "weight" | "volume" | "length" | "area" | "count" | "other" | "service";
 
 function getCategory(unit: string): Category {
   if (unit in WEIGHT_FACTORS) return "weight";
@@ -62,6 +62,10 @@ function getCategory(unit: string): Category {
   if (unit in AREA_FACTORS) return "area";
   // Count units (piece, bag, drum, pallet, etc.) — no conversion
   if (["piece", "pcs", "bag", "drum", "pallet", "container", "crate", "box", "carton", "roll", "coil", "bundle", "case", "set", "lot"].includes(unit)) return "count";
+  // Service / time units (migration 103) — deliberately NOT auto-converted:
+  // a billing "day" may be 8 or 24 hours depending on the engagement, so
+  // silently converting a rate would misprice the line. Same-unit only.
+  if (["hour", "day", "week", "month", "quarter", "year", "engagement", "session", "visit", "project", "milestone"].includes(unit)) return "service";
   return "other";
 }
 
@@ -104,8 +108,9 @@ export function convertUnit(
   // Different categories — cannot convert
   if (fromCat !== toCat) return null;
 
-  // Count units — only convert if same unit
-  if (fromCat === "count" || fromCat === "other") {
+  // Count + service units — only convert if same unit (a billing day ≠ 24h,
+  // an engagement has no hour equivalent — never auto-convert these).
+  if (fromCat === "count" || fromCat === "other" || fromCat === "service") {
     return fromUnit === toUnit ? quantity : null;
   }
 

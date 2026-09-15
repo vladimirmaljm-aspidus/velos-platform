@@ -12,6 +12,7 @@
  *   - area       → m², ft², ha, acre
  *   - count      → piece, bag, drum, pallet, container…
  *   - other      → set, lot
+ *   - service    → hour, day, week, month… (services-nature documents)
  */
 
 export type UnitCategory =
@@ -20,7 +21,8 @@ export type UnitCategory =
   | "length"
   | "area"
   | "count"
-  | "other";
+  | "other"
+  | "service";
 
 export interface UnitOption {
   value: string;
@@ -74,6 +76,19 @@ export const UNITS_OF_MEASURE: UnitOption[] = [
   // ── Other ──
   { value: "set", label: "Set", category: "other" },
   { value: "lot", label: "Lot", category: "other" },
+
+  // ── Service (time / engagement units — migration 103 documents) ──
+  { value: "hour", label: "Hour (h)", category: "service" },
+  { value: "day", label: "Day", category: "service" },
+  { value: "week", label: "Week", category: "service" },
+  { value: "month", label: "Month (mo)", category: "service" },
+  { value: "quarter", label: "Quarter", category: "service" },
+  { value: "year", label: "Year (yr)", category: "service" },
+  { value: "engagement", label: "Engagement", category: "service" },
+  { value: "session", label: "Session", category: "service" },
+  { value: "visit", label: "Visit", category: "service" },
+  { value: "project", label: "Project", category: "service" },
+  { value: "milestone", label: "Milestone", category: "service" },
 ];
 
 /** Resolve a unit value (e.g. "MT") to its human-readable label. */

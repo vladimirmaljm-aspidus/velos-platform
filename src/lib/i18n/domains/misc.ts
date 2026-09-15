@@ -997,6 +997,7 @@ export const MISC: Record<Locale, Record<string, string>> = {
     "misc-unit-area": "Area",
     "misc-unit-count": "Count / Packaging",
     "misc-unit-other": "Other",
+    "misc-unit-service": "Service / Time",
 
     // ── Completeness checker ────────────────────────────────────────────
     "misc-data-completeness": "Data Completeness",
@@ -2254,6 +2255,7 @@ export const MISC: Record<Locale, Record<string, string>> = {
     "misc-unit-area": "Površina",
     "misc-unit-count": "Količina / Pakovanje",
     "misc-unit-other": "Ostalo",
+    "misc-unit-service": "Usluge / Vreme",
 
     // ── Completeness checker ────────────────────────────────────────────
     "misc-data-completeness": "Potpunost podataka",
@@ -3503,6 +3505,7 @@ export const MISC: Record<Locale, Record<string, string>> = {
     "misc-unit-area": "Alan",
     "misc-unit-count": "Sayı / Ambalaj",
     "misc-unit-other": "Diğer",
+    "misc-unit-service": "Hizmet / Süre",
 
     // ── Completeness checker ────────────────────────────────────────────
     "misc-data-completeness": "Veri Tamlığı",
@@ -4752,6 +4755,7 @@ export const MISC: Record<Locale, Record<string, string>> = {
     "misc-unit-area": "Fläche",
     "misc-unit-count": "Anzahl / Verpackung",
     "misc-unit-other": "Sonstige",
+    "misc-unit-service": "Dienstleistung / Zeit",
 
     // ── Completeness checker ────────────────────────────────────────────
     "misc-data-completeness": "Datenvollständigkeit",
@@ -6001,6 +6005,7 @@ export const MISC: Record<Locale, Record<string, string>> = {
     "misc-unit-area": "Площадь",
     "misc-unit-count": "Количество / Упаковка",
     "misc-unit-other": "Другое",
+    "misc-unit-service": "Услуги / Время",
 
     // ── Completeness checker ────────────────────────────────────────────
     "misc-data-completeness": "Полнота данных",

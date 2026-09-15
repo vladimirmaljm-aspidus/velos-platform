@@ -1,6 +1,7 @@
 import React from "react";
 import { Document, Page, Text, View, StyleSheet, Image, Font } from "@react-pdf/renderer";
 import type { Offer, Invoice, Proforma, LetterOfIntent, OfferLineItem, Partner, Tenant, MemorandumSettings, TenantSeal, DocumentTemplate, TenantLetterhead } from "@/lib/supabase/types";
+import { docNature } from "@/lib/supabase/types";
 import { substitutePlaceholders, hasPagePlaceholders, normalizeSegment, type ContentSegment, type PlaceholderData } from "@/lib/utils/content-config";
 import { parseStyleConfig, type TemplateStyleConfig } from "@/lib/utils/style-config";
 import { templateSegments, readTemplateLayout, type TemplateFieldLayout } from "@/lib/pdf/doc-template";
@@ -357,6 +358,11 @@ export function buildPdfDocument({
   const flexQuantity = colFlex("quantity", 1.1);
   const flexUnitPrice = colFlex("unitPrice", 1);
   const flexTotal = colFlex("total", 1.1);
+  // migration 103 (goods vs services): the services line-items table swaps
+  // HS Code + Origin for a single "Period" column. Follows the same
+  // style_json columnWidths pattern so Template Studio can override it; only
+  // the services branch below consumes it — the goods table is unchanged.
+  const flexPeriod = colFlex("period", 1.1);
   const numericAlign = st.table.numericAlign;
 
   // ── audit23: custom watermark (style_json.watermark) ────────────────
@@ -796,6 +802,24 @@ export function buildPdfDocument({
   const items = normalizeLineItems<OfferLineItem>((doc as any).items);
   const currency = doc.currency || "USD";
 
+  // ── Document nature (migration 103: goods vs services) ─────────────
+  // Resolved ONCE here — every goods/services branch below keys off it.
+  // docNature() normalises null/undefined to "goods" so legacy rows keep
+  // the exact trade-document look. LOI carries no nature column and stays
+  // on the goods path by construction.
+  const nature = docNature(doc as any);
+  // Services documents get "Service *" titles so the reader immediately
+  // sees this is NOT a goods/trade document (no HS codes, no shipping).
+  // LOI is exempt — it has no nature field and keeps "LETTER OF INTENT".
+  const servicesDocTitle: Record<"offer" | "invoice" | "proforma", string> = {
+    offer: "Service Offer",
+    invoice: "Service Invoice",
+    proforma: "Service Proforma Invoice",
+  };
+  const docTitle = nature === "services" && docType !== "loi"
+    ? servicesDocTitle[docType]
+    : docTitleMap[docType];
+
   // ── Pull trade / shipping fields off the doc ───────────────────────
   // Offer carries these typed; invoice/proforma may carry them via the
   // extended DB row (we read defensively via `any`).
@@ -845,6 +869,39 @@ export function buildPdfDocument({
   // so when origins differ the reader looks at the table for the specifics.
   const originCountry: string = commonLineValue((it: any) => (it as any).origin_country);
   const bankDetails: string = tradeFields.bank_details || "";
+
+  // ── Services fields (migration 103: goods vs services) ──────────────
+  // Read defensively like tradeFields above: the Offer interface types
+  // nature/service_start/service_end/service_location, invoice/proforma
+  // rows may predate the columns — `any` reads render "—" instead of
+  // throwing. Only the services branches below consume these values.
+  const svc = doc as any;
+  /** Format a from/to service period as "06 Aug 2026 – 31 Aug 2026".
+   *  Only-from renders an open-ended "06 Aug 2026 –"; only-to renders the
+   *  single date; neither → null (caller decides the fallback). */
+  const fmtServicePeriod = (from?: string | null, to?: string | null): string | null => {
+    if (from && to) return `${fmtDate(from)} – ${fmtDate(to)}`;
+    if (from) return `${fmtDate(from)} –`;
+    if (to) return fmtDate(to);
+    return null;
+  };
+  // Document-level period first; when the doc row has no dates, derive the
+  // period from the line items (earliest service_period_from → latest
+  // service_period_to). ISO date strings sort lexicographically, so a plain
+  // sort gives min/max. Still nothing → "—" (matches the trade-grid em-dash
+  // convention for missing fields).
+  const itemPeriodFrom = items
+    .map((it: any) => (typeof it.service_period_from === "string" && it.service_period_from ? it.service_period_from : null))
+    .filter((v: string | null): v is string => !!v)
+    .sort()[0] ?? null;
+  const itemPeriodTo = items
+    .map((it: any) => (typeof it.service_period_to === "string" && it.service_period_to ? it.service_period_to : null))
+    .filter((v: string | null): v is string => !!v)
+    .sort()
+    .pop() ?? null;
+  const servicePeriod: string =
+    fmtServicePeriod(svc.service_start || itemPeriodFrom, svc.service_end || itemPeriodTo) ?? "—";
+  const serviceLocation: string = svc.service_location || "—";
 
   // ── Bank accounts (modern JSON array on tenant) ─────────────────────
   // The DB column is typed as `string | null` (jsonb), but in practice it
@@ -935,8 +992,16 @@ export function buildPdfDocument({
   );
 
   // ── Document notice (legally required disclaimer) per doc type ─────
+  // migration 103: services documents carry their own wording — a services
+  // invoice isn't a "commercial invoice" (customs terminology) and a services
+  // proforma isn't issued "for customs/bank purposes". The services offer
+  // keeps the goods offer notice (validity wording is nature-agnostic).
   const docNotice =
-    docType === "invoice"
+    nature === "services" && docType === "invoice"
+      ? "This is a computer-generated service invoice and is valid without signature."
+      : nature === "services" && docType === "proforma"
+      ? "This proforma invoice is issued for services rendered and is not a tax invoice."
+      : docType === "invoice"
       ? "This is a computer-generated commercial invoice and is valid without signature."
       : docType === "proforma"
       ? "This proforma invoice is issued for customs/bank purposes only and is not a tax invoice."
@@ -1193,7 +1258,7 @@ export function buildPdfDocument({
       node: (<>
         <View style={styles.docTitleRow}>
           <View style={styles.docTitleBlock}>
-            <Text style={styles.docTitle}>{docTitleMap[docType]}</Text>
+            <Text style={styles.docTitle}>{docTitle}</Text>
             {doc.subject && <Text style={styles.docSubtitle}>{doc.subject}</Text>}
           </View>
           <View style={styles.docMetaBlock}>
@@ -1292,12 +1357,40 @@ export function buildPdfDocument({
   }
 
   if (docType !== "loi") {
-    // ── 3. Trade terms ──
+    // ── 3. Trade terms (goods) / Service Details (services) ──
+    // migration 103: the SAME layout slot + visibility key ("trade_terms")
+    // renders a different grid per nature — goods keep the exact 3×3 trade
+    // grid (incoterms, origin, POL/POD, vessel, container, packaging),
+    // services get a single-row grid with the fields a service document
+    // actually has (period, place, payment). Template Studio layout configs
+    // keep working unchanged for both natures.
     if (!layoutHidden("trade_terms")) {
       bodySections.push({
         key: "trade_terms",
         y: layoutYOf("trade_terms"),
         node: (<>
+        {nature === "services" ? (<>
+        <Text style={styles.sectionHeader}>Service Details</Text>
+        <View style={styles.tradeTerms} wrap={false}>
+          <View style={styles.tradeTermsRow}>
+            <View style={styles.tradeTermsCell}>
+              <Text style={styles.tradeTermsLabel}>Service Period</Text>
+              {/* Doc-level service_start/end, falling back to the earliest
+                  from / latest to across line items — "—" when neither
+                  carries dates. */}
+              <Text style={styles.tradeTermsValue}>{servicePeriod}</Text>
+            </View>
+            <View style={styles.tradeTermsCell}>
+              <Text style={styles.tradeTermsLabel}>Place of Service</Text>
+              <Text style={styles.tradeTermsValue}>{serviceLocation}</Text>
+            </View>
+            <View style={styles.tradeTermsCellLast}>
+              <Text style={styles.tradeTermsLabel}>Payment</Text>
+              <Text style={styles.tradeTermsValue}>{paymentTerms}</Text>
+            </View>
+          </View>
+        </View>
+        </>) : (<>
         <Text style={styles.sectionHeader}>Trade Terms</Text>
         <View style={styles.tradeTerms} wrap={false}>
           <View style={styles.tradeTermsRow}>
@@ -1345,16 +1438,69 @@ export function buildPdfDocument({
             </View>
           </View>
         </View>
+        </>)}
         </>),
       });
     }
 
-    // ── 4. Line items table ──
+    // ── 4. Line items table (goods) / Service Lines (services) ──
+    // migration 103: services drop the HS Code + Origin columns (a service
+    // has neither) and gain a Period column (per-line service dates). The
+    // unit-price column is labelled "Rate" — the services billing term.
+    // Same "line_items_table" visibility key, so template layout configs
+    // keep working for both natures.
     if (!layoutHidden("line_items_table")) {
       bodySections.push({
         key: "line_items_table",
         y: layoutYOf("line_items_table"),
         node: (<>
+        {nature === "services" ? (<>
+        <Text style={styles.sectionHeader}>Service Lines</Text>
+        <View style={styles.table}>
+          <View style={styles.tableHeader} fixed>
+            <Text style={[styles.th, { flex: flexRowNum }]}>#</Text>
+            <Text style={[styles.th, { flex: flexDescription }]}>Description</Text>
+            <Text style={[styles.th, { flex: flexPeriod }]}>Period</Text>
+            <Text style={[styles.th, { flex: flexQuantity }]}>Quantity</Text>
+            <Text style={[styles.th, { flex: flexUnitPrice, textAlign: numericAlign }]}>Rate</Text>
+            <Text style={[styles.th, { flex: flexTotal, textAlign: numericAlign }]}>Total</Text>
+          </View>
+          {items.map((item, i) => {
+            // Same tax-EXCLUSIVE total as the goods table (2g-F7): qty ×
+            // unit_price so the column foots to the Subtotal row.
+            const lineNet = (typeof item.unit_price === "number" && typeof item.quantity === "number")
+              ? item.unit_price * item.quantity
+              : (typeof item.total === "number" ? item.total : 0);
+            // Per-line period; a line without its own dates falls back to
+            // the document-level period (the Service Details cell value).
+            const linePeriod = fmtServicePeriod(item.service_period_from, item.service_period_to) ?? servicePeriod;
+            return (
+              <View
+                key={i}
+                style={[styles.tableRow, ...(tableStripe && i % 2 === 1 ? [styles.tableRowEven] : [])]}
+              >
+                <Text style={[styles.td, { flex: flexRowNum }]}>{i + 1}</Text>
+                {/* Services: free-text detail lives in the description —
+                    SKU/Brand sub-lines are goods-only and stay off. */}
+                <Text style={[styles.td, { flex: flexDescription }]}>
+                  {item.product_name}
+                  {item.description ? `\n${item.description}` : ""}
+                </Text>
+                <Text style={[styles.td, { flex: flexPeriod }]}>{linePeriod}</Text>
+                <Text style={[styles.td, { flex: flexQuantity, textAlign: numericAlign }]}>
+                  {fmtQty(item.quantity)} {item.unit || "unit"}
+                </Text>
+                <Text style={[styles.td, { flex: flexUnitPrice, textAlign: numericAlign }]}>
+                  {fmtMoney(item.unit_price, currency)}
+                </Text>
+                <Text style={[styles.td, { flex: flexTotal, textAlign: numericAlign, fontFamily: headingFontFamily }]}>
+                  {fmtMoney(lineNet, currency)}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+        </>) : (<>
         <Text style={styles.sectionHeader}>Line Items</Text>
         <View style={styles.table}>
           <View style={styles.tableHeader} fixed>
@@ -1405,12 +1551,16 @@ export function buildPdfDocument({
             );
           })}
         </View>
+        </>)}
         </>),
       });
     }
 
-    // ── 5. Specifications ──
-    if (!layoutHidden("specifications") && hasItemSpecs) {
+    // ── 5. Specifications (goods only) ──
+    // migration 103: services documents skip the per-item spec tables — a
+    // service line's free-text detail already renders in the Description
+    // cell of the Service Lines table, so a spec section would just repeat it.
+    if (!layoutHidden("specifications") && hasItemSpecs && nature === "goods") {
       bodySections.push({
         key: "specifications",
         y: layoutYOf("specifications"),
@@ -2148,9 +2298,9 @@ export function buildPdfDocument({
 
   return (
     <Document
-      title={pdfMeta?.title || `${docTitleMap[docType]} ${doc.number}`}
+      title={pdfMeta?.title || `${docTitle} ${doc.number}`}
       author={pdfMeta?.author || tenant?.legal_name || tenant?.name || "VELOS CRM"}
-      subject={pdfMeta?.subject || `${docTitleMap[docType]} ${doc.number} — ${partner?.name || "client"}.${verificationMeta}`}
+      subject={pdfMeta?.subject || `${docTitle} ${doc.number} — ${partner?.name || "client"}.${verificationMeta}`}
       creator={pdfMeta?.creator || "VELOS CRM System"}
       keywords={pdfMeta?.keywords || `${docType}, ${doc.number}, ${partner?.name || ""}, ${currency}${verificationCode ? `, verification: ${verificationCode}` : ""}`}
       producer="VELOS CRM"

@@ -28,6 +28,7 @@ interface UnitSelectProps {
 }
 
 const CATEGORIES_KEYS: Array<{ value: UnitCategory; key: string }> = [
+  { value: "service", key: "misc-unit-service" },
   { value: "weight", key: "misc-unit-weight" },
   { value: "volume", key: "misc-unit-volume" },
   { value: "length", key: "misc-unit-length" },

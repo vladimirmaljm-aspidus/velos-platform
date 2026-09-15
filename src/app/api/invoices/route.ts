@@ -34,9 +34,12 @@ async function _get(req: NextRequest) {
     const search = url.searchParams.get("search") || undefined;
     const partner_id = url.searchParams.get("partner_id") || undefined;
     const status = url.searchParams.get("status") || undefined;
+    // Migration 103 (goods vs services): list filter from the toolbar
+    // segmented control (All / Goods / Services).
+    const nature = url.searchParams.get("nature") || undefined;
     const limit = url.searchParams.get("limit") ? Math.min(Number(url.searchParams.get("limit")), 500) : undefined;
     const offset = url.searchParams.get("offset") ? Number(url.searchParams.get("offset")) : undefined;
-    const result = await auth.store.listInvoices(tid!, { search, filters: { partner_id, status }, limit, offset });
+    const result = await auth.store.listInvoices(tid!, { search, filters: { partner_id, status, nature }, limit, offset });
     // Defense-in-depth: even though SupabaseStore filters by tenant_id,
     // this post-filter provides an extra safety layer. Do NOT remove.
     const shouldFilter = "apiKeyId" in auth || !auth.isSuperAdmin;
@@ -79,6 +82,13 @@ async function _post(req: NextRequest) {
       body = await req.json();
     } catch {
       return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+    }
+
+    // Migration 103 (goods vs services): validate the nature enum before
+    // anything else — a bogus value would violate the column CHECK
+    // constraint and surface as an opaque 500 from the upsert.
+    if (body.nature != null && body.nature !== "goods" && body.nature !== "services") {
+      return NextResponse.json({ error: "nature must be 'goods' or 'services'." }, { status: 400 });
     }
 
     // FIX-PRODUCTS-DOCS / Fix 4 (b) — required-fields check. partner_id
@@ -174,6 +184,7 @@ async function _post(req: NextRequest) {
       "delivery_address",
       "specification",
       "exchange_rate_note",
+      "service_location",
     ]);
     if (Array.isArray(body.items)) {
       body.items = body.items.map((it: any) => sanitizeFields(it, [

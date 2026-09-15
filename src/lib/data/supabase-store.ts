@@ -774,6 +774,7 @@ export class SupabaseStore implements Store {
     if (params?.search) q = q.textSearch("search_vector", params.search, { type: "websearch" });
     if (params?.filters?.partner_id) q = q.eq("partner_id", params.filters.partner_id);
     if (params?.filters?.status) q = q.eq("status", params.filters.status);
+    if (params?.filters?.nature) q = q.eq("nature", params.filters.nature);
     q = q.order("created_at", { ascending: false });
     return paginateQuery<Offer>(q, params);
   }
@@ -1573,6 +1574,7 @@ export class SupabaseStore implements Store {
     if (params?.search) q = q.textSearch("search_vector", params.search, { type: "websearch" });
     if (params?.filters?.partner_id) q = q.eq("partner_id", params.filters.partner_id);
     if (params?.filters?.status) q = q.eq("status", params.filters.status);
+    if (params?.filters?.nature) q = q.eq("nature", params.filters.nature);
     q = q.order("created_at", { ascending: false });
     return paginateQuery<Invoice>(q, params);
   }
@@ -1624,6 +1626,7 @@ export class SupabaseStore implements Store {
     if (params?.search) q = q.or(`number.ilike.%${safeSearch(params.search)}%,subject.ilike.%${safeSearch(params.search)}%`);
     if (params?.filters?.partner_id) q = q.eq("partner_id", params.filters.partner_id);
     if (params?.filters?.status) q = q.eq("status", params.filters.status);
+    if (params?.filters?.nature) q = q.eq("nature", params.filters.nature);
     q = q.order("created_at", { ascending: false });
     return paginateQuery<Proforma>(q, params);
   }

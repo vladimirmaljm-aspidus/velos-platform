@@ -43,7 +43,7 @@ import {
   Collapsible, CollapsibleTrigger, CollapsibleContent,
 } from "@/components/ui/collapsible";
 import {
-  Plus, Search, FileText, Pencil, Trash2, Eye, ChevronDown, ChevronRight, X, Calendar, Send, CheckCircle2, XCircle, Clock, Download, Loader2, Sparkles, Building2, Receipt, FileSpreadsheet, ArrowRight, ArrowLeftRight, Info, Landmark, MapPin, Hash, Globe, CreditCard, Handshake, Package, Ship, Container, Banknote, FileCheck, Timer, History, GitBranch, Save, Truck, Ban, FileDown,
+  Plus, Search, FileText, Pencil, Trash2, Eye, ChevronDown, ChevronRight, X, Calendar, Send, CheckCircle2, XCircle, Clock, Download, Loader2, Sparkles, Building2, Receipt, FileSpreadsheet, ArrowRight, ArrowLeftRight, Info, Landmark, MapPin, Hash, Globe, CreditCard, Handshake, Package, Ship, Container, Banknote, FileCheck, Timer, History, GitBranch, Save, Truck, Ban, FileDown, Wrench,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/page-header";
@@ -56,6 +56,7 @@ import { fmtMoney, fmtDate, fmtDateTime, fmtNumber } from "@/lib/utils/format";
 import { Offer, OfferLineItem, OfferStatus, Partner, Product, Deal, DocumentRevision, SupplierOffer, Tenant } from "@/lib/supabase/types";
 import { CURRENCIES, OFFER_STATUSES, PAYMENT_TERMS_LOCAL, INCOTERM_CODES } from "@/lib/data/reference";
 import { UnitSelect } from "@/components/common/unit-select";
+import { NatureSwitch, NatureBadge } from "@/components/common/nature-switch";
 import { convertUnitPrice, describeConversion } from "@/lib/utils/unit-conversion";
 import { CountrySelect } from "@/components/common/country-select";
 import { OfferTextBuilder } from "@/components/common/offer-text-builder";
@@ -381,6 +382,8 @@ export function OffersView() {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounced(search, 300);
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  // Migration 103 — document-nature filter (goods vs services) for the list.
+  const [natureFilter, setNatureFilter] = useState<string>("__all__");
   const [partnerFilter, setPartnerFilter] = useState<string>("all");
   const [editing, setEditing] = useState<Offer | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -415,11 +418,12 @@ export function OffersView() {
   }, []);
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ["offers", tenantKey, debouncedSearch, statusFilter, partnerFilter, page, PAGE_SIZE],
+    queryKey: ["offers", tenantKey, debouncedSearch, statusFilter, natureFilter, partnerFilter, page, PAGE_SIZE],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (debouncedSearch) params.set("search", debouncedSearch);
       if (statusFilter !== "all") params.set("status", statusFilter);
+      if (natureFilter !== "__all__") params.set("nature", natureFilter);
       if (partnerFilter !== "all") params.set("partner_id", partnerFilter);
       params.set("limit", String(PAGE_SIZE));
       params.set("offset", String(page * PAGE_SIZE));
@@ -739,6 +743,17 @@ export function OffersView() {
               <SelectItem value="countered">{t("marketplace-response-status-countered")}</SelectItem>
             </SelectContent>
           </Select>
+          {/* Migration 103 — filter the list by document nature (goods vs services). */}
+          <Select value={natureFilter} onValueChange={(v) => { setNatureFilter(v); setPage(0); }}>
+            <SelectTrigger className="w-full md:w-36" aria-label={t("fin-nature-filter")}>
+              <SelectValue placeholder={t("fin-nature-filter")} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">{t("fin-nature-all")}</SelectItem>
+              <SelectItem value="goods">{t("fin-nature-goods")}</SelectItem>
+              <SelectItem value="services">{t("fin-nature-services")}</SelectItem>
+            </SelectContent>
+          </Select>
           <PartnerPicker
             value={partnerFilter === "all" ? "" : partnerFilter}
             allowClear
@@ -804,7 +819,12 @@ export function OffersView() {
                             aria-label={t("fin-select-offer-aria").replace("${number}", o.number)}
                           />
                         </TableCell>
-                        <TableCell className="font-mono text-xs tabular">{o.number}</TableCell>
+                        <TableCell className="font-mono text-xs tabular">
+                          <div className="flex items-center gap-1.5">
+                            {o.number}
+                            <NatureBadge nature={o.nature} />
+                          </div>
+                        </TableCell>
                         <TableCell className="hidden md:table-cell">
                           <div className="font-medium truncate max-w-[200px]">{o.subject || "—"}</div>
                         </TableCell>
@@ -1274,6 +1294,7 @@ function OfferDetail({
       <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
         <div className="flex flex-wrap items-center gap-2">
           <StatusBadge status={offer.status} />
+          <NatureBadge nature={offer.nature} />
           <span className="text-sm text-muted-foreground">{partnerName}</span>
         </div>
         <DropdownMenu>
@@ -1379,6 +1400,37 @@ function OfferDetail({
           <p className="text-sm font-medium">{fmtDate(offer.created_at)}</p>
         </div>
       </div>
+
+      {/* Service Details (migration 103 — services-nature documents).
+          Deliberately separate from hasTradeData below: only rows with data
+          render, and a services offer can still show the trade-style grid
+          (e.g. payment terms live there). */}
+      {offer.nature === "services" && (offer.service_start || offer.service_end || offer.service_location) && (
+        <div className="mb-4">
+          <h4 className="text-sm font-semibold mb-2 flex items-center gap-1.5">
+            <Wrench className="size-4" /> {t("fin-service-details")}
+          </h4>
+          <div className="grid grid-cols-2 gap-2">
+            {(offer.service_start || offer.service_end) && (
+              <div className="p-3 rounded-lg bg-muted/40 border border-border/60">
+                <p className="text-xs text-muted-foreground flex items-center gap-1"><Calendar className="size-3" /> {t("fin-service-period")}</p>
+                <p className="text-sm font-medium">
+                  {[
+                    offer.service_start ? fmtDate(offer.service_start) : null,
+                    offer.service_end ? fmtDate(offer.service_end) : null,
+                  ].filter(Boolean).join(" – ")}
+                </p>
+              </div>
+            )}
+            {offer.service_location && (
+              <div className="p-3 rounded-lg bg-muted/40 border border-border/60">
+                <p className="text-xs text-muted-foreground flex items-center gap-1"><MapPin className="size-3" /> {t("fin-service-location")}</p>
+                <p className="text-sm font-medium">{offer.service_location}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Trade / Import Details */}
       {hasTradeData && (
@@ -1931,6 +1983,7 @@ function OfferFormDialog({
           : [];
         setForm({
           status: "draft",
+          nature: "goods",
           currency: p.currency || "USD",
           payment_terms: p.payment_terms || "net30",
           valid_until: p.valid_until || thirtyDaysFromNow(),
@@ -1952,6 +2005,7 @@ function OfferFormDialog({
       } else {
         setForm({
           status: "draft",
+          nature: "goods",
           currency: "USD",
           payment_terms: "net30",
           valid_until: thirtyDaysFromNow(),
@@ -2236,7 +2290,10 @@ function OfferFormDialog({
     setForm((f) => ({
       ...f,
       items: [...(f.items || []), {
-        product_id: "", product_name: "", sku: "", unit: "pcs",
+        product_id: "", product_name: "", sku: "",
+        // Migration 103 — services lines start on a time-based unit (the
+        // UnitSelect carries the Service/Time group); goods keep "pcs".
+        unit: (f.nature || "goods") === "services" ? "hour" : "pcs",
         quantity: 1, unit_price: 0, discount: 0, tax_rate: 20, total: 0,
       }],
     }));
@@ -2255,6 +2312,13 @@ function OfferFormDialog({
   }
 
   const totals = computeTotals(form.items || []);
+
+  // Migration 103 — document nature. Drives the whole form: goods keeps the
+  // classic trade flow (incoterms, POL/POD, product picker with HS codes),
+  // services swaps in the service flow (Service Details section + free-text
+  // service lines with per-line periods and time-based units). Switching does
+  // NOT clear anything — fields merely show/hide so no data is ever lost.
+  const isServices = (form.nature || "goods") === "services";
 
   async function save() {
     if (!form.partner_id) { toast.error(t("fin-select-partner-toast")); return; }
@@ -2456,6 +2520,16 @@ function OfferFormDialog({
 
         <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
 
+          {/* ─── Document Nature (migration 103 — goods vs services) ─── */}
+          {/* First-class choice made before anything else. Goods keeps the
+              classic trade form below; services swaps the trade section for
+              Service Details and renders free-text service lines. */}
+          <div className="space-y-1.5">
+            <Label>{t("fin-nature-label")}</Label>
+            <NatureSwitch value={form.nature || "goods"} onChange={(n) => set("nature", n)} />
+            {isServices && <p className="text-xs text-muted-foreground">{t("fin-nature-hint-services")}</p>}
+          </div>
+
           {/* ─── Partner Selection (top — auto-fill partner details) ─── */}
           <div className="border rounded-lg p-4 space-y-3 bg-muted/30">
             <h3 className="text-sm font-semibold flex items-center gap-2">
@@ -2613,11 +2687,76 @@ function OfferFormDialog({
 
           </div>
 
-          {/* ─── Trade Terms Section (always visible) ─── */}
+          {/* ─── Trade Terms / Service Details Section ─── */}
           {/* All the import/export fields every offer should carry, in one place
               rather than scattered across the form. Auto-filled from the latest
-              supplier offer when the user adds the first line item. */}
-          <div className="border rounded-lg p-4 space-y-3 bg-muted/30">
+              supplier offer when the user adds the first line item.
+              Migration 103: this block is goods-only — a services document
+              swaps it for a Service Details section (overall period, place of
+              service, payment terms, valid until) in the same visual style. */}
+          {isServices ? (
+            <div className="border rounded-lg p-4 space-y-3 bg-muted/30">
+              <h3 className="text-sm font-semibold flex items-center gap-2">
+                <Wrench className="h-4 w-4" /> {t("fin-service-details")}
+                <span className="text-xs text-muted-foreground font-normal">{t("fin-service-period-hint")}</span>
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                {/* Service period — from */}
+                <div className="space-y-1.5">
+                  <Label>{t("fin-service-period-from")}</Label>
+                  <Input
+                    type="date"
+                    value={form.service_start || ""}
+                    onChange={(e) => set("service_start", e.target.value || null)}
+                  />
+                </div>
+                {/* Service period — to */}
+                <div className="space-y-1.5">
+                  <Label>{t("fin-service-period-to")}</Label>
+                  <Input
+                    type="date"
+                    value={form.service_end || ""}
+                    onChange={(e) => set("service_end", e.target.value || null)}
+                  />
+                </div>
+                {/* Place of service */}
+                <div className="space-y-1.5">
+                  <Label>{t("fin-service-location")}</Label>
+                  <Input
+                    value={form.service_location || ""}
+                    onChange={(e) => set("service_location", e.target.value)}
+                    placeholder={t("fin-service-location-ph")}
+                  />
+                </div>
+                {/* Payment terms — the SAME select the goods trade section
+                    uses, so services offers keep payment terms (and any
+                    due-date behavior derived from them). */}
+                <div className="space-y-1.5">
+                  <Label>{t("crm-payment-terms-required")}</Label>
+                  <MissingFieldWrap missing={isMissingField("payment_terms")}>
+                    <Select value={form.payment_terms || "net30"} onValueChange={(v) => set("payment_terms", v)}>
+                      <SelectTrigger className={cn(isMissingField("payment_terms") && MISSING_FIELD_CLS)}>
+                        <SelectValue placeholder={t("crm-select-payment-terms")} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PAYMENT_TERMS_LOCAL.map((pt) => <SelectItem key={pt.value} value={pt.value}>{pt.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </MissingFieldWrap>
+                </div>
+                {/* Valid until — stays editable for services offers too */}
+                <div className="space-y-1.5">
+                  <Label>{t("crm-valid-until-required")}</Label>
+                  <Input
+                    type="date"
+                    value={form.valid_until ? form.valid_until.slice(0, 10) : ""}
+                    onChange={(e) => set("valid_until", e.target.value ? new Date(e.target.value).toISOString() : null)}
+                  />
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="border rounded-lg p-4 space-y-3 bg-muted/30">
             <h3 className="text-sm font-semibold flex items-center gap-2">
               <Truck className="h-4 w-4" /> {t("crm-trade-terms-section")}
               <span className="text-xs text-muted-foreground font-normal">{t("crm-trade-terms-desc")}</span>
@@ -2758,14 +2897,19 @@ function OfferFormDialog({
               </div>
             </div>
           </div>
+          )}
 
           {/* ─── Line Items Section (inline table) ─── */}
           <div className="border rounded-lg p-4 space-y-3 bg-muted/30">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold flex items-center gap-2">
-                <Package className="h-4 w-4" /> {t("crm-line-items")}
-                <Sparkles className="size-3.5 text-amber-500" />
-                <span className="text-xs text-muted-foreground font-normal">{t("crm-auto-fill-catalog-supplier")}</span>
+                {isServices ? <Wrench className="h-4 w-4" /> : <Package className="h-4 w-4" />} {isServices ? t("fin-service-lines") : t("crm-line-items")}
+                {!isServices && (
+                  <>
+                    <Sparkles className="size-3.5 text-amber-500" />
+                    <span className="text-xs text-muted-foreground font-normal">{t("crm-auto-fill-catalog-supplier")}</span>
+                  </>
+                )}
               </h3>
               <Button type="button" size="sm" variant="outline" onClick={addItem}>
                 <Plus className="size-4 mr-1" /> {t("crm-add-item")}
@@ -2774,13 +2918,141 @@ function OfferFormDialog({
 
             {(form.items || []).length === 0 ? (
               <div className="border rounded-md border-dashed border-border/60 p-6 text-center bg-card">
-                <Package className="size-8 text-muted-foreground/40 mx-auto mb-2" />
+                {isServices ? <Wrench className="size-8 text-muted-foreground/40 mx-auto mb-2" /> : <Package className="size-8 text-muted-foreground/40 mx-auto mb-2" />}
                 <p className="text-sm text-muted-foreground">{t("crm-no-line-items")}</p>
                 <p className="text-xs text-muted-foreground mt-1">{t("crm-click-add-item")}</p>
               </div>
             ) : (
               <div className="rounded-md border border-border/60 overflow-x-auto bg-card">
                 <Table>
+                {isServices ? (
+                  <>
+                  <TableHeader className="bg-muted/30">
+                    <TableRow>
+                      <TableHead className="min-w-[220px]">{t("fin-service-name")}</TableHead>
+                      <TableHead className="w-44">
+                        <span className="block">{t("fin-service-line-period")}</span>
+                        <span className="block text-[10px] font-normal text-muted-foreground">{t("fin-service-line-period-ph")}</span>
+                      </TableHead>
+                      <TableHead className="w-20 text-right">{t("fin-qty-time")}</TableHead>
+                      <TableHead className="w-24">{t("crm-unit-detail")}</TableHead>
+                      <TableHead className="w-32 text-right">{t("fin-rate")}</TableHead>
+                      <TableHead className="w-16 text-right hidden sm:table-cell">{t("crm-disc-pct")}</TableHead>
+                      <TableHead className="w-16 text-right hidden sm:table-cell">{t("crm-tax-pct-form")}</TableHead>
+                      <TableHead className="w-28 text-right">{t("crm-line-total")}</TableHead>
+                      <TableHead className="w-10"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(form.items || []).map((it, idx) => {
+                      const lineRevenue = lineTotal(it);
+                      return (
+                      <TableRow key={idx}>
+                        {/* Service name + optional description — free text,
+                            no ProductPicker for services documents. */}
+                        <TableCell>
+                          <div className="space-y-1">
+                            <Input
+                              placeholder={t("fin-service-name-ph")}
+                              value={it.product_name || ""}
+                              onChange={(e) => setItem(idx, { product_name: e.target.value })}
+                            />
+                            <Input
+                              className="h-8 text-xs"
+                              placeholder={t("fin-service-desc-ph")}
+                              value={it.description || ""}
+                              onChange={(e) => setItem(idx, { description: e.target.value || null })}
+                            />
+                          </div>
+                        </TableCell>
+                        {/* Per-line service period (optional — empty falls back
+                            to the document-level service_start / service_end). */}
+                        <TableCell>
+                          <div className="space-y-1">
+                            <Input
+                              type="date"
+                              className="h-8 text-xs"
+                              value={it.service_period_from || ""}
+                              onChange={(e) => setItem(idx, { service_period_from: e.target.value || null })}
+                            />
+                            <Input
+                              type="date"
+                              className="h-8 text-xs"
+                              value={it.service_period_to || ""}
+                              onChange={(e) => setItem(idx, { service_period_to: e.target.value || null })}
+                            />
+                          </div>
+                        </TableCell>
+                        {/* Qty / Time */}
+                        <TableCell className="text-right">
+                          <Input
+                            type="number"
+                            className="h-8 text-xs w-16 text-right"
+                            value={it.quantity}
+                            onChange={(e) => setItem(idx, { quantity: Number(e.target.value) })}
+                          />
+                        </TableCell>
+                        {/* Unit — the shared UnitSelect (its Service/Time group
+                            provides hour/day/week/month/… units). */}
+                        <TableCell>
+                          <UnitSelect
+                            value={it.unit || ""}
+                            onChange={(v) => handleUnitChange(idx, v)}
+                            placeholder="hour"
+                            className="h-8 text-xs w-24"
+                          />
+                        </TableCell>
+                        {/* Rate */}
+                        <TableCell className="text-right">
+                          <Input
+                            type="number"
+                            className="h-8 text-xs w-28 text-right"
+                            value={it.unit_price}
+                            onChange={(e) => setItem(idx, { unit_price: Number(e.target.value) })}
+                          />
+                        </TableCell>
+                        <TableCell className="text-right hidden sm:table-cell">
+                          <Input
+                            type="number"
+                            className="h-8 text-xs w-14 text-right"
+                            value={it.discount}
+                            onChange={(e) => setItem(idx, { discount: Number(e.target.value) })}
+                          />
+                        </TableCell>
+                        <TableCell className="text-right hidden sm:table-cell">
+                          <Input
+                            type="number"
+                            className="h-8 text-xs w-14 text-right"
+                            value={it.tax_rate}
+                            onChange={(e) => setItem(idx, { tax_rate: Number(e.target.value) })}
+                          />
+                        </TableCell>
+                        <TableCell
+                          className="text-right font-mono tabular text-sm font-medium"
+                          title={t("fin-line-total-prefix").replace("${money}", fmtMoney(lineRevenue, form.currency || "USD"))}
+                        >
+                          {fmtMoney(lineRevenue, form.currency || "USD")}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="size-8 text-destructive"
+                            onClick={() => removeItem(idx)}
+                            title={t("remove")}
+                            aria-label={t("remove")}
+                          >
+                            <X className="size-4" aria-hidden="true" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                  </>
+                ) : (
+                  <>
                   <TableHeader className="bg-muted/30">
                     <TableRow>
                       <TableHead className="min-w-[200px]">{t("crm-product")}</TableHead>
@@ -2996,6 +3268,8 @@ function OfferFormDialog({
                       );
                     })}
                   </TableBody>
+                  </>
+                )}
                 </Table>
               </div>
             )}
@@ -3295,20 +3569,25 @@ function OfferFormDialog({
                   </div>
                 </div>
 
-                {/* Shipping specifics — vessel + container */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                  <div className="space-y-1.5">
-                    <Label>{t("crm-vessel-label")}</Label>
-                    <Input value={form.vessel || ""} onChange={(e) => set("vessel", e.target.value)} placeholder="MV Ever Given" />
+                {/* Shipping specifics — vessel + container (goods only —
+                    migration 103: services documents carry no shipping data) */}
+                {!isServices && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                    <div className="space-y-1.5">
+                      <Label>{t("crm-vessel-label")}</Label>
+                      <Input value={form.vessel || ""} onChange={(e) => set("vessel", e.target.value)} placeholder="MV Ever Given" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>{t("crm-container-no-label")}</Label>
+                      <Input value={form.container_no || ""} onChange={(e) => set("container_no", e.target.value)} placeholder="MSKU-1234567" />
+                    </div>
                   </div>
-                  <div className="space-y-1.5">
-                    <Label>{t("crm-container-no-label")}</Label>
-                    <Input value={form.container_no || ""} onChange={(e) => set("container_no", e.target.value)} placeholder="MSKU-1234567" />
-                  </div>
-                </div>
+                )}
 
-                {/* Trade Advisor — auto-shows FTA + tariff info when countries are known */}
-                {selectedPartner?.country && (
+                {/* Trade Advisor — auto-shows FTA + tariff info when countries
+                    are known. Goods only (migration 103): FTA/tariff lookups
+                    make no sense for service documents. */}
+                {!isServices && selectedPartner?.country && (
                   <TradeAdvisor
                     reporterCode={selectedPartner.country}
                     partnerCode={undefined}
