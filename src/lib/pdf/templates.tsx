@@ -316,6 +316,14 @@ export function buildPdfDocument({
   // Page number — memorandum-owned (footer_right_* fonts).
   const showPageNumber = footerEnabled && (m?.page_number_enabled !== false);
 
+  // ── Per-document display options (migration 105/106) ───────────────────
+  // Parsed defensively (never throws — a malformed column renders with
+  // the built-in defaults). Every option below has a default that keeps
+  // the legacy output byte-stable for rows with display_options = NULL.
+  // Parsed THIS early (before the QR gate) because show_qr_code must be
+  // able to turn the footer QR off for ONE document.
+  const dOpts = parseDisplayOptions((doc as any).display_options);
+
   // ── QR code (memorandum-owned placement; CENTER default) ────────────
   const qrPosition = m?.qr_position === "left" || m?.qr_position === "right" || m?.qr_position === "none"
     ? m.qr_position
@@ -323,7 +331,11 @@ export function buildPdfDocument({
   const qrOpacity = typeof m?.qr_opacity === "number" ? Math.max(0, Math.min(m.qr_opacity, 1)) : 1;
   const qrEnabled = footerEnabled && m?.qr_enabled !== false && qrPosition !== "none";
   const qrSizePts = mmToPoints(m?.qr_size_mm ?? 15);
-  const showQr = qrEnabled && !!qrCodeDataUrl;
+  // migration 106: per-document QR kill-switch — the issuer can hide the
+  // verification QR on one document even when the memorandum shows it on
+  // every other. Verification records are still created (scans simply
+  // stop being advertised on the paper).
+  const showQr = qrEnabled && dOpts.show_qr_code !== false && !!qrCodeDataUrl;
 
   // ── Table styling (audit20: template-driven) ────────────────────────
   const tableHeaderBg = tpl?.table_header_bg || primaryColor;
@@ -842,11 +854,23 @@ export function buildPdfDocument({
   // the exact trade-document look. LOI carries no nature column and stays
   // on the goods path by construction.
   const nature = docNature(doc as any);
-  // ── Per-document display options (migration 105) ─────────────────────
-  // Parsed defensively (never throws — a malformed column renders with
-  // the built-in defaults). Every option below has a default that keeps
-  // the legacy output byte-stable for rows with display_options = NULL.
-  const dOpts = parseDisplayOptions((doc as any).display_options);
+  // ── Migration 106: party box labels ──────────────────────────────────
+  // Services documents call the parties what they are: the issuer is the
+  // SERVICE PROVIDER (CONSULTANT), the counterparty is the CLIENT — not
+  // "SELLER"/"BUYER" (trade terminology, user feedback). Goods documents
+  // and LOI keep the classic trade labels. The issuer's own wording
+  // (display_options.from_label / to_label) always wins — free text typed
+  // per document in the display options panel.
+  const defaultFromLabel =
+    docType === "loi" ? "FROM (BUYER)"
+    : nature === "services" ? "SERVICE PROVIDER (CONSULTANT)"
+    : "FROM (SELLER)";
+  const defaultToLabel =
+    docType === "loi" ? "TO (SELLER)"
+    : nature === "services" ? "CLIENT"
+    : "TO (BUYER)";
+  const fromLabel = dOpts.from_label?.trim() || defaultFromLabel;
+  const toLabel = dOpts.to_label?.trim() || defaultToLabel;
   // Custom title override — the issuer's own wording wins ("Tax Invoice",
   // "Fee Note"…). Otherwise the canonical title per doc type; services
   // documents use the PLAIN titles ("Invoice", not "Commercial Invoice" —
@@ -1416,7 +1440,7 @@ export function buildPdfDocument({
         <View style={styles.partiesSection}>
           {!layoutHidden("from_box") && (
           <PartyBox
-            title={docType === "loi" ? "FROM (BUYER)" : "FROM (SELLER)"}
+            title={fromLabel}
             name={tenant?.legal_name || tenant?.name || "Company"}
             addressLine={tenant?.address_line}
             city={tenant?.city}
@@ -1432,7 +1456,7 @@ export function buildPdfDocument({
           )}
           {!layoutHidden("to_box") && (
           <PartyBox
-            title={docType === "loi" ? "TO (SELLER)" : "TO (BUYER)"}
+            title={toLabel}
             name={partner?.name || "—"}
             addressLine={partner?.address_line}
             city={partner?.city}

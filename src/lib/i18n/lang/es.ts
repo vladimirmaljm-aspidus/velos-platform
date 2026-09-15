@@ -2038,6 +2038,13 @@ export const FINANCE: Record<string, string> = {
   "fin-display-group-doc": "Documento",
   "fin-display-group-svc": "Campos de servicio",
   "fin-display-group-sec": "Secciones",
+
+  // ── Party labels + QR toggle (migration 106) ──
+  "fin-display-group-parties": "Partes",
+  "fin-display-from-label": "Etiqueta De (emisor)",
+  "fin-display-to-label": "Etiqueta Para (destinatario)",
+  "fin-display-parties-hint": "Encabezados personalizados para los dos bloques de partes — dejar vacío para el valor predeterminado (servicios: SERVICE PROVIDER (CONSULTANT) / CLIENT, mercancías: FROM (SELLER) / TO (BUYER)). Se imprime en mayúsculas.",
+  "fin-display-qr-label": "Código QR de verificación",
 };
 
 

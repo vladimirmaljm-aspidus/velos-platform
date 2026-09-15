@@ -53,6 +53,17 @@ export interface DocumentDisplayOptions {
   show_bank_details?: boolean;
   /** Authorized signatures block. Default true (subject to the Template Studio layout too). */
   show_signatures?: boolean;
+  /** Custom header for the FROM party box. Default: "FROM (SELLER)" (goods) /
+   *  "SERVICE PROVIDER (CONSULTANT)" (services). Free text — the issuer
+   *  decides what the document calls each party. */
+  from_label?: string | null;
+  /** Custom header for the TO party box. Default: "TO (BUYER)" (goods) /
+   *  "CLIENT" (services). */
+  to_label?: string | null;
+  /** QR verification code in the footer. Default true (still subject to the
+   *  memorandum / template settings too). false = never rendered, even when
+   *  the memorandum has QR enabled. */
+  show_qr_code?: boolean;
 }
 
 const VAT_MODES = new Set<VatDisplayMode>(["auto", "amount", "reverse_charge", "custom", "hidden"]);
@@ -102,6 +113,11 @@ export function parseDisplayOptions(
   if (typeof obj.show_amount_words === "boolean") out.show_amount_words = obj.show_amount_words;
   if (typeof obj.show_bank_details === "boolean") out.show_bank_details = obj.show_bank_details;
   if (typeof obj.show_signatures === "boolean") out.show_signatures = obj.show_signatures;
+  const fromLabel = cleanString(obj.from_label, 60);
+  if (fromLabel) out.from_label = fromLabel;
+  const toLabel = cleanString(obj.to_label, 60);
+  if (toLabel) out.to_label = toLabel;
+  if (typeof obj.show_qr_code === "boolean") out.show_qr_code = obj.show_qr_code;
   return out;
 }
 

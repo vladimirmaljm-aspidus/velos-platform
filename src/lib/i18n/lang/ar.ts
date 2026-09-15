@@ -2037,6 +2037,13 @@ export const FINANCE: Record<string, string> = {
   "fin-display-group-doc": "المستند",
   "fin-display-group-svc": "حقول الخدمة",
   "fin-display-group-sec": "الأقسام",
+
+  // ── Party labels + QR toggle (migration 106) ──
+  "fin-display-group-parties": "الأطراف",
+  "fin-display-from-label": "تسمية المُصدر (المرسل)",
+  "fin-display-to-label": "تسمية المستلم (العميل)",
+  "fin-display-parties-hint": "عناوين مخصصة لكتلتي الأطراف — اتركه فارغًا للقيمة الافتراضية (الخدمات: SERVICE PROVIDER (CONSULTANT) / CLIENT، البضائع: FROM (SELLER) / TO (BUYER)). تُطبع بأحرف كبيرة.",
+  "fin-display-qr-label": "رمز QR للتحقق",
 };
 
 export const LOGISTICS: Record<string, string> = {

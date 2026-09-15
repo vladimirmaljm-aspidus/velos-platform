@@ -2037,6 +2037,13 @@ export const FINANCE: Record<string, string> = {
   "fin-display-group-doc": "Document",
   "fin-display-group-svc": "Champs de service",
   "fin-display-group-sec": "Sections",
+
+  // ── Party labels + QR toggle (migration 106) ──
+  "fin-display-group-parties": "Parties",
+  "fin-display-from-label": "Libellé De (émetteur)",
+  "fin-display-to-label": "Libellé À (destinataire)",
+  "fin-display-parties-hint": "En-têtes personnalisés pour les deux blocs de parties — laissez vide pour la valeur par défaut (services : SERVICE PROVIDER (CONSULTANT) / CLIENT, marchandises : FROM (SELLER) / TO (BUYER)). Imprimé en majuscules.",
+  "fin-display-qr-label": "Code QR de vérification",
 };
 
 export const LOGISTICS: Record<string, string> = {

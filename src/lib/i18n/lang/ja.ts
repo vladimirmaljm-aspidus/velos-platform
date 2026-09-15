@@ -2037,6 +2037,13 @@ export const FINANCE: Record<string, string> = {
   "fin-display-group-doc": "書類",
   "fin-display-group-svc": "サービス項目",
   "fin-display-group-sec": "セクション",
+
+  // ── Party labels + QR toggle (migration 106) ──
+  "fin-display-group-parties": "当事者",
+  "fin-display-from-label": "差出人（発行者）ラベル",
+  "fin-display-to-label": "宛先（顧客）ラベル",
+  "fin-display-parties-hint": "両当事者ブロックのカスタム見出し — 空欄でデフォルト（サービス: SERVICE PROVIDER (CONSULTANT) / CLIENT、物品: FROM (SELLER) / TO (BUYER)）。大文字で印刷されます。",
+  "fin-display-qr-label": "QR検証コード",
 };
 
 export const LOGISTICS: Record<string, string> = {

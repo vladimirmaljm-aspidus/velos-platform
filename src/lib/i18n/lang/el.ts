@@ -2037,6 +2037,13 @@ export const FINANCE: Record<string, string> = {
   "fin-display-group-doc": "Έγγραφο",
   "fin-display-group-svc": "Πεδία υπηρεσίας",
   "fin-display-group-sec": "Ενότητες",
+
+  // ── Party labels + QR toggle (migration 106) ──
+  "fin-display-group-parties": "Μέρη",
+  "fin-display-from-label": "Ετικέτα Από (εκδότης)",
+  "fin-display-to-label": "Ετικέτα Προς (παραλήπτης)",
+  "fin-display-parties-hint": "Προσαρμοσμένες επικεφαλίδες για τα δύο μπλοκ των μερών — αφήστε κενό για την προεπιλογή (υπηρεσίες: SERVICE PROVIDER (CONSULTANT) / CLIENT, αγαθά: FROM (SELLER) / TO (BUYER)). Εκτυπώνεται με κεφαλαία.",
+  "fin-display-qr-label": "Κωδικός επαλήθευσης QR",
 };
 
 export const LOGISTICS: Record<string, string> = {

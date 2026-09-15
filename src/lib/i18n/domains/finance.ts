@@ -745,6 +745,13 @@ export const FINANCE: Record<Locale, Record<string, string>> = {
     "fin-display-group-doc": "Document",
     "fin-display-group-svc": "Service fields",
     "fin-display-group-sec": "Sections",
+
+    // ── Party labels + QR toggle (migration 106) ──
+    "fin-display-group-parties": "Parties",
+    "fin-display-from-label": "From (issuer) label",
+    "fin-display-to-label": "To (recipient) label",
+    "fin-display-parties-hint": "Custom headers for the two party boxes — leave empty for the default (services: SERVICE PROVIDER (CONSULTANT) / CLIENT, goods: FROM (SELLER) / TO (BUYER)). Rendered in upper case.",
+    "fin-display-qr-label": "QR verification code",
   },
 
   sr: {
@@ -1463,6 +1470,13 @@ export const FINANCE: Record<Locale, Record<string, string>> = {
     "fin-display-group-doc": "Dokument",
     "fin-display-group-svc": "Polja usluge",
     "fin-display-group-sec": "Sekcije",
+
+    // ── Party labels + QR toggle (migration 106) ──
+    "fin-display-group-parties": "Stranke",
+    "fin-display-from-label": "Oznaka pošiljaoca (izdavaoca)",
+    "fin-display-to-label": "Oznaka primaoca (klijenta)",
+    "fin-display-parties-hint": "Posebni naslovi za dva bloka strana — ostavite prazno za podrazumevano (usluge: SERVICE PROVIDER (CONSULTANT) / CLIENT, robe: FROM (SELLER) / TO (BUYER)). Ispisano velikim slovima.",
+    "fin-display-qr-label": "QR kod za verifikaciju",
   },
 
   tr: {
@@ -2181,6 +2195,13 @@ export const FINANCE: Record<Locale, Record<string, string>> = {
     "fin-display-group-doc": "Belge",
     "fin-display-group-svc": "Hizmet alanları",
     "fin-display-group-sec": "Bölümler",
+
+    // ── Party labels + QR toggle (migration 106) ──
+    "fin-display-group-parties": "Tarafiar",
+    "fin-display-from-label": "Gönderen (düzenleyen) etiketi",
+    "fin-display-to-label": "Alıcı (müşteri) etiketi",
+    "fin-display-parties-hint": "İki taraf kutusu için özel başlıklar — varsayılan için boş bırakın (hizmet: SERVICE PROVIDER (CONSULTANT) / CLIENT, mal: FROM (SELLER) / TO (BUYER)). Büyük harfle yazılır.",
+    "fin-display-qr-label": "QR doğrulama kodu",
   },
 
   de: {
@@ -2899,6 +2920,13 @@ export const FINANCE: Record<Locale, Record<string, string>> = {
     "fin-display-group-doc": "Dokument",
     "fin-display-group-svc": "Leistungsfelder",
     "fin-display-group-sec": "Abschnitte",
+
+    // ── Party labels + QR toggle (migration 106) ──
+    "fin-display-group-parties": "Parteien",
+    "fin-display-from-label": "Beschriftung Von (Aussteller)",
+    "fin-display-to-label": "Beschriftung An (Empfänger)",
+    "fin-display-parties-hint": "Eigene Überschriften für die beiden Parteifelder — leer lassen für die Vorgabe (Dienstleistungen: SERVICE PROVIDER (CONSULTANT) / CLIENT, Waren: FROM (SELLER) / TO (BUYER)). Wird in Großbuchstaben gedruckt.",
+    "fin-display-qr-label": "QR-Bestätigungscode",
   },
 
   ru: {
@@ -3617,6 +3645,13 @@ export const FINANCE: Record<Locale, Record<string, string>> = {
     "fin-display-group-doc": "Документ",
     "fin-display-group-svc": "Поля услуги",
     "fin-display-group-sec": "Разделы",
+
+    // ── Party labels + QR toggle (migration 106) ──
+    "fin-display-group-parties": "Стороны",
+    "fin-display-from-label": "Подпись отправителя (эмитента)",
+    "fin-display-to-label": "Подпись получателя (клиента)",
+    "fin-display-parties-hint": "Свои заголовки для двух блоков сторон — оставьте пустым для значения по умолчанию (услуги: SERVICE PROVIDER (CONSULTANT) / CLIENT, товары: FROM (SELLER) / TO (BUYER)). Печатается заглавными буквами.",
+    "fin-display-qr-label": "QR-код верификации",
   },
 
 

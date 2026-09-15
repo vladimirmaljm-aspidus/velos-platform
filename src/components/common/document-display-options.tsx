@@ -23,6 +23,10 @@ import type {
  *
  *   • Title      — custom wording ("Tax Invoice", "Fee Note"…) or the
  *                  default per doc type ("Invoice" / "Offer" / …).
+ *   • Parties    — custom headers for the two party boxes. Services
+ *                  documents default to SERVICE PROVIDER (CONSULTANT) /
+ *                  CLIENT (not Seller/Buyer); goods keep FROM (SELLER) /
+ *                  TO (BUYER). Free text — the issuer's wording wins.
  *   • VAT row    — Auto (factual amount only) / amount / the reverse-charge
  *                  legend / a custom note / hidden. The legend is an
  *                  explicit choice — it is never inferred from a zero
@@ -30,7 +34,7 @@ import type {
  *   • Services   — period (cell + column, tri-state), place-of-service cell,
  *                  payment cell, quantity column.
  *   • Sections   — legal notice (+ custom text), amount in words, bank
- *                  details, signature block.
+ *                  details, signature block, QR verification code.
  *
  * Defaults are stored as ABSENT keys (auto/on) so legacy rows and untouched
  * documents keep the exact built-in rendering.
@@ -73,7 +77,7 @@ export function DocumentDisplayOptions({
   );
   /** Boolean section switch, default ON: off stores false, on removes the key. */
   const sectionSwitch = (
-    key: "show_notice" | "show_amount_words" | "show_bank_details" | "show_signatures" | "show_service_location" | "show_payment_terms",
+    key: "show_notice" | "show_amount_words" | "show_bank_details" | "show_signatures" | "show_service_location" | "show_payment_terms" | "show_qr_code",
     label: string,
   ) => (
     <div className="flex items-center justify-between gap-2 rounded-md border border-border/60 bg-card px-3 py-2">
@@ -89,6 +93,13 @@ export function DocumentDisplayOptions({
   const vatMode: VatDisplayMode = v.vat_mode ?? "auto";
   const periodMode: TriStateVisibility = v.show_period ?? "auto";
   const activeCount = Object.keys(v).length;
+
+  // Party box defaults per nature — services call the parties what they
+  // are (SERVICE PROVIDER (CONSULTANT) / CLIENT); goods keep the classic
+  // trade FROM (SELLER) / TO (BUYER). Shown as placeholders; typing
+  // anything else overrides the PDF headers 1:1 (rendered uppercase).
+  const defaultFromLabel = isServices ? "SERVICE PROVIDER (CONSULTANT)" : "FROM (SELLER)";
+  const defaultToLabel = isServices ? "CLIENT" : "TO (BUYER)";
 
   return (
     <div className={className}>
@@ -176,6 +187,44 @@ export function DocumentDisplayOptions({
             )}
           </div>
 
+          {/* ── Parties group — custom headers for the two party boxes ── */}
+          <div className="space-y-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              {t("fin-display-group-parties")}
+            </p>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs">{t("fin-display-from-label")}</Label>
+                <Input
+                  className="h-9"
+                  value={v.from_label || ""}
+                  onChange={(e) =>
+                    e.target.value.trim()
+                      ? set({ from_label: e.target.value })
+                      : clear("from_label")
+                  }
+                  placeholder={defaultFromLabel}
+                  aria-label={t("fin-display-from-label")}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">{t("fin-display-to-label")}</Label>
+                <Input
+                  className="h-9"
+                  value={v.to_label || ""}
+                  onChange={(e) =>
+                    e.target.value.trim()
+                      ? set({ to_label: e.target.value })
+                      : clear("to_label")
+                  }
+                  placeholder={defaultToLabel}
+                  aria-label={t("fin-display-to-label")}
+                />
+              </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground">{t("fin-display-parties-hint")}</p>
+          </div>
+
           {/* ── Service fields group (services nature only) ── */}
           {isServices && (
             <div className="space-y-3">
@@ -231,6 +280,7 @@ export function DocumentDisplayOptions({
               {sectionSwitch("show_amount_words", t("fin-display-words-label"))}
               {sectionSwitch("show_bank_details", t("fin-display-bank-label"))}
               {sectionSwitch("show_signatures", t("fin-display-signatures-label"))}
+              {sectionSwitch("show_qr_code", t("fin-display-qr-label"))}
             </div>
             {v.show_notice !== false && (
               <div className="space-y-1.5">

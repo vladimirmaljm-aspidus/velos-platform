@@ -2037,6 +2037,13 @@ export const FINANCE: Record<string, string> = {
   "fin-display-group-doc": "单据",
   "fin-display-group-svc": "服务字段",
   "fin-display-group-sec": "板块",
+
+  // ── Party labels + QR toggle (migration 106) ──
+  "fin-display-group-parties": "当事方",
+  "fin-display-from-label": "发件方（出具方）标签",
+  "fin-display-to-label": "收件方（客户）标签",
+  "fin-display-parties-hint": "两个当事方区块的自定义标题 — 留空使用默认值（服务：SERVICE PROVIDER (CONSULTANT) / CLIENT，货物：FROM (SELLER) / TO (BUYER)）。以大写字母打印。",
+  "fin-display-qr-label": "QR 验证码",
 };
 
 export const LOGISTICS: Record<string, string> = {
