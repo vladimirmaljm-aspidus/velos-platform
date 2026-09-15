@@ -12,7 +12,7 @@ import {
   FolderOpen, ListChecks, ScrollText, Settings, ShieldCheck, Key,
   Webhook, Lock, Mail, Receipt, FileSignature, Boxes,
   ChevronLeft, ChevronRight, Building2, Calculator,
-  ToggleRight, LayoutGrid, Plug, DollarSign, BookMarked, Calendar,
+  ToggleRight, LayoutGrid, Plug, DollarSign, BookMarked, Calendar, Wallet,
   StickyNote, Briefcase, Settings2, TrendingUp, Truck, MapPin,
   Shield, Globe, Gauge, Store, UserPlus, Bell, Bug,
 } from "lucide-react";
@@ -118,6 +118,10 @@ const SECTIONS: NavSection[] = [
       { key: "lois", i18nKey: "lois", i18nSection: "finance", icon: ScrollText, permission: "lois.read", featureFlag: "module_finance" },
       { key: "document-register", i18nKey: "document-register", i18nSection: "finance", icon: FolderOpen, permission: "document-register.read", featureFlag: "module_finance" },
       { key: "erp", i18nKey: "erp", i18nSection: "finance", icon: BookMarked, permission: "erp.read", featureFlag: "module_finance" },
+      // task 11-a — collections workbench over unpaid invoices + partner
+      // credit limits. Same gate as Invoices (finance module) so every
+      // finance-visible user sees it.
+      { key: "credit-collections", i18nKey: "credit-collections", i18nSection: "finance", icon: Wallet, permission: "invoices.read", featureFlag: "module_finance" },
     ],
   },
   {

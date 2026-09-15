@@ -29,6 +29,8 @@ const VIEW_KEYS = [
   "trade-calculator",
   // Finance
   "invoices",
+  // task 11-a (migration 102) — Credit & Collections workbench.
+  "credit-collections",
   "proformas",
   "lois",
   "document-register",

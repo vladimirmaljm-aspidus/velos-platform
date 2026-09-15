@@ -14,6 +14,7 @@ import {
   OfferStatus,
   DealStage,
   Invoice, Proforma, LetterOfIntent, DocumentRegisterEntry, DocumentRevision,
+  CollectionReminder,
   VaultSecret, ApiKey, Webhook, WebhookDelivery, WebhookPayload,
   SecuritySession, LoginHistoryEntry, KnownIp, TrustedDevice,
   MailQueueEntry,
@@ -81,6 +82,7 @@ const TENANT_SCOPED_TABLES: readonly string[] = [
   "mail_queue", "notifications", "team_chat_messages", "portal_messages",
   // weak entities
   "entity_notes", "user_tasks", "user_preferences", "quick_notes",
+  "collection_reminders",
   "time_entries", "reminders", "expense_entries", "meeting_notes",
   "project_tasks", "recurring_expenses",
   // trade core
@@ -1587,6 +1589,35 @@ export class SupabaseStore implements Store {
     if (error) throw error;
   }
 
+  // ---- collection reminders (migration 102 — Credit & Collections) ----
+  async listCollectionReminders(tenantId: string, sinceDays?: number): Promise<CollectionReminder[]> {
+    let q = this.sb().from("collection_reminders").select("*").eq("tenant_id", tenantId);
+    if (sinceDays != null && Number.isFinite(sinceDays)) {
+      const cutoff = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000).toISOString();
+      q = q.gte("sent_at", cutoff);
+    }
+    const { data, error } = await q.order("sent_at", { ascending: false });
+    if (error) throw error;
+    return (data as CollectionReminder[]) || [];
+  }
+  async insertCollectionReminder(row: Omit<CollectionReminder, "id" | "sent_at">): Promise<CollectionReminder> {
+    // Explicit allowlist insert — reminders are append-only history, so there
+    // is no upsert-by-id path to abuse and no client field beyond the route's
+    // validated payload ever reaches this method.
+    const payload: SupaRow = {
+      tenant_id: row.tenant_id,
+      partner_id: row.partner_id,
+      invoice_id: row.invoice_id ?? null,
+      stage: row.stage,
+      kind: row.kind,
+      note: row.note ?? null,
+      sent_by: row.sent_by ?? null,
+    };
+    const { data, error } = await this.sb().from("collection_reminders").insert(payload).select().single();
+    if (error) throw error;
+    return data as CollectionReminder;
+  }
+
   // ---- proformas ----
   async listProformas(tenantId: string, params?: ListParams): Promise<ListResult<Proforma>> {
     let q = this.sb().from("proformas").select("*", { count: "exact" }).eq("tenant_id", tenantId);
@@ -2693,7 +2724,8 @@ export class SupabaseStore implements Store {
         footer_height: activeLetterhead?.footer_height_mm ?? 15,
         footer_content: null,
         footer_show_page_number: activeLetterhead?.footer_show_page_number ?? true,
-        footer_show_bank_details: activeLetterhead?.footer_show_bank_details ?? true,
+        // audit48: bank lines under the QR are OPT-IN — letterhead fallback OFF.
+        footer_show_bank_details: activeLetterhead?.footer_show_bank_details ?? false,
         footer_show_tax_id: activeLetterhead?.footer_show_tax_id ?? true,
         // Body typography
         body_font_family: activeLetterhead?.body_font_family || "Inter",

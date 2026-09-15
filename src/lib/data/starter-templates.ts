@@ -93,12 +93,15 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
       header_show_logo: true,
       header_show_company_name: true,
       header_show_contact: true,
-      // Footer — invoices show bank details in footer (payment reference)
+      // Footer — bank details in the footer are now OPT-IN (audit48):
+      // seeding them ON meant tenants saw bank lines under the QR without
+      // ever enabling anything in settings. The payment block in the body
+      // ("Bank details" section) remains the canonical place for it.
       footer_enabled: true,
       footer_height: 20,
       footer_content: "",
       footer_show_page_number: true,
-      footer_show_bank_details: true,
+      footer_show_bank_details: false,
       footer_show_tax_id: true,
       // Body typography
       body_font_family: "Helvetica",
@@ -146,7 +149,7 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
       footer_content:
         "This proforma invoice is issued for customs/bank purposes only and is not a tax invoice.",
       footer_show_page_number: true,
-      footer_show_bank_details: true,
+      footer_show_bank_details: false,
       footer_show_tax_id: true,
       // Body typography
       body_font_family: "Helvetica",

@@ -20,7 +20,7 @@ import {
 // 31-f — shared numeric-field validation (audit 30-a finding 30a-02,
 // applied to the PUT path for parity with POST: a string risk_score is a
 // PostgREST 22P02 on the integer cast → 500; now a clean 400).
-import { assertNumeric } from "@/lib/api/validate";
+import { assertNumeric, assertBoolean } from "@/lib/api/validate";
 
 export const runtime = "nodejs";
 
@@ -94,9 +94,17 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     // 31-f — numeric-field validation BEFORE the DB write (parity with the
     // POST handler's 30a-02 fix: risk_score / rating are integer columns —
     // coerce numeric strings, 400 on junk).
+    // 102 — credit_limit (numeric), on_hold (boolean), credit_currency
+    // (ISO 4217) ride the same guards.
     {
-      const bad = assertNumeric(body, ["risk_score", "rating"]);
+      const bad = assertNumeric(body, ["risk_score", "rating", "credit_limit"]);
       if (bad) return bad;
+      const badBool = assertBoolean(body, ["on_hold"]);
+      if (badBool) return badBool;
+      if (body.credit_currency !== undefined && body.credit_currency !== null &&
+          (typeof body.credit_currency !== "string" || !/^[A-Z]{3}$/.test(body.credit_currency))) {
+        return NextResponse.json({ error: "Field 'credit_currency' must be an ISO 4217 code (e.g. USD)." }, { status: 400 });
+      }
     }
     // FIX-ALL-2 / Fix 6 — XSS prevention on free-text fields (parity with POST).
     body = sanitizeFields(body, [
@@ -110,6 +118,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       "country",
       "website",
       "notes",
+      "hold_reason",
     ]);
     // SEC-M9 (mass-assignment) — apply the field whitelist BEFORE the
     // encryption step. Strips client-supplied values for privileged

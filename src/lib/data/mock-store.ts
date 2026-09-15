@@ -16,6 +16,7 @@ import {
   DashboardInsights,
   DashboardCharts,
   Invoice, Proforma, DocumentRegisterEntry, DocumentRevision,
+  CollectionReminder,
   VaultSecret, ApiKey, Webhook,
   SecuritySession, LoginHistoryEntry, KnownIp, TrustedDevice,
   MailQueueEntry,
@@ -675,6 +676,34 @@ export class MockStore implements Store {
     const idx = mock.invoices.findIndex((i) => i.id === id); if (idx >= 0) mock.invoices.splice(idx, 1);
   }
 
+  // ---- collection reminders (migration 102 — Credit & Collections) ----
+  // In-memory history (no seed data) — mutations live for the process
+  // lifetime, mirroring the ERP maps above.
+  private collectionReminders: CollectionReminder[] = [];
+  async listCollectionReminders(tenantId: string, sinceDays?: number): Promise<CollectionReminder[]> {
+    let items = this.collectionReminders.filter((r) => r.tenant_id === tenantId);
+    if (sinceDays != null && Number.isFinite(sinceDays)) {
+      const cutoff = Date.now() - sinceDays * 24 * 60 * 60 * 1000;
+      items = items.filter((r) => new Date(r.sent_at).getTime() >= cutoff);
+    }
+    return [...items].sort((a, b) => b.sent_at.localeCompare(a.sent_at));
+  }
+  async insertCollectionReminder(row: Omit<CollectionReminder, "id" | "sent_at">): Promise<CollectionReminder> {
+    const entry: CollectionReminder = {
+      id: mock.nid("cr_"),
+      tenant_id: row.tenant_id,
+      partner_id: row.partner_id,
+      invoice_id: row.invoice_id ?? null,
+      stage: row.stage,
+      kind: row.kind,
+      note: row.note ?? null,
+      sent_by: row.sent_by ?? null,
+      sent_at: new Date().toISOString(),
+    };
+    this.collectionReminders.push(entry);
+    return entry;
+  }
+
   // ---- proformas ----
   async listProformas(_tenantId: string, params?: ListParams): Promise<ListResult<Proforma>> {
     let items = [...mock.proformas];
@@ -1210,7 +1239,8 @@ export class MockStore implements Store {
       header_show_company_name: t.header_show_company_name ?? true, header_show_contact: t.header_show_contact ?? true,
       footer_enabled: t.footer_enabled ?? true, footer_height: t.footer_height ?? 15,
       footer_content: t.footer_content || "", footer_show_page_number: t.footer_show_page_number ?? true,
-      footer_show_bank_details: t.footer_show_bank_details ?? true, footer_show_tax_id: t.footer_show_tax_id ?? true,
+      // audit48: bank lines under the QR are OPT-IN — mock fallback OFF.
+      footer_show_bank_details: t.footer_show_bank_details ?? false, footer_show_tax_id: t.footer_show_tax_id ?? true,
       body_font_family: t.body_font_family || "Inter", body_font_size: t.body_font_size ?? 11, body_line_height: t.body_line_height ?? 1.5,
       primary_color: t.primary_color || "#0f766e", accent_color: t.accent_color || "#0d9488",
       table_header_bg: t.table_header_bg || "#0f766e", table_header_color: t.table_header_color || "#ffffff",

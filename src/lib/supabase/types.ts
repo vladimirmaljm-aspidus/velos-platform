@@ -78,6 +78,11 @@ export interface Partner {
   preferred_currency?: string | null;
   preferred_incoterm?: string | null;
   preferred_payment_terms?: string | null;
+  // Credit control (migration 102 — Credit & Collections module)
+  credit_limit?: number | null;      // NULL = no limit set
+  credit_currency?: string | null;    // ISO 4217, currency of credit_limit
+  on_hold?: boolean;                  // shipments/orders blocked while true
+  hold_reason?: string | null;
   // Commission Agent
   is_commissioner?: boolean; // if true, this partner is also a commission agent
   // CRM
@@ -571,6 +576,22 @@ export interface Invoice {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+}
+
+// ---------- Collection reminders (migration 102 — Credit & Collections) ----------
+// Dunning ladder per (tenant, partner, invoice): stage 1 = gentle,
+// 2 = firm, 3 = final. `kind` separates ladder reminders from free-form
+// collection notes. `invoice_id` is NULL for partner-level reminders.
+export interface CollectionReminder {
+  id: string;
+  tenant_id: string;
+  partner_id: string;
+  invoice_id: string | null;
+  stage: number;
+  kind: "reminder" | "note";
+  note: string | null;
+  sent_by: string | null;
+  sent_at: string;
 }
 
 // ---------- Proformas ----------

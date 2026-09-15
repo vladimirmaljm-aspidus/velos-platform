@@ -8,6 +8,7 @@ import {
   AuditLog, Setting, UserTask, InventoryMovement, EntityNote,
   DashboardInsights, DashboardCharts,
   Invoice, Proforma, LetterOfIntent, DocumentRegisterEntry, DocumentRevision,
+  CollectionReminder,
   VaultSecret, ApiKey, Webhook, WebhookDelivery, WebhookPayload,
   SecuritySession, LoginHistoryEntry, KnownIp, TrustedDevice,
   MailQueueEntry,
@@ -108,6 +109,17 @@ export interface Store {
   getInvoice(id: string): Promise<Invoice | null>;
   upsertInvoice(i: Partial<Invoice> & { id?: string }): Promise<Invoice>;
   deleteInvoice(id: string): Promise<void>;
+
+  // collection reminders (migration 102 — Credit & Collections)
+  /**
+   * Newest-first reminder history for the tenant. `sinceDays` (default: no
+   * filter) limits the window — the credit report asks for the last 365 so
+   * the dunning ladder + 30-day KPI stay complete without scanning the
+   * full history.
+   */
+  listCollectionReminders(tenantId: string, sinceDays?: number): Promise<CollectionReminder[]>;
+  /** Append-only insert of a reminder / collection note. */
+  insertCollectionReminder(row: Omit<CollectionReminder, "id" | "sent_at">): Promise<CollectionReminder>;
 
   // proformas
   listProformas(tenantId: string, params?: ListParams): Promise<ListResult<Proforma>>;

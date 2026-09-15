@@ -13,6 +13,7 @@ import {
   AuditLog, Setting, UserTask, InventoryMovement, EntityNote,
   DashboardInsights, DashboardCharts, DealStage,
   Invoice, Proforma, DocumentRegisterEntry, DocumentRevision,
+  CollectionReminder,
   VaultSecret, ApiKey, Webhook,
   SecuritySession, LoginHistoryEntry, KnownIp, TrustedDevice,
   MailQueueEntry,
@@ -749,6 +750,12 @@ export class PrismaStore implements Store {
   async deleteInvoice(id: string): Promise<void> {
     await db.invoice.delete({ where: { id } });
   }
+
+  // ---- Collection reminders (migration 102 — Credit & Collections) —
+  // Prisma is deprecated and has no collection_reminders model; production
+  // runs SupabaseStore, MockStore covers tests/dev parity.
+  async listCollectionReminders(tenantId: string, sinceDays?: number): Promise<CollectionReminder[]> { throw unsupported("listCollectionReminders", "PrismaStore"); }
+  async insertCollectionReminder(row: Omit<CollectionReminder, "id" | "sent_at">): Promise<CollectionReminder> { throw unsupported("insertCollectionReminder", "PrismaStore"); }
 
   // ─── Proformas ──────────────────────────────────────────────────────────
 

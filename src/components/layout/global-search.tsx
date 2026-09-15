@@ -8,7 +8,7 @@ import {
   FolderOpen, ListChecks, ScrollText, Settings, ShieldCheck, Key,
   Webhook, Lock, Mail, Receipt, FileSignature, Boxes, Building2,
   BookOpen, Calculator, ToggleRight, Plus, FileDown, ExternalLink,
-  Clock, CornerDownLeft, ArrowRight,
+  Clock, CornerDownLeft, ArrowRight, Wallet,
 } from "lucide-react";
 import {
   Command, CommandInput, CommandList, CommandEmpty,
@@ -72,6 +72,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: "inventory", label: "Inventory", icon: Boxes },
   // Finance
   { key: "invoices", label: "Invoices", icon: Receipt },
+  { key: "credit-collections", label: "Credit & Collections", icon: Wallet },
   { key: "proformas", label: "Proformas", icon: FileSignature },
   { key: "document-register", label: "Document Register", icon: FolderOpen },
   // Admin

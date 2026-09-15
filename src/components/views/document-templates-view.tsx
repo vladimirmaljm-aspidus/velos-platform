@@ -388,7 +388,8 @@ function defaultLetterhead(name = "Untitled letterhead"): LetterheadFormState {
     header_divider_color: "#e2e8f0",
     header_custom_html: null,
     footer_layout: "bank-contact-tax",
-    footer_show_bank_details: true,
+    // audit48: bank lines under the QR are OPT-IN — new letterheads start OFF.
+    footer_show_bank_details: false,
     footer_show_contact: true,
     footer_show_tax_id: true,
     footer_show_page_number: true,
@@ -452,7 +453,9 @@ function defaultTemplate(name = "Untitled template"): TemplateFormState {
     footer_height: 18,
     footer_content: DEFAULT_FOOTER_CONTENT_JSON,
     footer_show_page_number: true,
-    footer_show_bank_details: true,
+    // audit48: bank lines under the QR are OPT-IN — new templates start OFF
+    // (the body "Bank details" section remains the default payment block).
+    footer_show_bank_details: false,
     footer_show_tax_id: true,
     body_font_family: "Inter, system-ui, sans-serif",
     body_font_size: 11,

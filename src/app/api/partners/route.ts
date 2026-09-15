@@ -23,7 +23,7 @@ import {
 // 31-f — shared numeric-field validation (audit 30-a finding 30a-02:
 // POST /api/partners {risk_score: "not-a-number"} → 500 "Invalid input
 // format." — PostgREST 22P02 on the integer cast; now a clean 400).
-import { assertNumeric } from "@/lib/api/validate";
+import { assertNumeric, assertBoolean } from "@/lib/api/validate";
 
 export const runtime = "nodejs";
 
@@ -131,6 +131,15 @@ export function whitelistPartnerFields(
     "social",
     "whatsapp",
     "activities",
+    // Credit control (migration 102 — Credit & Collections). Set from the
+    // collections view's limit / hold dialogs via PUT /api/partners/[id].
+    // credit_limit is numeric(18,2) (assertNumeric), credit_currency is
+    // ISO 4217 (regex-validated), on_hold is boolean (assertBoolean),
+    // hold_reason is free text.
+    "credit_limit",
+    "credit_currency",
+    "on_hold",
+    "hold_reason",
   ]);
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(body)) {
@@ -247,8 +256,15 @@ async function _post(req: NextRequest) {
     // error mapped by sanitizeError). risk_score and rating are integer
     // columns; coerce numeric strings, 400 on junk.
     {
-      const bad = assertNumeric(body, ["risk_score", "rating"]);
+      const bad = assertNumeric(body, ["risk_score", "rating", "credit_limit"]);
       if (bad) return bad;
+      // 102 — on_hold is boolean; credit_currency is ISO 4217 (or null).
+      const badBool = assertBoolean(body, ["on_hold"]);
+      if (badBool) return badBool;
+      if (body.credit_currency !== undefined && body.credit_currency !== null &&
+          (typeof body.credit_currency !== "string" || !/^[A-Z]{3}$/.test(body.credit_currency))) {
+        return NextResponse.json({ error: "Field 'credit_currency' must be an ISO 4217 code (e.g. USD)." }, { status: 400 });
+      }
     }
 
     // FIX-ALL-2 / Fix 6 — XSS prevention. Escape `<`/`>`/`"`/`'` in

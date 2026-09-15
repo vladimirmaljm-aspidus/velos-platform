@@ -42,6 +42,9 @@ const ErrorAuditView = dynamic(() => import("@/components/views/error-audit-view
 const UsersView = dynamic(() => import("@/components/views/users-view").then((m) => m.UsersView), { ssr: false, loading: () => <ViewSkeleton /> });
 const SettingsView = dynamic(() => import("@/components/views/settings-view").then((m) => m.SettingsView), { ssr: false, loading: () => <ViewSkeleton /> });
 const InvoicesView = dynamic(() => import("@/components/views/invoices-view").then((m) => m.InvoicesView), { ssr: false, loading: () => <ViewSkeleton /> });
+// task 11-a (migration 102) — Credit & Collections workbench. Dynamic +
+// ssr:false: recharts and the two big tables stay out of the initial bundle.
+const CreditCollectionsView = dynamic(() => import("@/components/views/credit-view").then((m) => m.CreditCollectionsView), { ssr: false, loading: () => <ViewSkeleton /> });
 const ProformasView = dynamic(() => import("@/components/views/proformas-view").then((m) => m.ProformasView), { ssr: false, loading: () => <ViewSkeleton /> });
 // BUILD-LOI — admin Letters of Intent view (mirrors proformas-view pattern).
 // Dynamic + ssr:false so the heavy table + dialog stays out of the initial
@@ -118,6 +121,7 @@ function ViewContent({ view }: { view: string }) {
     case "users":                return <UsersView />;
     case "settings":             return <SettingsView />;
     case "invoices":             return <InvoicesView />;
+    case "credit-collections":   return <CreditCollectionsView />;
     case "proformas":            return <ProformasView />;
     case "lois":                 return <LoisView />;
     case "document-register":    return <DocumentRegisterView />;
