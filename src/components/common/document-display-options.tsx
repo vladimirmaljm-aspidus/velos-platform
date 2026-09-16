@@ -13,6 +13,7 @@ import type {
   DocumentDisplayOptions,
   VatDisplayMode,
   TriStateVisibility,
+  SignatureMode,
 } from "@/lib/supabase/types";
 
 /**
@@ -34,7 +35,12 @@ import type {
  *   • Services   — period (cell + column, tri-state), place-of-service cell,
  *                  payment cell, quantity column.
  *   • Sections   — legal notice (+ custom text), amount in words, bank
- *                  details, signature block, QR verification code.
+ *                  details, QR verification code.
+ *   • Signatures — how the signature area is presented: auto (invoices →
+ *                  the "electronically generated, valid without signature"
+ *                  line; offers/proformas → both boxes), both boxes, client
+ *                  acceptance only, the generated line (+ custom text), or
+ *                  hidden completely.
  *
  * Defaults are stored as ABSENT keys (auto/on) so legacy rows and untouched
  * documents keep the exact built-in rendering.
@@ -44,6 +50,7 @@ export function DocumentDisplayOptions({
   onChange,
   nature,
   defaultTitle,
+  docType,
   className,
 }: {
   value: DocumentDisplayOptions | null | undefined;
@@ -52,6 +59,9 @@ export function DocumentDisplayOptions({
   nature: DocumentNature;
   /** Placeholder for the custom-title input ("Invoice", "Offer"…). */
   defaultTitle: string;
+  /** Doc type drives the signature "auto" default (invoice → generated
+   *  validity line; offer/proforma → both boxes). */
+  docType: "offer" | "proforma" | "invoice";
   className?: string;
 }) {
   const t = useT();
@@ -77,7 +87,7 @@ export function DocumentDisplayOptions({
   );
   /** Boolean section switch, default ON: off stores false, on removes the key. */
   const sectionSwitch = (
-    key: "show_notice" | "show_amount_words" | "show_bank_details" | "show_signatures" | "show_service_location" | "show_payment_terms" | "show_qr_code",
+    key: "show_notice" | "show_amount_words" | "show_bank_details" | "show_service_location" | "show_payment_terms" | "show_qr_code",
     label: string,
   ) => (
     <div className="flex items-center justify-between gap-2 rounded-md border border-border/60 bg-card px-3 py-2">
@@ -93,6 +103,13 @@ export function DocumentDisplayOptions({
   const vatMode: VatDisplayMode = v.vat_mode ?? "auto";
   const periodMode: TriStateVisibility = v.show_period ?? "auto";
   const activeCount = Object.keys(v).length;
+
+  // Signature mode — legacy show_signatures:false behaves as "hidden";
+  // "auto" resolves per doc type (invoice → generated line, else both).
+  const signatureMode: SignatureMode | "hidden" =
+    v.show_signatures === false ? "hidden" : (v.signature_mode ?? "auto");
+  const resolvedSignatureMode =
+    signatureMode === "auto" ? (docType === "invoice" ? "generated" : "both") : signatureMode;
 
   // Party box defaults per nature — services call the parties what they
   // are (SERVICE PROVIDER (CONSULTANT) / CLIENT); goods keep the classic
@@ -279,9 +296,54 @@ export function DocumentDisplayOptions({
               {sectionSwitch("show_notice", t("fin-display-notice-label"))}
               {sectionSwitch("show_amount_words", t("fin-display-words-label"))}
               {sectionSwitch("show_bank_details", t("fin-display-bank-label"))}
-              {sectionSwitch("show_signatures", t("fin-display-signatures-label"))}
               {sectionSwitch("show_qr_code", t("fin-display-qr-label"))}
             </div>
+            {/* ── Signature mode (migration 107) ── */}
+            <div className="space-y-1.5">
+              <Label className="text-xs">{t("fin-display-sigmode-label")}</Label>
+              <Select
+                value={signatureMode}
+                onValueChange={(mode) => {
+                  // Single-pass patch: drop the legacy boolean, then set /
+                  // clear the mode so the two keys can never fight.
+                  const next = { ...v } as Record<string, unknown>;
+                  delete next.show_signatures;
+                  if (mode === "auto") delete next.signature_mode;
+                  else next.signature_mode = mode;
+                  onChange(
+                    Object.keys(next).length > 0
+                      ? (next as DocumentDisplayOptions)
+                      : null,
+                  );
+                }}
+              >
+                <SelectTrigger className="h-9" aria-label={t("fin-display-sigmode-label")}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">{t("fin-display-sigmode-auto")}</SelectItem>
+                  <SelectItem value="both">{t("fin-display-sigmode-both")}</SelectItem>
+                  <SelectItem value="client">{t("fin-display-sigmode-client")}</SelectItem>
+                  <SelectItem value="generated">{t("fin-display-sigmode-generated")}</SelectItem>
+                  <SelectItem value="hidden">{t("fin-display-sigmode-hidden")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {resolvedSignatureMode === "generated" && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">{t("fin-display-sig-note-label")}</Label>
+                <Input
+                  className="h-9"
+                  value={v.signature_note || ""}
+                  onChange={(e) =>
+                    e.target.value.trim()
+                      ? set({ signature_note: e.target.value })
+                      : clear("signature_note")
+                  }
+                  placeholder="This document is electronically generated and is valid without signature."
+                />
+              </div>
+            )}
             {v.show_notice !== false && (
               <div className="space-y-1.5">
                 <Label className="text-xs">{t("fin-display-notice-text-label")}</Label>

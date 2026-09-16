@@ -2044,6 +2044,15 @@ export const FINANCE: Record<string, string> = {
   "fin-display-to-label": "تسمية المستلم (العميل)",
   "fin-display-parties-hint": "عناوين مخصصة لكتلتي الأطراف — اتركه فارغًا للقيمة الافتراضية (الخدمات: SERVICE PROVIDER (CONSULTANT) / CLIENT، البضائع: FROM (SELLER) / TO (BUYER)). تُطبع بأحرف كبيرة.",
   "fin-display-qr-label": "رمز QR للتحقق",
+
+  // ── Signature mode (migration 107) ──
+  "fin-display-sigmode-label": "التوقيعات",
+  "fin-display-sigmode-auto": "تلقائي — الافتراضي لهذا النوع من المستندات (الفاتورة: سطر الصلاحية، بدون توقيعات)",
+  "fin-display-sigmode-both": "كلا الطرفين يوقّعان",
+  "fin-display-sigmode-client": "قبول العميل فقط",
+  "fin-display-sigmode-generated": "بدون توقيعات — مُنشأ إلكترونيًا وصالح",
+  "fin-display-sigmode-hidden": "مخفي بالكامل",
+  "fin-display-sig-note-label": "نص ملاحظة الصلاحية",
 };
 
 export const LOGISTICS: Record<string, string> = {

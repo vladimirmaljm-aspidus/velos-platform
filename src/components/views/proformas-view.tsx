@@ -1540,6 +1540,7 @@ function ProformaFormDialog({
                 onChange={setDisplayOptions}
                 nature={isServices ? "services" : "goods"}
                 defaultTitle={isServices ? "Proforma Invoice" : "Proforma Invoice"}
+                docType="proforma"
               />
             </div>
 

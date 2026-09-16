@@ -27,6 +27,15 @@ export type VatDisplayMode =
 /** Tri-state visibility for optional columns/cells. */
 export type TriStateVisibility = "auto" | "show" | "hide";
 
+/** How the signature area at the bottom of the document is presented. */
+export type SignatureMode =
+  | "auto"       // per doc type: invoice → "generated", offer/proforma/LOI → "both"
+  | "both"       // issuer + counterparty signature boxes (classic look)
+  | "client"     // counterparty acceptance box only (issuer does not sign)
+  | "generated"  // no boxes — the "electronically generated, valid without
+                  //  signature" line (invoices: the issuer does not sign them)
+  | "hidden";    // nothing at all (legacy show_signatures: false maps here)
+
 export interface DocumentDisplayOptions {
   /** VAT row presentation (see VatDisplayMode). Default "auto". */
   vat_mode?: VatDisplayMode;
@@ -51,8 +60,16 @@ export interface DocumentDisplayOptions {
   show_amount_words?: boolean;
   /** Bank details section. Default true (subject to the Template Studio layout too). */
   show_bank_details?: boolean;
-  /** Authorized signatures block. Default true (subject to the Template Studio layout too). */
+  /** Authorized signatures block. Legacy boolean — false hides the whole
+   *  area. Superseded by signature_mode (kept for rows saved before it). */
   show_signatures?: boolean;
+  /** Signature area presentation (see SignatureMode). Default "auto" —
+   *  invoices render the generated-validity line instead of signature
+   *  boxes (the issuer does not sign invoices). */
+  signature_mode?: SignatureMode;
+  /** Free-text validity note — rendered instead of the default line when
+   *  signature_mode = "generated". */
+  signature_note?: string | null;
   /** Custom header for the FROM party box. Default: "FROM (SELLER)" (goods) /
    *  "SERVICE PROVIDER (CONSULTANT)" (services). Free text — the issuer
    *  decides what the document calls each party. */
@@ -68,6 +85,7 @@ export interface DocumentDisplayOptions {
 
 const VAT_MODES = new Set<VatDisplayMode>(["auto", "amount", "reverse_charge", "custom", "hidden"]);
 const TRI_STATES = new Set<TriStateVisibility>(["auto", "show", "hide"]);
+const SIGNATURE_MODES = new Set<SignatureMode>(["auto", "both", "client", "generated", "hidden"]);
 
 function cleanString(v: unknown, maxLen: number): string | null {
   if (typeof v !== "string") return null;
@@ -113,6 +131,11 @@ export function parseDisplayOptions(
   if (typeof obj.show_amount_words === "boolean") out.show_amount_words = obj.show_amount_words;
   if (typeof obj.show_bank_details === "boolean") out.show_bank_details = obj.show_bank_details;
   if (typeof obj.show_signatures === "boolean") out.show_signatures = obj.show_signatures;
+  if (typeof obj.signature_mode === "string" && SIGNATURE_MODES.has(obj.signature_mode as SignatureMode)) {
+    out.signature_mode = obj.signature_mode as SignatureMode;
+  }
+  const sigNote = cleanString(obj.signature_note, 300);
+  if (sigNote) out.signature_note = sigNote;
   const fromLabel = cleanString(obj.from_label, 60);
   if (fromLabel) out.from_label = fromLabel;
   const toLabel = cleanString(obj.to_label, 60);

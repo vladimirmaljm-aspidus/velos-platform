@@ -792,6 +792,9 @@ export function buildPdfDocument({
     signatureParty: { fontSize: 8, color: "#555", marginBottom: 2, fontFamily: headingFontFamily },
     signatureLine: { marginTop: 26, borderBottomWidth: 1, borderBottomColor: "#333" },
     signatureLabel: { fontSize: 8, color: "#666", marginTop: 3, textAlign: "center", fontFamily: headingFontFamily },
+    // migration 107: the generated-validity line that replaces the signature
+    // boxes on invoices — small, muted, centred, sitting in the same slot.
+    signatureGeneratedNote: { marginTop: 18, fontSize: 7.5, color: "#6b7280", textAlign: "center", fontFamily: headingFontFamily, letterSpacing: 0.3 },
 
     // ── Company Seal (Zigled) ─────────────────────────────────────────
     // Absolutely positioned over the signature area. Placement comes from the
@@ -2061,27 +2064,57 @@ export function buildPdfDocument({
     }
   }
 
-  // ── 9. Authorized signatures + company seal ──
-  // migration 105: + per-document switch (show_signatures). The Template
-  // Studio layout toggle stays the tenant-wide default.
-  if (!layoutHidden("signatures") && dOpts.show_signatures !== false) {
+  // ── 9. Signatures + company seal ──
+  // migration 107: signature_mode. "auto" resolves per doc type — invoices
+  // no longer carry signature boxes (the issuer does not sign them); they
+  // close with the "electronically generated, valid without signature"
+  // line instead. Offers / proformas / LOI keep the classic both-boxes look
+  // (counterparty acceptance matters there). The issuer can still force any
+  // mode per document. Legacy show_signatures:false hides the whole area.
+  const sigMode: "both" | "client" | "generated" | "hidden" =
+    dOpts.show_signatures === false ? "hidden"
+    : !dOpts.signature_mode || dOpts.signature_mode === "auto"
+      ? (docType === "invoice" ? "generated" : "both")
+      : dOpts.signature_mode;
+  if (!layoutHidden("signatures") && sigMode !== "hidden") {
     bodySections.push({
       key: "signatures",
       y: layoutYOf("signatures"),
       node: (
-        <View style={styles.signatureWrap} wrap={false}>
-          <View style={styles.signatureBlock}>
-            <View style={styles.signatureCol}>
-              <Text style={styles.signatureParty}>For {tenant?.legal_name || tenant?.name || "Company"}:</Text>
-              <View style={styles.signatureLine} />
-              <Text style={styles.signatureLabel}>{docType === "loi" ? "Buyer Signature" : "Authorized Signature"}</Text>
+        <View
+          style={[
+            styles.signatureWrap,
+            // "generated" mode collapses the area to a single note line —
+            // when a company seal is configured, keep enough height for the
+            // absolutely-positioned seal so it cannot overlap the content
+            // above (bank details / notice).
+            ...(sigMode === "generated" && sealImageUrl && seal
+              ? [{ minHeight: mmToPoints((seal.image_height_mm || 30) + Math.max(0, seal.offset_y_mm || 0) + 5) }]
+              : []),
+          ]}
+          wrap={false}
+        >
+          {sigMode === "generated" ? (
+            <Text style={styles.signatureGeneratedNote}>
+              {dOpts.signature_note?.trim() ||
+                "This document is electronically generated and is valid without signature."}
+            </Text>
+          ) : (
+            <View style={styles.signatureBlock}>
+              {sigMode !== "client" && (
+                <View style={styles.signatureCol}>
+                  <Text style={styles.signatureParty}>For {tenant?.legal_name || tenant?.name || "Company"}:</Text>
+                  <View style={styles.signatureLine} />
+                  <Text style={styles.signatureLabel}>{docType === "loi" ? "Buyer Signature" : "Authorized Signature"}</Text>
+                </View>
+              )}
+              <View style={styles.signatureCol}>
+                <Text style={styles.signatureParty}>For {partner?.name || (docType === "loi" ? "Seller" : "Buyer")}:</Text>
+                <View style={styles.signatureLine} />
+                <Text style={styles.signatureLabel}>{docType === "loi" ? "Seller Acceptance" : "Accepted & Signed"}</Text>
+              </View>
             </View>
-            <View style={styles.signatureCol}>
-              <Text style={styles.signatureParty}>For {partner?.name || (docType === "loi" ? "Seller" : "Buyer")}:</Text>
-              <View style={styles.signatureLine} />
-              <Text style={styles.signatureLabel}>{docType === "loi" ? "Seller Acceptance" : "Accepted & Signed"}</Text>
-            </View>
-          </View>
+          )}
 
           {/* Company seal (zigled) — only rendered when a seal image is
               available. Placement / opacity / rotation come from the

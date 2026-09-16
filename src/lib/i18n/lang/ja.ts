@@ -2044,6 +2044,15 @@ export const FINANCE: Record<string, string> = {
   "fin-display-to-label": "宛先（顧客）ラベル",
   "fin-display-parties-hint": "両当事者ブロックのカスタム見出し — 空欄でデフォルト（サービス: SERVICE PROVIDER (CONSULTANT) / CLIENT、物品: FROM (SELLER) / TO (BUYER)）。大文字で印刷されます。",
   "fin-display-qr-label": "QR検証コード",
+
+  // ── Signature mode (migration 107) ──
+  "fin-display-sigmode-label": "署名",
+  "fin-display-sigmode-auto": "自動 — この書類タイプのデフォルト（請求書：有効性の一行、署名なし）",
+  "fin-display-sigmode-both": "両者が署名",
+  "fin-display-sigmode-client": "顧客の同意のみ",
+  "fin-display-sigmode-generated": "署名なし — 電子的に生成され有効",
+  "fin-display-sigmode-hidden": "完全に非表示",
+  "fin-display-sig-note-label": "有効性注記テキスト",
 };
 
 export const LOGISTICS: Record<string, string> = {

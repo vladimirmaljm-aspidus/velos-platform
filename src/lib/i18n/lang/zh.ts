@@ -2044,6 +2044,15 @@ export const FINANCE: Record<string, string> = {
   "fin-display-to-label": "收件方（客户）标签",
   "fin-display-parties-hint": "两个当事方区块的自定义标题 — 留空使用默认值（服务：SERVICE PROVIDER (CONSULTANT) / CLIENT，货物：FROM (SELLER) / TO (BUYER)）。以大写字母打印。",
   "fin-display-qr-label": "QR 验证码",
+
+  // ── Signature mode (migration 107) ──
+  "fin-display-sigmode-label": "签名",
+  "fin-display-sigmode-auto": "自动 — 此单据类型的默认值（发票：有效性说明行，无签名）",
+  "fin-display-sigmode-both": "双方签名",
+  "fin-display-sigmode-client": "仅客户签署确认",
+  "fin-display-sigmode-generated": "无签名 — 电子生成且有效",
+  "fin-display-sigmode-hidden": "完全隐藏",
+  "fin-display-sig-note-label": "有效性说明文本",
 };
 
 export const LOGISTICS: Record<string, string> = {

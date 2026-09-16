@@ -752,6 +752,15 @@ export const FINANCE: Record<Locale, Record<string, string>> = {
     "fin-display-to-label": "To (recipient) label",
     "fin-display-parties-hint": "Custom headers for the two party boxes — leave empty for the default (services: SERVICE PROVIDER (CONSULTANT) / CLIENT, goods: FROM (SELLER) / TO (BUYER)). Rendered in upper case.",
     "fin-display-qr-label": "QR verification code",
+
+    // ── Signature mode (migration 107) ──
+    "fin-display-sigmode-label": "Signatures",
+    "fin-display-sigmode-auto": "Auto — default for this document type (invoice: validity line, no signatures)",
+    "fin-display-sigmode-both": "Both parties sign",
+    "fin-display-sigmode-client": "Client acceptance only",
+    "fin-display-sigmode-generated": "No signatures — electronically generated & valid",
+    "fin-display-sigmode-hidden": "Hidden completely",
+    "fin-display-sig-note-label": "Validity note text",
   },
 
   sr: {
@@ -1477,6 +1486,15 @@ export const FINANCE: Record<Locale, Record<string, string>> = {
     "fin-display-to-label": "Oznaka primaoca (klijenta)",
     "fin-display-parties-hint": "Posebni naslovi za dva bloka strana — ostavite prazno za podrazumevano (usluge: SERVICE PROVIDER (CONSULTANT) / CLIENT, robe: FROM (SELLER) / TO (BUYER)). Ispisano velikim slovima.",
     "fin-display-qr-label": "QR kod za verifikaciju",
+
+    // ── Signature mode (migration 107) ──
+    "fin-display-sigmode-label": "Potpisi",
+    "fin-display-sigmode-auto": "Auto — podrazumevano za ovaj tip dokumenta (faktura: linija o važenju, bez potpisa)",
+    "fin-display-sigmode-both": "Potpisuju obe strane",
+    "fin-display-sigmode-client": "Samo prihvatanje klijenta",
+    "fin-display-sigmode-generated": "Bez potpisa — elektronski generisan i važeći",
+    "fin-display-sigmode-hidden": "Potpuno sakriveno",
+    "fin-display-sig-note-label": "Tekst napomene o važenju",
   },
 
   tr: {
@@ -2202,6 +2220,15 @@ export const FINANCE: Record<Locale, Record<string, string>> = {
     "fin-display-to-label": "Alıcı (müşteri) etiketi",
     "fin-display-parties-hint": "İki taraf kutusu için özel başlıklar — varsayılan için boş bırakın (hizmet: SERVICE PROVIDER (CONSULTANT) / CLIENT, mal: FROM (SELLER) / TO (BUYER)). Büyük harfle yazılır.",
     "fin-display-qr-label": "QR doğrulama kodu",
+
+    // ── Signature mode (migration 107) ──
+    "fin-display-sigmode-label": "İmzalar",
+    "fin-display-sigmode-auto": "Otomatik — bu belge türü için varsayılan (fatura: geçerlilik satırı, imzasız)",
+    "fin-display-sigmode-both": "Her iki taraf imzalar",
+    "fin-display-sigmode-client": "Sadece müşteri onayı",
+    "fin-display-sigmode-generated": "İmzasız — elektronik olarak oluşturulmuş ve geçerli",
+    "fin-display-sigmode-hidden": "Tamamen gizli",
+    "fin-display-sig-note-label": "Geçerlilik notu metni",
   },
 
   de: {
@@ -2927,6 +2954,15 @@ export const FINANCE: Record<Locale, Record<string, string>> = {
     "fin-display-to-label": "Beschriftung An (Empfänger)",
     "fin-display-parties-hint": "Eigene Überschriften für die beiden Parteifelder — leer lassen für die Vorgabe (Dienstleistungen: SERVICE PROVIDER (CONSULTANT) / CLIENT, Waren: FROM (SELLER) / TO (BUYER)). Wird in Großbuchstaben gedruckt.",
     "fin-display-qr-label": "QR-Bestätigungscode",
+
+    // ── Signature mode (migration 107) ──
+    "fin-display-sigmode-label": "Unterschriften",
+    "fin-display-sigmode-auto": "Automatisch — Standard für diesen Dokumenttyp (Rechnung: Gültigkeitszeile, ohne Unterschriften)",
+    "fin-display-sigmode-both": "Beide Parteien unterschreiben",
+    "fin-display-sigmode-client": "Nur Kundenannahme",
+    "fin-display-sigmode-generated": "Keine Unterschriften — elektronisch erstellt und gültig",
+    "fin-display-sigmode-hidden": "Vollständig ausgeblendet",
+    "fin-display-sig-note-label": "Text des Gültigkeitshinweises",
   },
 
   ru: {
@@ -3652,6 +3688,15 @@ export const FINANCE: Record<Locale, Record<string, string>> = {
     "fin-display-to-label": "Подпись получателя (клиента)",
     "fin-display-parties-hint": "Свои заголовки для двух блоков сторон — оставьте пустым для значения по умолчанию (услуги: SERVICE PROVIDER (CONSULTANT) / CLIENT, товары: FROM (SELLER) / TO (BUYER)). Печатается заглавными буквами.",
     "fin-display-qr-label": "QR-код верификации",
+
+    // ── Signature mode (migration 107) ──
+    "fin-display-sigmode-label": "Подписи",
+    "fin-display-sigmode-auto": "Авто — по умолчанию для этого типа документа (инвойс: строка о действительности, без подписей)",
+    "fin-display-sigmode-both": "Подписывают обе стороны",
+    "fin-display-sigmode-client": "Только согласие клиента",
+    "fin-display-sigmode-generated": "Без подписей — создан электронно и действителен",
+    "fin-display-sigmode-hidden": "Полностью скрыто",
+    "fin-display-sig-note-label": "Текст примечания о действительности",
   },
 
 

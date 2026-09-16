@@ -227,6 +227,7 @@ export type {
   DocumentDisplayOptions,
   VatDisplayMode,
   TriStateVisibility,
+  SignatureMode,
 } from "@/lib/utils/document-display";
 type DocumentDisplayOptions = _DocumentDisplayOptions;
 

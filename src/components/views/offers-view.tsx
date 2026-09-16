@@ -2701,6 +2701,7 @@ function OfferFormDialog({
               onChange={setDisplayOptions}
               nature={isServices ? "services" : "goods"}
               defaultTitle={isServices ? "Offer" : "Offer"}
+              docType="offer"
             />
           </div>
 

@@ -1083,6 +1083,15 @@ export const FINANCE: Record<string, string> = {
   "fin-display-to-label": "Rótulo Para (destinatário)",
   "fin-display-parties-hint": "Cabeçalhos personalizados para os dois blocos de partes — deixe vazio para o padrão (serviços: SERVICE PROVIDER (CONSULTANT) / CLIENT, mercadorias: FROM (SELLER) / TO (BUYER)). Impresso em maiúsculas.",
   "fin-display-qr-label": "Código QR de verificação",
+
+  // ── Signature mode (migration 107) ──
+  "fin-display-sigmode-label": "Assinaturas",
+  "fin-display-sigmode-auto": "Auto — padrão para este tipo de documento (fatura: linha de validade, sem assinaturas)",
+  "fin-display-sigmode-both": "Ambas as partes assinam",
+  "fin-display-sigmode-client": "Apenas aceitação do cliente",
+  "fin-display-sigmode-generated": "Sem assinaturas — gerado eletronicamente e válido",
+  "fin-display-sigmode-hidden": "Oculto completamente",
+  "fin-display-sig-note-label": "Texto da nota de validade",
 };
 
 export const LOGISTICS: Record<string, string> = {

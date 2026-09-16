@@ -2199,6 +2199,7 @@ function InvoiceFormDialog({
               onChange={setDisplayOptions}
               nature={isServices ? "services" : "goods"}
               defaultTitle={isServices ? "Invoice" : "Commercial Invoice"}
+              docType="invoice"
             />
           </div>
 

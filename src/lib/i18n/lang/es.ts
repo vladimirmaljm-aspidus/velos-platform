@@ -2045,6 +2045,15 @@ export const FINANCE: Record<string, string> = {
   "fin-display-to-label": "Etiqueta Para (destinatario)",
   "fin-display-parties-hint": "Encabezados personalizados para los dos bloques de partes — dejar vacío para el valor predeterminado (servicios: SERVICE PROVIDER (CONSULTANT) / CLIENT, mercancías: FROM (SELLER) / TO (BUYER)). Se imprime en mayúsculas.",
   "fin-display-qr-label": "Código QR de verificación",
+
+  // ── Signature mode (migration 107) ──
+  "fin-display-sigmode-label": "Firmas",
+  "fin-display-sigmode-auto": "Auto — predeterminado para este tipo de documento (factura: línea de validez, sin firmas)",
+  "fin-display-sigmode-both": "Firman ambas partes",
+  "fin-display-sigmode-client": "Solo aceptación del cliente",
+  "fin-display-sigmode-generated": "Sin firmas — generado electrónicamente y válido",
+  "fin-display-sigmode-hidden": "Oculto por completo",
+  "fin-display-sig-note-label": "Texto de la nota de validez",
 };
 
 

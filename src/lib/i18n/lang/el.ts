@@ -2044,6 +2044,15 @@ export const FINANCE: Record<string, string> = {
   "fin-display-to-label": "Ετικέτα Προς (παραλήπτης)",
   "fin-display-parties-hint": "Προσαρμοσμένες επικεφαλίδες για τα δύο μπλοκ των μερών — αφήστε κενό για την προεπιλογή (υπηρεσίες: SERVICE PROVIDER (CONSULTANT) / CLIENT, αγαθά: FROM (SELLER) / TO (BUYER)). Εκτυπώνεται με κεφαλαία.",
   "fin-display-qr-label": "Κωδικός επαλήθευσης QR",
+
+  // ── Signature mode (migration 107) ──
+  "fin-display-sigmode-label": "Υπογραφές",
+  "fin-display-sigmode-auto": "Αυτόματο — προεπιλογή για αυτό τον τύπο εγγράφου (τιμολόγιο: γραμμή ισχύος, χωρίς υπογραφές)",
+  "fin-display-sigmode-both": "Υπογράφουν και τα δύο μέρη",
+  "fin-display-sigmode-client": "Μό αποδοχή πελάτη",
+  "fin-display-sigmode-generated": "Χωρίς υπογραφές — δημιουργήθηκε ηλεκτρονικά και ισχύει",
+  "fin-display-sigmode-hidden": "Πλήρως κρυφό",
+  "fin-display-sig-note-label": "Κείμενο σημείωσης ισχύος",
 };
 
 export const LOGISTICS: Record<string, string> = {

@@ -2044,6 +2044,15 @@ export const FINANCE: Record<string, string> = {
   "fin-display-to-label": "Libellé À (destinataire)",
   "fin-display-parties-hint": "En-têtes personnalisés pour les deux blocs de parties — laissez vide pour la valeur par défaut (services : SERVICE PROVIDER (CONSULTANT) / CLIENT, marchandises : FROM (SELLER) / TO (BUYER)). Imprimé en majuscules.",
   "fin-display-qr-label": "Code QR de vérification",
+
+  // ── Signature mode (migration 107) ──
+  "fin-display-sigmode-label": "Signatures",
+  "fin-display-sigmode-auto": "Auto — valeur par défaut pour ce type de document (facture : ligne de validité, sans signatures)",
+  "fin-display-sigmode-both": "Les deux parties signent",
+  "fin-display-sigmode-client": "Acceptation du client uniquement",
+  "fin-display-sigmode-generated": "Sans signatures — généré électroniquement et valide",
+  "fin-display-sigmode-hidden": "Masqué complètement",
+  "fin-display-sig-note-label": "Texte de la note de validité",
 };
 
 export const LOGISTICS: Record<string, string> = {
